@@ -8957,16 +8957,6 @@ Invalid rule config, corrupt cache, invalid local rulebooks, or remote rulebook 
 `;
 
 // src/bin/rule/format.ts
-function printSyncResult(result) {
-  if (!result.ok) {
-    printResultErrors(result);
-    return;
-  }
-  for (const entry of result.entries) {
-    const ruleCount = entry.ruleCount === undefined ? "" : ` (${entry.ruleCount} rules)`;
-    console.log(`${entry.name} ${entry.version} ${entry.digest} ${entry.spec}${ruleCount}`);
-  }
-}
 function printRuleChangeResult(result, action) {
   if (!result.ok) {
     printResultErrors(result);
@@ -9011,6 +9001,52 @@ function printRulesTestResult(result, sourceDisplayMap = new Map) {
     return;
   console.log("");
   console.log(`Tested ${result.entries.length} rulebooks, ${sumStats(result.entries, "ruleCount")} rules, ${sumStats(result.entries, "testCount")} tests.`);
+}
+function printRulesListReport(policy, sourceDisplayMaps) {
+  printListSection("Active sources", policy.rulebooks, (rulebook) => [
+    `[${rulebook.source}] ${rulebook.name} ${rulebook.version}`,
+    `  Source: ${sourceDisplayMaps[rulebook.source].get(rulebook.spec) ?? rulebook.spec}`
+  ]);
+  printListSection("Active rules", policy.rules, (rule) => [
+    `[${getRuleSource(policy, rule.name)}] ${rule.name}`,
+    `  Command: ${rule.subcommand ? `${rule.command} ${rule.subcommand}` : rule.command}`,
+    `  Block args: ${rule.block_args.join(", ")}`,
+    `  Reason: ${rule.reason}`
+  ]);
+  printListSection("Disabled rules", getMergedOverrides(policy, "off"), (override) => [
+    override.key
+  ]);
+  printListSection("Reason overrides", getMergedOverrides(policy, "reason"), (override) => [
+    override.key,
+    `  Reason: ${override.value.reason}`
+  ]);
+  printListSection("Issues", policy.errors, (error) => [error]);
+}
+function printListSection(title, items, format) {
+  if (items.length === 0) {
+    console.log(`${title}: (none)`);
+    return;
+  }
+  console.log(`${title} (${items.length}):`);
+  for (const item of items) {
+    const [firstLine, ...detailLines] = format(item);
+    console.log(`  - ${firstLine}`);
+    for (const line of detailLines)
+      console.log(`    ${line}`);
+  }
+}
+function getRuleSource(policy, ruleName) {
+  return policy.rulebooks.find((rulebook) => rulebook.rules.includes(ruleName))?.source ?? "project";
+}
+function getMergedOverrides(policy, kind) {
+  return Object.entries({
+    ...policy.userConfig?.overrides ?? {},
+    ...policy.projectConfig?.overrides ?? {}
+  }).filter((entry) => {
+    if (kind === "off")
+      return entry[1] === "off";
+    return !!entry[1] && typeof entry[1] === "object";
+  }).map(([key, value]) => ({ key, value }));
 }
 function sumStats(entries, key) {
   return entries.reduce((total, entry) => total + (entry[key] ?? 0), 0);
@@ -9533,13 +9569,11 @@ async function runRuleCommand(args) {
   }
   if (subcommand === "list") {
     const policy = loadRulesPolicy();
-    if (policy.errors.length > 0) {
-      for (const error of policy.errors)
-        console.error(error);
-      return 1;
-    }
-    printSyncResult({ ok: true, errors: [], entries: [] });
-    return 0;
+    printRulesListReport(policy, {
+      user: getRulesConfigSourceDisplayMap(policy.userConfigPath),
+      project: getRulesConfigSourceDisplayMap(policy.projectConfigPath)
+    });
+    return policy.errors.length > 0 ? 1 : 0;
   }
   if (subcommand === "test") {
     const sources = value ? [value] : [];
@@ -9603,6 +9637,9 @@ function parseRuleFlags(args) {
     }
   } else if (flags.positionals.length > 2) {
     flags.errors.push(`Unexpected rule argument: ${flags.positionals[2]}`);
+  }
+  if (subcommand === "list" && flags.global) {
+    flags.errors.push("Unknown option for rule list: --global");
   }
   return flags;
 }

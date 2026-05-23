@@ -1,13 +1,18 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { RULE_DOC } from '@/bin/rule/doc';
-import { printRuleChangeResult, printRulesTestResult, printSyncResult } from '@/bin/rule/format';
+import {
+  printRuleChangeResult,
+  printRulesListReport,
+  printRulesTestResult,
+} from '@/bin/rule/format';
 import { runRulesMigrate } from '@/bin/rule/migrate';
 import { runRulesVerify } from '@/bin/rule/verify';
 import {
   addRulebookSource,
   getProjectRulesConfigPath,
   getProjectRulesDir,
+  getRulesConfigSourceDisplayMap,
   getUserRulesConfigPath,
   getUserRulesDir,
   loadRulesPolicy,
@@ -97,12 +102,11 @@ export async function runRuleCommand(args: readonly string[]): Promise<number> {
 
   if (subcommand === 'list') {
     const policy = loadRulesPolicy();
-    if (policy.errors.length > 0) {
-      for (const error of policy.errors) console.error(error);
-      return 1;
-    }
-    printSyncResult({ ok: true, errors: [], entries: [] });
-    return 0;
+    printRulesListReport(policy, {
+      user: getRulesConfigSourceDisplayMap(policy.userConfigPath),
+      project: getRulesConfigSourceDisplayMap(policy.projectConfigPath),
+    });
+    return policy.errors.length > 0 ? 1 : 0;
   }
 
   if (subcommand === 'test') {
@@ -172,6 +176,9 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
     }
   } else if (flags.positionals.length > 2) {
     flags.errors.push(`Unexpected rule argument: ${flags.positionals[2]}`);
+  }
+  if (subcommand === 'list' && flags.global) {
+    flags.errors.push('Unknown option for rule list: --global');
   }
 
   return flags;

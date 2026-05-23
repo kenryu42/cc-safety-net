@@ -1,4 +1,9 @@
-import { getRulebookDisplaySource, type RulebookLockEntryWithStats } from '@/core/rules/policy';
+import {
+  getRulebookDisplaySource,
+  type LoadedRulesPolicy,
+  type RulebookLockEntryWithStats,
+  type RuleOverride,
+} from '@/core/rules/policy';
 
 export function printSyncResult(result: {
   ok: boolean;
@@ -82,6 +87,64 @@ export function printRulesTestResult(
   console.log(
     `Tested ${result.entries.length} rulebooks, ${sumStats(result.entries, 'ruleCount')} rules, ${sumStats(result.entries, 'testCount')} tests.`,
   );
+}
+
+export function printRulesListReport(
+  policy: LoadedRulesPolicy,
+  sourceDisplayMaps: Record<'user' | 'project', Map<string, string>>,
+): void {
+  printListSection('Active sources', policy.rulebooks, (rulebook) => [
+    `[${rulebook.source}] ${rulebook.name} ${rulebook.version}`,
+    `  Source: ${sourceDisplayMaps[rulebook.source].get(rulebook.spec) ?? rulebook.spec}`,
+  ]);
+  printListSection('Active rules', policy.rules, (rule) => [
+    `[${getRuleSource(policy, rule.name)}] ${rule.name}`,
+    `  Command: ${rule.subcommand ? `${rule.command} ${rule.subcommand}` : rule.command}`,
+    `  Block args: ${rule.block_args.join(', ')}`,
+    `  Reason: ${rule.reason}`,
+  ]);
+  printListSection('Disabled rules', getMergedOverrides(policy, 'off'), (override) => [
+    override.key,
+  ]);
+  printListSection('Reason overrides', getMergedOverrides(policy, 'reason'), (override) => [
+    override.key,
+    `  Reason: ${(override.value as { reason: string }).reason}`,
+  ]);
+  printListSection('Issues', policy.errors, (error) => [error]);
+}
+
+function printListSection<T>(title: string, items: T[], format: (item: T) => string[]): void {
+  if (items.length === 0) {
+    console.log(`${title}: (none)`);
+    return;
+  }
+  console.log(`${title} (${items.length}):`);
+  for (const item of items) {
+    const [firstLine, ...detailLines] = format(item);
+    console.log(`  - ${firstLine}`);
+    for (const line of detailLines) console.log(`    ${line}`);
+  }
+}
+
+function getRuleSource(policy: LoadedRulesPolicy, ruleName: string): 'user' | 'project' {
+  return (
+    policy.rulebooks.find((rulebook) => rulebook.rules.includes(ruleName))?.source ?? 'project'
+  );
+}
+
+function getMergedOverrides(
+  policy: LoadedRulesPolicy,
+  kind: 'off' | 'reason',
+): Array<{ key: string; value: RuleOverride }> {
+  return Object.entries({
+    ...(policy.userConfig?.overrides ?? {}),
+    ...(policy.projectConfig?.overrides ?? {}),
+  })
+    .filter((entry): entry is [string, RuleOverride] => {
+      if (kind === 'off') return entry[1] === 'off';
+      return !!entry[1] && typeof entry[1] === 'object';
+    })
+    .map(([key, value]) => ({ key, value }));
 }
 
 function sumStats(entries: RulebookLockEntryWithStats[], key: 'ruleCount' | 'testCount'): number {

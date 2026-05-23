@@ -55,6 +55,110 @@ describe('rule command docs', () => {
   });
 });
 
+describe('rule list', () => {
+  test('prints merged active sources, active rules, overrides, and issues', async () => {
+    await withTempDir('safety-net-rule-list-', async (tempDir) => {
+      const env = ruleListEnv(tempDir);
+      writeLocalRulebook(
+        join(tempDir, 'home', '.cc-safety-net', 'rules', 'user-rules', 'rulebook.json'),
+        'user-rules',
+      );
+      writeLocalRulebook(
+        join(tempDir, '.cc-safety-net', 'rules', 'project-rules', 'rulebook.json'),
+        'project-rules',
+      );
+      writeFileSync(
+        join(tempDir, 'home', '.cc-safety-net', 'rules', 'rule.json'),
+        JSON.stringify({
+          version: 1,
+          rules: ['user-rules'],
+          overrides: {
+            'user-rules/user-rules-rule': 'off',
+          },
+        }),
+      );
+      writeFileSync(
+        join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
+        JSON.stringify({
+          version: 1,
+          rules: ['project-rules'],
+          overrides: {
+            'project-rules/project-rules-rule': { reason: 'Ask before echo danger.' },
+          },
+        }),
+      );
+      expect((await runSafetyNetCli(['rule', 'sync', '--global'], env, tempDir)).exitCode).toBe(0);
+      expect((await runSafetyNetCli(['rule', 'sync'], env, tempDir)).exitCode).toBe(0);
+
+      const result = await runRuleList(tempDir, env);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.output).toContain('Active sources (2):');
+      expect(result.output).toContain('[user] user-rules 1.0.0');
+      expect(result.output).toContain('[project] project-rules 1.0.0');
+      expect(result.output).toContain('Active rules (1):');
+      expect(result.output).toContain('[project] project-rules/project-rules-rule');
+      expect(result.output).toContain('Command: echo');
+      expect(result.output).toContain('Reason: Ask before echo danger.');
+      expect(result.output).toContain('Disabled rules (1):');
+      expect(result.output).toContain('user-rules/user-rules-rule');
+      expect(result.output).toContain('Reason overrides (1):');
+      expect(result.output).toContain('Issues: (none)');
+    });
+  });
+
+  test('prints policy issues and exits nonzero', async () => {
+    await withTempDir('safety-net-rule-list-issues-', async (tempDir) => {
+      mkdirSync(join(tempDir, '.cc-safety-net', 'rules'), { recursive: true });
+      writeFileSync(
+        join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
+        JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
+      );
+
+      const result = await runRuleList(tempDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      expect(result.output).toContain('Issues (1):');
+      expect(result.output).toContain('missing lockfile');
+    });
+  });
+
+  test('rejects global list scope', async () => {
+    const result = await runSafetyNetCli(['rule', 'list', '--global']);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toBe('');
+    expect(result.stderr).toContain('Unknown option for rule list: --global');
+  });
+
+  test('prints empty merged policy', async () => {
+    await withTempDir('safety-net-rule-list-empty-', async (tempDir) => {
+      const result = await runRuleList(tempDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.output).toContain('Active sources: (none)');
+      expect(result.output).toContain('Active rules: (none)');
+      expect(result.output).toContain('Disabled rules: (none)');
+      expect(result.output).toContain('Reason overrides: (none)');
+      expect(result.output).toContain('Issues: (none)');
+    });
+  });
+});
+
+function ruleListEnv(tempDir: string): Record<string, string> {
+  return {
+    CC_SAFETY_NET_HOME: join(tempDir, 'home', '.cc-safety-net'),
+    HOME: join(tempDir, 'home'),
+  };
+}
+
+function runRuleList(tempDir: string, env = ruleListEnv(tempDir)) {
+  return runSafetyNetCli(['rule', 'list'], env, tempDir);
+}
+
 describe('rule migrate', () => {
   test('rejects unsupported write option', async () => {
     const result = await runSafetyNetCli(['rule', 'migrate', '--write']);
