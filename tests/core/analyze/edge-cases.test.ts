@@ -529,6 +529,10 @@ describe('edge cases', () => {
       assertBlocked('parallel rm -rf ::: /', 'root or home');
     });
 
+    test('parallel rm rf checks every marker arg without placeholder', () => {
+      assertBlocked('parallel rm -rf ::: build /', 'root or home', tempDir);
+    });
+
     test('parallel rm rf with replacement args analyzed', () => {
       assertBlocked('parallel rm -rf {} ::: /', 'rm -rf', tempDir);
     });
@@ -576,6 +580,14 @@ describe('edge cases', () => {
 
     test('parallel busybox rm rf args after marker without placeholder blocked', () => {
       assertBlocked('parallel busybox rm -rf ::: /', 'root or home');
+    });
+
+    test('parallel busybox rm rf checks every marker arg without placeholder', () => {
+      assertBlocked('parallel busybox rm -rf ::: build /', 'root or home', tempDir);
+    });
+
+    test('parallel rm rf allows safe marker args without placeholder', () => {
+      assertAllowed('parallel rm -rf ::: build dist', tempDir);
     });
 
     test('parallel attached sshlogin disables worktree relaxation', () => {

@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { claudeCodeBashInput, expectNoHookOutput, runClaudeCodeHook } from './hook-helpers';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  claudeCodeBashInput,
+  expectNoHookOutput,
+  runClaudeCodeHook,
+  TEST_HOOK_CWD,
+} from './hook-helpers';
 
 describe('Claude Code hook', () => {
   describe('blocked commands', () => {
@@ -11,14 +18,64 @@ describe('Claude Code hook', () => {
       expect(parsed.hookSpecificOutput).toBeDefined();
       expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
       expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
-      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('BLOCKED by Safety Net');
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        'BLOCKED by CC SafetyNet',
+      );
       expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('git reset --hard');
+    });
+
+    test('policy fail-closed denial shows repair command without manual permission footer', async () => {
+      rmSync(join(TEST_HOOK_CWD, '.cc-safetynet-rules'), { recursive: true, force: true });
+      mkdirSync(join(TEST_HOOK_CWD, '.cc-safetynet-rules'), { recursive: true });
+      writeFileSync(
+        join(TEST_HOOK_CWD, '.cc-safetynet-rules', 'rule.json'),
+        JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
+        'utf-8',
+      );
+
+      const result = await runClaudeCodeHook(claudeCodeBashInput('git status --short --branch'));
+      rmSync(join(TEST_HOOK_CWD, '.cc-safetynet-rules'), { recursive: true, force: true });
+
+      const parsed = JSON.parse(result.stdout);
+      expect(result.exitCode).toBe(0);
+      expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        'BLOCKED by CC SafetyNet',
+      );
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('missing lockfile');
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        'run `cc-safety-net rule sync`',
+      );
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        'Command: git status --short --branch',
+      );
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).not.toContain('ask the user');
     });
   });
 
   describe('allowed commands', () => {
     test('allowed command produces no output', async () => {
       await expectNoHookOutput(runClaudeCodeHook, claudeCodeBashInput('git status'));
+    });
+
+    test('debug mode logs allowed command without output', async () => {
+      const homeDir = join(TEST_HOOK_CWD, `debug-home-${Date.now()}`);
+      await expectNoHookOutput(
+        runClaudeCodeHook,
+        {
+          ...claudeCodeBashInput('TOKEN=secret git status'),
+          session_id: 'debug-session',
+        },
+        { CC_SAFETY_NET_DEBUG: '1', HOME: homeDir },
+      );
+
+      const logFile = join(homeDir, '.cc-safety-net', 'logs', 'debug-session.jsonl');
+      expect(existsSync(logFile)).toBe(true);
+      const entry = JSON.parse(readFileSync(logFile, 'utf-8').trim());
+      expect(entry.decision).toBe('allow');
+      expect(entry.reason).toBe('allowed');
+      expect(entry.command).toContain('<redacted>');
+      expect(entry.command).not.toContain('secret');
     });
   });
 
@@ -49,7 +106,7 @@ describe('Claude Code hook', () => {
   describe('invalid JSON', () => {
     test('strict mode blocks invalid JSON', async () => {
       const { stdout, exitCode } = await runClaudeCodeHook('{invalid json', {
-        SAFETY_NET_STRICT: '1',
+        CC_SAFETY_NET_STRICT: '1',
       });
 
       expect(exitCode).toBe(0);

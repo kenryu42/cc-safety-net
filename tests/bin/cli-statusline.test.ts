@@ -14,7 +14,7 @@ function clearEnv(): void {
 }
 
 async function runStatusline(env: Record<string, string>) {
-  const result = await runSafetyNetCli(['--statusline'], env);
+  const result = await runSafetyNetCli(['statusline', '--claude-code'], env);
   return { output: result.output.trim(), exitCode: result.exitCode };
 }
 
@@ -24,7 +24,7 @@ async function expectStatusline(env: Record<string, string>, output: string) {
   expect(result.exitCode).toBe(0);
 }
 
-describe('--statusline flag', () => {
+describe('statusline command', () => {
   // Create a temp settings file with plugin enabled to test statusline modes
   // When settings file doesn't exist, isPluginEnabled() defaults to false (disabled)
   let tempDir: string;
@@ -112,7 +112,40 @@ describe('--statusline flag', () => {
   });
 });
 
-describe('--statusline enabled/disabled detection', () => {
+describe('statusline command routing', () => {
+  test('supports short Claude Code flag', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'safety-net-statusline-'));
+    const settingsPath = join(tempDir, 'settings.json');
+    try {
+      await writePluginSettings(settingsPath, true);
+      const result = await runSafetyNetCli(['statusline', '-cc'], {
+        CLAUDE_SETTINGS_PATH: settingsPath,
+      });
+
+      expect(result.output.trim()).toBe('🛡️ Safety Net ✅');
+      expect(result.exitCode).toBe(0);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects legacy --statusline flag', async () => {
+    const result = await runSafetyNetCli(['--statusline']);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Unknown option: --statusline');
+  });
+
+  test('statusline without platform flag prints help and exits nonzero', async () => {
+    const result = await runSafetyNetCli(['statusline']);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('cc-safety-net statusline');
+    expect(result.output).toContain('-cc, --claude-code');
+  });
+});
+
+describe('statusline enabled/disabled detection', () => {
   let tempDir: string;
 
   beforeEach(async () => {

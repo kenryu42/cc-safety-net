@@ -220,7 +220,7 @@ var claudeCodeCommand = {
   name: "claude-code",
   aliases: ["-cc", "--claude-code"],
   description: "Run as Claude Code PreToolUse hook (reads JSON from stdin)",
-  usage: "-cc, --claude-code",
+  usage: "hook -cc, hook --claude-code",
   options: [
     {
       flags: "-h, --help",
@@ -235,7 +235,7 @@ var copilotCliCommand = {
   name: "copilot-cli",
   aliases: ["-cp", "--copilot-cli"],
   description: "Run as Copilot CLI PreToolUse hook (reads JSON from stdin)",
-  usage: "-cp, --copilot-cli",
+  usage: "hook -cp, hook --copilot-cli",
   options: [
     {
       flags: "-h, --help",
@@ -243,21 +243,6 @@ var copilotCliCommand = {
     }
   ],
   examples: ["cc-safety-net -cp", "cc-safety-net --copilot-cli"]
-};
-
-// src/bin/commands/custom-rules-doc.ts
-var customRulesDocCommand = {
-  name: "custom-rules-doc",
-  aliases: ["--custom-rules-doc"],
-  description: "Print custom rules documentation",
-  usage: "--custom-rules-doc",
-  options: [
-    {
-      flags: "-h, --help",
-      description: "Show this help"
-    }
-  ],
-  examples: ["cc-safety-net --custom-rules-doc"]
 };
 
 // src/bin/commands/doctor.ts
@@ -320,7 +305,7 @@ var geminiCliCommand = {
   name: "gemini-cli",
   aliases: ["-gc", "--gemini-cli"],
   description: "Run as Gemini CLI BeforeTool hook (reads JSON from stdin)",
-  usage: "-gc, --gemini-cli",
+  usage: "hook -gc, hook --gemini-cli",
   options: [
     {
       flags: "-h, --help",
@@ -330,19 +315,97 @@ var geminiCliCommand = {
   examples: ["cc-safety-net -gc", "cc-safety-net --gemini-cli"]
 };
 
-// src/bin/commands/statusline.ts
-var statuslineCommand = {
-  name: "statusline",
-  aliases: ["--statusline"],
-  description: "Print status line with mode indicators for shell integration",
-  usage: "--statusline",
+// src/bin/commands/hook.ts
+var hookCommand = {
+  name: "hook",
+  description: "Run as an agent CLI hook (reads JSON from stdin)",
+  usage: "hook <platform>",
+  subcommands: [
+    { usage: "install --opencode", description: "Install OpenCode hook config" },
+    { usage: "install --kimi-cli", description: "Install Kimi CLI hook config" },
+    { usage: "uninstall --opencode", description: "Uninstall OpenCode hook config" },
+    { usage: "uninstall --kimi-cli", description: "Uninstall Kimi CLI hook config" }
+  ],
   options: [
+    {
+      flags: "-cc, --claude-code",
+      description: "Run as Claude Code PreToolUse hook"
+    },
+    {
+      flags: "-cp, --copilot-cli",
+      description: "Run as Copilot CLI PreToolUse hook"
+    },
+    {
+      flags: "-gc, --gemini-cli",
+      description: "Run as Gemini CLI BeforeTool hook"
+    },
+    {
+      flags: "-kc, --kimi-cli",
+      description: "Run as Kimi CLI PreToolUse hook"
+    },
     {
       flags: "-h, --help",
       description: "Show this help"
     }
   ],
-  examples: ["cc-safety-net --statusline"]
+  examples: [
+    "cc-safety-net hook -cc",
+    "cc-safety-net hook --claude-code",
+    "cc-safety-net hook -cp",
+    "cc-safety-net hook --copilot-cli",
+    "cc-safety-net hook -gc",
+    "cc-safety-net hook --gemini-cli",
+    "cc-safety-net hook -kc",
+    "cc-safety-net hook --kimi-cli",
+    "cc-safety-net hook uninstall --opencode"
+  ]
+};
+
+// src/bin/commands/rule.ts
+var ruleCommand = {
+  name: "rule",
+  description: "Manage Safety Net rulebook sources",
+  usage: "rule <subcommand>",
+  subcommands: [
+    { usage: "init", description: "Create starter rule config and rulebook files" },
+    { usage: "add <source>", description: "Add a rulebook source and sync" },
+    { usage: "remove <source>", description: "Remove a rulebook source and sync" },
+    { usage: "update [source]", description: "Refresh rulebook lock/cache state" },
+    { usage: "sync", description: "Sync configured rulebooks" },
+    { usage: "list", description: "List active rulebooks" },
+    { usage: "test [source]", description: "Run rulebook fixtures" },
+    { usage: "doc", description: "Print the rulebook authoring guide" },
+    { usage: "verify", description: "Validate rule config files" }
+  ],
+  options: [
+    { flags: "-g, --global", description: "Use user-scope rule config" },
+    { flags: "--check", description: "Check without changing lock/cache state" },
+    { flags: "-h, --help", description: "Show this help" }
+  ],
+  examples: [
+    "cc-safety-net rule init",
+    "cc-safety-net rule add project-rules",
+    "cc-safety-net rule sync",
+    "cc-safety-net rule verify"
+  ]
+};
+
+// src/bin/commands/statusline.ts
+var statuslineCommand = {
+  name: "statusline",
+  description: "Print status line with mode indicators for shell integration",
+  usage: "statusline <coding cli>",
+  options: [
+    {
+      flags: "-cc, --claude-code",
+      description: "Print status line for Claude Code"
+    },
+    {
+      flags: "-h, --help",
+      description: "Show this help"
+    }
+  ],
+  examples: ["cc-safety-net statusline -cc", "cc-safety-net statusline --claude-code"]
 };
 
 // src/bin/commands/verify-config.ts
@@ -351,6 +414,7 @@ var verifyConfigCommand = {
   aliases: ["-vc", "--verify-config"],
   description: "Validate custom rules configuration files",
   usage: "-vc, --verify-config",
+  hidden: true,
   options: [
     {
       flags: "-h, --help",
@@ -364,11 +428,12 @@ var verifyConfigCommand = {
 var commands = [
   doctorCommand,
   explainCommand,
+  ruleCommand,
+  hookCommand,
   claudeCodeCommand,
   copilotCliCommand,
   geminiCliCommand,
   verifyConfigCommand,
-  customRulesDocCommand,
   statuslineCommand
 ];
 function findCommand(nameOrAlias) {
@@ -378,124 +443,6 @@ function findCommand(nameOrAlias) {
 function getVisibleCommands() {
   return commands.filter((cmd) => !cmd.hidden);
 }
-
-// src/bin/custom-rules-doc.ts
-var CUSTOM_RULES_DOC = `# Custom Rules Reference
-
-Agent reference for generating \`.safety-net.json\` config files.
-
-## Config Locations
-
-| Scope | Path | Priority |
-|-------|------|----------|
-| User | \`~/.cc-safety-net/config.json\` | Lower |
-| Project | \`.safety-net.json\` (cwd) | Higher (overrides user) |
-
-Duplicate rule names (case-insensitive) → project wins.
-
-## Schema
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [...]
-}
-\`\`\`
-
-- \`$schema\`: Optional. Enables IDE autocomplete and inline validation.
-- \`version\`: Required. Must be \`1\`.
-- \`rules\`: Optional. Defaults to \`[]\`.
-
-**Always include \`$schema\`** when generating config files for IDE support.
-
-## Rule Fields
-
-| Field | Required | Constraints |
-|-------|----------|-------------|
-| \`name\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$\` — unique (case-insensitive) |
-| \`command\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]*$\` — basename only, not path |
-| \`subcommand\` | No | Same pattern as command. Omit to match any. |
-| \`block_args\` | Yes | Non-empty array of non-empty strings |
-| \`reason\` | Yes | Non-empty string, max 256 chars |
-
-## Guidelines:
-
-- \`name\`: kebab-case, descriptive (e.g., \`block-git-add-all\`)
-- \`command\`: binary name only, lowercase
-- \`subcommand\`: omit if rule applies to any subcommand
-- \`block_args\`: include all variants (e.g., both \`-g\` and \`--global\`)
-- \`reason\`: explain why blocked AND suggest alternative
-
-## Matching Behavior
-
-- **Command**: Normalized to basename (\`/usr/bin/git\` → \`git\`)
-- **Subcommand**: First non-option argument after command
-- **Arguments**: Matched literally. Command blocked if **any** \`block_args\` item present.
-- **Short options**: Expanded (\`-Ap\` matches \`-A\`)
-- **Long options**: Exact match (\`--all-files\` does NOT match \`--all\`)
-- **Execution order**: Built-in rules first, then custom rules (additive only)
-
-## Examples
-
-### Block \`git add -A\`
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [
-    {
-      "name": "block-git-add-all",
-      "command": "git",
-      "subcommand": "add",
-      "block_args": ["-A", "--all", "."],
-      "reason": "Use 'git add <specific-files>' instead."
-    }
-  ]
-}
-\`\`\`
-
-### Block global npm install
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [
-    {
-      "name": "block-npm-global",
-      "command": "npm",
-      "subcommand": "install",
-      "block_args": ["-g", "--global"],
-      "reason": "Use npx or local install."
-    }
-  ]
-}
-\`\`\`
-
-### Block docker system prune
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [
-    {
-      "name": "block-docker-prune",
-      "command": "docker",
-      "subcommand": "system",
-      "block_args": ["prune"],
-      "reason": "Use targeted cleanup instead."
-    }
-  ]
-}
-\`\`\`
-
-## Error Handling
-
-Invalid config → silent fallback to built-in rules only. No custom rules applied.
-`;
 
 // src/bin/doctor/activity.ts
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -519,8 +466,13 @@ function getActivitySummary(days = 7, logsDir = join(homedir(), ".cc-safety-net"
     return { totalBlocked: 0, sessionCount: 0, recentEntries: [] };
   }
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const entries = [];
+  const recentEntries = [];
+  let totalBlocked = 0;
   let sessionCount = 0;
+  let oldestEntry;
+  let oldestEntryTs;
+  let newestEntry;
+  let newestEntryTs;
   let files;
   try {
     files = readdirSync(logsDir).filter((f) => f.endsWith(".jsonl"));
@@ -536,10 +488,22 @@ function getActivitySummary(days = 7, logsDir = join(homedir(), ".cc-safety-net"
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
+          if (entry.decision === "allow") {
+            continue;
+          }
           const ts = new Date(entry.ts).getTime();
           if (ts >= cutoff) {
-            entries.push(entry);
+            totalBlocked++;
             hasRecentEntry = true;
+            if (oldestEntryTs === undefined || ts <= oldestEntryTs) {
+              oldestEntry = entry.ts;
+              oldestEntryTs = ts;
+            }
+            if (newestEntryTs === undefined || ts > newestEntryTs) {
+              newestEntry = entry.ts;
+              newestEntryTs = ts;
+            }
+            insertRecentEntry(recentEntries, entry, ts);
           }
         } catch {}
       }
@@ -548,29 +512,41 @@ function getActivitySummary(days = 7, logsDir = join(homedir(), ".cc-safety-net"
       }
     } catch {}
   }
-  entries.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-  const recentEntries = entries.slice(0, 3).map((e) => ({
+  const displayEntries = recentEntries.map((e) => ({
     timestamp: e.ts,
     command: e.command,
     reason: e.reason,
     relativeTime: formatRelativeTime(new Date(e.ts))
   }));
   return {
-    totalBlocked: entries.length,
+    totalBlocked,
     sessionCount,
-    recentEntries,
-    oldestEntry: entries.at(-1)?.ts,
-    newestEntry: entries.at(0)?.ts
+    recentEntries: displayEntries,
+    oldestEntry,
+    newestEntry
   };
+}
+function insertRecentEntry(entries, entry, ts) {
+  const index = entries.findIndex((existing) => ts > new Date(existing.ts).getTime());
+  if (index === -1) {
+    if (entries.length < 3) {
+      entries.push(entry);
+    }
+    return;
+  }
+  entries.splice(index, 0, entry);
+  if (entries.length > 3) {
+    entries.pop();
+  }
 }
 
 // src/bin/doctor/config.ts
-import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync8 } from "node:fs";
 
 // src/core/config.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { join as join2, resolve } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync7 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { join as join5, resolve as resolve3 } from "node:path";
 
 // src/types.ts
 var MAX_RECURSION_DEPTH = 10;
@@ -596,906 +572,442 @@ var PARANOID_INTERPRETERS_SUFFIX = `
 
 (Paranoid mode: interpreter one-liners are blocked.)`;
 
-// src/core/config.ts
-var DEFAULT_CONFIG = {
-  version: 1,
-  rules: []
-};
-function loadConfig(cwd, options) {
-  const safeCwd = typeof cwd === "string" ? cwd : process.cwd();
-  const userConfigDir = options?.userConfigDir ?? join2(homedir2(), ".cc-safety-net");
-  const userConfigPath = join2(userConfigDir, "config.json");
-  const projectConfigPath = join2(safeCwd, ".safety-net.json");
-  const userConfig = loadSingleConfig(userConfigPath);
-  const projectConfig = loadSingleConfig(projectConfigPath);
-  return mergeConfigs(userConfig, projectConfig);
+// src/core/rules-policy/config-file.ts
+import { existsSync as existsSync3, mkdirSync, readFileSync as readFileSync2, renameSync, writeFileSync } from "node:fs";
+import { dirname as dirname2 } from "node:path";
+
+// src/core/rules-policy/paths.ts
+import { existsSync as existsSync2 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { dirname, join as join2, resolve } from "node:path";
+var RULES_CONFIG_FILE = "rule.json";
+var RULES_LOCK_FILE = "rule.lock";
+var RULEBOOK_FILE = "rulebook.json";
+var LEGACY_RULES_CONFIG_FILE = "config.json";
+var SAFETY_NET_DIR = ".cc-safetynet-rules";
+var LEGACY_PROJECT_RULES_DIR = ".cc-safety-net/rules";
+var RULES_DIR = SAFETY_NET_DIR;
+var CC_SAFETY_NET_HOME = "CC_SAFETY_NET_HOME";
+var GITHUB_RULEBOOK_SOURCE_FORMAT = "owner/repo#ref/<rulebook-name>";
+var RULE_SYNC_COMMAND = "`cc-safety-net rule sync`";
+var RULE_MIGRATE_COMMAND = "`npx cc-safety-net rule migrate`";
+function getProjectRulesDir(cwd) {
+  const base = cwd ?? process.cwd();
+  const legacyPath = resolve(base, LEGACY_PROJECT_RULES_DIR);
+  return existsSync2(legacyPath) ? legacyPath : resolve(base, RULES_DIR);
 }
-function loadSingleConfig(path) {
-  if (!existsSync2(path)) {
-    return null;
+function getProjectRulesConfigPath(cwd) {
+  return join2(getProjectRulesDir(cwd), RULES_CONFIG_FILE);
+}
+function getProjectRulesLockPath(cwd) {
+  return join2(getProjectRulesDir(cwd), RULES_LOCK_FILE);
+}
+function getUserRulesDir(options) {
+  return options?.userConfigDir ?? (options?.userConfigPath ? dirname(options.userConfigPath) : getUserSafetyNetHome());
+}
+function getUserSafetyNetHome() {
+  const home = process.env[CC_SAFETY_NET_HOME];
+  return home ? resolve(home) : join2(homedir2(), SAFETY_NET_DIR);
+}
+function getUserRulesConfigPath(options) {
+  return join2(getUserRulesDir(options), RULES_CONFIG_FILE);
+}
+function getUserRulesLockPath(options) {
+  return join2(getUserRulesDir(options), RULES_LOCK_FILE);
+}
+function getRulesLockPathForConfigPath(configPath) {
+  return join2(dirname(configPath), RULES_LOCK_FILE);
+}
+function getLegacyUserRulesConfigPath(options = {}) {
+  return join2(dirname(getUserRulesDir(options)), LEGACY_RULES_CONFIG_FILE);
+}
+function getLegacyProjectRulesConfigPath(options = {}) {
+  return resolve(options.cwd ?? process.cwd(), ".safety-net.json");
+}
+function getPolicyPaths(options) {
+  return {
+    userConfigPath: options.userConfigPath ?? getUserRulesConfigPath(options),
+    projectConfigPath: options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd),
+    userLockPath: getUserRulesLockPath(options),
+    projectLockPath: getRulesLockPathForConfigPath(options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd))
+  };
+}
+function getScopePaths(options) {
+  const configPath = options.global ? getUserRulesConfigPath(options) : getProjectRulesConfigPath(options.cwd);
+  return {
+    configDir: dirname(configPath),
+    configPath,
+    lockPath: options.global ? getUserRulesLockPath(options) : getProjectRulesLockPath(options.cwd)
+  };
+}
+function getRulebookDisplaySource(entry) {
+  if (entry.kind === "github" && entry.display_ref) {
+    return `${entry.owner}/${entry.repo}#${entry.display_ref}/${entry.name}`;
   }
-  try {
-    const content = readFileSync2(path, "utf-8");
-    if (!content.trim()) {
+  return entry.spec;
+}
+function getRulebookCachePath(entry, options) {
+  const digestHex = entry.digest.startsWith("sha256:") ? entry.digest.slice(7) : entry.digest;
+  return join2(options?.cacheConfigDir ?? getUserRulesDir(options), "cache", "rulebooks", `${getRulebookCacheSlug(entry)}--${digestHex.slice(0, 12)}`, RULEBOOK_FILE);
+}
+function getRulebookCacheSlug(entry) {
+  const source = entry.kind === "github" && entry.display_ref ? `${entry.owner}/${entry.repo}#${entry.display_ref}/${entry.name}` : entry.spec;
+  return source.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "rulebook";
+}
+function getRepositoryRulebookPath(name) {
+  return `${RULES_DIR}/${name}/${RULEBOOK_FILE}`;
+}
+
+// src/core/rules-policy/sources.ts
+var GITHUB_SOURCE_RE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#(.+)$/;
+var GITHUB_REPOSITORY_SOURCE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+$/;
+var GITHUB_REPOSITORY_REF_SOURCE_RE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([A-Za-z0-9._-]+)$/;
+var GITHUB_REF_PATTERN = /^[A-Za-z0-9._-]+$/;
+var RULES_DIR_RE = RULES_DIR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var RULEBOOK_FILE_RE = RULEBOOK_FILE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var GITHUB_RULEBOOK_PATH_RE = new RegExp(`^${RULES_DIR_RE}/(${NAME_PATTERN.source.slice(1, -1)})/${RULEBOOK_FILE_RE}$`);
+function getRulebookSourceSyntaxError(source) {
+  if (source.startsWith("builtin:") || source.startsWith("github:")) {
+    return `Invalid rulebook source: ${source}`;
+  }
+  if (isGitHubRulebookSource(source)) {
+    try {
+      parseGitHubSource(source);
       return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
     }
-    const parsed = JSON.parse(content);
-    const result = validateConfig(parsed);
-    if (result.errors.length > 0) {
-      return null;
-    }
-    const cfg = parsed;
+  }
+  return NAME_PATTERN.test(source) ? null : `Local rulebook sources must be bare names matching ${NAME_PATTERN}: ${source}`;
+}
+function parseGitHubSource(spec) {
+  if (spec.startsWith("github:")) {
+    throw new Error(`Invalid rulebook source: ${spec}`);
+  }
+  const match = spec.match(GITHUB_SOURCE_RE);
+  if (!match?.[1] || !match[2] || !match[3]) {
+    throw new Error(`Invalid GitHub rulebook source: ${spec}`);
+  }
+  const [ref, name, ...extraParts] = match[3].split("/");
+  if (!ref || !GITHUB_REF_PATTERN.test(ref)) {
+    throw new Error(`GitHub rulebook refs must be a single path segment: ${spec}`);
+  }
+  if (!name || extraParts.length > 0 || !NAME_PATTERN.test(name)) {
+    throw new Error(`GitHub rulebook sources must be ${GITHUB_RULEBOOK_SOURCE_FORMAT}: ${spec}`);
+  }
+  return {
+    owner: match[1],
+    repo: match[2],
+    ref,
+    path: getRepositoryRulebookPath(name),
+    name
+  };
+}
+function isGitHubRepositorySource(source) {
+  return GITHUB_REPOSITORY_SOURCE_RE.test(source);
+}
+function isGitHubRulebookSource(source) {
+  return GITHUB_SOURCE_RE.test(source);
+}
+function assertBareRulebookName(source) {
+  if (!NAME_PATTERN.test(source)) {
+    throw new Error(`Local rulebook sources must be bare names matching ${NAME_PATTERN}: ${source}`);
+  }
+}
+function getSelectedUpdateSpecs(config, lock, match) {
+  const exactMatches = config.rules.filter((spec) => spec === match);
+  if (exactMatches.length > 0) {
+    return { ok: true, specs: exactMatches };
+  }
+  if (!lock) {
     return {
-      version: cfg.version,
-      rules: cfg.rules ?? []
+      ok: false,
+      result: {
+        ok: false,
+        errors: [
+          `No lockfile available to match rulebook name ${match}; use the exact source or run ${RULE_SYNC_COMMAND}`
+        ],
+        entries: []
+      }
     };
+  }
+  const configuredSpecs = new Set(config.rules);
+  const nameMatches = lock.rulebooks.filter((entry) => entry.name === match && configuredSpecs.has(entry.spec)).map((entry) => entry.spec);
+  if (nameMatches.length === 1) {
+    return { ok: true, specs: nameMatches };
+  }
+  return noRulebookMatch(match, nameMatches);
+}
+function getRemoveMatches(rules, lock, match) {
+  const exactMatches = rules.filter((spec) => spec === match);
+  if (exactMatches.length > 0)
+    return { ok: true, specs: exactMatches };
+  const githubRefMatches = getGitHubRepositoryRefMatches(rules, match);
+  if (githubRefMatches.length > 0)
+    return { ok: true, specs: githubRefMatches };
+  const githubRepositoryMatches = getGitHubRepositoryMatches(rules, match);
+  if (!githubRepositoryMatches.ok)
+    return githubRepositoryMatches;
+  if (githubRepositoryMatches.specs.length > 0) {
+    return { ok: true, specs: githubRepositoryMatches.specs };
+  }
+  const nameMatches = lock ? rules.filter((spec) => lock.rulebooks.find((entry) => entry.spec === spec)?.name === match) : [];
+  if (nameMatches.length === 1)
+    return { ok: true, specs: nameMatches };
+  return noRulebookMatch(match, nameMatches);
+}
+function noRulebookMatch(match, nameMatches) {
+  return {
+    ok: false,
+    result: {
+      ok: false,
+      errors: nameMatches.length === 0 ? [`No configured rulebook matches ${match}`] : [`Ambiguous rulebook match ${match}: ${nameMatches.join(", ")}`],
+      entries: []
+    }
+  };
+}
+function getGitHubRepositoryRefMatches(rules, match) {
+  const parsed = match.match(GITHUB_REPOSITORY_REF_SOURCE_RE);
+  if (!parsed?.[1] || !parsed[2] || !parsed[3])
+    return [];
+  return rules.filter((spec) => {
+    const source = getConfiguredGitHubSource(spec);
+    if (!source)
+      return false;
+    return source.owner === parsed[1] && source.repo === parsed[2] && source.ref === parsed[3];
+  });
+}
+function getGitHubRepositoryMatches(rules, match) {
+  if (!isGitHubRepositorySource(match))
+    return { ok: true, specs: [] };
+  const specs = rules.filter((spec) => {
+    const source = getConfiguredGitHubSource(spec);
+    if (!source)
+      return false;
+    return source.owner === match.split("/")[0] && source.repo === match.split("/")[1];
+  });
+  const refs = new Set(specs.map((spec) => getConfiguredGitHubSource(spec)?.ref).filter((ref) => !!ref));
+  if (refs.size < 2)
+    return { ok: true, specs };
+  return {
+    ok: false,
+    result: {
+      ok: false,
+      errors: [
+        `Multiple refs are configured for ${match}. Use an explicit ref:`,
+        `  cc-safety-net rule remove ${match}#<ref>`
+      ],
+      entries: []
+    }
+  };
+}
+function getConfiguredGitHubSource(spec) {
+  try {
+    return parseGitHubSource(spec);
   } catch {
     return null;
   }
 }
-function mergeConfigs(userConfig, projectConfig) {
-  if (!userConfig && !projectConfig) {
-    return DEFAULT_CONFIG;
-  }
-  if (!userConfig) {
-    return projectConfig ?? DEFAULT_CONFIG;
-  }
-  if (!projectConfig) {
-    return userConfig;
-  }
-  const projectRuleNames = new Set(projectConfig.rules.map((r) => r.name.toLowerCase()));
-  const mergedRules = [
-    ...userConfig.rules.filter((r) => !projectRuleNames.has(r.name.toLowerCase())),
-    ...projectConfig.rules
-  ];
-  return {
-    version: 1,
-    rules: mergedRules
-  };
-}
-function validateConfig(config) {
+
+// src/core/rules-policy/types.ts
+var DEFAULT_CONFIG = { version: 1, rules: [], overrides: {} };
+
+// src/core/rules-policy/config-file.ts
+function validateRulesConfig(config) {
   const errors = [];
-  const ruleNames = new Set;
+  const sources = new Set;
   if (!config || typeof config !== "object") {
-    errors.push("Config must be an object");
-    return { errors, ruleNames };
+    return { errors: ["Config must be an object"], sources };
   }
   const cfg = config;
   if (cfg.version !== 1) {
     errors.push("version must be 1");
   }
-  if (cfg.rules !== undefined) {
-    if (!Array.isArray(cfg.rules)) {
-      errors.push("rules must be an array");
+  if (cfg.rules === undefined) {} else if (!Array.isArray(cfg.rules)) {
+    errors.push("rules must be an array of rulebook source strings");
+  } else {
+    for (let i = 0;i < cfg.rules.length; i++) {
+      if (typeof cfg.rules[i] !== "string") {
+        errors.push(`rules[${i}]: must be a rulebook source string`);
+        continue;
+      }
+      if (cfg.rules[i].trim() === "") {
+        errors.push(`rules[${i}]: must be a non-empty rulebook source string`);
+        continue;
+      }
+      if (sources.has(cfg.rules[i])) {
+        errors.push(`rules[${i}]: duplicate rulebook source "${cfg.rules[i]}"`);
+        continue;
+      }
+      const sourceError = getRulebookSourceSyntaxError(cfg.rules[i]);
+      if (sourceError) {
+        errors.push(`rules[${i}]: ${sourceError}`);
+        continue;
+      }
+      sources.add(cfg.rules[i]);
+    }
+  }
+  if (cfg.overrides !== undefined) {
+    if (!cfg.overrides || typeof cfg.overrides !== "object" || Array.isArray(cfg.overrides)) {
+      errors.push("overrides must be an object if provided");
     } else {
-      for (let i = 0;i < cfg.rules.length; i++) {
-        const rule = cfg.rules[i];
-        const ruleErrors = validateRule(rule, i, ruleNames);
-        errors.push(...ruleErrors);
+      for (const [key, value] of Object.entries(cfg.overrides)) {
+        if (!/^[^/]+\/[^/]+$/.test(key)) {
+          errors.push(`overrides.${key}: must use <rulebook-name>/<rule-name>`);
+        }
+        if (value === "off") {
+          continue;
+        }
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          errors.push(`overrides.${key}: must be "off" or an object`);
+          continue;
+        }
+        const reason = value.reason;
+        if (typeof reason !== "string" || reason === "") {
+          errors.push(`overrides.${key}.reason: required non-empty string`);
+        } else if (reason.length > MAX_REASON_LENGTH) {
+          errors.push(`overrides.${key}.reason: must be at most ${MAX_REASON_LENGTH} characters`);
+        }
       }
     }
   }
-  return { errors, ruleNames };
+  return { errors, sources };
 }
-function validateRule(rule, index, ruleNames) {
-  const errors = [];
-  const prefix = `rules[${index}]`;
-  if (!rule || typeof rule !== "object") {
-    errors.push(`${prefix}: must be an object`);
-    return errors;
-  }
-  const r = rule;
-  if (typeof r.name !== "string") {
-    errors.push(`${prefix}.name: required string`);
-  } else {
-    if (!NAME_PATTERN.test(r.name)) {
-      errors.push(`${prefix}.name: must match pattern (letters, numbers, hyphens, underscores; max 64 chars)`);
-    }
-    const lowerName = r.name.toLowerCase();
-    if (ruleNames.has(lowerName)) {
-      errors.push(`${prefix}.name: duplicate rule name "${r.name}"`);
-    } else {
-      ruleNames.add(lowerName);
-    }
-  }
-  if (typeof r.command !== "string") {
-    errors.push(`${prefix}.command: required string`);
-  } else if (!COMMAND_PATTERN.test(r.command)) {
-    errors.push(`${prefix}.command: must match pattern (letters, numbers, hyphens, underscores)`);
-  }
-  if (r.subcommand !== undefined) {
-    if (typeof r.subcommand !== "string") {
-      errors.push(`${prefix}.subcommand: must be a string if provided`);
-    } else if (!COMMAND_PATTERN.test(r.subcommand)) {
-      errors.push(`${prefix}.subcommand: must match pattern (letters, numbers, hyphens, underscores)`);
-    }
-  }
-  if (!Array.isArray(r.block_args)) {
-    errors.push(`${prefix}.block_args: required array`);
-  } else {
-    if (r.block_args.length === 0) {
-      errors.push(`${prefix}.block_args: must have at least one element`);
-    }
-    for (let i = 0;i < r.block_args.length; i++) {
-      const arg = r.block_args[i];
-      if (typeof arg !== "string") {
-        errors.push(`${prefix}.block_args[${i}]: must be a string`);
-      } else if (arg === "") {
-        errors.push(`${prefix}.block_args[${i}]: must not be empty`);
-      }
-    }
-  }
-  if (typeof r.reason !== "string") {
-    errors.push(`${prefix}.reason: required string`);
-  } else if (r.reason === "") {
-    errors.push(`${prefix}.reason: must not be empty`);
-  } else if (r.reason.length > MAX_REASON_LENGTH) {
-    errors.push(`${prefix}.reason: must be at most ${MAX_REASON_LENGTH} characters`);
-  }
-  return errors;
-}
-function validateConfigFile(path) {
-  const errors = [];
-  const ruleNames = new Set;
-  if (!existsSync2(path)) {
-    errors.push(`File not found: ${path}`);
-    return { errors, ruleNames };
+function readRulesConfig(path) {
+  if (!existsSync3(path)) {
+    return { config: null, errors: [] };
   }
   try {
     const content = readFileSync2(path, "utf-8");
     if (!content.trim()) {
-      errors.push("Config file is empty");
-      return { errors, ruleNames };
+      return { config: null, errors: ["Config file is empty"] };
     }
     const parsed = JSON.parse(content);
-    return validateConfig(parsed);
-  } catch (e) {
-    errors.push(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
-    return { errors, ruleNames };
-  }
-}
-function getUserConfigPath() {
-  return join2(homedir2(), ".cc-safety-net", "config.json");
-}
-function getProjectConfigPath(cwd) {
-  return resolve(cwd ?? process.cwd(), ".safety-net.json");
-}
-
-// src/bin/doctor/config.ts
-function getConfigSourceInfo(path) {
-  if (!existsSync3(path)) {
-    return { path, exists: false, valid: false, ruleCount: 0 };
-  }
-  const validation = validateConfigFile(path);
-  if (validation.errors.length > 0) {
+    const validation = validateRulesConfig(parsed);
+    if (validation.errors.length > 0) {
+      return { config: null, errors: validation.errors };
+    }
+    const cfg = parsed;
     return {
-      path,
-      exists: true,
-      valid: false,
-      ruleCount: 0,
-      errors: validation.errors
+      config: {
+        version: 1,
+        rules: cfg.rules ?? [],
+        overrides: cfg.overrides ?? {}
+      },
+      errors: []
+    };
+  } catch (error) {
+    return {
+      config: null,
+      errors: [`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`]
     };
   }
-  return {
-    path,
-    exists: true,
-    valid: true,
-    ruleCount: validation.ruleNames.size
-  };
 }
-function isValidRule(rule) {
-  if (typeof rule !== "object" || rule === null)
-    return false;
-  const r = rule;
-  return typeof r.name === "string" && typeof r.command === "string" && Array.isArray(r.block_args) && typeof r.reason === "string";
-}
-function loadSingleConfigRules(path) {
-  if (!existsSync3(path))
-    return [];
-  try {
-    const content = readFileSync3(path, "utf-8");
-    if (!content.trim())
-      return [];
-    const parsed = JSON.parse(content);
-    if (!Array.isArray(parsed.rules))
-      return [];
-    return parsed.rules.filter(isValidRule);
-  } catch {
-    return [];
+function readScopeRulesConfig(path) {
+  const loaded = readRulesConfig(path);
+  if (loaded.errors.length > 0) {
+    return { ok: false, result: { ok: false, errors: loaded.errors, entries: [] } };
   }
+  return { ok: true, config: loaded.config ?? DEFAULT_CONFIG };
 }
-function mergeRulesWithTracking(userRules, projectRules) {
-  const projectRuleNames = new Set(projectRules.map((r) => r.name.toLowerCase()));
-  const shadowedRules = [];
-  const effectiveRules = [];
-  for (const rule of userRules) {
-    if (projectRuleNames.has(rule.name.toLowerCase())) {
-      shadowedRules.push({ name: rule.name, shadowedBy: "project" });
-    } else {
-      effectiveRules.push({
-        source: "user",
-        name: rule.name,
-        command: rule.command,
-        subcommand: rule.subcommand,
-        blockArgs: rule.block_args,
-        reason: rule.reason
-      });
-    }
-  }
-  for (const rule of projectRules) {
-    effectiveRules.push({
-      source: "project",
-      name: rule.name,
-      command: rule.command,
-      subcommand: rule.subcommand,
-      blockArgs: rule.block_args,
-      reason: rule.reason
-    });
-  }
-  return { effectiveRules, shadowedRules };
+function writeDefaultRulesConfig(path, rules = []) {
+  writeJsonAtomic(path, { version: 1, rules, overrides: {} });
 }
-function getConfigInfo(cwd, options) {
-  const userPath = options?.userConfigPath ?? getUserConfigPath();
-  const projectPath = options?.projectConfigPath ?? getProjectConfigPath(cwd);
-  const userConfig = getConfigSourceInfo(userPath);
-  const projectConfig = getConfigSourceInfo(projectPath);
-  const userRules = userConfig.valid ? loadSingleConfigRules(userPath) : [];
-  const projectRules = projectConfig.valid ? loadSingleConfigRules(projectPath) : [];
-  const { effectiveRules, shadowedRules } = mergeRulesWithTracking(userRules, projectRules);
-  return {
-    userConfig,
-    projectConfig,
-    effectiveRules,
-    shadowedRules
-  };
-}
-
-// src/bin/doctor/environment.ts
-var ENV_VARS = [
-  {
-    name: "SAFETY_NET_STRICT",
-    description: "Fail-closed on unparseable commands",
-    defaultBehavior: "permissive"
-  },
-  {
-    name: "SAFETY_NET_PARANOID",
-    description: "Enable all paranoid checks",
-    defaultBehavior: "off"
-  },
-  {
-    name: "SAFETY_NET_PARANOID_RM",
-    description: "Block rm -rf even within cwd",
-    defaultBehavior: "off"
-  },
-  {
-    name: "SAFETY_NET_PARANOID_INTERPRETERS",
-    description: "Block interpreter one-liners",
-    defaultBehavior: "off"
-  },
-  {
-    name: "SAFETY_NET_WORKTREE",
-    description: "Allow local git discards in linked worktrees",
-    defaultBehavior: "off"
-  }
-];
-function getEnvironmentInfo() {
-  return ENV_VARS.map((v) => ({
-    ...v,
-    value: process.env[v.name],
-    isSet: v.name in process.env
-  }));
-}
-
-// src/bin/utils/colors.ts
-function shouldUseColor() {
-  return Boolean(process.stdout.isTTY && !process.env.NO_COLOR);
-}
-var green = (s) => shouldUseColor() ? `\x1B[32m${s}\x1B[0m` : s;
-var yellow = (s) => shouldUseColor() ? `\x1B[33m${s}\x1B[0m` : s;
-var blue = (s) => shouldUseColor() ? `\x1B[34m${s}\x1B[0m` : s;
-var magenta = (s) => shouldUseColor() ? `\x1B[35m${s}\x1B[0m` : s;
-var cyan = (s) => shouldUseColor() ? `\x1B[36m${s}\x1B[0m` : s;
-var red = (s) => shouldUseColor() ? `\x1B[31m${s}\x1B[0m` : s;
-var dim = (s) => shouldUseColor() ? `\x1B[2m${s}\x1B[0m` : s;
-var bold = (s) => shouldUseColor() ? `\x1B[1m${s}\x1B[0m` : s;
-var colors = {
-  green,
-  yellow,
-  blue,
-  magenta,
-  cyan,
-  red,
-  dim,
-  bold
-};
-var ANSI_RESET = "\x1B[0m";
-var DISTINCT_COLORS = [
-  39,
-  82,
-  198,
-  226,
-  208,
-  51,
-  196,
-  46,
-  201,
-  214,
-  93,
-  154,
-  220,
-  27,
-  49,
-  190,
-  200,
-  33,
-  129,
-  227,
-  45,
-  160,
-  63,
-  118,
-  123,
-  202
-];
-function createRandom(seed) {
-  let state = seed;
-  return () => {
-    state = (state * 1664525 + 1013904223) % 4294967296;
-    return state / 4294967296;
-  };
-}
-function getShuffledPalette(seed) {
-  const palette = [...DISTINCT_COLORS];
-  const random = createRandom(seed);
-  for (let i = palette.length - 1;i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    const temp = palette[i];
-    palette[i] = palette[j];
-    palette[j] = temp;
-  }
-  return palette;
-}
-function generateDistinctColor(index, seed = 0) {
-  if (!shouldUseColor())
-    return "";
-  const palette = getShuffledPalette(seed);
-  const colorCode = palette[index % palette.length];
-  return `\x1B[38;5;${colorCode}m`;
-}
-function colorizeToken(token, index, seed = 0) {
-  if (!shouldUseColor())
-    return `"${token}"`;
-  const colorCode = generateDistinctColor(index, seed);
-  return `${colorCode}"${token}"${ANSI_RESET}`;
-}
-
-// src/bin/doctor/format.ts
-var PLATFORM_NAMES = {
-  "claude-code": "Claude Code",
-  opencode: "OpenCode",
-  "gemini-cli": "Gemini CLI",
-  "copilot-cli": "Copilot CLI",
-  codex: "Codex"
-};
-function formatAsciiTable(options) {
-  const rawRows = options.rawRows ?? options.rows;
-  const colWidths = (options.headers ?? rawRows[0] ?? []).map((h, i) => {
-    const maxDataWidth = Math.max(...rawRows.map((r) => r[i]?.length ?? 0));
-    return Math.max(h.length, maxDataWidth);
-  });
-  const pad = (s, w, raw) => s + " ".repeat(Math.max(0, w - raw.length));
-  const line = (char, corners) => corners[0] + colWidths.map((w) => char.repeat(w + 2)).join(corners[1]) + corners[2];
-  const formatRow = (cells, rawCells) => `│ ${cells.map((c, i) => pad(c, colWidths[i] ?? 0, rawCells[i] ?? "")).join(" │ ")} │`;
-  const headerLines = options.headers ? [`   ${formatRow(options.headers, options.headers)}`, `   ${line("─", ["├", "┼", "┤"])}`] : [];
-  return [
-    `   ${line("─", ["┌", "┬", "┐"])}`,
-    ...headerLines,
-    ...options.rows.map((r, i) => `   ${formatRow(r, rawRows[i] ?? [])}`),
-    `   ${line("─", ["└", "┴", "┘"])}`
-  ].join(`
-`);
-}
-function formatHooksSection(hooks) {
-  const lines = [];
-  lines.push("Hook Integration");
-  lines.push(formatHooksTable(hooks));
-  const failures = [];
-  const warnings = [];
-  const errors = [];
-  for (const hook of hooks) {
-    const platformName = PLATFORM_NAMES[hook.platform] ?? hook.platform;
-    if (hook.selfTest) {
-      for (const result of hook.selfTest.results) {
-        if (!result.passed) {
-          failures.push({ platform: platformName, result });
-        }
+function writeStarterRulebook(path, name = "project-rules") {
+  writeJsonAtomic(path, {
+    rulebook_version: 1,
+    name,
+    version: "1.0.0",
+    description: name === "project-rules" ? "Project-specific CC Safety Net rules." : "User-specific CC Safety Net rules.",
+    author: name === "project-rules" ? "project" : "user",
+    allowed_commands: ["docker"],
+    rules: [
+      {
+        name: "block-docker-system-prune",
+        command: "docker",
+        subcommand: "system",
+        block_args: ["prune"],
+        reason: "Use targeted cleanup instead."
       }
-    }
-    if (hook.errors && hook.errors.length > 0) {
-      for (const err of hook.errors) {
-        if (hook.status === "configured") {
-          warnings.push({ platform: platformName, message: err });
-        } else {
-          errors.push({ platform: platformName, message: err });
-        }
+    ],
+    tests: [
+      {
+        command: "docker system prune",
+        expect: "blocked",
+        rule: "block-docker-system-prune"
       }
-    }
-  }
-  if (failures.length > 0) {
-    lines.push("");
-    lines.push(colors.red("   Failures:"));
-    for (const f of failures) {
-      lines.push(colors.red(`   • ${f.platform}: ${f.result.description}`));
-      lines.push(colors.red(`     expected ${f.result.expected}, got ${f.result.actual}`));
-    }
-  }
-  for (const w of warnings) {
-    lines.push(`   Warning (${w.platform}): ${w.message}`);
-  }
-  for (const e of errors) {
-    lines.push(colors.red(`   Error (${e.platform}): ${e.message}`));
-  }
-  return lines.join(`
-`);
-}
-function formatHooksTable(hooks) {
-  const headers = ["Platform", "Status", "Tests"];
-  const getStatusDisplay = (h) => {
-    switch (h.status) {
-      case "configured":
-        return { text: "Configured", colored: colors.green("Configured") };
-      case "disabled":
-        return { text: "Disabled", colored: colors.yellow("Disabled") };
-      case "n/a":
-        return { text: "N/A", colored: colors.dim("N/A") };
-    }
-  };
-  const rowData = hooks.map((h) => {
-    const platformName = PLATFORM_NAMES[h.platform] ?? h.platform;
-    const statusDisplay = getStatusDisplay(h);
-    let testsText = "-";
-    if (h.status === "configured" && h.selfTest) {
-      const label = h.selfTest.failed > 0 ? "FAIL" : "OK";
-      testsText = `${h.selfTest.passed}/${h.selfTest.total} ${label}`;
-    }
-    return {
-      colored: [platformName, statusDisplay.colored, testsText],
-      raw: [platformName, statusDisplay.text, testsText]
-    };
+    ]
   });
-  const rows = rowData.map((r) => r.colored);
-  const rawRows = rowData.map((r) => r.raw);
-  return formatAsciiTable({ headers, rows, rawRows });
 }
-function formatRulesTable(rules) {
-  if (rules.length === 0) {
-    return "   (no custom rules)";
-  }
-  const headers = ["Source", "Name", "Command", "Block Args"];
-  const rows = rules.map((r) => [
-    r.source,
-    r.name,
-    r.subcommand ? `${r.command} ${r.subcommand}` : r.command,
-    r.blockArgs.join(", ")
-  ]);
-  return formatAsciiTable({ headers, rows });
-}
-function formatConfigSection(report) {
-  const lines = [];
-  lines.push("Configuration");
-  lines.push(formatConfigTable(report.userConfig, report.projectConfig));
-  lines.push("");
-  if (report.effectiveRules.length > 0) {
-    lines.push(`   Effective rules (${report.effectiveRules.length} total):`);
-    lines.push(formatRulesTable(report.effectiveRules));
-  } else {
-    lines.push("   Effective rules: (none - using built-in rules only)");
-  }
-  for (const shadow of report.shadowedRules) {
-    lines.push("");
-    lines.push(`   Note: Project rule "${shadow.name}" shadows user rule with same name`);
-  }
-  return lines.join(`
-`);
-}
-function formatConfigTable(userConfig, projectConfig) {
-  const headers = ["Scope", "Status"];
-  const getStatusDisplay = (config) => {
-    if (!config.exists) {
-      return { text: "N/A", colored: colors.dim("N/A") };
-    }
-    if (!config.valid) {
-      const errMsg = config.errors?.[0] ?? "unknown error";
-      const text = `Invalid (${errMsg})`;
-      return { text, colored: colors.red(text) };
-    }
-    return { text: "Configured", colored: colors.green("Configured") };
-  };
-  const userStatus = getStatusDisplay(userConfig);
-  const projectStatus = getStatusDisplay(projectConfig);
-  const rows = [
-    ["User", userStatus.colored],
-    ["Project", projectStatus.colored]
-  ];
-  const rawRows = [
-    ["User", userStatus.text],
-    ["Project", projectStatus.text]
-  ];
-  return formatAsciiTable({ headers, rows, rawRows });
-}
-function formatEnvironmentSection(envVars) {
-  const lines = [];
-  lines.push("Environment");
-  lines.push(formatEnvironmentTable(envVars));
-  return lines.join(`
-`);
-}
-function formatEnvironmentTable(envVars) {
-  const headers = ["Variable", "Status"];
-  const rows = envVars.map((v) => {
-    const statusIcon = v.isSet ? colors.green("✓") : colors.dim("✗");
-    return [v.name, statusIcon];
-  });
-  const rawRows = envVars.map((v) => [v.name, v.isSet ? "✓" : "✗"]);
-  return formatAsciiTable({ headers, rows, rawRows });
-}
-function formatActivitySection(activity) {
-  const lines = [];
-  if (activity.totalBlocked === 0) {
-    lines.push("Recent Activity");
-    lines.push("   No blocked commands in the last 7 days");
-    lines.push("   Tip: This is normal for new installations");
-  } else {
-    lines.push(`Recent Activity (${activity.totalBlocked} blocked / ${activity.sessionCount} sessions)`);
-    lines.push(formatActivityTable(activity.recentEntries));
-  }
-  return lines.join(`
-`);
-}
-function formatActivityTable(entries) {
-  const headers = ["Time", "Command"];
-  const rows = entries.map((e) => {
-    const cmd = e.command.length > 40 ? `${e.command.slice(0, 37)}...` : e.command;
-    return [e.relativeTime, cmd];
-  });
-  return formatAsciiTable({ headers, rows });
-}
-function formatUpdateSection(update) {
-  const lines = [];
-  lines.push("Update Check");
-  const rowData = [];
-  if (update.latestVersion === null && !update.error) {
-    rowData.push({
-      label: "Status",
-      value: colors.dim("Skipped"),
-      rawValue: "Skipped"
-    });
-    rowData.push({
-      label: "Installed",
-      value: update.currentVersion,
-      rawValue: update.currentVersion
-    });
-    lines.push(formatUpdateTable(rowData));
-    return lines.join(`
-`);
-  }
-  if (update.error) {
-    rowData.push({
-      label: "Status",
-      value: `${colors.yellow("⚠")} Error`,
-      rawValue: "⚠ Error"
-    });
-    rowData.push({
-      label: "Installed",
-      value: update.currentVersion,
-      rawValue: update.currentVersion
-    });
-    rowData.push({
-      label: "Error",
-      value: colors.dim(update.error),
-      rawValue: update.error
-    });
-    lines.push(formatUpdateTable(rowData));
-    return lines.join(`
-`);
-  }
-  if (update.updateAvailable) {
-    rowData.push({
-      label: "Status",
-      value: `${colors.yellow("⚠")} Update Available`,
-      rawValue: "⚠ Update Available"
-    });
-    rowData.push({
-      label: "Current",
-      value: update.currentVersion,
-      rawValue: update.currentVersion
-    });
-    rowData.push({
-      label: "Latest",
-      value: colors.green(update.latestVersion ?? ""),
-      rawValue: update.latestVersion ?? ""
-    });
-    lines.push(formatUpdateTable(rowData));
-    lines.push("");
-    lines.push("   Run: bunx cc-safety-net@latest doctor");
-    lines.push("   Or:  npx cc-safety-net@latest doctor");
-    return lines.join(`
-`);
-  }
-  rowData.push({
-    label: "Status",
-    value: `${colors.green("✓")} Up to date`,
-    rawValue: "✓ Up to date"
-  });
-  rowData.push({
-    label: "Version",
-    value: update.currentVersion,
-    rawValue: update.currentVersion
-  });
-  lines.push(formatUpdateTable(rowData));
-  return lines.join(`
-`);
-}
-function formatUpdateTable(rowData) {
-  const rows = rowData.map((r) => [r.label, r.value]);
-  const rawRows = rowData.map((r) => [r.label, r.rawValue]);
-  return formatAsciiTable({ rows, rawRows });
-}
-function formatSystemInfoSection(system) {
-  const lines = [];
-  lines.push("System Info");
-  lines.push(formatSystemInfoTable(system));
-  return lines.join(`
-`);
-}
-function formatSystemInfoTable(system) {
-  const headers = ["Component", "Version"];
-  const formatValue = (value) => {
-    if (value === null)
-      return colors.dim("not found");
-    return value;
-  };
-  const rawValue = (value) => {
-    return value ?? "not found";
-  };
-  const rowData = [
-    { label: "cc-safety-net", value: system.version },
-    { label: "Claude Code", value: system.claudeCodeVersion },
-    { label: "OpenCode", value: system.openCodeVersion },
-    { label: "Gemini CLI", value: system.geminiCliVersion },
-    { label: "Copilot CLI", value: system.copilotCliVersion },
-    { label: "Node.js", value: system.nodeVersion },
-    { label: "npm", value: system.npmVersion },
-    { label: "Bun", value: system.bunVersion },
-    { label: "Platform", value: system.platform }
-  ];
-  const rows = rowData.map((r) => [r.label, formatValue(r.value)]);
-  const rawRows = rowData.map((r) => [r.label, rawValue(r.value)]);
-  return formatAsciiTable({ headers, rows, rawRows });
-}
-function formatSummary(report) {
-  const hooksFailed = report.hooks.every((h) => h.status !== "configured");
-  const selfTestFailed = report.hooks.some((h) => h.selfTest && h.selfTest.failed > 0);
-  const configFailed = (report.userConfig.errors?.length ?? 0) > 0 || (report.projectConfig.errors?.length ?? 0) > 0;
-  const failures = [hooksFailed, selfTestFailed, configFailed].filter(Boolean).length;
-  let warnings = 0;
-  if (report.update.updateAvailable)
-    warnings++;
-  if (report.activity.totalBlocked === 0)
-    warnings++;
-  warnings += report.shadowedRules.length;
-  if (failures > 0) {
-    return colors.red(`
-${failures} check(s) failed.`);
-  }
-  if (warnings > 0) {
-    return colors.yellow(`
-All checks passed with ${warnings} warning(s).`);
-  }
-  return colors.green(`
-All checks passed.`);
+function writeJsonAtomic(path, value) {
+  mkdirSync(dirname2(path), { recursive: true });
+  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}
+`, "utf-8");
+  renameSync(tempPath, path);
 }
 
-// src/bin/doctor/hooks.ts
-import { existsSync as existsSync6, readdirSync as readdirSync2, readFileSync as readFileSync6 } from "node:fs";
-import { homedir as homedir4, tmpdir as tmpdir3 } from "node:os";
-import { join as join5 } from "node:path";
-
-// src/core/analyze/dangerous-text.ts
-function dangerousInText(text) {
-  const t = text.toLowerCase();
-  const stripped = t.trimStart();
-  const isEchoOrRg = stripped.startsWith("echo ") || stripped.startsWith("rg ");
-  const patterns = [
-    {
-      regex: /\brm\s+(-[^\s]*r[^\s]*\s+-[^\s]*f|-[^\s]*f[^\s]*\s+-[^\s]*r|-[^\s]*rf|-[^\s]*fr)\b/,
-      reason: "rm -rf"
-    },
-    {
-      regex: /\bgit\s+reset\s+--hard\b/,
-      reason: "git reset --hard"
-    },
-    {
-      regex: /\bgit\s+reset\s+--merge\b/,
-      reason: "git reset --merge"
-    },
-    {
-      regex: /\bgit\s+clean\s+(-[^\s]*f|-f)\b/,
-      reason: "git clean -f"
-    },
-    {
-      regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
-      reason: "git push --force (use --force-with-lease instead)"
-    },
-    {
-      regex: /\bgit\s+branch\s+-D\b/,
-      reason: "git branch -D",
-      caseSensitive: true
-    },
-    {
-      regex: /\bgit\s+stash\s+(drop|clear)\b/,
-      reason: "git stash drop/clear"
-    },
-    {
-      regex: /\bgit\s+checkout\s+--\s/,
-      reason: "git checkout --"
-    },
-    {
-      regex: /\bgit\s+restore\b(?!.*--(staged|help))/,
-      reason: "git restore (without --staged)"
-    },
-    {
-      regex: /\bfind\b[^\n;|&]*\s-delete\b/,
-      reason: "find -delete",
-      skipForEchoRg: true
-    }
-  ];
-  for (const { regex, reason, skipForEchoRg, caseSensitive } of patterns) {
-    if (skipForEchoRg && isEchoOrRg)
-      continue;
-    const target = caseSensitive ? text : t;
-    if (regex.test(target)) {
-      return reason;
-    }
-  }
-  return null;
-}
-
-// src/core/analyze/constants.ts
-var DISPLAY_COMMANDS = new Set([
-  "echo",
-  "printf",
-  "cat",
-  "head",
-  "tail",
-  "less",
-  "more",
-  "grep",
-  "rg",
-  "ag",
-  "ack",
-  "sed",
-  "awk",
-  "cut",
-  "tr",
-  "sort",
-  "uniq",
-  "wc",
-  "tee",
-  "man",
-  "help",
-  "info",
-  "type",
-  "which",
-  "whereis",
-  "whatis",
-  "apropos",
-  "file",
-  "stat",
-  "ls",
-  "ll",
-  "dir",
-  "tree",
-  "pwd",
-  "date",
-  "cal",
-  "uptime",
-  "whoami",
-  "id",
-  "groups",
-  "hostname",
-  "uname",
-  "env",
-  "printenv",
-  "set",
-  "export",
-  "alias",
-  "history",
-  "jobs",
-  "fg",
-  "bg",
-  "test",
-  "true",
-  "false",
-  "read",
-  "return",
-  "exit",
-  "break",
-  "continue",
-  "shift",
-  "wait",
-  "trap",
-  "basename",
-  "dirname",
-  "realpath",
-  "readlink",
-  "md5sum",
-  "sha256sum",
-  "base64",
-  "xxd",
-  "od",
-  "hexdump",
-  "strings",
-  "diff",
-  "cmp",
-  "comm",
-  "join",
-  "paste",
-  "column",
-  "fmt",
-  "fold",
-  "nl",
-  "pr",
-  "expand",
-  "unexpand",
-  "rev",
-  "tac",
-  "shuf",
-  "seq",
-  "yes",
-  "timeout",
-  "time",
-  "sleep",
-  "watch",
-  "logger",
-  "write",
-  "wall",
-  "mesg",
-  "notify-send"
-]);
-
-// src/core/analyze/rm-flags.ts
-function hasRecursiveForceFlags(tokens) {
-  let hasRecursive = false;
-  let hasForce = false;
-  for (const token of tokens) {
-    if (token === "--")
-      break;
-    if (token === "-r" || token === "-R" || token === "--recursive") {
-      hasRecursive = true;
-    } else if (token === "-f" || token === "--force") {
-      hasForce = true;
-    } else if (token.startsWith("-") && !token.startsWith("--")) {
-      if (token.includes("r") || token.includes("R"))
-        hasRecursive = true;
-      if (token.includes("f"))
-        hasForce = true;
-    }
-  }
-  return hasRecursive && hasForce;
-}
+// src/core/rules-policy/scope-policy.ts
+import { existsSync as existsSync6, readFileSync as readFileSync5 } from "node:fs";
+import { dirname as dirname4, isAbsolute as isAbsolute3, join as join4, relative, resolve as resolve2, sep as sep2 } from "node:path";
 
 // src/core/shell.ts
-import { realpathSync as realpathSync3 } from "node:fs";
-import { isAbsolute as isAbsolute3, parse as parsePath2 } from "node:path";
+import { realpathSync as realpathSync2 } from "node:fs";
+import { isAbsolute as isAbsolute2, parse as parsePath2 } from "node:path";
 
 // node_modules/shell-quote/index.js
 var $quote = require_quote();
 var $parse = require_parse();
 
+// src/core/git/env.ts
+var GIT_CONTEXT_ENV_OVERRIDES = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE"
+];
+var GIT_CONTEXT_ENV_OVERRIDE_NAMES = new Set(GIT_CONTEXT_ENV_OVERRIDES);
+var GIT_CONFIG_AFFECTING_ENV_NAMES = new Set([
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_CONFIG_SYSTEM",
+  "HOME",
+  "XDG_CONFIG_HOME"
+]);
+var GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
+function isGitContextEnvOverrideName(name) {
+  return GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name);
+}
+function isGitConfigEnvName(name) {
+  return name === "GIT_CONFIG_COUNT" || name === "GIT_CONFIG_PARAMETERS" || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name);
+}
+function isTrackedGitEnvName(name) {
+  return isGitContextEnvOverrideName(name) || GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) || isGitConfigEnvName(name);
+}
+function parseGitContextAppendEnvAssignment(token) {
+  const match = token.match(GIT_CONTEXT_APPEND_ASSIGNMENT_RE);
+  const name = match?.[1];
+  if (!name || !isTrackedGitEnvName(name)) {
+    return null;
+  }
+  const eqIdx = token.indexOf("=");
+  return { name, value: token.slice(eqIdx + 1) };
+}
+function hasConfigAffectingEnvAssignment(envAssignments) {
+  if (!envAssignments) {
+    return false;
+  }
+  for (const key of envAssignments.keys()) {
+    if (GIT_CONFIG_AFFECTING_ENV_NAMES.has(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // src/core/path.ts
 import { lstatSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, parse as parsePath, sep } from "node:path";
+import { dirname as dirname3, isAbsolute, parse as parsePath, sep } from "node:path";
 function resolveChdirTarget(baseCwd, target) {
   const root = isAbsolute(target) ? getPathRoot(target) : "";
   let current = root || baseCwd;
@@ -1504,7 +1016,7 @@ function resolveChdirTarget(baseCwd, target) {
       continue;
     }
     if (component === "..") {
-      current = dirname(current);
+      current = dirname3(current);
       continue;
     }
     const candidate = appendPathWithoutNormalizing(current, component);
@@ -1523,327 +1035,51 @@ function getPathComponents(target) {
   return target.split(separator);
 }
 
-// src/core/worktree.ts
-import { existsSync as existsSync4, lstatSync as lstatSync2, readFileSync as readFileSync4, realpathSync as realpathSync2, statSync } from "node:fs";
-import { dirname as dirname2, isAbsolute as isAbsolute2, join as join3, resolve as resolve2 } from "node:path";
-var GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
-  "-c",
-  "-C",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "--super-prefix",
-  "--config-env"
-]);
-var GIT_CONTEXT_ENV_OVERRIDES = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_COMMON_DIR",
-  "GIT_INDEX_FILE"
-];
-var GIT_CONFIG_AFFECTING_ENV_NAMES = new Set([
-  "GIT_CONFIG_GLOBAL",
-  "GIT_CONFIG_NOSYSTEM",
-  "GIT_CONFIG_SYSTEM",
-  "HOME",
-  "XDG_CONFIG_HOME"
-]);
-function hasGitContextEnvOverride(envAssignments) {
-  for (const name of GIT_CONTEXT_ENV_OVERRIDES) {
-    if (envAssignments?.has(name) || Object.hasOwn(process.env, name)) {
-      return true;
-    }
-  }
-  return false;
-}
-function getGitExecutionContext(tokens, cwd) {
-  if (!cwd) {
-    return { gitCwd: null, hasExplicitGitContext: false };
-  }
-  let gitCwd;
-  try {
-    gitCwd = realpathSync2(resolve2(cwd));
-  } catch {
-    return { gitCwd: null, hasExplicitGitContext: false };
-  }
-  if (!isDirectory(gitCwd)) {
-    return { gitCwd: null, hasExplicitGitContext: false };
-  }
-  let hasExplicitGitContext = false;
-  let i = 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token)
-      break;
-    if (token === "--") {
-      break;
-    }
-    if (!token.startsWith("-")) {
-      break;
-    }
-    if (token === "-C") {
-      const target = tokens[i + 1];
-      if (!target) {
-        return { gitCwd: null, hasExplicitGitContext };
-      }
-      const resolvedCwd = resolveGitCwd(gitCwd, target);
-      if (!resolvedCwd) {
-        return { gitCwd: null, hasExplicitGitContext };
-      }
-      gitCwd = resolvedCwd;
-      i += 2;
-      continue;
-    }
-    if (token.startsWith("-C") && token.length > 2) {
-      const resolvedCwd = resolveGitCwd(gitCwd, token.slice(2));
-      if (!resolvedCwd) {
-        return { gitCwd: null, hasExplicitGitContext };
-      }
-      gitCwd = resolvedCwd;
-      i++;
-      continue;
-    }
-    if (token === "--git-dir" || token === "--work-tree") {
-      hasExplicitGitContext = true;
-      i += 2;
-      continue;
-    }
-    if (token.startsWith("--git-dir=") || token.startsWith("--work-tree=")) {
-      hasExplicitGitContext = true;
-      i++;
-      continue;
-    }
-    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
-      i += 2;
-    } else if (token.startsWith("-c") && token.length > 2) {
-      i++;
-    } else {
-      i++;
-    }
-  }
-  return { gitCwd, hasExplicitGitContext };
-}
-function isLinkedWorktree(cwd) {
-  const dotGitPath = findDotGit(cwd);
-  if (!dotGitPath) {
-    return false;
-  }
-  try {
-    const stat = lstatSync2(dotGitPath);
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      return false;
-    }
-    const content = readFileSync4(dotGitPath, "utf-8");
-    const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
-    if (!firstLine.startsWith("gitdir:")) {
-      return false;
-    }
-    const rawGitDir = firstLine.slice("gitdir:".length).trim();
-    if (rawGitDir === "") {
-      return false;
-    }
-    const gitDir = isAbsolute2(rawGitDir) ? rawGitDir : resolve2(dirname2(dotGitPath), rawGitDir);
-    if (!existsSync4(join3(gitDir, "commondir"))) {
-      return false;
-    }
-    if (!worktreeGitdirBacklinkMatches(gitDir, dotGitPath)) {
-      return false;
-    }
-    return worktreeConfigMatchesRoot(gitDir, dirname2(dotGitPath));
-  } catch {
-    return false;
-  }
-}
-function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
-  const backlinkPath = join3(gitDir, "gitdir");
-  if (!existsSync4(backlinkPath)) {
-    return false;
-  }
-  const rawBacklink = readFileSync4(backlinkPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
-  if (rawBacklink === "") {
-    return false;
-  }
-  const linkedDotGitPath = isAbsolute2(rawBacklink) ? rawBacklink : resolve2(gitDir, rawBacklink);
-  try {
-    return sameFilesystemPath(linkedDotGitPath, dotGitPath);
-  } catch {
-    return false;
-  }
-}
-function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
-  const configWorktreePath = join3(gitDir, "config.worktree");
-  if (!existsSync4(configWorktreePath)) {
-    return true;
-  }
-  const configuredWorktree = readCoreWorktree(configWorktreePath);
-  if (configuredWorktree === null) {
-    return true;
-  }
-  const resolvedConfiguredWorktree = isAbsolute2(configuredWorktree) ? configuredWorktree : resolve2(gitDir, configuredWorktree);
-  try {
-    return sameFilesystemPath(resolvedConfiguredWorktree, worktreeRoot);
-  } catch {
-    return false;
-  }
-}
-function sameFilesystemPath(left, right) {
-  try {
-    const leftStat = statSync(left);
-    const rightStat = statSync(right);
-    if (leftStat.ino !== 0 && rightStat.ino !== 0 && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino) {
-      return true;
-    }
-  } catch {}
-  return getCanonicalPathForComparison(left) === getCanonicalPathForComparison(right);
-}
-function getCanonicalPathForComparison(path) {
-  return normalizePathForComparison(realpathSync2.native(path));
-}
-function normalizePathForComparison(path) {
-  let normalized = path.replace(/^\\\\\?\\UNC\\/i, "//").replace(/^\\\\\?\\/i, "");
-  normalized = normalized.replace(/\\/g, "/");
-  if (normalized.length > 1 && normalized.endsWith("/")) {
-    normalized = normalized.slice(0, -1);
-  }
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-function readCoreWorktree(configPath) {
-  const content = readFileSync4(configPath, "utf-8");
-  let inCore = false;
-  let configuredWorktree = null;
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
-      continue;
-    }
-    if (trimmed.startsWith("[")) {
-      inCore = /^\[core\]$/i.test(trimmed);
-      continue;
-    }
-    if (!inCore) {
-      continue;
-    }
-    const match = trimmed.match(/^worktree\s*=\s*(.*)$/i);
-    if (match) {
-      configuredWorktree = parseGitConfigValue(match[1] ?? "");
-    }
-  }
-  return configuredWorktree;
-}
-function parseGitConfigValue(value) {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith('"') || !trimmed.endsWith('"')) {
-    return trimmed;
-  }
-  return unescapeDoubleQuotedGitConfigValue(trimmed.slice(1, -1));
-}
-function unescapeDoubleQuotedGitConfigValue(value) {
-  let result = "";
-  for (let i = 0;i < value.length; i++) {
-    const char = value[i];
-    if (char !== "\\") {
-      result += char;
-      continue;
-    }
-    const next = value[i + 1];
-    if (next === undefined) {
-      result += char;
-      continue;
-    }
-    switch (next) {
-      case "\\":
-      case '"':
-        result += next;
-        break;
-      case "n":
-        result += `
-`;
-        break;
-      case "t":
-        result += "\t";
-        break;
-      case "b":
-        result += "\b";
-        break;
-      default:
-        result += `\\${next}`;
-        break;
-    }
-    i++;
-  }
-  return result;
-}
-function resolveGitCwd(baseCwd, target) {
-  try {
-    const resolved = resolveChdirTarget(baseCwd, target);
-    return isDirectory(resolved) ? resolved : null;
-  } catch {
-    return null;
-  }
-}
-function isDirectory(path) {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-function findDotGit(cwd) {
-  try {
-    return findDotGitInAncestors(realpathSync2(cwd));
-  } catch {
-    return null;
-  }
-}
-function findDotGitInAncestors(cwd) {
-  let current = cwd;
-  while (true) {
-    const dotGitPath = join3(current, ".git");
-    if (existsSync4(dotGitPath)) {
-      return dotGitPath;
-    }
-    const parent = dirname2(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
-  }
-}
-
 // src/core/shell.ts
 var ENV_PROXY = new Proxy({}, {
   get: (_, name) => `$${String(name)}`
 });
 var ARITHMETIC_SENTINEL = "__CC_SAFETY_NET_ARITH_SENTINEL__";
 var BACKTICK_ATTACHED_SUFFIX_SENTINEL = "__CC_SAFETY_NET_BACKTICK_SUFFIX__";
-var DYNAMIC_SUBSTITUTION_TOKEN = "$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__";
 function splitShellCommands(command) {
+  return splitShellCommandsWithInfo(command).map((segment) => segment.tokens);
+}
+function splitShellCommandsWithInfo(command) {
   if (hasUnclosedQuotes(command)) {
-    return [[command]];
+    return [{ tokens: [command], hasDynamicSubstitution: false }];
   }
   const normalizedCommand = _stripAttachedIoNumbers(command.replace(/\n/g, " ; "));
   const tokens = $parse(normalizedCommand, ENV_PROXY);
   const segments = [];
   let current = [];
+  let currentHasDynamicSubstitution = false;
   let i = 0;
   while (i < tokens.length) {
     const token = tokens[i];
     if (isOperator(token)) {
       if (current.length > 0) {
-        segments.push(current);
+        segments.push({
+          tokens: current,
+          hasDynamicSubstitution: currentHasDynamicSubstitution
+        });
         current = [];
+        currentHasDynamicSubstitution = false;
       }
       i++;
       continue;
     }
     if (_isProcessSubstitutionStart(tokens, i)) {
       if (current.length > 0) {
-        segments.push(current);
+        segments.push({
+          tokens: current,
+          hasDynamicSubstitution: currentHasDynamicSubstitution
+        });
         current = [];
+        currentHasDynamicSubstitution = false;
       }
       const { innerSegments, endIndex } = extractProcessSubstitution(tokens, i);
       for (const seg of innerSegments) {
-        segments.push(seg);
+        segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
       i = endIndex + 1;
       continue;
@@ -1851,7 +1087,7 @@ function splitShellCommands(command) {
     if (_isRedirectOp(token)) {
       const { redirectTarget, advance } = _getRedirectTargetInfo(tokens, i);
       if (redirectTarget !== null) {
-        _pushInlineSubstitutionSegments(segments, redirectTarget);
+        _pushInlineSubstitutionSegmentInfos(segments, redirectTarget);
       }
       i += advance;
       continue;
@@ -1861,16 +1097,18 @@ function splitShellCommands(command) {
       const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
       const shouldKeepCurrent = attachedSuffix !== null && !_isRedirectOp(tokens[i - 1]) && !isOperatorToken(tokens[i - 1]);
       if (current.length > 0) {
-        if (_containsGitCommandToken(current)) {
-          current.push(DYNAMIC_SUBSTITUTION_TOKEN);
-        }
+        currentHasDynamicSubstitution = true;
         if (!shouldKeepCurrent) {
-          segments.push(current);
+          segments.push({
+            tokens: current,
+            hasDynamicSubstitution: currentHasDynamicSubstitution
+          });
           current = [];
+          currentHasDynamicSubstitution = false;
         }
       }
       for (const seg of innerSegments) {
-        segments.push(seg);
+        segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
       if (shouldKeepCurrent && attachedSuffix) {
         current.push(attachedSuffix);
@@ -1886,12 +1124,10 @@ function splitShellCommands(command) {
           current.push(prefix);
         }
       }
-      if (_containsGitCommandToken(current)) {
-        current.push(DYNAMIC_SUBSTITUTION_TOKEN);
-      }
+      currentHasDynamicSubstitution = current.length > 0;
       const { innerSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
       for (const seg of innerSegments) {
-        segments.push(seg);
+        segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
       i = endIndex + 1;
       continue;
@@ -1901,12 +1137,15 @@ function splitShellCommands(command) {
       i++;
       continue;
     }
-    _pushInlineSubstitutionSegments(segments, tokenText);
+    _pushInlineSubstitutionSegmentInfos(segments, tokenText);
     current.push(tokenText);
     i++;
   }
   if (current.length > 0) {
-    segments.push(current);
+    segments.push({
+      tokens: current,
+      hasDynamicSubstitution: currentHasDynamicSubstitution
+    });
   }
   return segments;
 }
@@ -1974,9 +1213,6 @@ function _getCommandTokenText(token) {
     return token.pattern;
   }
   return null;
-}
-function _containsGitCommandToken(tokens) {
-  return tokens.some((token) => (token.split("/").pop() ?? token).toLowerCase() === "git");
 }
 function extractCommandSubstitution(tokens, startIndex) {
   if (tokens[startIndex] === ARITHMETIC_SENTINEL) {
@@ -2149,6 +1385,12 @@ function _pushInlineSubstitutionSegments(segments, token) {
     segments.push(seg);
   }
 }
+function _pushInlineSubstitutionSegmentInfos(segments, token) {
+  const inlineSegments = extractInlineCommandSubstitutions(token);
+  for (const seg of inlineSegments) {
+    segments.push({ tokens: seg, hasDynamicSubstitution: false });
+  }
+}
 function hasUnclosedQuotes(command) {
   let inSingle = false;
   let inDouble = false;
@@ -2287,29 +1529,12 @@ function _stripAttachedIoNumbers(command) {
   return result;
 }
 var ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
-var ENV_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
-var GIT_CONTEXT_ENV_OVERRIDE_NAMES = new Set(GIT_CONTEXT_ENV_OVERRIDES);
 function parseEnvAssignment(token) {
   if (!ENV_ASSIGNMENT_RE.test(token)) {
     return null;
   }
   const eqIdx = token.indexOf("=");
   return { name: token.slice(0, eqIdx), value: token.slice(eqIdx + 1) };
-}
-function parseGitContextAppendEnvAssignment(token) {
-  const match = token.match(ENV_APPEND_ASSIGNMENT_RE);
-  const name = match?.[1];
-  if (!name || !isTrackedGitEnvName(name)) {
-    return null;
-  }
-  const eqIdx = token.indexOf("=");
-  return { name, value: token.slice(eqIdx + 1) };
-}
-function isTrackedGitEnvName(name) {
-  return GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name) || GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) || isGitConfigEnvName(name);
-}
-function isGitConfigEnvName(name) {
-  return name === "GIT_CONFIG_COUNT" || name === "GIT_CONFIG_PARAMETERS" || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name);
 }
 function stripEnvAssignmentsWithInfo(tokens) {
   const envAssignments = new Map;
@@ -2553,10 +1778,10 @@ function resolveWrapperCwd(cwd, target) {
     return null;
   }
   try {
-    if (!cwd && !isAbsolute3(target)) {
+    if (!cwd && !isAbsolute2(target)) {
       return null;
     }
-    const baseCwd = isAbsolute3(target) ? getPathRoot2(target) : realpathSync3(cwd ?? "/");
+    const baseCwd = isAbsolute2(target) ? getPathRoot2(target) : realpathSync2(cwd ?? "/");
     return resolveChdirTarget(baseCwd, target);
   } catch {
     return null;
@@ -2806,6 +2031,1944 @@ function _isShellTokenBoundaryChar(char) {
   return _isWhitespaceChar(char) || ";|&()<>".includes(char);
 }
 
+// src/core/rules-custom.ts
+function checkCustomRules(tokens, rules) {
+  if (tokens.length === 0 || rules.length === 0) {
+    return null;
+  }
+  const command = getBasename(tokens[0] ?? "");
+  const subcommand = extractSubcommand(tokens);
+  const shortOpts = extractShortOpts(tokens);
+  for (const rule of rules) {
+    if (!matchesCommand(command, rule.command)) {
+      continue;
+    }
+    if (rule.subcommand && subcommand !== rule.subcommand) {
+      continue;
+    }
+    if (matchesBlockArgs(tokens, rule.block_args, shortOpts)) {
+      return `[${rule.name}] ${rule.reason}`;
+    }
+  }
+  return null;
+}
+function matchesCommand(command, ruleCommand2) {
+  return command === ruleCommand2;
+}
+var OPTIONS_WITH_VALUES = new Set([
+  "-c",
+  "-C",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--config-env"
+]);
+function extractSubcommand(tokens) {
+  let skipNext = false;
+  for (let i = 1;i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token)
+      continue;
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+    if (token === "--") {
+      const nextToken = tokens[i + 1];
+      if (nextToken && !nextToken.startsWith("-")) {
+        return nextToken;
+      }
+      return null;
+    }
+    if (OPTIONS_WITH_VALUES.has(token)) {
+      skipNext = true;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      for (const opt of OPTIONS_WITH_VALUES) {
+        if (token.startsWith(`${opt}=`)) {
+          break;
+        }
+      }
+      continue;
+    }
+    return token;
+  }
+  return null;
+}
+function matchesBlockArgs(tokens, blockArgs, shortOpts) {
+  const blockArgsSet = new Set(blockArgs);
+  for (const token of tokens) {
+    if (blockArgsSet.has(token)) {
+      return true;
+    }
+  }
+  for (const opt of shortOpts) {
+    if (blockArgsSet.has(opt)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// src/core/rulebook.ts
+function validateRulebook(rulebook) {
+  const errors = [];
+  const ruleNames = new Set;
+  if (!rulebook || typeof rulebook !== "object") {
+    return { errors: ["Rulebook must be an object"], ruleNames };
+  }
+  const rb = rulebook;
+  if (rb.rulebook_version !== 1) {
+    errors.push("rulebook_version must be 1");
+  }
+  if (typeof rb.name !== "string" || !NAME_PATTERN.test(rb.name)) {
+    errors.push("name: required string matching rule name pattern");
+  }
+  if (typeof rb.version !== "string" || rb.version === "") {
+    errors.push("version: required non-empty string");
+  }
+  if (!Array.isArray(rb.allowed_commands)) {
+    errors.push("allowed_commands: required array");
+  } else {
+    validateAllowedCommands(rb.allowed_commands, errors);
+  }
+  if (!Array.isArray(rb.rules)) {
+    errors.push("rules: required array");
+  } else {
+    for (let i = 0;i < rb.rules.length; i++) {
+      errors.push(...validateRulebookRule(rb.rules[i], i, ruleNames));
+    }
+  }
+  if (!Array.isArray(rb.tests)) {
+    errors.push("tests: required array");
+  } else {
+    validateFixtures(rb.tests, rb.rules, errors);
+  }
+  if (Array.isArray(rb.allowed_commands) && Array.isArray(rb.rules)) {
+    const allowed = new Set(rb.allowed_commands.filter((cmd) => typeof cmd === "string"));
+    for (let i = 0;i < rb.rules.length; i++) {
+      const rule = rb.rules[i];
+      if (typeof rule.command === "string" && !allowed.has(rule.command)) {
+        errors.push(`rules[${i}].command: "${rule.command}" must be listed in allowed_commands`);
+      }
+    }
+  }
+  return { errors, ruleNames };
+}
+function validateAllowedCommands(commands2, errors) {
+  const seen = new Set;
+  for (let i = 0;i < commands2.length; i++) {
+    const command = commands2[i];
+    if (typeof command !== "string" || !COMMAND_PATTERN.test(command)) {
+      errors.push(`allowed_commands[${i}]: must match command pattern`);
+      continue;
+    }
+    if (seen.has(command)) {
+      errors.push(`allowed_commands[${i}]: duplicate command "${command}"`);
+      continue;
+    }
+    seen.add(command);
+  }
+}
+function validateRulebookRule(candidate, index, ruleNames) {
+  const errorsForRule = [];
+  const prefix = `rules[${index}]`;
+  if (!candidate || typeof candidate !== "object")
+    return [`${prefix}: must be an object`];
+  const r = candidate;
+  const namePrefix = `${prefix}.name`;
+  const ruleName = typeof r.name === "string" ? r.name : null;
+  if (!ruleName) {
+    errorsForRule.push(`${namePrefix}: required string`);
+  } else if (!NAME_PATTERN.test(ruleName)) {
+    errorsForRule.push(`${namePrefix}: must match rule name pattern`);
+  } else if (ruleNames.has(ruleName)) {
+    errorsForRule.push(`${namePrefix}: duplicate rule name "${ruleName}"`);
+  } else {
+    ruleNames.add(ruleName);
+  }
+  if (typeof r.command !== "string" || !COMMAND_PATTERN.test(r.command)) {
+    errorsForRule.push(`${prefix}.command: required string matching command pattern`);
+  }
+  if (r.subcommand !== undefined && (typeof r.subcommand !== "string" || !COMMAND_PATTERN.test(r.subcommand))) {
+    errorsForRule.push(`${prefix}.subcommand: must match command pattern`);
+  }
+  if (!Array.isArray(r.block_args) || r.block_args.length === 0) {
+    errorsForRule.push(`${prefix}.block_args: required non-empty array`);
+  } else {
+    for (let i = 0;i < r.block_args.length; i++) {
+      if (typeof r.block_args[i] !== "string" || r.block_args[i] === "") {
+        errorsForRule.push(`${prefix}.block_args[${i}]: must be a non-empty string`);
+      }
+    }
+  }
+  if (typeof r.reason !== "string" || r.reason === "" || r.reason.length > MAX_REASON_LENGTH) {
+    errorsForRule.push(`${prefix}.reason: required non-empty string up to ${MAX_REASON_LENGTH} characters`);
+  }
+  return errorsForRule;
+}
+function validateFixtures(tests, rules, errors) {
+  const blockedFixtures = new Set;
+  const ruleNames = new Set(Array.isArray(rules) ? rules.map((rule) => rule && typeof rule === "object" ? rule.name : null).filter((name) => typeof name === "string") : []);
+  for (let i = 0;i < tests.length; i++) {
+    const fixture = tests[i];
+    if (!fixture || typeof fixture !== "object") {
+      errors.push(`tests[${i}]: must be an object`);
+      continue;
+    }
+    const f = fixture;
+    if (typeof f.command !== "string" || f.command.trim() === "") {
+      errors.push(`tests[${i}].command: required non-empty string`);
+    }
+    if (f.expect !== "blocked" && f.expect !== "allowed") {
+      errors.push(`tests[${i}].expect: must be "blocked" or "allowed"`);
+    }
+    if (f.rule !== undefined && typeof f.rule !== "string") {
+      errors.push(`tests[${i}].rule: must be a string if provided`);
+    }
+    if (f.expect === "blocked" && typeof f.rule !== "string") {
+      errors.push(`tests[${i}].rule: required string for blocked fixtures`);
+    }
+    if (f.expect === "blocked" && typeof f.rule === "string") {
+      blockedFixtures.add(f.rule);
+    }
+  }
+  for (let i = 0;i < (Array.isArray(rules) ? rules.length : 0); i++) {
+    const rule = rules[i];
+    if (typeof rule.name === "string" && !blockedFixtures.has(rule.name)) {
+      errors.push(`rules[${i}]: missing blocked fixture for rule "${rule.name}"`);
+    }
+  }
+  for (const rule of blockedFixtures) {
+    if (!ruleNames.has(rule)) {
+      errors.push(`tests: blocked fixture references unknown rule "${rule}"`);
+    }
+  }
+}
+function runRulebookFixtures(rulebook) {
+  const failures = rulebook.tests.flatMap((fixture) => {
+    const segments = splitShellCommands(fixture.command).map((tokens) => {
+      const result = checkCustomRules(tokens, rulebook.rules);
+      return { tokens, result, matchedRule: result?.match(/^\[([^\]]+)]/)?.[1] ?? null };
+    });
+    const firstSegment = segments[0] ?? { tokens: [], result: null, matchedRule: null };
+    if (fixture.expect === "allowed") {
+      const blockedSegment = segments.find((segment) => segment.result);
+      return blockedSegment ? [
+        {
+          command: fixture.command,
+          message: `expected allowed but matched ${blockedSegment.matchedRule ?? "a rule"}`,
+          trace: traceRulebookFixture(blockedSegment.tokens, rulebook.rules)
+        }
+      ] : [];
+    }
+    const firstBlockedSegment = segments.find((segment) => segment.result);
+    if (!firstBlockedSegment) {
+      return [
+        {
+          command: fixture.command,
+          message: `expected blocked by ${fixture.rule ?? "a rule"} but command was allowed`,
+          trace: traceRulebookFixture(firstSegment.tokens, rulebook.rules)
+        }
+      ];
+    }
+    if (!fixture.rule || firstBlockedSegment.matchedRule === fixture.rule)
+      return [];
+    return [
+      {
+        command: fixture.command,
+        message: `expected blocked by ${fixture.rule} but matched ${firstBlockedSegment.matchedRule}`,
+        trace: traceRulebookFixture(firstBlockedSegment.tokens, rulebook.rules)
+      }
+    ];
+  });
+  return { ok: failures.length === 0, failures };
+}
+function traceRulebookFixture(tokens, rules) {
+  return rules.map((rule) => {
+    const result = checkCustomRules([...tokens], [rule]);
+    return `${result ? "matched" : "skipped"} ${rule.name}`;
+  });
+}
+function assertValidRulebook(rulebook) {
+  const result = validateRulebook(rulebook);
+  if (result.errors.length > 0) {
+    throw new Error(result.errors.join("; "));
+  }
+  const parsed = rulebook;
+  const fixtures = runRulebookFixtures(parsed);
+  if (!fixtures.ok) {
+    throw new Error(fixtures.failures.map((failure) => `${failure.command}: ${failure.message}`).join("; "));
+  }
+  return parsed;
+}
+
+// src/core/rules-policy/lockfile.ts
+import { existsSync as existsSync4, readFileSync as readFileSync3 } from "node:fs";
+var SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+var RULEBOOK_SOURCE_KINDS = new Set(["local-directory", "github"]);
+function readLockfile(path) {
+  if (!existsSync4(path)) {
+    return { lock: null, errors: [] };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync3(path, "utf-8"));
+    if (!parsed || typeof parsed !== "object") {
+      return { lock: null, errors: [`malformed lockfile ${path}: must be an object`] };
+    }
+    const lock = parsed;
+    if (lock.version !== 1 || !Array.isArray(lock.rulebooks)) {
+      return { lock: null, errors: [`malformed lockfile ${path}`] };
+    }
+    const parsedEntries = lock.rulebooks.map((entry, index) => parseLockEntry(entry, `${path}: rulebooks[${index}]`));
+    const entryErrors = parsedEntries.flatMap((entry) => entry.errors);
+    if (entryErrors.length > 0) {
+      return { lock: null, errors: [`malformed lockfile ${path}`, ...entryErrors] };
+    }
+    return {
+      lock: {
+        version: 1,
+        rulebooks: parsedEntries.flatMap((entry) => entry.entry ? [entry.entry] : [])
+      },
+      errors: []
+    };
+  } catch (error) {
+    return {
+      lock: null,
+      errors: [
+        `malformed lockfile ${path}: ${error instanceof Error ? error.message : String(error)}`
+      ]
+    };
+  }
+}
+function parseLockEntry(entry, prefix) {
+  if (!entry || typeof entry !== "object") {
+    return { entry: null, errors: [`${prefix}: must be an object`] };
+  }
+  const candidate = entry;
+  const errors = [
+    ...validateRequiredString(candidate, prefix, "spec"),
+    ...validateRequiredString(candidate, prefix, "name"),
+    ...validateRequiredString(candidate, prefix, "version"),
+    ...validateDigest(candidate, prefix),
+    ...validateKind(candidate, prefix),
+    ...validateKindFields(candidate, prefix)
+  ];
+  if (errors.length > 0)
+    return { entry: null, errors };
+  if (candidate.kind === "local-directory") {
+    return {
+      entry: {
+        spec: requiredString(candidate, "spec"),
+        kind: "local-directory",
+        path: requiredString(candidate, "path"),
+        name: requiredString(candidate, "name"),
+        version: requiredString(candidate, "version"),
+        digest: requiredString(candidate, "digest")
+      },
+      errors: []
+    };
+  }
+  const githubEntry = {
+    spec: requiredString(candidate, "spec"),
+    kind: "github",
+    owner: requiredString(candidate, "owner"),
+    repo: requiredString(candidate, "repo"),
+    ref: requiredString(candidate, "ref"),
+    commit: requiredString(candidate, "commit"),
+    path: requiredString(candidate, "path"),
+    name: requiredString(candidate, "name"),
+    version: requiredString(candidate, "version"),
+    digest: requiredString(candidate, "digest")
+  };
+  return {
+    entry: typeof candidate.display_ref === "string" && candidate.display_ref !== "" ? { ...githubEntry, display_ref: candidate.display_ref } : githubEntry,
+    errors: []
+  };
+}
+function validateRequiredString(candidate, prefix, field) {
+  return typeof candidate[field] === "string" && candidate[field] !== "" ? [] : [`${prefix}.${field}: required string`];
+}
+function validateDigest(candidate, prefix) {
+  return typeof candidate.digest === "string" && SHA256_DIGEST_PATTERN.test(candidate.digest) ? [] : [`${prefix}.digest: required sha256 digest`];
+}
+function validateKind(candidate, prefix) {
+  if (typeof candidate.kind !== "string") {
+    return [`${prefix}.kind: required string`];
+  }
+  return RULEBOOK_SOURCE_KINDS.has(candidate.kind) ? [] : [`${prefix}.kind: unknown kind "${candidate.kind}"`];
+}
+function validateKindFields(candidate, prefix) {
+  if (candidate.kind === "local-directory") {
+    return validateRequiredString(candidate, prefix, "path");
+  }
+  if (candidate.kind === "github") {
+    return ["owner", "repo", "ref", "commit", "path"].flatMap((field) => validateRequiredString(candidate, prefix, field));
+  }
+  return [];
+}
+function requiredString(candidate, field) {
+  const value = candidate[field];
+  if (typeof value !== "string") {
+    throw new Error(`Expected ${field} to be validated before reading`);
+  }
+  return value;
+}
+
+// src/core/rules-policy/resolver.ts
+import { createHash } from "node:crypto";
+import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
+import { join as join3 } from "node:path";
+async function resolveRulebookSource(spec, configDir, options) {
+  if (spec.startsWith("builtin:") || spec.startsWith("github:")) {
+    throw new Error(`Invalid rulebook source: ${spec}`);
+  }
+  if (isGitHubRulebookSource(spec)) {
+    return resolveGitHubRulebook(spec);
+  }
+  return resolveLocalRulebook(spec, configDir, options);
+}
+async function resolveRulebookSourceForSync(spec, configDir, options, previousLock) {
+  if (!isGitHubRulebookSource(spec) || options.refresh) {
+    return resolveRulebookSource(spec, configDir, options);
+  }
+  const locked = previousLock?.rulebooks.find((entry) => entry.spec === spec);
+  if (!locked || locked.kind !== "github") {
+    return resolveRulebookSource(spec, configDir, options);
+  }
+  return readLockedGitHubRulebook(locked, configDir, options);
+}
+async function discoverGitHubRepositoryRulebooks(source) {
+  const [owner, repo] = source.split("/");
+  if (!owner || !repo) {
+    throw new Error(`Invalid GitHub repository source: ${source}`);
+  }
+  const metadataResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+  if (!metadataResponse.ok) {
+    throw new Error(`Failed to inspect ${source}: GitHub returned ${metadataResponse.status}`);
+  }
+  const metadata = await metadataResponse.json();
+  if (!metadata.default_branch) {
+    throw new Error(`Failed to inspect ${source}: missing default branch`);
+  }
+  const commit = await resolveGitHubCommit(owner, repo, metadata.default_branch, source);
+  const treeResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${commit}?recursive=1`);
+  if (!treeResponse.ok) {
+    throw new Error(`Failed to inspect ${source}: GitHub tree returned ${treeResponse.status}`);
+  }
+  const treeJson = await treeResponse.json();
+  const names = (treeJson.tree ?? []).flatMap((entry) => {
+    if (entry.type !== "blob" || typeof entry.path !== "string")
+      return [];
+    const match = entry.path.match(GITHUB_RULEBOOK_PATH_RE);
+    return match?.[1] ? [match[1]] : [];
+  }).sort();
+  if (names.length === 0) {
+    throw new Error(`No rulebooks found in ${source} under ${RULES_DIR}/`);
+  }
+  return names.map((name) => ({
+    spec: `${owner}/${repo}#${commit}/${name}`,
+    display_ref: metadata.default_branch
+  }));
+}
+function resolveLocalRulebook(spec, configDir, _options) {
+  assertBareRulebookName(spec);
+  const path = getLocalRulebookPath(configDir, spec);
+  if (!existsSync5(path)) {
+    throw new Error(`Rulebook source not found: ${spec}`);
+  }
+  const content = readFileSync4(path, "utf-8");
+  const rulebook = assertValidRulebook(JSON.parse(content));
+  if (rulebook.name !== spec) {
+    throw new Error(`rulebook name "${rulebook.name}" must match local source "${spec}"`);
+  }
+  return {
+    rulebook,
+    content,
+    entry: {
+      spec,
+      kind: "local-directory",
+      path: spec,
+      name: rulebook.name,
+      version: rulebook.version,
+      digest: sha256Digest(content)
+    }
+  };
+}
+async function resolveGitHubRulebook(spec) {
+  const parsed = parseGitHubSource(spec);
+  const commit = await resolveGitHubCommit(parsed.owner, parsed.repo, parsed.ref, spec);
+  const rawResponse = await fetch(`https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${commit}/${parsed.path}`);
+  if (!rawResponse.ok) {
+    throw new Error(`Failed to fetch ${spec}: GitHub raw returned ${rawResponse.status}`);
+  }
+  const content = await rawResponse.text();
+  const rulebook = assertValidRulebook(JSON.parse(content));
+  if (rulebook.name !== parsed.name) {
+    throw new Error(`rulebook name "${rulebook.name}" must match GitHub source "${parsed.name}"`);
+  }
+  return {
+    rulebook,
+    content,
+    entry: {
+      spec,
+      kind: "github",
+      owner: parsed.owner,
+      repo: parsed.repo,
+      ref: parsed.ref,
+      commit,
+      path: parsed.path,
+      name: rulebook.name,
+      version: rulebook.version,
+      digest: sha256Digest(content)
+    }
+  };
+}
+async function readLockedGitHubRulebook(entry, configDir, options) {
+  const cachePath = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
+  if (existsSync5(cachePath)) {
+    const content = readFileSync4(cachePath, "utf-8");
+    if (sha256Digest(content) === entry.digest) {
+      return { entry, rulebook: assertRulebookMatchesLockEntry(content, entry), content };
+    }
+  }
+  return fetchLockedGitHubRulebook(entry);
+}
+async function fetchLockedGitHubRulebook(entry) {
+  const rawResponse = await fetch(`https://raw.githubusercontent.com/${entry.owner}/${entry.repo}/${entry.commit}/${entry.path}`);
+  if (!rawResponse.ok) {
+    throw new Error(`Failed to restore ${entry.spec}: GitHub raw returned ${rawResponse.status}`);
+  }
+  const content = await rawResponse.text();
+  if (sha256Digest(content) !== entry.digest) {
+    throw new Error(`locked GitHub digest mismatch for ${entry.spec}; run ${RULE_SYNC_COMMAND}`);
+  }
+  return { entry, rulebook: assertRulebookMatchesLockEntry(content, entry), content };
+}
+function assertRulebookMatchesLockEntry(content, entry) {
+  const rulebook = assertValidRulebook(JSON.parse(content));
+  if (rulebook.name !== entry.name) {
+    throw new Error(`rulebook name "${rulebook.name}" must match lock entry "${entry.name}"`);
+  }
+  return rulebook;
+}
+async function resolveGitHubCommit(owner, repo, ref, source) {
+  const commitResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`);
+  if (!commitResponse.ok) {
+    throw new Error(`Failed to resolve ${source}: GitHub returned ${commitResponse.status}`);
+  }
+  const commitJson = await commitResponse.json();
+  if (!commitJson.sha) {
+    throw new Error(`Failed to resolve commit for ${source}`);
+  }
+  return commitJson.sha;
+}
+function getLocalRulebookPath(configDir, name) {
+  return join3(configDir, name, RULEBOOK_FILE);
+}
+function sha256Digest(content) {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+// src/core/rules-policy/scope-policy.ts
+function loadRulesPolicy(options = {}) {
+  const paths = getPolicyPaths(options);
+  const user = readRulesConfig(paths.userConfigPath);
+  const project = readRulesConfig(paths.projectConfigPath);
+  const errors = [
+    ...getLegacyRulesConfigErrors(paths, options),
+    ...user.errors.map((error) => `${paths.userConfigPath}: ${error}`),
+    ...project.errors.map((error) => `${paths.projectConfigPath}: ${error}`)
+  ];
+  const userPolicy = user.config ? loadScopePolicy(user.config, paths.userLockPath, dirname4(paths.userConfigPath), options, "user") : emptyScopePolicy();
+  const projectPolicy = project.config ? loadScopePolicy(project.config, paths.projectLockPath, dirname4(paths.projectConfigPath), options, "project") : emptyScopePolicy();
+  const duplicateNames = getDuplicateRulebookNames([
+    ...user.config ? getConfiguredLockEntries(user.config, paths.userLockPath) : [],
+    ...project.config ? getConfiguredLockEntries(project.config, paths.projectLockPath) : []
+  ]);
+  const overrides = { ...user.config?.overrides ?? {}, ...project.config?.overrides ?? {} };
+  const knownRuleIds = new Set([...userPolicy.knownRuleIds, ...projectPolicy.knownRuleIds]);
+  return {
+    rules: applyOverrides([...userPolicy.rules, ...projectPolicy.rules], overrides),
+    rulebooks: [...userPolicy.rulebooks, ...projectPolicy.rulebooks],
+    errors: [
+      ...errors,
+      ...userPolicy.errors,
+      ...projectPolicy.errors,
+      ...duplicateNames.map((name) => `duplicate active rulebook name "${name}"`),
+      ...userPolicy.canValidateOverrides && projectPolicy.canValidateOverrides ? getUnknownOverrideErrors(overrides, knownRuleIds) : []
+    ],
+    userConfig: user.config ?? undefined,
+    projectConfig: project.config ?? undefined,
+    ...paths
+  };
+}
+function getRulesConfigSourceDisplayMap(configPath) {
+  const config = readRulesConfig(configPath).config;
+  const lock = readLockfile(getRulesLockPathForConfigPath(configPath)).lock;
+  if (!config || !lock)
+    return new Map;
+  const configuredSources = new Set(config.rules);
+  return new Map(lock.rulebooks.filter((entry) => configuredSources.has(entry.spec)).map((entry) => [entry.spec, getRulebookDisplaySource(entry)]));
+}
+function getRulesConfigRuntimeErrorsForConfig(configPath, lockPath, options) {
+  const loaded = loadScopePolicyForConfig(configPath, lockPath, options);
+  if (!loaded)
+    return [];
+  return [...loaded.scope.errors, ...getUnknownOverrideErrorsForScope(loaded.config, loaded.scope)];
+}
+function loadScopePolicyForConfig(configPath, lockPath, options) {
+  const config = readRulesConfig(configPath).config;
+  if (!config) {
+    return null;
+  }
+  return {
+    config,
+    scope: loadScopePolicy(config, lockPath, dirname4(configPath), options, "project")
+  };
+}
+function getUnknownOverrideErrorsForScope(config, scope) {
+  return scope.canValidateOverrides ? getUnknownOverrideErrors(config.overrides ?? {}, scope.knownRuleIds) : [];
+}
+function loadScopePolicy(config, lockPath, configDir, options, source) {
+  const lockResult = readLockfile(lockPath);
+  if (lockResult.errors.length > 0) {
+    return { ...emptyScopePolicy(), errors: lockResult.errors, canValidateOverrides: false };
+  }
+  const lock = lockResult.lock;
+  if (!lock && config.rules.length > 0) {
+    return {
+      ...emptyScopePolicy(),
+      errors: [`missing lockfile ${lockPath}; run ${RULE_SYNC_COMMAND}`],
+      canValidateOverrides: false
+    };
+  }
+  const entries = lock?.rulebooks ?? [];
+  const entriesBySpec = new Map(entries.map((entry) => [entry.spec, entry]));
+  const errors = [];
+  const loaded = config.rules.flatMap((spec) => {
+    const entry = entriesBySpec.get(spec);
+    if (!entry) {
+      errors.push(`missing lock entry for ${spec}; run ${RULE_SYNC_COMMAND}`);
+      return [];
+    }
+    const validationErrors = validateLockedRulebook(entry, configDir, options);
+    if (validationErrors.length > 0) {
+      errors.push(...validationErrors);
+      return [];
+    }
+    const rulebook = JSON.parse(readFileSync5(getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir }), "utf-8"));
+    return [
+      {
+        rules: rulebook.rules.map((rule) => ({ ...rule, name: `${rulebook.name}/${rule.name}` })),
+        rulebook: {
+          source,
+          spec: entry.spec,
+          name: rulebook.name,
+          version: rulebook.version,
+          rules: rulebook.rules.map((rule) => `${rulebook.name}/${rule.name}`)
+        }
+      }
+    ];
+  });
+  const rules = loaded.flatMap((item) => item.rules);
+  return {
+    rules,
+    rulebooks: loaded.map((item) => item.rulebook),
+    entries,
+    knownRuleIds: new Set(rules.map((rule) => rule.name)),
+    errors,
+    canValidateOverrides: errors.length === 0
+  };
+}
+function validateLockedRulebook(entry, configDir, options) {
+  const errors = [];
+  const cachePath = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
+  if (!existsSync6(cachePath)) {
+    return [`missing cache entry for ${entry.spec}; run ${RULE_SYNC_COMMAND}`];
+  }
+  const cacheContent = readFileSync5(cachePath, "utf-8");
+  if (sha256Digest(cacheContent) !== entry.digest) {
+    errors.push(`cache digest mismatch for ${entry.spec}; run ${RULE_SYNC_COMMAND}`);
+  }
+  try {
+    assertValidRulebook(JSON.parse(cacheContent));
+  } catch (error) {
+    errors.push(`invalid cached rulebook for ${entry.spec}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (entry.kind === "local-directory") {
+    const sourcePath = resolve2(configDir, entry.path);
+    const sourceRelative = relative(resolve2(configDir), sourcePath);
+    if (sourceRelative === ".." || sourceRelative.startsWith(`..${sep2}`) || isAbsolute3(sourceRelative)) {
+      errors.push(`lockfile local source path for ${entry.spec} must stay within ${configDir}; run ${RULE_SYNC_COMMAND}`);
+      return errors;
+    }
+    const localPath = join4(sourcePath, RULEBOOK_FILE);
+    if (!existsSync6(localPath)) {
+      errors.push(`missing local source for ${entry.spec}; run ${RULE_SYNC_COMMAND}`);
+    } else {
+      const localContent = readFileSync5(localPath, "utf-8");
+      if (sha256Digest(localContent) !== entry.digest) {
+        errors.push(getLocalSourceDriftError(entry.spec, localContent));
+      }
+    }
+  }
+  return errors;
+}
+function rulesPolicyToConfig(policy) {
+  if (policy.errors.length > 0) {
+    return {
+      version: 1,
+      rules: [],
+      failClosedReason: withTerminalPeriod(policy.errors.join("; "))
+    };
+  }
+  return { version: 1, rules: policy.rules };
+}
+function getLegacyRulesConfigErrors(paths, options) {
+  return Array.from(new Set([
+    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath),
+    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options), paths.projectConfigPath)
+  ]));
+}
+function getLegacyRulesConfigError(legacyPath, configPath) {
+  if (existsSync6(configPath) || !existsSync6(legacyPath))
+    return [];
+  try {
+    const parsed = JSON.parse(readFileSync5(legacyPath, "utf-8"));
+    if (parsed.version === 1)
+      return [];
+  } catch {}
+  return [`legacy rules config location is no longer used; run ${RULE_MIGRATE_COMMAND}`];
+}
+function getLocalSourceDriftError(spec, content) {
+  try {
+    assertValidRulebook(JSON.parse(content));
+  } catch (error) {
+    return `invalid local rulebook for ${spec}: ${error instanceof Error ? error.message : String(error)}; fix the rulebook, then run ${RULE_SYNC_COMMAND}`;
+  }
+  return `local source digest mismatch for ${spec}; run ${RULE_SYNC_COMMAND}`;
+}
+function applyOverrides(rules, overrides) {
+  return rules.flatMap((rule) => {
+    const override = overrides[rule.name];
+    if (override === "off") {
+      return [];
+    }
+    if (override && typeof override === "object") {
+      return [{ ...rule, reason: override.reason }];
+    }
+    return [rule];
+  });
+}
+function getUnknownOverrideErrors(overrides, knownRuleIds) {
+  return Object.keys(overrides).filter((key) => !knownRuleIds.has(key)).map((key) => `unknown override key "${key}"`);
+}
+function getDuplicateRulebookNames(entries) {
+  const seen = new Set;
+  const duplicates = new Set;
+  for (const entry of entries) {
+    if (seen.has(entry.name)) {
+      duplicates.add(entry.name);
+      continue;
+    }
+    seen.add(entry.name);
+  }
+  return [...duplicates];
+}
+function getConfiguredLockEntries(config, path) {
+  return (readLockfile(path).lock?.rulebooks ?? []).filter((entry) => config.rules.includes(entry.spec));
+}
+function emptyScopePolicy() {
+  return {
+    rules: [],
+    rulebooks: [],
+    entries: [],
+    knownRuleIds: new Set,
+    errors: [],
+    canValidateOverrides: true
+  };
+}
+function withTerminalPeriod(message) {
+  return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
+// src/core/rules-policy/sync.ts
+import { existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync6, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname5 } from "node:path";
+async function syncRulesConfig(options = {}) {
+  const internalOptions = options;
+  const scope = getScopePaths(options);
+  const scopeConfig = readScopeRulesConfig(scope.configPath);
+  if (!scopeConfig.ok)
+    return scopeConfig.result;
+  const config = scopeConfig.config;
+  if (options.check) {
+    return checkRulesConfig(config, scope.configDir, scope.lockPath, options);
+  }
+  try {
+    const existingLockResult = readLockfile(scope.lockPath);
+    if (options.only && existingLockResult.errors.length > 0) {
+      return { ok: false, errors: existingLockResult.errors, entries: [] };
+    }
+    const previousLock = existingLockResult.errors.length > 0 ? null : existingLockResult.lock;
+    const selectedSpecs = options.only ? getSelectedUpdateSpecs(config, previousLock, options.only) : { ok: true, specs: config.rules };
+    if (!selectedSpecs.ok) {
+      return selectedSpecs.result;
+    }
+    if (options.only && !previousLock && selectedSpecs.specs.length < config.rules.length) {
+      return {
+        ok: false,
+        errors: [`No lockfile available for partial update; run ${RULE_SYNC_COMMAND}`],
+        entries: []
+      };
+    }
+    const resolved = (await Promise.all(selectedSpecs.specs.map((spec) => resolveRulebookSourceForSync(spec, scope.configDir, options, previousLock)))).map((item) => preserveDisplayRef(item, previousLock, internalOptions.discoveredDisplayRefs));
+    for (const item of resolved) {
+      writeCache(item.content, item.entry, scope.configDir, options);
+    }
+    const entries = options.only ? mergeSelectedLockEntries(config, previousLock, resolved) : resolved.map((item) => item.entry);
+    writeJsonAtomic(scope.lockPath, { version: 1, rulebooks: entries });
+    const ruleCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.rules.length]));
+    return {
+      ok: true,
+      errors: [],
+      entries: entries.map((entry) => addRuleCount(entry, ruleCountsBySpec))
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [error instanceof Error ? error.message : String(error)],
+      entries: []
+    };
+  }
+}
+async function testRulebookSources(sources, options = {}) {
+  const scope = getScopePaths(options);
+  try {
+    const resolved = await Promise.all(sources.map((spec) => resolveRulebookSource(spec, scope.configDir, options)));
+    const ruleCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.rules.length]));
+    const testCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.tests.length]));
+    const fixtureErrors = resolved.flatMap((item) => runRulebookFixtures(item.rulebook).failures.map((failure) => [
+      `${item.entry.spec}: ${failure.command}: ${failure.message}`,
+      ...failure.trace.map((line) => `  ${line}`)
+    ].join(`
+`)));
+    return {
+      ok: fixtureErrors.length === 0,
+      errors: fixtureErrors,
+      entries: resolved.map((item) => ({
+        ...addRuleCount(item.entry, ruleCountsBySpec),
+        testCount: testCountsBySpec.get(item.entry.spec)
+      }))
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [error instanceof Error ? error.message : String(error)],
+      entries: []
+    };
+  }
+}
+async function addRulebookSource(source, options = {}) {
+  const scope = getScopePaths(options);
+  mkdirSync2(scope.configDir, { recursive: true });
+  const before = existsSync7(scope.configPath) ? readFileSync6(scope.configPath, "utf-8") : null;
+  const scopeConfig = readScopeRulesConfig(scope.configPath);
+  if (!scopeConfig.ok)
+    return scopeConfig.result;
+  const config = scopeConfig.config;
+  let discoveredSources;
+  try {
+    discoveredSources = isGitHubRepositorySource(source) ? await discoverGitHubRepositoryRulebooks(source) : [{ spec: source }];
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [error instanceof Error ? error.message : String(error)],
+      entries: []
+    };
+  }
+  const sources = discoveredSources.map((item) => item.spec);
+  const nextRules = [...config.rules, ...sources.filter((item) => !config.rules.includes(item))];
+  if (nextRules.length !== config.rules.length) {
+    writeJsonAtomic(scope.configPath, {
+      version: 1,
+      rules: nextRules,
+      overrides: config.overrides ?? {}
+    });
+  }
+  const result = await syncRulesConfig({
+    ...options,
+    discoveredDisplayRefs: new Map(discoveredSources.filter((item) => !!item.display_ref).map((item) => [item.spec, item.display_ref]))
+  });
+  if (!result.ok) {
+    restoreConfig(scope.configPath, before);
+  }
+  return result;
+}
+async function removeRulebookSource(match, options = {}) {
+  const scope = getScopePaths(options);
+  const loaded = readRulesConfig(scope.configPath);
+  if (loaded.errors.length > 0) {
+    return { ok: false, errors: loaded.errors, entries: [] };
+  }
+  if (!loaded.config) {
+    return { ok: false, errors: [`No config found at ${scope.configPath}`], entries: [] };
+  }
+  const lock = readLockfile(scope.lockPath).lock;
+  const matches = getRemoveMatches(loaded.config.rules, lock, match);
+  if (!matches.ok)
+    return matches.result;
+  const before = readFileSync6(scope.configPath, "utf-8");
+  writeJsonAtomic(scope.configPath, {
+    version: 1,
+    rules: loaded.config.rules.filter((spec) => !matches.specs.includes(spec)),
+    overrides: loaded.config.overrides ?? {}
+  });
+  const result = await syncRulesConfig(options);
+  if (!result.ok) {
+    restoreConfig(scope.configPath, before);
+  }
+  return result;
+}
+function repairLocalRulesPolicy(options = {}) {
+  repairLocalRulesScope({ ...options, global: true });
+  repairLocalRulesScope({ ...options, global: false });
+}
+async function checkRulesConfig(config, configDir, lockPath, options) {
+  const result = loadScopePolicy(config, lockPath, configDir, options, "project");
+  return { ok: result.errors.length === 0, errors: result.errors, entries: result.entries };
+}
+function repairLocalRulesScope(options) {
+  const scope = getScopePaths(options);
+  const loaded = readRulesConfig(scope.configPath);
+  if (!loaded.config || loaded.errors.length > 0 || loaded.config.rules.length === 0) {
+    return;
+  }
+  if (!loaded.config.rules.every((spec) => /^[a-zA-Z0-9_-]{1,64}$/.test(spec))) {
+    return;
+  }
+  try {
+    const resolved = loaded.config.rules.map((spec) => resolveLocalRulebook(spec, scope.configDir, options));
+    for (const item of resolved) {
+      writeCache(item.content, item.entry, scope.configDir, options);
+    }
+    writeJsonAtomic(scope.lockPath, {
+      version: 1,
+      rulebooks: resolved.map((item) => item.entry)
+    });
+  } catch {}
+}
+function preserveDisplayRef(item, previousLock, discoveredDisplayRefs) {
+  const previousEntry = previousLock?.rulebooks.find((entry) => entry.spec === item.entry.spec && entry.kind === "github");
+  const displayRef = discoveredDisplayRefs?.get(item.entry.spec) ?? (previousEntry?.kind === "github" ? previousEntry.display_ref : undefined);
+  if (!displayRef || item.entry.kind !== "github")
+    return item;
+  return { ...item, entry: { ...item.entry, display_ref: displayRef } };
+}
+function mergeSelectedLockEntries(config, previousLock, resolved) {
+  const configuredSpecs = new Set(config.rules);
+  const previousSpecs = new Set(previousLock?.rulebooks.map((entry) => entry.spec) ?? []);
+  const resolvedBySpec = new Map(resolved.map((item) => [item.entry.spec, item.entry]));
+  return [
+    ...(previousLock?.rulebooks.filter((entry) => configuredSpecs.has(entry.spec)) ?? []).map((entry) => resolvedBySpec.get(entry.spec) ?? entry),
+    ...resolved.filter((item) => !previousSpecs.has(item.entry.spec)).map((item) => item.entry)
+  ];
+}
+function addRuleCount(entry, ruleCountsBySpec) {
+  return {
+    ...entry,
+    ruleCount: ruleCountsBySpec.get(entry.spec)
+  };
+}
+function writeCache(content, entry, configDir, options) {
+  const path = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
+  mkdirSync2(dirname5(path), { recursive: true });
+  writeFileSync2(path, content, "utf-8");
+}
+function restoreConfig(path, content) {
+  if (content === null) {
+    rmSync(path, { force: true });
+    return;
+  }
+  writeFileSync2(path, content, "utf-8");
+}
+
+// src/core/config.ts
+var DEFAULT_CONFIG2 = {
+  version: 1,
+  rules: []
+};
+function loadConfig(cwd, options) {
+  const safeCwd = typeof cwd === "string" ? cwd : process.cwd();
+  if (options?.repairLocalRulebooks) {
+    repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options.userConfigDir });
+  }
+  const userConfigDir = options?.userConfigDir ?? join5(homedir3(), ".cc-safety-net");
+  const userConfigPath = join5(userConfigDir, "config.json");
+  const projectConfigPath = join5(safeCwd, ".safety-net.json");
+  const userConfig = loadSingleConfig(userConfigPath);
+  const projectConfig = loadSingleConfig(projectConfigPath);
+  let rulesPolicyConfig = rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }));
+  if (rulesPolicyConfig.failClosedReason && (userConfig || projectConfig)) {
+    rulesPolicyConfig = DEFAULT_CONFIG2;
+  }
+  return mergeConfigs(mergeConfigs(userConfig, projectConfig), rulesPolicyConfig);
+}
+function loadSingleConfig(path) {
+  if (!existsSync8(path)) {
+    return null;
+  }
+  try {
+    const content = readFileSync7(path, "utf-8");
+    if (!content.trim()) {
+      return null;
+    }
+    const parsed = JSON.parse(content);
+    const result = validateConfig(parsed);
+    if (result.errors.length > 0) {
+      return null;
+    }
+    const cfg = parsed;
+    return {
+      version: cfg.version,
+      rules: cfg.rules ?? []
+    };
+  } catch {
+    return null;
+  }
+}
+function mergeConfigs(userConfig, projectConfig) {
+  if (userConfig?.failClosedReason || projectConfig?.failClosedReason) {
+    return {
+      version: 1,
+      rules: [],
+      failClosedReason: userConfig?.failClosedReason ?? projectConfig?.failClosedReason
+    };
+  }
+  if (!userConfig && !projectConfig) {
+    return DEFAULT_CONFIG2;
+  }
+  if (!userConfig) {
+    return projectConfig ?? DEFAULT_CONFIG2;
+  }
+  if (!projectConfig) {
+    return userConfig;
+  }
+  const projectRuleNames = new Set(projectConfig.rules.map((r) => r.name.toLowerCase()));
+  const mergedRules = [
+    ...userConfig.rules.filter((r) => !projectRuleNames.has(r.name.toLowerCase())),
+    ...projectConfig.rules
+  ];
+  return {
+    version: 1,
+    rules: mergedRules
+  };
+}
+function validateConfig(config) {
+  const errors = [];
+  const ruleNames = new Set;
+  if (!config || typeof config !== "object") {
+    errors.push("Config must be an object");
+    return { errors, ruleNames };
+  }
+  const cfg = config;
+  if (cfg.version !== 1) {
+    errors.push("version must be 1");
+  }
+  if (cfg.rules !== undefined) {
+    if (!Array.isArray(cfg.rules)) {
+      errors.push("rules must be an array");
+    } else {
+      for (let i = 0;i < cfg.rules.length; i++) {
+        const rule = cfg.rules[i];
+        const ruleErrors = validateRule(rule, i, ruleNames);
+        errors.push(...ruleErrors);
+      }
+    }
+  }
+  return { errors, ruleNames };
+}
+function validateRule(rule, index, ruleNames) {
+  const errors = [];
+  const prefix = `rules[${index}]`;
+  if (!rule || typeof rule !== "object") {
+    errors.push(`${prefix}: must be an object`);
+    return errors;
+  }
+  const r = rule;
+  if (typeof r.name !== "string") {
+    errors.push(`${prefix}.name: required string`);
+  } else {
+    if (!NAME_PATTERN.test(r.name)) {
+      errors.push(`${prefix}.name: must match pattern (letters, numbers, hyphens, underscores; max 64 chars)`);
+    }
+    const lowerName = r.name.toLowerCase();
+    if (ruleNames.has(lowerName)) {
+      errors.push(`${prefix}.name: duplicate rule name "${r.name}"`);
+    } else {
+      ruleNames.add(lowerName);
+    }
+  }
+  if (typeof r.command !== "string") {
+    errors.push(`${prefix}.command: required string`);
+  } else if (!COMMAND_PATTERN.test(r.command)) {
+    errors.push(`${prefix}.command: must match pattern (letters, numbers, hyphens, underscores)`);
+  }
+  if (r.subcommand !== undefined) {
+    if (typeof r.subcommand !== "string") {
+      errors.push(`${prefix}.subcommand: must be a string if provided`);
+    } else if (!COMMAND_PATTERN.test(r.subcommand)) {
+      errors.push(`${prefix}.subcommand: must match pattern (letters, numbers, hyphens, underscores)`);
+    }
+  }
+  if (!Array.isArray(r.block_args)) {
+    errors.push(`${prefix}.block_args: required array`);
+  } else {
+    if (r.block_args.length === 0) {
+      errors.push(`${prefix}.block_args: must have at least one element`);
+    }
+    for (let i = 0;i < r.block_args.length; i++) {
+      const arg = r.block_args[i];
+      if (typeof arg !== "string") {
+        errors.push(`${prefix}.block_args[${i}]: must be a string`);
+      } else if (arg === "") {
+        errors.push(`${prefix}.block_args[${i}]: must not be empty`);
+      }
+    }
+  }
+  if (typeof r.reason !== "string") {
+    errors.push(`${prefix}.reason: required string`);
+  } else if (r.reason === "") {
+    errors.push(`${prefix}.reason: must not be empty`);
+  } else if (r.reason.length > MAX_REASON_LENGTH) {
+    errors.push(`${prefix}.reason: must be at most ${MAX_REASON_LENGTH} characters`);
+  }
+  return errors;
+}
+function validateConfigFile(path) {
+  return validateParsedConfigFile(path, validateConfig);
+}
+function readConfigFileInput(path) {
+  const errors = [];
+  const ruleNames = new Set;
+  if (!existsSync8(path)) {
+    errors.push(`File not found: ${path}`);
+    return { ok: false, result: { errors, ruleNames } };
+  }
+  try {
+    const content = readFileSync7(path, "utf-8");
+    if (!content.trim()) {
+      errors.push("Config file is empty");
+      return { ok: false, result: { errors, ruleNames } };
+    }
+    return { ok: true, parsed: JSON.parse(content) };
+  } catch (e) {
+    errors.push(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+    return { ok: false, result: { errors, ruleNames } };
+  }
+}
+function getUserConfigPath() {
+  return join5(homedir3(), ".cc-safety-net", "config.json");
+}
+function getProjectConfigPath(cwd) {
+  return resolve3(cwd ?? process.cwd(), ".safety-net.json");
+}
+function getLegacyProjectConfigPath(cwd) {
+  return getProjectConfigPath(cwd);
+}
+function validateRulesConfigFile(path) {
+  const loaded = readConfigFileInput(path);
+  if (!loaded.ok)
+    return loaded.result;
+  const result = validateRulesConfig(loaded.parsed);
+  return { errors: result.errors, ruleNames: result.sources };
+}
+function validateParsedConfigFile(path, validate) {
+  const loaded = readConfigFileInput(path);
+  if (!loaded.ok)
+    return loaded.result;
+  return validate(loaded.parsed);
+}
+
+// src/bin/doctor/config.ts
+function getConfigSourceInfo(path) {
+  if (!existsSync9(path)) {
+    return { path, exists: false, valid: false, ruleCount: 0 };
+  }
+  const validation = validateConfigFile(path);
+  if (validation.errors.length > 0) {
+    return {
+      path,
+      exists: true,
+      valid: false,
+      ruleCount: 0,
+      errors: validation.errors
+    };
+  }
+  return {
+    path,
+    exists: true,
+    valid: true,
+    ruleCount: validation.ruleNames.size
+  };
+}
+function isValidRule(rule) {
+  if (typeof rule !== "object" || rule === null)
+    return false;
+  const r = rule;
+  return typeof r.name === "string" && typeof r.command === "string" && Array.isArray(r.block_args) && typeof r.reason === "string";
+}
+function loadSingleConfigRules(path) {
+  if (!existsSync9(path))
+    return [];
+  try {
+    const content = readFileSync8(path, "utf-8");
+    if (!content.trim())
+      return [];
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed.rules))
+      return [];
+    return parsed.rules.filter(isValidRule);
+  } catch {
+    return [];
+  }
+}
+function mergeRulesWithTracking(userRules, projectRules) {
+  const projectRuleNames = new Set(projectRules.map((r) => r.name.toLowerCase()));
+  const shadowedRules = [];
+  const effectiveRules = [];
+  for (const rule of userRules) {
+    if (projectRuleNames.has(rule.name.toLowerCase())) {
+      shadowedRules.push({ name: rule.name, shadowedBy: "project" });
+    } else {
+      effectiveRules.push({
+        source: "user",
+        name: rule.name,
+        command: rule.command,
+        subcommand: rule.subcommand,
+        blockArgs: rule.block_args,
+        reason: rule.reason
+      });
+    }
+  }
+  for (const rule of projectRules) {
+    effectiveRules.push({
+      source: "project",
+      name: rule.name,
+      command: rule.command,
+      subcommand: rule.subcommand,
+      blockArgs: rule.block_args,
+      reason: rule.reason
+    });
+  }
+  return { effectiveRules, shadowedRules };
+}
+function getConfigInfo(cwd, options) {
+  const userPath = options?.userConfigPath ?? getUserConfigPath();
+  const projectPath = options?.projectConfigPath ?? getProjectConfigPath(cwd);
+  const userConfig = getConfigSourceInfo(userPath);
+  const projectConfig = getConfigSourceInfo(projectPath);
+  const userRules = userConfig.valid ? loadSingleConfigRules(userPath) : [];
+  const projectRules = projectConfig.valid ? loadSingleConfigRules(projectPath) : [];
+  const { effectiveRules, shadowedRules } = mergeRulesWithTracking(userRules, projectRules);
+  return {
+    userConfig,
+    projectConfig,
+    effectiveRules,
+    shadowedRules
+  };
+}
+
+// src/core/env.ts
+var ENV_FLAGS = {
+  strict: { name: "CC_SAFETY_NET_STRICT", legacyName: "SAFETY_NET_STRICT" },
+  paranoid: { name: "CC_SAFETY_NET_PARANOID", legacyName: "SAFETY_NET_PARANOID" },
+  paranoidRm: { name: "CC_SAFETY_NET_PARANOID_RM", legacyName: "SAFETY_NET_PARANOID_RM" },
+  paranoidInterpreters: {
+    name: "CC_SAFETY_NET_PARANOID_INTERPRETERS",
+    legacyName: "SAFETY_NET_PARANOID_INTERPRETERS"
+  },
+  worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
+  debug: { name: "CC_SAFETY_NET_DEBUG" }
+};
+function envTruthy(flag) {
+  const value = typeof flag === "string" ? process.env[flag] : getEnvFlagValue(flag);
+  return value === "1" || value?.toLowerCase() === "true";
+}
+function getEnvFlagValue(flag) {
+  if (process.env[flag.name] !== undefined) {
+    return process.env[flag.name];
+  }
+  if (flag.legacyName) {
+    return process.env[flag.legacyName];
+  }
+  return;
+}
+function envFlagIsSet(flag) {
+  return process.env[flag.name] !== undefined || !!flag.legacyName && process.env[flag.legacyName] !== undefined;
+}
+
+// src/bin/doctor/environment.ts
+var ENV_VARS = [
+  {
+    flag: ENV_FLAGS.strict,
+    description: "Fail-closed on unparseable commands",
+    defaultBehavior: "permissive"
+  },
+  {
+    flag: ENV_FLAGS.paranoid,
+    description: "Enable all paranoid checks",
+    defaultBehavior: "off"
+  },
+  {
+    flag: ENV_FLAGS.paranoidRm,
+    description: "Block rm -rf even within cwd",
+    defaultBehavior: "off"
+  },
+  {
+    flag: ENV_FLAGS.paranoidInterpreters,
+    description: "Block interpreter one-liners",
+    defaultBehavior: "off"
+  },
+  {
+    flag: ENV_FLAGS.worktree,
+    description: "Allow local git discards in linked worktrees",
+    defaultBehavior: "off"
+  },
+  {
+    flag: ENV_FLAGS.debug,
+    description: "Log allowed hook commands for debugging",
+    defaultBehavior: "off"
+  }
+];
+function getEnvironmentInfo() {
+  return [
+    ...ENV_VARS.map((v) => ({
+      name: v.flag.name,
+      value: getEnvFlagValue(v.flag),
+      isSet: envFlagIsSet(v.flag),
+      legacyName: v.flag.legacyName,
+      legacyValue: v.flag.legacyName ? process.env[v.flag.legacyName] : undefined,
+      legacyIsSet: v.flag.legacyName ? process.env[v.flag.legacyName] !== undefined : undefined,
+      description: v.description,
+      defaultBehavior: v.defaultBehavior
+    })),
+    {
+      name: "CC_SAFETY_NET_HOME",
+      value: process.env.CC_SAFETY_NET_HOME,
+      isSet: process.env.CC_SAFETY_NET_HOME !== undefined,
+      description: "Override user-scope config/cache directory",
+      defaultBehavior: "~/.cc-safety-net"
+    }
+  ];
+}
+
+// src/bin/utils/colors.ts
+function shouldUseColor() {
+  return Boolean(process.stdout.isTTY && !process.env.NO_COLOR);
+}
+var green = (s) => shouldUseColor() ? `\x1B[32m${s}\x1B[0m` : s;
+var yellow = (s) => shouldUseColor() ? `\x1B[33m${s}\x1B[0m` : s;
+var blue = (s) => shouldUseColor() ? `\x1B[34m${s}\x1B[0m` : s;
+var magenta = (s) => shouldUseColor() ? `\x1B[35m${s}\x1B[0m` : s;
+var cyan = (s) => shouldUseColor() ? `\x1B[36m${s}\x1B[0m` : s;
+var red = (s) => shouldUseColor() ? `\x1B[31m${s}\x1B[0m` : s;
+var dim = (s) => shouldUseColor() ? `\x1B[2m${s}\x1B[0m` : s;
+var bold = (s) => shouldUseColor() ? `\x1B[1m${s}\x1B[0m` : s;
+var colors = {
+  green,
+  yellow,
+  blue,
+  magenta,
+  cyan,
+  red,
+  dim,
+  bold
+};
+var ANSI_RESET = "\x1B[0m";
+var DISTINCT_COLORS = [
+  39,
+  82,
+  198,
+  226,
+  208,
+  51,
+  196,
+  46,
+  201,
+  214,
+  93,
+  154,
+  220,
+  27,
+  49,
+  190,
+  200,
+  33,
+  129,
+  227,
+  45,
+  160,
+  63,
+  118,
+  123,
+  202
+];
+function createRandom(seed) {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+function getShuffledPalette(seed) {
+  const palette = [...DISTINCT_COLORS];
+  const random = createRandom(seed);
+  for (let i = palette.length - 1;i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    const temp = palette[i];
+    palette[i] = palette[j];
+    palette[j] = temp;
+  }
+  return palette;
+}
+function generateDistinctColor(index, seed = 0) {
+  if (!shouldUseColor())
+    return "";
+  const palette = getShuffledPalette(seed);
+  const colorCode = palette[index % palette.length];
+  return `\x1B[38;5;${colorCode}m`;
+}
+function colorizeToken(token, index, seed = 0) {
+  if (!shouldUseColor())
+    return `"${token}"`;
+  const colorCode = generateDistinctColor(index, seed);
+  return `${colorCode}"${token}"${ANSI_RESET}`;
+}
+
+// src/bin/doctor/format.ts
+var PLATFORM_NAMES = {
+  "claude-code": "Claude Code",
+  opencode: "OpenCode",
+  "gemini-cli": "Gemini CLI",
+  "copilot-cli": "Copilot CLI",
+  codex: "Codex"
+};
+function formatAsciiTable(options) {
+  const rawRows = options.rawRows ?? options.rows;
+  const colWidths = (options.headers ?? rawRows[0] ?? []).map((h, i) => {
+    const maxDataWidth = Math.max(...rawRows.map((r) => r[i]?.length ?? 0));
+    return Math.max(h.length, maxDataWidth);
+  });
+  const pad = (s, w, raw) => s + " ".repeat(Math.max(0, w - raw.length));
+  const line = (char, corners) => corners[0] + colWidths.map((w) => char.repeat(w + 2)).join(corners[1]) + corners[2];
+  const formatRow = (cells, rawCells) => `│ ${cells.map((c, i) => pad(c, colWidths[i] ?? 0, rawCells[i] ?? "")).join(" │ ")} │`;
+  const headerLines = options.headers ? [`   ${formatRow(options.headers, options.headers)}`, `   ${line("─", ["├", "┼", "┤"])}`] : [];
+  return [
+    `   ${line("─", ["┌", "┬", "┐"])}`,
+    ...headerLines,
+    ...options.rows.map((r, i) => `   ${formatRow(r, rawRows[i] ?? [])}`),
+    `   ${line("─", ["└", "┴", "┘"])}`
+  ].join(`
+`);
+}
+function formatHooksSection(hooks) {
+  const lines = [];
+  lines.push("Hook Integration");
+  lines.push(formatHooksTable(hooks));
+  const failures = [];
+  const warnings = [];
+  const errors = [];
+  for (const hook of hooks) {
+    const platformName = PLATFORM_NAMES[hook.platform] ?? hook.platform;
+    if (hook.selfTest) {
+      for (const result of hook.selfTest.results) {
+        if (!result.passed) {
+          failures.push({ platform: platformName, result });
+        }
+      }
+    }
+    if (hook.errors && hook.errors.length > 0) {
+      for (const err of hook.errors) {
+        if (hook.status === "configured") {
+          warnings.push({ platform: platformName, message: err });
+        } else {
+          errors.push({ platform: platformName, message: err });
+        }
+      }
+    }
+  }
+  if (failures.length > 0) {
+    lines.push("");
+    lines.push(colors.red("   Failures:"));
+    for (const f of failures) {
+      lines.push(colors.red(`   • ${f.platform}: ${f.result.description}`));
+      lines.push(colors.red(`     expected ${f.result.expected}, got ${f.result.actual}`));
+    }
+  }
+  for (const w of warnings) {
+    lines.push(`   Warning (${w.platform}): ${w.message}`);
+  }
+  for (const e of errors) {
+    lines.push(colors.red(`   Error (${e.platform}): ${e.message}`));
+  }
+  return lines.join(`
+`);
+}
+function formatHooksTable(hooks) {
+  const headers = ["Platform", "Status", "Tests"];
+  const getStatusDisplay = (h) => {
+    switch (h.status) {
+      case "configured":
+        return { text: "Configured", colored: colors.green("Configured") };
+      case "disabled":
+        return { text: "Disabled", colored: colors.yellow("Disabled") };
+      case "n/a":
+        return { text: "N/A", colored: colors.dim("N/A") };
+    }
+  };
+  const rowData = hooks.map((h) => {
+    const platformName = PLATFORM_NAMES[h.platform] ?? h.platform;
+    const statusDisplay = getStatusDisplay(h);
+    let testsText = "-";
+    if (h.status === "configured" && h.selfTest) {
+      const label = h.selfTest.failed > 0 ? "FAIL" : "OK";
+      testsText = `${h.selfTest.passed}/${h.selfTest.total} ${label}`;
+    }
+    return {
+      colored: [platformName, statusDisplay.colored, testsText],
+      raw: [platformName, statusDisplay.text, testsText]
+    };
+  });
+  const rows = rowData.map((r) => r.colored);
+  const rawRows = rowData.map((r) => r.raw);
+  return formatAsciiTable({ headers, rows, rawRows });
+}
+function formatRulesTable(rules) {
+  if (rules.length === 0) {
+    return "   (no custom rules)";
+  }
+  const headers = ["Source", "Name", "Command", "Block Args"];
+  const rows = rules.map((r) => [
+    r.source,
+    r.name,
+    r.subcommand ? `${r.command} ${r.subcommand}` : r.command,
+    r.blockArgs.join(", ")
+  ]);
+  return formatAsciiTable({ headers, rows });
+}
+function formatConfigSection(report) {
+  const lines = [];
+  lines.push("Configuration");
+  lines.push(formatConfigTable(report.userConfig, report.projectConfig));
+  lines.push("");
+  if (report.effectiveRules.length > 0) {
+    lines.push(`   Effective rules (${report.effectiveRules.length} total):`);
+    lines.push(formatRulesTable(report.effectiveRules));
+  } else {
+    lines.push("   Effective rules: (none - using built-in rules only)");
+  }
+  for (const shadow of report.shadowedRules) {
+    lines.push("");
+    lines.push(`   Note: Project rule "${shadow.name}" shadows user rule with same name`);
+  }
+  return lines.join(`
+`);
+}
+function formatConfigTable(userConfig, projectConfig) {
+  const headers = ["Scope", "Status"];
+  const getStatusDisplay = (config) => {
+    if (!config.exists) {
+      return { text: "N/A", colored: colors.dim("N/A") };
+    }
+    if (!config.valid) {
+      const errMsg = config.errors?.[0] ?? "unknown error";
+      const text = `Invalid (${errMsg})`;
+      return { text, colored: colors.red(text) };
+    }
+    return { text: "Configured", colored: colors.green("Configured") };
+  };
+  const userStatus = getStatusDisplay(userConfig);
+  const projectStatus = getStatusDisplay(projectConfig);
+  const rows = [
+    ["User", userStatus.colored],
+    ["Project", projectStatus.colored]
+  ];
+  const rawRows = [
+    ["User", userStatus.text],
+    ["Project", projectStatus.text]
+  ];
+  return formatAsciiTable({ headers, rows, rawRows });
+}
+function formatEnvironmentSection(envVars) {
+  const lines = [];
+  lines.push("Environment");
+  lines.push(formatEnvironmentTable(envVars));
+  return lines.join(`
+`);
+}
+function formatEnvironmentTable(envVars) {
+  const headers = ["Variable", "Status", "Legacy"];
+  const rows = envVars.map((v) => {
+    const statusIcon = v.isSet ? colors.green("✓") : colors.dim("✗");
+    const legacyStatus = v.legacyName && v.legacyIsSet ? `${v.legacyName} ${colors.green("✓")}` : v.legacyName ?? "";
+    return [v.name, statusIcon, legacyStatus];
+  });
+  const rawRows = envVars.map((v) => [
+    v.name,
+    v.isSet ? "✓" : "✗",
+    v.legacyName && v.legacyIsSet ? `${v.legacyName} ✓` : v.legacyName ?? ""
+  ]);
+  return formatAsciiTable({ headers, rows, rawRows });
+}
+function formatActivitySection(activity) {
+  const lines = [];
+  if (activity.totalBlocked === 0) {
+    lines.push("Recent Activity");
+    lines.push("   No blocked commands in the last 7 days");
+    lines.push("   Tip: This is normal for new installations");
+  } else {
+    lines.push(`Recent Activity (${activity.totalBlocked} blocked / ${activity.sessionCount} sessions)`);
+    lines.push(formatActivityTable(activity.recentEntries));
+  }
+  return lines.join(`
+`);
+}
+function formatActivityTable(entries) {
+  const headers = ["Time", "Command"];
+  const rows = entries.map((e) => {
+    const cmd = e.command.length > 40 ? `${e.command.slice(0, 37)}...` : e.command;
+    return [e.relativeTime, cmd];
+  });
+  return formatAsciiTable({ headers, rows });
+}
+function formatUpdateSection(update) {
+  const lines = [];
+  lines.push("Update Check");
+  const rowData = [];
+  if (update.latestVersion === null && !update.error) {
+    rowData.push({
+      label: "Status",
+      value: colors.dim("Skipped"),
+      rawValue: "Skipped"
+    });
+    rowData.push({
+      label: "Installed",
+      value: update.currentVersion,
+      rawValue: update.currentVersion
+    });
+    lines.push(formatUpdateTable(rowData));
+    return lines.join(`
+`);
+  }
+  if (update.error) {
+    rowData.push({
+      label: "Status",
+      value: `${colors.yellow("⚠")} Error`,
+      rawValue: "⚠ Error"
+    });
+    rowData.push({
+      label: "Installed",
+      value: update.currentVersion,
+      rawValue: update.currentVersion
+    });
+    rowData.push({
+      label: "Error",
+      value: colors.dim(update.error),
+      rawValue: update.error
+    });
+    lines.push(formatUpdateTable(rowData));
+    return lines.join(`
+`);
+  }
+  if (update.updateAvailable) {
+    rowData.push({
+      label: "Status",
+      value: `${colors.yellow("⚠")} Update Available`,
+      rawValue: "⚠ Update Available"
+    });
+    rowData.push({
+      label: "Current",
+      value: update.currentVersion,
+      rawValue: update.currentVersion
+    });
+    rowData.push({
+      label: "Latest",
+      value: colors.green(update.latestVersion ?? ""),
+      rawValue: update.latestVersion ?? ""
+    });
+    lines.push(formatUpdateTable(rowData));
+    lines.push("");
+    lines.push("   Run: bunx cc-safety-net@latest doctor");
+    lines.push("   Or:  npx cc-safety-net@latest doctor");
+    return lines.join(`
+`);
+  }
+  rowData.push({
+    label: "Status",
+    value: `${colors.green("✓")} Up to date`,
+    rawValue: "✓ Up to date"
+  });
+  rowData.push({
+    label: "Version",
+    value: update.currentVersion,
+    rawValue: update.currentVersion
+  });
+  lines.push(formatUpdateTable(rowData));
+  return lines.join(`
+`);
+}
+function formatUpdateTable(rowData) {
+  const rows = rowData.map((r) => [r.label, r.value]);
+  const rawRows = rowData.map((r) => [r.label, r.rawValue]);
+  return formatAsciiTable({ rows, rawRows });
+}
+function formatSystemInfoSection(system) {
+  const lines = [];
+  lines.push("System Info");
+  lines.push(formatSystemInfoTable(system));
+  return lines.join(`
+`);
+}
+function formatSystemInfoTable(system) {
+  const headers = ["Component", "Version"];
+  const formatValue = (value) => {
+    if (value === null)
+      return colors.dim("not found");
+    return value;
+  };
+  const rawValue = (value) => {
+    return value ?? "not found";
+  };
+  const rowData = [
+    { label: "cc-safety-net", value: system.version },
+    { label: "Claude Code", value: system.claudeCodeVersion },
+    { label: "OpenCode", value: system.openCodeVersion },
+    { label: "Gemini CLI", value: system.geminiCliVersion },
+    { label: "Copilot CLI", value: system.copilotCliVersion },
+    { label: "Node.js", value: system.nodeVersion },
+    { label: "npm", value: system.npmVersion },
+    { label: "Bun", value: system.bunVersion },
+    { label: "Platform", value: system.platform }
+  ];
+  const rows = rowData.map((r) => [r.label, formatValue(r.value)]);
+  const rawRows = rowData.map((r) => [r.label, rawValue(r.value)]);
+  return formatAsciiTable({ headers, rows, rawRows });
+}
+function formatSummary(report) {
+  const hooksFailed = report.hooks.every((h) => h.status !== "configured");
+  const selfTestFailed = report.hooks.some((h) => h.selfTest && h.selfTest.failed > 0);
+  const configFailed = (report.userConfig.errors?.length ?? 0) > 0 || (report.projectConfig.errors?.length ?? 0) > 0;
+  const failures = [hooksFailed, selfTestFailed, configFailed].filter(Boolean).length;
+  let warnings = 0;
+  if (report.update.updateAvailable)
+    warnings++;
+  if (report.activity.totalBlocked === 0)
+    warnings++;
+  warnings += report.shadowedRules.length;
+  if (failures > 0) {
+    return colors.red(`
+${failures} check(s) failed.`);
+  }
+  if (warnings > 0) {
+    return colors.yellow(`
+All checks passed with ${warnings} warning(s).`);
+  }
+  return colors.green(`
+All checks passed.`);
+}
+
+// src/bin/doctor/hooks.ts
+import { existsSync as existsSync12, readdirSync as readdirSync2, readFileSync as readFileSync11 } from "node:fs";
+import { homedir as homedir5, tmpdir as tmpdir3 } from "node:os";
+import { join as join8 } from "node:path";
+
+// src/core/analyze/dangerous-text.ts
+function dangerousInText(text) {
+  const t = text.toLowerCase();
+  const stripped = t.trimStart();
+  const isEchoOrRg = stripped.startsWith("echo ") || stripped.startsWith("rg ");
+  const patterns = [
+    {
+      regex: /\brm\s+(-[^\s]*r[^\s]*\s+-[^\s]*f|-[^\s]*f[^\s]*\s+-[^\s]*r|-[^\s]*rf|-[^\s]*fr)\b/,
+      reason: "rm -rf"
+    },
+    {
+      regex: /\bgit\s+reset\s+--hard\b/,
+      reason: "git reset --hard"
+    },
+    {
+      regex: /\bgit\s+reset\s+--merge\b/,
+      reason: "git reset --merge"
+    },
+    {
+      regex: /\bgit\s+clean\s+(-[^\s]*f|-f)\b/,
+      reason: "git clean -f"
+    },
+    {
+      regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
+      reason: "git push --force (use --force-with-lease instead)"
+    },
+    {
+      regex: /\bgit\s+branch\s+-D\b/,
+      reason: "git branch -D",
+      caseSensitive: true
+    },
+    {
+      regex: /\bgit\s+stash\s+(drop|clear)\b/,
+      reason: "git stash drop/clear"
+    },
+    {
+      regex: /\bgit\s+checkout\s+--\s/,
+      reason: "git checkout --"
+    },
+    {
+      regex: /\bgit\s+restore\b(?!.*--(staged|help))/,
+      reason: "git restore (without --staged)"
+    },
+    {
+      regex: /\bfind\b[^\n;|&]*\s-delete\b/,
+      reason: "find -delete",
+      skipForEchoRg: true
+    }
+  ];
+  for (const { regex, reason, skipForEchoRg, caseSensitive } of patterns) {
+    if (skipForEchoRg && isEchoOrRg)
+      continue;
+    const target = caseSensitive ? text : t;
+    if (regex.test(target)) {
+      return reason;
+    }
+  }
+  return null;
+}
+
+// src/core/analyze/constants.ts
+var DISPLAY_COMMANDS = new Set([
+  "echo",
+  "printf",
+  "cat",
+  "head",
+  "tail",
+  "less",
+  "more",
+  "grep",
+  "rg",
+  "ag",
+  "ack",
+  "sed",
+  "awk",
+  "cut",
+  "tr",
+  "sort",
+  "uniq",
+  "wc",
+  "tee",
+  "man",
+  "help",
+  "info",
+  "type",
+  "which",
+  "whereis",
+  "whatis",
+  "apropos",
+  "file",
+  "stat",
+  "ls",
+  "ll",
+  "dir",
+  "tree",
+  "pwd",
+  "date",
+  "cal",
+  "uptime",
+  "whoami",
+  "id",
+  "groups",
+  "hostname",
+  "uname",
+  "env",
+  "printenv",
+  "set",
+  "export",
+  "alias",
+  "history",
+  "jobs",
+  "fg",
+  "bg",
+  "test",
+  "true",
+  "false",
+  "read",
+  "return",
+  "exit",
+  "break",
+  "continue",
+  "shift",
+  "wait",
+  "trap",
+  "basename",
+  "dirname",
+  "realpath",
+  "readlink",
+  "md5sum",
+  "sha256sum",
+  "base64",
+  "xxd",
+  "od",
+  "hexdump",
+  "strings",
+  "diff",
+  "cmp",
+  "comm",
+  "join",
+  "paste",
+  "column",
+  "fmt",
+  "fold",
+  "nl",
+  "pr",
+  "expand",
+  "unexpand",
+  "rev",
+  "tac",
+  "shuf",
+  "seq",
+  "yes",
+  "timeout",
+  "time",
+  "sleep",
+  "watch",
+  "logger",
+  "write",
+  "wall",
+  "mesg",
+  "notify-send"
+]);
+
+// src/core/analyze/rm-flags.ts
+function hasRecursiveForceFlags(tokens) {
+  let hasRecursive = false;
+  let hasForce = false;
+  for (const token of tokens) {
+    if (token === "--")
+      break;
+    if (token === "-r" || token === "-R" || token === "--recursive") {
+      hasRecursive = true;
+    } else if (token === "-f" || token === "--force") {
+      hasForce = true;
+    } else if (token.startsWith("-") && !token.startsWith("--")) {
+      if (token.includes("r") || token.includes("R"))
+        hasRecursive = true;
+      if (token.includes("f"))
+        hasForce = true;
+    }
+  }
+  return hasRecursive && hasForce;
+}
+
 // src/core/analyze/find.ts
 var REASON_FIND_DELETE = "find -delete permanently removes files. Use -print first to preview.";
 function analyzeFind(tokens) {
@@ -2947,39 +4110,286 @@ function extractDashCArg(tokens) {
   return null;
 }
 
-// src/core/rules-git.ts
+// src/core/git/config.ts
 import { execFileSync } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
-import { dirname as dirname3, isAbsolute as isAbsolute4, join as join4, resolve as resolve3 } from "node:path";
-var REASON_CHECKOUT_DOUBLE_DASH = "git checkout -- discards uncommitted changes permanently. Use 'git stash' first.";
-var REASON_CHECKOUT_FORCE = "git checkout --force discards uncommitted changes. Use 'git stash' first.";
-var REASON_CHECKOUT_REF_PATH = "git checkout <ref> -- <path> overwrites working tree with ref version. Use 'git stash' first.";
-var REASON_CHECKOUT_PATHSPEC_FROM_FILE = "git checkout --pathspec-from-file can overwrite multiple files. Use 'git stash' first.";
-var REASON_CHECKOUT_AMBIGUOUS = "git checkout with multiple positional args may overwrite files. Use 'git switch' for branches or 'git restore' for files.";
-var REASON_SWITCH_DISCARD_CHANGES = "git switch --discard-changes discards uncommitted changes. Use 'git stash' first.";
-var REASON_SWITCH_FORCE = "git switch --force discards uncommitted changes. Use 'git stash' first.";
-var REASON_RESTORE = "git restore discards uncommitted changes. Use 'git stash' first, or use --staged to only unstage.";
-var REASON_RESTORE_WORKTREE = "git restore --worktree explicitly discards working tree changes. Use 'git stash' first.";
-var REASON_RESET_HARD = "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.";
-var REASON_RESET_MERGE = "git reset --merge can lose uncommitted changes. Use 'git stash' first.";
-var REASON_CLEAN = "git clean -f removes untracked files permanently. Use 'git clean -n' to preview first.";
-var REASON_PUSH_FORCE = "git push --force destroys remote history. Use --force-with-lease for safer force push.";
-var REASON_BRANCH_DELETE = "git branch -D force-deletes without merge check. Use -d for safe delete.";
-var REASON_STASH_DROP = "git stash drop permanently deletes stashed changes. Consider 'git stash list' first.";
-var REASON_STASH_CLEAR = "git stash clear deletes ALL stashed changes permanently.";
-var REASON_WORKTREE_REMOVE_FORCE = "git worktree remove --force can delete uncommitted changes. Remove --force flag.";
-var CHECKOUT_OPTS_WITH_VALUE = new Set([
-  "-b",
-  "-B",
-  "--orphan",
-  "--conflict",
-  "--inter-hunk-context",
-  "--pathspec-from-file",
-  "--unified"
+import { existsSync as existsSync11, readFileSync as readFileSync10 } from "node:fs";
+import { dirname as dirname7, isAbsolute as isAbsolute5, join as join7, resolve as resolve5 } from "node:path";
+
+// src/core/worktree.ts
+import { existsSync as existsSync10, lstatSync as lstatSync2, readFileSync as readFileSync9, realpathSync as realpathSync3, statSync } from "node:fs";
+import { dirname as dirname6, isAbsolute as isAbsolute4, join as join6, resolve as resolve4 } from "node:path";
+var GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
+  "-c",
+  "-C",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--super-prefix",
+  "--config-env"
 ]);
-var CHECKOUT_OPTS_WITH_OPTIONAL_VALUE = new Set(["--recurse-submodules", "--track", "-t"]);
-var CHECKOUT_SHORT_OPTS_WITH_VALUE = new Set(["-b", "-B", "-U"]);
-var SWITCH_SHORT_OPTS_WITH_VALUE = new Set(["-c", "-C"]);
+function hasGitContextEnvOverride(envAssignments) {
+  for (const name of GIT_CONTEXT_ENV_OVERRIDES) {
+    if (envAssignments?.has(name) || Object.hasOwn(process.env, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+function getGitExecutionContext(tokens, cwd) {
+  if (!cwd) {
+    return { gitCwd: null, hasExplicitGitContext: false };
+  }
+  let gitCwd;
+  try {
+    gitCwd = realpathSync3(resolve4(cwd));
+  } catch {
+    return { gitCwd: null, hasExplicitGitContext: false };
+  }
+  if (!isDirectory(gitCwd)) {
+    return { gitCwd: null, hasExplicitGitContext: false };
+  }
+  let hasExplicitGitContext = false;
+  let i = 1;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (!token)
+      break;
+    if (token === "--") {
+      break;
+    }
+    if (!token.startsWith("-")) {
+      break;
+    }
+    if (token === "-C") {
+      const target = tokens[i + 1];
+      if (!target) {
+        return { gitCwd: null, hasExplicitGitContext };
+      }
+      const resolvedCwd = resolveGitCwd(gitCwd, target);
+      if (!resolvedCwd) {
+        return { gitCwd: null, hasExplicitGitContext };
+      }
+      gitCwd = resolvedCwd;
+      i += 2;
+      continue;
+    }
+    if (token.startsWith("-C") && token.length > 2) {
+      const resolvedCwd = resolveGitCwd(gitCwd, token.slice(2));
+      if (!resolvedCwd) {
+        return { gitCwd: null, hasExplicitGitContext };
+      }
+      gitCwd = resolvedCwd;
+      i++;
+      continue;
+    }
+    if (token === "--git-dir" || token === "--work-tree") {
+      hasExplicitGitContext = true;
+      i += 2;
+      continue;
+    }
+    if (token.startsWith("--git-dir=") || token.startsWith("--work-tree=")) {
+      hasExplicitGitContext = true;
+      i++;
+      continue;
+    }
+    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
+      i += 2;
+    } else if (token.startsWith("-c") && token.length > 2) {
+      i++;
+    } else {
+      i++;
+    }
+  }
+  return { gitCwd, hasExplicitGitContext };
+}
+function isLinkedWorktree(cwd) {
+  const dotGitPath = findDotGit(cwd);
+  if (!dotGitPath) {
+    return false;
+  }
+  try {
+    const stat = lstatSync2(dotGitPath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      return false;
+    }
+    const content = readFileSync9(dotGitPath, "utf-8");
+    const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (!firstLine.startsWith("gitdir:")) {
+      return false;
+    }
+    const rawGitDir = firstLine.slice("gitdir:".length).trim();
+    if (rawGitDir === "") {
+      return false;
+    }
+    const gitDir = isAbsolute4(rawGitDir) ? rawGitDir : resolve4(dirname6(dotGitPath), rawGitDir);
+    if (!existsSync10(join6(gitDir, "commondir"))) {
+      return false;
+    }
+    if (!worktreeGitdirBacklinkMatches(gitDir, dotGitPath)) {
+      return false;
+    }
+    return worktreeConfigMatchesRoot(gitDir, dirname6(dotGitPath));
+  } catch {
+    return false;
+  }
+}
+function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
+  const backlinkPath = join6(gitDir, "gitdir");
+  if (!existsSync10(backlinkPath)) {
+    return false;
+  }
+  const rawBacklink = readFileSync9(backlinkPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+  if (rawBacklink === "") {
+    return false;
+  }
+  const linkedDotGitPath = isAbsolute4(rawBacklink) ? rawBacklink : resolve4(gitDir, rawBacklink);
+  try {
+    return sameFilesystemPath(linkedDotGitPath, dotGitPath);
+  } catch {
+    return false;
+  }
+}
+function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
+  const configWorktreePath = join6(gitDir, "config.worktree");
+  if (!existsSync10(configWorktreePath)) {
+    return true;
+  }
+  const configuredWorktree = readCoreWorktree(configWorktreePath);
+  if (configuredWorktree === null) {
+    return true;
+  }
+  const resolvedConfiguredWorktree = isAbsolute4(configuredWorktree) ? configuredWorktree : resolve4(gitDir, configuredWorktree);
+  try {
+    return sameFilesystemPath(resolvedConfiguredWorktree, worktreeRoot);
+  } catch {
+    return false;
+  }
+}
+function sameFilesystemPath(left, right) {
+  try {
+    const leftStat = statSync(left);
+    const rightStat = statSync(right);
+    if (leftStat.ino !== 0 && rightStat.ino !== 0 && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino) {
+      return true;
+    }
+  } catch {}
+  return getCanonicalPathForComparison(left) === getCanonicalPathForComparison(right);
+}
+function getCanonicalPathForComparison(path) {
+  return normalizePathForComparison(realpathSync3.native(path));
+}
+function normalizePathForComparison(path) {
+  let normalized = path.replace(/^\\\\\?\\UNC\\/i, "//").replace(/^\\\\\?\\/i, "");
+  normalized = normalized.replace(/\\/g, "/");
+  if (normalized.length > 1 && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+function readCoreWorktree(configPath) {
+  const content = readFileSync9(configPath, "utf-8");
+  let inCore = false;
+  let configuredWorktree = null;
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      continue;
+    }
+    if (trimmed.startsWith("[")) {
+      inCore = /^\[core\]$/i.test(trimmed);
+      continue;
+    }
+    if (!inCore) {
+      continue;
+    }
+    const match = trimmed.match(/^worktree\s*=\s*(.*)$/i);
+    if (match) {
+      configuredWorktree = parseGitConfigValue(match[1] ?? "");
+    }
+  }
+  return configuredWorktree;
+}
+function parseGitConfigValue(value) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('"') || !trimmed.endsWith('"')) {
+    return trimmed;
+  }
+  return unescapeDoubleQuotedGitConfigValue(trimmed.slice(1, -1));
+}
+function unescapeDoubleQuotedGitConfigValue(value) {
+  let result = "";
+  for (let i = 0;i < value.length; i++) {
+    const char = value[i];
+    if (char !== "\\") {
+      result += char;
+      continue;
+    }
+    const next = value[i + 1];
+    if (next === undefined) {
+      result += char;
+      continue;
+    }
+    switch (next) {
+      case "\\":
+      case '"':
+        result += next;
+        break;
+      case "n":
+        result += `
+`;
+        break;
+      case "t":
+        result += "\t";
+        break;
+      case "b":
+        result += "\b";
+        break;
+      default:
+        result += `\\${next}`;
+        break;
+    }
+    i++;
+  }
+  return result;
+}
+function resolveGitCwd(baseCwd, target) {
+  try {
+    const resolved = resolveChdirTarget(baseCwd, target);
+    return isDirectory(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+function isDirectory(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function findDotGit(cwd) {
+  try {
+    return findDotGitInAncestors(realpathSync3(cwd));
+  } catch {
+    return null;
+  }
+}
+function findDotGitInAncestors(cwd) {
+  let current = cwd;
+  while (true) {
+    const dotGitPath = join6(current, ".git");
+    if (existsSync10(dotGitPath)) {
+      return dotGitPath;
+    }
+    const parent = dirname6(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+// src/core/git/config.ts
 var TRUSTED_GIT_BINARIES = [
   "/usr/bin/git",
   "/usr/local/bin/git",
@@ -2987,41 +4397,272 @@ var TRUSTED_GIT_BINARIES = [
   "C:\\Program Files\\Git\\cmd\\git.exe",
   "C:\\Program Files\\Git\\bin\\git.exe"
 ];
-var CHECKOUT_KNOWN_OPTS_NO_VALUE = new Set([
-  "-q",
-  "--quiet",
-  "--no-quiet",
-  "-f",
-  "--force",
-  "--no-force",
-  "-d",
-  "--detach",
-  "--no-detach",
-  "-m",
-  "--merge",
-  "--no-merge",
-  "-p",
-  "--patch",
-  "--no-patch",
-  "--guess",
-  "--no-guess",
-  "--overlay",
-  "--no-overlay",
-  "--ours",
-  "--theirs",
-  "--ignore-skip-worktree-bits",
-  "--no-ignore-skip-worktree-bits",
-  "--no-track",
-  "--overwrite-ignore",
-  "--no-overwrite-ignore",
-  "--ignore-other-worktrees",
-  "--no-ignore-other-worktrees",
-  "--progress",
-  "--no-progress",
-  "--pathspec-file-nul",
-  "--no-pathspec-file-nul",
-  "--no-recurse-submodules"
-]);
+function hasRecursiveSubmoduleConfig(tokens, envAssignments, gitCwd) {
+  const commandLineConfig = commandLineRecursiveSubmoduleConfig(tokens, envAssignments);
+  if (commandLineConfig !== null) {
+    return commandLineConfig;
+  }
+  const envConfig = envRecursiveSubmoduleConfig(envAssignments);
+  if (envConfig !== null) {
+    return envConfig;
+  }
+  if (hasConfigAffectingEnvAssignment(envAssignments)) {
+    return true;
+  }
+  return effectiveGitConfigEnablesRecursiveSubmodules(gitCwd);
+}
+function commandLineRecursiveSubmoduleConfig(tokens, envAssignments) {
+  let recursiveSubmoduleConfig = null;
+  let i = 1;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (!token || token === "--") {
+      return recursiveSubmoduleConfig;
+    }
+    if (!token.startsWith("-")) {
+      return recursiveSubmoduleConfig;
+    }
+    if (token === "-c") {
+      const configValue = recursiveSubmoduleConfigValue(tokens[i + 1]);
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i += 2;
+      continue;
+    }
+    if (token.startsWith("-c") && token.length > 2) {
+      const configValue = recursiveSubmoduleConfigValue(token.slice(2));
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i++;
+      continue;
+    }
+    if (token === "--config-env") {
+      const configValue = recursiveSubmoduleConfigEnvValue(tokens[i + 1], envAssignments);
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i += 2;
+      continue;
+    }
+    if (token.startsWith("--config-env=")) {
+      const configValue = recursiveSubmoduleConfigEnvValue(token.slice("--config-env=".length), envAssignments);
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i++;
+      continue;
+    }
+    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
+      i += 2;
+    } else {
+      i++;
+    }
+  }
+  return recursiveSubmoduleConfig;
+}
+function envRecursiveSubmoduleConfig(envAssignments) {
+  if (getEnvConfigValue("GIT_CONFIG_PARAMETERS", envAssignments) !== undefined) {
+    return true;
+  }
+  const countValue = getEnvConfigValue("GIT_CONFIG_COUNT", envAssignments);
+  if (countValue === undefined) {
+    return null;
+  }
+  const count = Number.parseInt(countValue, 10);
+  if (!Number.isInteger(count) || count < 0) {
+    return true;
+  }
+  let recursiveSubmoduleConfig = null;
+  for (let i = 0;i < count; i++) {
+    const key = getEnvConfigValue(`GIT_CONFIG_KEY_${i}`, envAssignments);
+    if (key?.toLowerCase() !== "submodule.recurse") {
+      continue;
+    }
+    const value = getEnvConfigValue(`GIT_CONFIG_VALUE_${i}`, envAssignments);
+    recursiveSubmoduleConfig = value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
+  }
+  return recursiveSubmoduleConfig;
+}
+function getEnvConfigValue(name, envAssignments) {
+  return envAssignments?.get(name) ?? process.env[name];
+}
+function effectiveGitConfigEnablesRecursiveSubmodules(cwd, gitBinary = getTrustedGitBinary()) {
+  const localConfigResult = localGitConfigEnablesRecursiveSubmodules(cwd);
+  if (localConfigResult === null || localConfigResult) {
+    return true;
+  }
+  if (gitBinary === null) {
+    return true;
+  }
+  try {
+    const value = execFileSync(gitBinary, ["config", "--get", "submodule.recurse"], {
+      cwd,
+      encoding: "utf8",
+      env: withoutGitConfigEnv(process.env),
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return gitConfigValueEnablesRecursiveSubmodules(value);
+  } catch (error) {
+    return !isGitConfigUnsetError(error);
+  }
+}
+function localGitConfigEnablesRecursiveSubmodules(cwd) {
+  const configPaths = getLocalGitConfigPaths(cwd);
+  if (configPaths === null) {
+    return null;
+  }
+  for (const configPath of configPaths) {
+    if (!existsSync11(configPath)) {
+      continue;
+    }
+    const result = gitConfigFileEnablesRecursiveSubmodules(configPath);
+    if (result) {
+      return true;
+    }
+  }
+  return false;
+}
+function getTrustedGitBinary() {
+  for (const gitBinary of TRUSTED_GIT_BINARIES) {
+    if (existsSync11(gitBinary)) {
+      return gitBinary;
+    }
+  }
+  return null;
+}
+function withoutGitConfigEnv(env) {
+  const nextEnv = { ...env };
+  for (const key of Object.keys(nextEnv)) {
+    if (isGitConfigEnvName(key)) {
+      delete nextEnv[key];
+    }
+  }
+  return nextEnv;
+}
+function isGitConfigUnsetError(error) {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 1;
+}
+function getLocalGitConfigPaths(cwd) {
+  const dotGitPath = findDotGitInAncestors(cwd);
+  if (dotGitPath === null) {
+    return null;
+  }
+  const gitDir = resolveGitDirFromDotGit(dotGitPath);
+  if (gitDir === null) {
+    return null;
+  }
+  const commonDir = resolveCommonGitDir(gitDir);
+  if (commonDir === null) {
+    return null;
+  }
+  return [join7(commonDir, "config"), join7(gitDir, "config.worktree")];
+}
+function resolveGitDirFromDotGit(dotGitPath) {
+  try {
+    const content = readFileSync10(dotGitPath, "utf-8");
+    const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (!firstLine.startsWith("gitdir:")) {
+      return dotGitPath;
+    }
+    const rawGitDir = firstLine.slice("gitdir:".length).trim();
+    if (rawGitDir === "") {
+      return null;
+    }
+    return isAbsolute5(rawGitDir) ? rawGitDir : resolve5(dirname7(dotGitPath), rawGitDir);
+  } catch {
+    return null;
+  }
+}
+function resolveCommonGitDir(gitDir) {
+  const commonDirPath = join7(gitDir, "commondir");
+  if (!existsSync11(commonDirPath)) {
+    return gitDir;
+  }
+  try {
+    const rawCommonDir = readFileSync10(commonDirPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (rawCommonDir === "") {
+      return null;
+    }
+    return isAbsolute5(rawCommonDir) ? rawCommonDir : resolve5(gitDir, rawCommonDir);
+  } catch {
+    return null;
+  }
+}
+function gitConfigFileEnablesRecursiveSubmodules(configPath) {
+  let content;
+  try {
+    content = readFileSync10(configPath, "utf-8");
+  } catch {
+    return true;
+  }
+  let section = "";
+  let recursiveSubmoduleConfig = false;
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      continue;
+    }
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      section = sectionMatch[1]?.trim().toLowerCase() ?? "";
+      continue;
+    }
+    const eqIdx = trimmed.indexOf("=");
+    const key = (eqIdx === -1 ? trimmed : trimmed.slice(0, eqIdx)).trim().toLowerCase();
+    const value = eqIdx === -1 ? "true" : trimmed.slice(eqIdx + 1).trim();
+    if (isIncludeConfigSection(section) && key === "path") {
+      return true;
+    }
+    if (section === "submodule" && key === "recurse") {
+      recursiveSubmoduleConfig = gitConfigValueEnablesRecursiveSubmodules(value);
+    }
+  }
+  return recursiveSubmoduleConfig;
+}
+function isIncludeConfigSection(section) {
+  return section === "include" || section.startsWith("includeif ");
+}
+function recursiveSubmoduleConfigValue(config) {
+  if (!config) {
+    return null;
+  }
+  const eqIdx = config.indexOf("=");
+  const key = (eqIdx === -1 ? config : config.slice(0, eqIdx)).toLowerCase();
+  if (isIncludeConfigKey(key)) {
+    return true;
+  }
+  if (key !== "submodule.recurse") {
+    return null;
+  }
+  const value = eqIdx === -1 ? "true" : config.slice(eqIdx + 1).toLowerCase();
+  return gitConfigValueEnablesRecursiveSubmodules(value);
+}
+function gitConfigValueEnablesRecursiveSubmodules(value) {
+  const normalizedValue = value.toLowerCase();
+  return normalizedValue !== "false" && normalizedValue !== "no" && normalizedValue !== "off" && normalizedValue !== "0";
+}
+function recursiveSubmoduleConfigEnvValue(configEnv, envAssignments) {
+  const eqIdx = configEnv?.indexOf("=") ?? -1;
+  if (!configEnv || eqIdx === -1) {
+    return null;
+  }
+  const key = configEnv.slice(0, eqIdx).toLowerCase();
+  if (isIncludeConfigKey(key)) {
+    return true;
+  }
+  if (key !== "submodule.recurse") {
+    return null;
+  }
+  const value = getEnvConfigValue(configEnv.slice(eqIdx + 1), envAssignments);
+  return value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
+}
+function isIncludeConfigKey(key) {
+  return key === "include.path" || key.startsWith("includeif.") && key.endsWith(".path");
+}
+
+// src/core/git/parse.ts
 function splitAtDoubleDash(tokens) {
   const index = tokens.indexOf("--");
   if (index === -1) {
@@ -3031,76 +4672,6 @@ function splitAtDoubleDash(tokens) {
     index,
     before: tokens.slice(0, index),
     after: tokens.slice(index + 1)
-  };
-}
-function analyzeGit(tokens, options = {}) {
-  const match = analyzeGitRule(tokens);
-  if (!match) {
-    return null;
-  }
-  if (getGitWorktreeRelaxationForMatch(tokens, match, options)) {
-    return null;
-  }
-  return match.reason;
-}
-function getGitWorktreeRelaxation(tokens, options = {}) {
-  const match = analyzeGitRule(tokens);
-  if (!match) {
-    return null;
-  }
-  return getGitWorktreeRelaxationForMatch(tokens, match, options);
-}
-function analyzeGitRule(tokens) {
-  const { subcommand, rest } = extractGitSubcommandAndRest(tokens);
-  if (!subcommand) {
-    return null;
-  }
-  switch (subcommand.toLowerCase()) {
-    case "checkout":
-      return localDiscard(analyzeGitCheckout(rest));
-    case "switch":
-      return localDiscard(analyzeGitSwitch(rest));
-    case "restore":
-      return localDiscard(analyzeGitRestore(rest));
-    case "reset":
-      return analyzeGitReset(rest);
-    case "clean":
-      return localDiscard(analyzeGitClean(rest));
-    case "push":
-      return sharedState(analyzeGitPush(rest));
-    case "branch":
-      return sharedState(analyzeGitBranch(rest));
-    case "stash":
-      return sharedState(analyzeGitStash(rest));
-    case "worktree":
-      return sharedState(analyzeGitWorktree(rest));
-    default:
-      return null;
-  }
-}
-function localDiscard(reason) {
-  return reason ? { reason, localDiscard: true } : null;
-}
-function sharedState(reason) {
-  return reason ? { reason, localDiscard: false } : null;
-}
-function getGitWorktreeRelaxationForMatch(tokens, match, options) {
-  if (!match.localDiscard || !options.worktreeMode || hasGitContextEnvOverride(options.envAssignments)) {
-    return null;
-  }
-  const context = getGitExecutionContext(tokens, options.cwd);
-  if (!context.gitCwd || context.hasExplicitGitContext) {
-    return null;
-  }
-  if (!isLinkedWorktree(context.gitCwd)) {
-    return null;
-  }
-  if (isNonRelaxableLocalDiscard(tokens, options, context.gitCwd)) {
-    return null;
-  }
-  return {
-    originalReason: match.reason,
-    gitCwd: context.gitCwd
   };
 }
 function extractGitSubcommandAndRest(tokens) {
@@ -3139,6 +4710,106 @@ function extractGitSubcommandAndRest(tokens) {
     }
   }
   return { subcommand: null, rest: [] };
+}
+
+// src/core/git/rules.ts
+var REASON_CHECKOUT_DOUBLE_DASH = "git checkout -- discards uncommitted changes permanently. Use 'git stash' first.";
+var REASON_CHECKOUT_FORCE = "git checkout --force discards uncommitted changes. Use 'git stash' first.";
+var REASON_CHECKOUT_REF_PATH = "git checkout <ref> -- <path> overwrites working tree with ref version. Use 'git stash' first.";
+var REASON_CHECKOUT_PATHSPEC_FROM_FILE = "git checkout --pathspec-from-file can overwrite multiple files. Use 'git stash' first.";
+var REASON_CHECKOUT_AMBIGUOUS = "git checkout with multiple positional args may overwrite files. Use 'git switch' for branches or 'git restore' for files.";
+var REASON_SWITCH_DISCARD_CHANGES = "git switch --discard-changes discards uncommitted changes. Use 'git stash' first.";
+var REASON_SWITCH_FORCE = "git switch --force discards uncommitted changes. Use 'git stash' first.";
+var REASON_RESTORE = "git restore discards uncommitted changes. Use 'git stash' first, or use --staged to only unstage.";
+var REASON_RESTORE_WORKTREE = "git restore --worktree explicitly discards working tree changes. Use 'git stash' first.";
+var REASON_RESET_HARD = "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.";
+var REASON_RESET_MERGE = "git reset --merge can lose uncommitted changes. Use 'git stash' first.";
+var REASON_CLEAN = "git clean -f removes untracked files permanently. Use 'git clean -n' to preview first.";
+var REASON_PUSH_FORCE = "git push --force destroys remote history. Use --force-with-lease for safer force push.";
+var REASON_BRANCH_DELETE = "git branch -D force-deletes without merge check. Use -d for safe delete.";
+var REASON_STASH_DROP = "git stash drop permanently deletes stashed changes. Consider 'git stash list' first.";
+var REASON_STASH_CLEAR = "git stash clear deletes ALL stashed changes permanently.";
+var REASON_WORKTREE_REMOVE_FORCE = "git worktree remove --force can delete uncommitted changes. Remove --force flag.";
+var CHECKOUT_OPTS_WITH_VALUE = new Set([
+  "-b",
+  "-B",
+  "--orphan",
+  "--conflict",
+  "--inter-hunk-context",
+  "--pathspec-from-file",
+  "--unified"
+]);
+var CHECKOUT_OPTS_WITH_OPTIONAL_VALUE = new Set(["--recurse-submodules", "--track", "-t"]);
+var CHECKOUT_SHORT_OPTS_WITH_VALUE = new Set(["-b", "-B", "-U"]);
+var SWITCH_SHORT_OPTS_WITH_VALUE = new Set(["-c", "-C"]);
+var CHECKOUT_KNOWN_OPTS_NO_VALUE = new Set([
+  "-q",
+  "--quiet",
+  "--no-quiet",
+  "-f",
+  "--force",
+  "--no-force",
+  "-d",
+  "--detach",
+  "--no-detach",
+  "-m",
+  "--merge",
+  "--no-merge",
+  "-p",
+  "--patch",
+  "--no-patch",
+  "--guess",
+  "--no-guess",
+  "--overlay",
+  "--no-overlay",
+  "--ours",
+  "--theirs",
+  "--ignore-skip-worktree-bits",
+  "--no-ignore-skip-worktree-bits",
+  "--no-track",
+  "--overwrite-ignore",
+  "--no-overwrite-ignore",
+  "--ignore-other-worktrees",
+  "--no-ignore-other-worktrees",
+  "--progress",
+  "--no-progress",
+  "--pathspec-file-nul",
+  "--no-pathspec-file-nul",
+  "--no-recurse-submodules"
+]);
+function analyzeGitRule(tokens) {
+  const { subcommand, rest } = extractGitSubcommandAndRest(tokens);
+  if (!subcommand) {
+    return null;
+  }
+  switch (subcommand.toLowerCase()) {
+    case "checkout":
+      return localDiscard(analyzeGitCheckout(rest));
+    case "switch":
+      return localDiscard(analyzeGitSwitch(rest));
+    case "restore":
+      return localDiscard(analyzeGitRestore(rest));
+    case "reset":
+      return analyzeGitReset(rest);
+    case "clean":
+      return localDiscard(analyzeGitClean(rest));
+    case "push":
+      return sharedState(analyzeGitPush(rest));
+    case "branch":
+      return sharedState(analyzeGitBranch(rest));
+    case "stash":
+      return sharedState(analyzeGitStash(rest));
+    case "worktree":
+      return sharedState(analyzeGitWorktree(rest));
+    default:
+      return null;
+  }
+}
+function localDiscard(reason) {
+  return reason ? { reason, localDiscard: true } : null;
+}
+function sharedState(reason) {
+  return reason ? { reason, localDiscard: false } : null;
 }
 function analyzeGitCheckout(tokens) {
   const { index: doubleDashIdx, before: beforeDash } = splitAtDoubleDash(tokens);
@@ -3279,291 +4950,81 @@ function analyzeGitClean(tokens) {
   }
   return null;
 }
+function analyzeGitPush(tokens) {
+  let hasForceWithLease = false;
+  const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
+  const hasForce = tokens.includes("--force") || shortOpts.has("-f");
+  for (const token of tokens) {
+    if (token === "--force-with-lease" || token.startsWith("--force-with-lease=")) {
+      hasForceWithLease = true;
+    }
+  }
+  if (hasForce && !hasForceWithLease) {
+    return REASON_PUSH_FORCE;
+  }
+  return null;
+}
+function analyzeGitBranch(tokens) {
+  const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
+  if (shortOpts.has("-D")) {
+    return REASON_BRANCH_DELETE;
+  }
+  return null;
+}
+function analyzeGitStash(tokens) {
+  for (const token of tokens) {
+    if (token === "drop") {
+      return REASON_STASH_DROP;
+    }
+    if (token === "clear") {
+      return REASON_STASH_CLEAR;
+    }
+  }
+  return null;
+}
+function analyzeGitWorktree(tokens) {
+  const hasRemove = tokens.includes("remove");
+  if (!hasRemove)
+    return null;
+  const { before } = splitAtDoubleDash(tokens);
+  for (const token of before) {
+    if (token === "--force" || token === "-f") {
+      return REASON_WORKTREE_REMOVE_FORCE;
+    }
+  }
+  return null;
+}
+
+// src/core/git/worktree-relaxation.ts
+function getGitWorktreeRelaxationForMatch(tokens, match, options) {
+  if (!match.localDiscard || !options.worktreeMode || hasGitContextEnvOverride(options.envAssignments)) {
+    return null;
+  }
+  const context = getGitExecutionContext(tokens, options.cwd);
+  if (!context.gitCwd || context.hasExplicitGitContext) {
+    return null;
+  }
+  if (!isLinkedWorktree(context.gitCwd)) {
+    return null;
+  }
+  if (isNonRelaxableLocalDiscard(tokens, options, context.gitCwd)) {
+    return null;
+  }
+  return {
+    originalReason: match.reason,
+    gitCwd: context.gitCwd
+  };
+}
 function isNonRelaxableLocalDiscard(tokens, options, gitCwd) {
   const { subcommand, rest } = extractGitSubcommandAndRest(tokens);
   const normalizedSubcommand = subcommand?.toLowerCase();
-  if (hasDynamicGitArgument(rest) || hasRecursiveSubmoduleConfig(tokens, options, gitCwd) || hasRecurseSubmodulesOption(rest) || isForcedBranchReset(normalizedSubcommand, rest)) {
+  if (hasDynamicGitArgument(rest) || hasRecursiveSubmoduleConfig(tokens, options.envAssignments, gitCwd) || hasRecurseSubmodulesOption(rest) || isForcedBranchReset(normalizedSubcommand, rest)) {
     return true;
   }
   return normalizedSubcommand === "clean" && countCleanForceFlags(rest) > 1;
 }
 function hasDynamicGitArgument(tokens) {
   return tokens.some((token) => /[$*?[]/.test(token));
-}
-function hasRecursiveSubmoduleConfig(tokens, options, gitCwd) {
-  const commandLineConfig = commandLineRecursiveSubmoduleConfig(tokens, options.envAssignments);
-  if (commandLineConfig !== null) {
-    return commandLineConfig;
-  }
-  const envConfig = envRecursiveSubmoduleConfig(options.envAssignments);
-  if (envConfig !== null) {
-    return envConfig;
-  }
-  if (hasConfigAffectingEnvAssignment(options.envAssignments)) {
-    return true;
-  }
-  return effectiveGitConfigEnablesRecursiveSubmodules(gitCwd);
-}
-function commandLineRecursiveSubmoduleConfig(tokens, envAssignments) {
-  let recursiveSubmoduleConfig = null;
-  let i = 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token || token === "--") {
-      return recursiveSubmoduleConfig;
-    }
-    if (!token.startsWith("-")) {
-      return recursiveSubmoduleConfig;
-    }
-    if (token === "-c") {
-      const configValue = recursiveSubmoduleConfigValue(tokens[i + 1]);
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i += 2;
-      continue;
-    }
-    if (token.startsWith("-c") && token.length > 2) {
-      const configValue = recursiveSubmoduleConfigValue(token.slice(2));
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i++;
-      continue;
-    }
-    if (token === "--config-env") {
-      const configValue = recursiveSubmoduleConfigEnvValue(tokens[i + 1], envAssignments);
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i += 2;
-      continue;
-    }
-    if (token.startsWith("--config-env=")) {
-      const configValue = recursiveSubmoduleConfigEnvValue(token.slice("--config-env=".length), envAssignments);
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i++;
-      continue;
-    }
-    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
-      i += 2;
-    } else {
-      i++;
-    }
-  }
-  return recursiveSubmoduleConfig;
-}
-function envRecursiveSubmoduleConfig(envAssignments) {
-  if (getEnvConfigValue("GIT_CONFIG_PARAMETERS", envAssignments) !== undefined) {
-    return true;
-  }
-  const countValue = getEnvConfigValue("GIT_CONFIG_COUNT", envAssignments);
-  if (countValue === undefined) {
-    return null;
-  }
-  const count = Number.parseInt(countValue, 10);
-  if (!Number.isInteger(count) || count < 0) {
-    return true;
-  }
-  let recursiveSubmoduleConfig = null;
-  for (let i = 0;i < count; i++) {
-    const key = getEnvConfigValue(`GIT_CONFIG_KEY_${i}`, envAssignments);
-    if (key?.toLowerCase() !== "submodule.recurse") {
-      continue;
-    }
-    const value = getEnvConfigValue(`GIT_CONFIG_VALUE_${i}`, envAssignments);
-    recursiveSubmoduleConfig = value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
-  }
-  return recursiveSubmoduleConfig;
-}
-function hasConfigAffectingEnvAssignment(envAssignments) {
-  if (!envAssignments) {
-    return false;
-  }
-  for (const key of envAssignments.keys()) {
-    if (GIT_CONFIG_AFFECTING_ENV_NAMES.has(key)) {
-      return true;
-    }
-  }
-  return false;
-}
-function getEnvConfigValue(name, envAssignments) {
-  return envAssignments?.get(name) ?? process.env[name];
-}
-function effectiveGitConfigEnablesRecursiveSubmodules(cwd, gitBinary = getTrustedGitBinary()) {
-  const localConfigResult = localGitConfigEnablesRecursiveSubmodules(cwd);
-  if (localConfigResult === null || localConfigResult) {
-    return true;
-  }
-  if (gitBinary === null) {
-    return true;
-  }
-  try {
-    const value = execFileSync(gitBinary, ["config", "--get", "submodule.recurse"], {
-      cwd,
-      encoding: "utf8",
-      env: withoutGitConfigEnv(process.env),
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    return gitConfigValueEnablesRecursiveSubmodules(value);
-  } catch (error) {
-    return !isGitConfigUnsetError(error);
-  }
-}
-function localGitConfigEnablesRecursiveSubmodules(cwd) {
-  const configPaths = getLocalGitConfigPaths(cwd);
-  if (configPaths === null) {
-    return null;
-  }
-  for (const configPath of configPaths) {
-    if (!existsSync5(configPath)) {
-      continue;
-    }
-    const result = gitConfigFileEnablesRecursiveSubmodules(configPath);
-    if (result) {
-      return true;
-    }
-  }
-  return false;
-}
-function getTrustedGitBinary() {
-  for (const gitBinary of TRUSTED_GIT_BINARIES) {
-    if (existsSync5(gitBinary)) {
-      return gitBinary;
-    }
-  }
-  return null;
-}
-function withoutGitConfigEnv(env) {
-  const nextEnv = { ...env };
-  for (const key of Object.keys(nextEnv)) {
-    if (key === "GIT_CONFIG_COUNT" || key === "GIT_CONFIG_PARAMETERS" || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)) {
-      delete nextEnv[key];
-    }
-  }
-  return nextEnv;
-}
-function isGitConfigUnsetError(error) {
-  return typeof error === "object" && error !== null && "status" in error && error.status === 1;
-}
-function getLocalGitConfigPaths(cwd) {
-  const dotGitPath = findDotGitInAncestors(cwd);
-  if (dotGitPath === null) {
-    return null;
-  }
-  const gitDir = resolveGitDirFromDotGit(dotGitPath);
-  if (gitDir === null) {
-    return null;
-  }
-  const commonDir = resolveCommonGitDir(gitDir);
-  if (commonDir === null) {
-    return null;
-  }
-  return [join4(commonDir, "config"), join4(gitDir, "config.worktree")];
-}
-function resolveGitDirFromDotGit(dotGitPath) {
-  try {
-    const content = readFileSync5(dotGitPath, "utf-8");
-    const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
-    if (!firstLine.startsWith("gitdir:")) {
-      return dotGitPath;
-    }
-    const rawGitDir = firstLine.slice("gitdir:".length).trim();
-    if (rawGitDir === "") {
-      return null;
-    }
-    return isAbsolute4(rawGitDir) ? rawGitDir : resolve3(dirname3(dotGitPath), rawGitDir);
-  } catch {
-    return null;
-  }
-}
-function resolveCommonGitDir(gitDir) {
-  const commonDirPath = join4(gitDir, "commondir");
-  if (!existsSync5(commonDirPath)) {
-    return gitDir;
-  }
-  try {
-    const rawCommonDir = readFileSync5(commonDirPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
-    if (rawCommonDir === "") {
-      return null;
-    }
-    return isAbsolute4(rawCommonDir) ? rawCommonDir : resolve3(gitDir, rawCommonDir);
-  } catch {
-    return null;
-  }
-}
-function gitConfigFileEnablesRecursiveSubmodules(configPath) {
-  let content;
-  try {
-    content = readFileSync5(configPath, "utf-8");
-  } catch {
-    return true;
-  }
-  let section = "";
-  let recursiveSubmoduleConfig = false;
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
-      continue;
-    }
-    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
-    if (sectionMatch) {
-      section = sectionMatch[1]?.trim().toLowerCase() ?? "";
-      continue;
-    }
-    const eqIdx = trimmed.indexOf("=");
-    const key = (eqIdx === -1 ? trimmed : trimmed.slice(0, eqIdx)).trim().toLowerCase();
-    const value = eqIdx === -1 ? "true" : trimmed.slice(eqIdx + 1).trim();
-    if (isIncludeConfigSection(section) && key === "path") {
-      return true;
-    }
-    if (section === "submodule" && key === "recurse") {
-      recursiveSubmoduleConfig = gitConfigValueEnablesRecursiveSubmodules(value);
-    }
-  }
-  return recursiveSubmoduleConfig;
-}
-function isIncludeConfigSection(section) {
-  return section === "include" || section.startsWith("includeif ");
-}
-function recursiveSubmoduleConfigValue(config) {
-  if (!config) {
-    return null;
-  }
-  const eqIdx = config.indexOf("=");
-  const key = (eqIdx === -1 ? config : config.slice(0, eqIdx)).toLowerCase();
-  if (isIncludeConfigKey(key)) {
-    return true;
-  }
-  if (key !== "submodule.recurse") {
-    return null;
-  }
-  const value = eqIdx === -1 ? "true" : config.slice(eqIdx + 1).toLowerCase();
-  return gitConfigValueEnablesRecursiveSubmodules(value);
-}
-function gitConfigValueEnablesRecursiveSubmodules(value) {
-  const normalizedValue = value.toLowerCase();
-  return normalizedValue !== "false" && normalizedValue !== "no" && normalizedValue !== "off" && normalizedValue !== "0";
-}
-function recursiveSubmoduleConfigEnvValue(configEnv, envAssignments) {
-  const eqIdx = configEnv?.indexOf("=") ?? -1;
-  if (!configEnv || eqIdx === -1) {
-    return null;
-  }
-  const key = configEnv.slice(0, eqIdx).toLowerCase();
-  if (isIncludeConfigKey(key)) {
-    return true;
-  }
-  if (key !== "submodule.recurse") {
-    return null;
-  }
-  const value = getEnvConfigValue(configEnv.slice(eqIdx + 1), envAssignments);
-  return value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
-}
-function isIncludeConfigKey(key) {
-  return key === "include.path" || key.startsWith("includeif.") && key.endsWith(".path");
 }
 function isForcedBranchReset(subcommand, rest) {
   if (subcommand === "checkout") {
@@ -3610,55 +5071,30 @@ function countCleanForceFlags(tokens) {
   }
   return count;
 }
-function analyzeGitPush(tokens) {
-  let hasForceWithLease = false;
-  const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
-  const hasForce = tokens.includes("--force") || shortOpts.has("-f");
-  for (const token of tokens) {
-    if (token === "--force-with-lease" || token.startsWith("--force-with-lease=")) {
-      hasForceWithLease = true;
-    }
-  }
-  if (hasForce && !hasForceWithLease) {
-    return REASON_PUSH_FORCE;
-  }
-  return null;
-}
-function analyzeGitBranch(tokens) {
-  const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
-  if (shortOpts.has("-D")) {
-    return REASON_BRANCH_DELETE;
-  }
-  return null;
-}
-function analyzeGitStash(tokens) {
-  for (const token of tokens) {
-    if (token === "drop") {
-      return REASON_STASH_DROP;
-    }
-    if (token === "clear") {
-      return REASON_STASH_CLEAR;
-    }
-  }
-  return null;
-}
-function analyzeGitWorktree(tokens) {
-  const hasRemove = tokens.includes("remove");
-  if (!hasRemove)
+
+// src/core/git/index.ts
+function analyzeGit(tokens, options = {}) {
+  const match = analyzeGitRule(tokens);
+  if (!match) {
     return null;
-  const { before } = splitAtDoubleDash(tokens);
-  for (const token of before) {
-    if (token === "--force" || token === "-f") {
-      return REASON_WORKTREE_REMOVE_FORCE;
-    }
   }
-  return null;
+  if (getGitWorktreeRelaxationForMatch(tokens, match, options)) {
+    return null;
+  }
+  return match.reason;
+}
+function getGitWorktreeRelaxation(tokens, options = {}) {
+  const match = analyzeGitRule(tokens);
+  if (!match) {
+    return null;
+  }
+  return getGitWorktreeRelaxationForMatch(tokens, match, options);
 }
 
 // src/core/rules-rm.ts
 import { realpathSync as realpathSync4 } from "node:fs";
-import { homedir as homedir3, tmpdir } from "node:os";
-import { normalize, resolve as resolve4, sep as sep2 } from "node:path";
+import { homedir as homedir4, tmpdir } from "node:os";
+import { normalize, resolve as resolve6, sep as sep3 } from "node:path";
 var IS_WINDOWS = process.platform === "win32";
 function normalizePathForComparison2(p) {
   let normalized = normalize(p);
@@ -3763,7 +5199,7 @@ function reasonForClassification(classification, ctx) {
       return REASON_RM_RF;
     case "within_anchored_cwd":
       if (ctx.paranoid) {
-        return `${REASON_RM_RF} (SAFETY_NET_PARANOID_RM enabled)`;
+        return `${REASON_RM_RF} (${ENV_FLAGS.paranoidRm.name} enabled)`;
       }
       return null;
     case "outside_anchored_cwd":
@@ -3802,7 +5238,7 @@ function isTempTarget(path, allowTmpdirVar) {
   const systemTmpdir = tmpdir();
   const normalizedTmpdir = normalizePathForComparison2(systemTmpdir);
   const pathToCompare = normalizePathForComparison2(normalized);
-  if (pathToCompare.startsWith(`${normalizedTmpdir}${sep2}`) || pathToCompare === normalizedTmpdir) {
+  if (pathToCompare.startsWith(`${normalizedTmpdir}${sep3}`) || pathToCompare === normalizedTmpdir) {
     return true;
   }
   if (allowTmpdirVar) {
@@ -3816,7 +5252,7 @@ function isTempTarget(path, allowTmpdirVar) {
   return false;
 }
 function getHomeDirForRmPolicy() {
-  return process.env.HOME ?? homedir3();
+  return process.env.HOME ?? homedir4();
 }
 function isCwdHomeForRmPolicy(cwd, homeDir) {
   try {
@@ -3830,13 +5266,13 @@ function isCwdSelfTarget(target, cwd) {
     return true;
   }
   try {
-    const resolved = resolve4(cwd, target);
+    const resolved = resolve6(cwd, target);
     const realCwd = realpathSync4(cwd);
     const realResolved = realpathSync4(resolved);
     return normalizePathForComparison2(realResolved) === normalizePathForComparison2(realCwd);
   } catch {
     try {
-      const resolved = resolve4(cwd, target);
+      const resolved = resolve6(cwd, target);
       return normalizePathForComparison2(resolved) === normalizePathForComparison2(cwd);
     } catch {
       return false;
@@ -3854,7 +5290,7 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
   if (target.startsWith("/") || /^[A-Za-z]:[\\/]/.test(target)) {
     try {
       const normalizedTarget = normalizePathForComparison2(target);
-      const normalizedCwd = `${normalizePathForComparison2(originalCwd)}${sep2}`;
+      const normalizedCwd = `${normalizePathForComparison2(originalCwd)}${sep3}`;
       return normalizedTarget.startsWith(normalizedCwd);
     } catch {
       return false;
@@ -3862,10 +5298,10 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
   }
   if (target.startsWith("./") || target.startsWith(".\\") || !target.includes("/") && !target.includes("\\")) {
     try {
-      const resolved = resolve4(resolveCwd, target);
+      const resolved = resolve6(resolveCwd, target);
       const normalizedResolved = normalizePathForComparison2(resolved);
       const normalizedOriginalCwd = normalizePathForComparison2(originalCwd);
-      return normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep2}`) || normalizedResolved === normalizedOriginalCwd;
+      return normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep3}`) || normalizedResolved === normalizedOriginalCwd;
     } catch {
       return false;
     }
@@ -3874,10 +5310,10 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
     return false;
   }
   try {
-    const resolved = resolve4(resolveCwd, target);
+    const resolved = resolve6(resolveCwd, target);
     const normalizedResolved = normalizePathForComparison2(resolved);
     const normalizedCwd = normalizePathForComparison2(originalCwd);
-    return normalizedResolved.startsWith(`${normalizedCwd}${sep2}`) || normalizedResolved === normalizedCwd;
+    return normalizedResolved.startsWith(`${normalizedCwd}${sep3}`) || normalizedResolved === normalizedCwd;
   } catch {
     return false;
   }
@@ -3949,32 +5385,10 @@ function analyzeParallel(tokens, context) {
   }
   if (childCommand.head === "rm" && hasRecursiveForceFlags(childTokens)) {
     if (hasPlaceholder && args.length > 0) {
-      for (const arg of args) {
-        const expandedTokens = childTokens.map((t) => t.replace(/{}/g, arg));
-        const rmResult = analyzeRm(expandedTokens, {
-          cwd: childCommand.cwd,
-          originalCwd: context.originalCwd,
-          paranoid: context.paranoidRm,
-          allowTmpdirVar: context.allowTmpdirVar
-        });
-        if (rmResult) {
-          return rmResult;
-        }
-      }
-      return null;
+      return analyzeParallelRmExpansions(args.map((arg) => childTokens.map((t) => t.replace(/{}/g, arg))), childCommand.cwd, context);
     }
     if (args.length > 0) {
-      const expandedTokens = [...childTokens, args[0] ?? ""];
-      const rmResult = analyzeRm(expandedTokens, {
-        cwd: childCommand.cwd,
-        originalCwd: context.originalCwd,
-        paranoid: context.paranoidRm,
-        allowTmpdirVar: context.allowTmpdirVar
-      });
-      if (rmResult) {
-        return rmResult;
-      }
-      return null;
+      return analyzeParallelRmExpansions(args.map((arg) => [...childTokens, arg]), childCommand.cwd, context);
     }
     return REASON_PARALLEL_RM;
   }
@@ -3996,6 +5410,20 @@ function analyzeParallel(tokens, context) {
       if (gitResult) {
         return gitResult;
       }
+    }
+  }
+  return null;
+}
+function analyzeParallelRmExpansions(tokenSets, cwd, context) {
+  for (const tokens of tokenSets) {
+    const rmResult = analyzeRm(tokens, {
+      cwd,
+      originalCwd: context.originalCwd,
+      paranoid: context.paranoidRm,
+      allowTmpdirVar: context.allowTmpdirVar
+    });
+    if (rmResult) {
+      return rmResult;
     }
   }
   return null;
@@ -4129,7 +5557,7 @@ function parseParallelCommand(tokens) {
 
 // src/core/analyze/tmpdir.ts
 import { tmpdir as tmpdir2 } from "node:os";
-import { normalize as normalize2, sep as sep3 } from "node:path";
+import { normalize as normalize2, sep as sep4 } from "node:path";
 function isTmpdirOverriddenToNonTemp(envAssignments) {
   if (!envAssignments.has("TMPDIR")) {
     return false;
@@ -4149,7 +5577,7 @@ function isPathOrSubpath(path, basePath) {
   if (path === basePath) {
     return true;
   }
-  const baseWithSlash = basePath.endsWith(sep3) ? basePath : `${basePath}${sep3}`;
+  const baseWithSlash = basePath.endsWith(sep4) ? basePath : `${basePath}${sep4}`;
   return path.startsWith(baseWithSlash);
 }
 
@@ -4269,89 +5697,16 @@ function extractXargsChildCommandWithInfo(tokens) {
   return { childTokens: [], replacementToken };
 }
 
-// src/core/rules-custom.ts
-function checkCustomRules(tokens, rules) {
-  if (tokens.length === 0 || rules.length === 0) {
-    return null;
-  }
-  const command = getBasename(tokens[0] ?? "");
-  const subcommand = extractSubcommand(tokens);
-  const shortOpts = extractShortOpts(tokens);
-  for (const rule of rules) {
-    if (!matchesCommand(command, rule.command)) {
-      continue;
-    }
-    if (rule.subcommand && subcommand !== rule.subcommand) {
-      continue;
-    }
-    if (matchesBlockArgs(tokens, rule.block_args, shortOpts)) {
-      return `[${rule.name}] ${rule.reason}`;
-    }
-  }
-  return null;
-}
-function matchesCommand(command, ruleCommand) {
-  return command === ruleCommand;
-}
-var OPTIONS_WITH_VALUES = new Set([
-  "-c",
-  "-C",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "--config-env"
-]);
-function extractSubcommand(tokens) {
-  let skipNext = false;
-  for (let i = 1;i < tokens.length; i++) {
-    const token = tokens[i];
-    if (!token)
-      continue;
-    if (skipNext) {
-      skipNext = false;
-      continue;
-    }
-    if (token === "--") {
-      const nextToken = tokens[i + 1];
-      if (nextToken && !nextToken.startsWith("-")) {
-        return nextToken;
-      }
-      return null;
-    }
-    if (OPTIONS_WITH_VALUES.has(token)) {
-      skipNext = true;
-      continue;
-    }
-    if (token.startsWith("-")) {
-      for (const opt of OPTIONS_WITH_VALUES) {
-        if (token.startsWith(`${opt}=`)) {
-          break;
-        }
-      }
-      continue;
-    }
-    return token;
-  }
-  return null;
-}
-function matchesBlockArgs(tokens, blockArgs, shortOpts) {
-  const blockArgsSet = new Set(blockArgs);
-  for (const token of tokens) {
-    if (blockArgsSet.has(token)) {
-      return true;
-    }
-  }
-  for (const opt of shortOpts) {
-    if (blockArgsSet.has(opt)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // src/core/analyze/segment.ts
 var REASON_INTERPRETER_DANGEROUS = "Detected potentially dangerous command in interpreter code.";
 var REASON_INTERPRETER_BLOCKED = "Interpreter one-liners are blocked in paranoid mode.";
+var COMMAND_ANALYZERS = new Map([
+  ["git", analyzeGitCommand],
+  ["rm", analyzeRmCommand],
+  ["find", analyzeFindCommand],
+  ["xargs", analyzeXargsCommand],
+  ["parallel", analyzeParallelCommand]
+]);
 function deriveCwdContext(options) {
   const cwdUnknown = options.effectiveCwd === null;
   const cwdForRm = cwdUnknown ? undefined : options.effectiveCwd ?? options.cwd;
@@ -4382,6 +5737,9 @@ function analyzeSegment(tokens, depth, options) {
   const head = stripped[0];
   if (!head) {
     return null;
+  }
+  if (options.config.failClosedReason) {
+    return options.config.failClosedReason;
   }
   const normalizedHead = normalizeCommandToken(head);
   const basename = getBasename(head);
@@ -4422,107 +5780,36 @@ function analyzeSegment(tokens, depth, options) {
       envAssignments
     });
   }
-  const isGit = basename.toLowerCase() === "git";
-  const isRm = basename === "rm";
-  const isFind = basename === "find";
-  const isXargs = basename === "xargs";
-  const isParallel = basename === "parallel";
-  if (isGit) {
-    const gitResult = analyzeGit(stripped, {
-      cwd: cwdForRm,
-      envAssignments,
-      worktreeMode: options.worktreeMode
-    });
-    if (gitResult) {
-      return gitResult;
-    }
+  const commandContext = {
+    tokens: stripped,
+    head,
+    normalizedHead,
+    basename,
+    cwdForRm,
+    originalCwd,
+    envAssignments,
+    allowTmpdirVar,
+    options
+  };
+  const commandAnalyzer = getCommandAnalyzer(commandContext);
+  const commandResult = commandAnalyzer?.(commandContext);
+  if (commandResult) {
+    return commandResult;
   }
-  if (isRm) {
-    const rmResult = analyzeRm(stripped, {
-      cwd: cwdForRm,
-      originalCwd,
-      paranoid: options.paranoidRm,
-      allowTmpdirVar
-    });
-    if (rmResult) {
-      return rmResult;
-    }
-  }
-  if (isFind) {
-    const findResult = analyzeFind(stripped);
-    if (findResult) {
-      return findResult;
-    }
-  }
-  if (isXargs) {
-    const xargsResult = analyzeXargs(stripped, {
-      cwd: cwdForRm,
-      originalCwd,
-      paranoidRm: options.paranoidRm,
-      allowTmpdirVar,
-      envAssignments,
-      worktreeMode: options.worktreeMode
-    });
-    if (xargsResult) {
-      return xargsResult;
-    }
-  }
-  if (isParallel) {
-    const parallelResult = analyzeParallel(stripped, {
-      cwd: cwdForRm,
-      originalCwd,
-      paranoidRm: options.paranoidRm,
-      allowTmpdirVar,
-      envAssignments,
-      worktreeMode: options.worktreeMode,
-      analyzeNested: options.analyzeNested
-    });
-    if (parallelResult) {
-      return parallelResult;
-    }
-  }
-  const matchedKnown = isGit || isRm || isFind || isXargs || isParallel;
+  const matchedKnown = commandAnalyzer !== undefined;
   if (!matchedKnown) {
     if (!DISPLAY_COMMANDS.has(normalizedHead)) {
       for (let i = 1;i < stripped.length; i++) {
         const token = stripped[i];
         if (!token)
           continue;
-        const cmd = normalizeCommandToken(token);
-        if (cmd === "rm") {
-          const rmTokens = ["rm", ...stripped.slice(i + 1)];
-          const reason = analyzeRm(rmTokens, {
-            cwd: cwdForRm,
-            originalCwd,
-            paranoid: options.paranoidRm,
-            allowTmpdirVar
-          });
-          if (reason) {
-            return reason;
-          }
-        }
-        if (cmd === "git") {
-          const gitTokens = ["git", ...stripped.slice(i + 1)];
-          const reason = analyzeGit(gitTokens, {
-            cwd: cwdForRm,
-            envAssignments,
-            worktreeMode: false
-          });
-          if (reason) {
-            return reason;
-          }
-        }
-        if (cmd === "find") {
-          const findTokens = ["find", ...stripped.slice(i + 1)];
-          const reason = analyzeFind(findTokens);
-          if (reason) {
-            return reason;
-          }
-        }
+        const reason = analyzeEmbeddedCommand(commandContext, i);
+        if (reason)
+          return reason;
       }
     }
   }
-  const customRulesTopLevelOnly = isGit || isRm || isFind || isXargs || isParallel;
+  const customRulesTopLevelOnly = matchedKnown;
   if (depth === 0 || !customRulesTopLevelOnly) {
     const customResult = checkCustomRules(stripped, options.config.rules);
     if (customResult) {
@@ -4530,6 +5817,71 @@ function analyzeSegment(tokens, depth, options) {
     }
   }
   return null;
+}
+function getCommandAnalyzer(context) {
+  if (context.basename.toLowerCase() === "git") {
+    return COMMAND_ANALYZERS.get("git");
+  }
+  return COMMAND_ANALYZERS.get(context.basename);
+}
+function analyzeEmbeddedCommand(context, index) {
+  const token = context.tokens[index];
+  if (!token) {
+    return null;
+  }
+  const cmd = normalizeCommandToken(token);
+  const analyzer = COMMAND_ANALYZERS.get(cmd);
+  if (!analyzer || cmd === "xargs" || cmd === "parallel") {
+    return null;
+  }
+  const embeddedContext = {
+    ...context,
+    tokens: [cmd, ...context.tokens.slice(index + 1)],
+    head: cmd,
+    normalizedHead: cmd,
+    basename: cmd,
+    options: cmd === "git" ? { ...context.options, worktreeMode: false } : context.options
+  };
+  return analyzer(embeddedContext);
+}
+function analyzeGitCommand(context) {
+  return analyzeGit(context.tokens, {
+    cwd: context.cwdForRm,
+    envAssignments: context.envAssignments,
+    worktreeMode: context.options.worktreeMode
+  });
+}
+function analyzeRmCommand(context) {
+  return analyzeRm(context.tokens, {
+    cwd: context.cwdForRm,
+    originalCwd: context.originalCwd,
+    paranoid: context.options.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar
+  });
+}
+function analyzeFindCommand(context) {
+  return analyzeFind(context.tokens);
+}
+function analyzeXargsCommand(context) {
+  return analyzeXargs(context.tokens, {
+    cwd: context.cwdForRm,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.options.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: context.envAssignments,
+    worktreeMode: context.options.worktreeMode
+  });
+}
+function analyzeParallelCommand(context) {
+  return analyzeParallel(context.tokens, {
+    cwd: context.cwdForRm,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.options.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: context.envAssignments,
+    worktreeMode: context.options.worktreeMode,
+    analyzeNested: context.options.analyzeNested
+  });
 }
 var CWD_CHANGE_REGEX = /^\s*(?:\$\(\s*)?[({]*\s*(?:command\s+|builtin\s+)?(?:cd|pushd|popd)(?:\s|$)/;
 function segmentChangesCwd(segment) {
@@ -4563,21 +5915,21 @@ function stripLeadingGrouping(tokens) {
 
 // src/core/analyze/analyze-command.ts
 var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Verify manually.";
+var DYNAMIC_SUBSTITUTION_TOKEN = "$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__";
 var REASON_RECURSION_LIMIT = "Command exceeds maximum recursion depth and cannot be safely analyzed.";
-var GIT_CONTEXT_ENV_OVERRIDE_NAMES2 = new Set(GIT_CONTEXT_ENV_OVERRIDES);
-var GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
 function analyzeCommandInternal(command, depth, options) {
   if (depth >= MAX_RECURSION_DEPTH) {
     return { reason: REASON_RECURSION_LIMIT, segment: command };
   }
-  const segments = splitShellCommands(command);
-  if (options.strict && segments.length === 1 && segments[0]?.length === 1 && segments[0][0] === command && command.includes(" ")) {
+  const segments = splitShellCommandsWithInfo(command);
+  if (options.strict && segments.length === 1 && segments[0]?.tokens.length === 1 && segments[0].tokens[0] === command && command.includes(" ")) {
     return { reason: REASON_STRICT_UNPARSEABLE, segment: command };
   }
   const originalCwd = options.cwd;
   let effectiveCwd = options.effectiveCwd !== undefined ? options.effectiveCwd : options.cwd;
   const shellGitContextState = createShellGitContextEnvState(options.envAssignments);
-  for (const segment of segments) {
+  for (const segmentInfo of segments) {
+    const segment = segmentInfo.hasDynamicSubstitution ? appendDynamicSubstitutionSentinelForGit(segmentInfo.tokens) : segmentInfo.tokens;
     const segmentStr = segment.join(" ");
     const segmentEnvAssignments = getSegmentGitContextEnvAssignments(segment, shellGitContextState);
     if (segment.length === 1 && segment[0]?.includes(" ")) {
@@ -4614,6 +5966,12 @@ function analyzeCommandInternal(command, depth, options) {
     applyShellGitContextEnvSegment(segment, shellGitContextState);
   }
   return null;
+}
+function appendDynamicSubstitutionSentinelForGit(tokens) {
+  if (!tokens.some((token) => getBasename(token).toLowerCase() === "git")) {
+    return tokens;
+  }
+  return [...tokens, DYNAMIC_SUBSTITUTION_TOKEN];
 }
 function createShellGitContextEnvState(effectiveEnvAssignments) {
   return {
@@ -4697,7 +6055,7 @@ function getShellCommandInfo(tokens) {
     if (!assignment) {
       break;
     }
-    if (isTrackedGitEnvName2(assignment.name)) {
+    if (isTrackedGitEnvName(assignment.name)) {
       leadingAssignments.set(assignment.name, assignment);
     }
     i++;
@@ -4751,39 +6109,24 @@ function getCommandBuiltinTarget(tokens, commandIndex) {
   return command ? { command, commandIndex: i } : null;
 }
 function parseShellAssignment(token) {
-  return parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment2(token);
+  return parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment(token);
 }
 function parseGitContextEnvAssignment(token) {
-  const assignment = parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment2(token);
-  if (!assignment || !isTrackedGitEnvName2(assignment.name)) {
+  const assignment = parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment(token);
+  if (!assignment || !isTrackedGitEnvName(assignment.name)) {
     return null;
   }
   return assignment;
 }
-function parseGitContextAppendEnvAssignment2(token) {
-  const match = token.match(GIT_CONTEXT_APPEND_ASSIGNMENT_RE);
-  const name = match?.[1];
-  if (!name || !isTrackedGitEnvName2(name)) {
-    return null;
-  }
-  const eqIdx = token.indexOf("=");
-  return { name, value: token.slice(eqIdx + 1) };
-}
-function isTrackedGitEnvName2(name) {
-  return GIT_CONTEXT_ENV_OVERRIDE_NAMES2.has(name) || GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) || isGitConfigEnvName2(name);
-}
-function isGitConfigEnvName2(name) {
-  return name === "GIT_CONFIG_COUNT" || name === "GIT_CONFIG_PARAMETERS" || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name);
-}
 function getInitiallyExportedGitContextNames(effectiveEnvAssignments) {
   const exportedNames = new Set;
   for (const name of Object.keys(process.env)) {
-    if (isTrackedGitEnvName2(name)) {
+    if (isTrackedGitEnvName(name)) {
       exportedNames.add(name);
     }
   }
   for (const name of effectiveEnvAssignments?.keys() ?? []) {
-    if (isTrackedGitEnvName2(name)) {
+    if (isTrackedGitEnvName(name)) {
       exportedNames.add(name);
     }
   }
@@ -4808,7 +6151,7 @@ function addExportedGitContextEnvAssignment(state, token) {
     setEffectiveGitContextAssignment(state, assignment);
     return;
   }
-  if (isTrackedGitEnvName2(token)) {
+  if (isTrackedGitEnvName(token)) {
     exportTrackedGitContextEnvName(state, token);
   }
 }
@@ -4830,7 +6173,7 @@ function addTypesetGitContextEnvAssignment(state, token, exports, readonlyLeadin
     setEffectiveGitContextAssignment(state, readonlyAssignment);
     return;
   }
-  if (exports && isTrackedGitEnvName2(token)) {
+  if (exports && isTrackedGitEnvName(token)) {
     exportTrackedGitContextEnvName(state, token);
   }
 }
@@ -4960,7 +6303,7 @@ var SELF_TEST_CASES = [
 ];
 var SELF_TEST_CONFIG = { version: 1, rules: [] };
 function runSelfTest() {
-  const selfTestCwd = join5(tmpdir3(), "cc-safety-net-self-test");
+  const selfTestCwd = join8(tmpdir3(), "cc-safety-net-self-test");
   const results = SELF_TEST_CASES.map((tc) => {
     const result = analyzeCommand(tc.command, {
       cwd: selfTestCwd,
@@ -5118,13 +6461,13 @@ function _escapeRegExp(value) {
 }
 function detectOpenCode(homeDir) {
   const errors = [];
-  const configDir = join5(homeDir, ".config", "opencode");
+  const configDir = join8(homeDir, ".config", "opencode");
   const candidates = ["opencode.json", "opencode.jsonc"];
   for (const filename of candidates) {
-    const configPath = join5(configDir, filename);
-    if (existsSync6(configPath)) {
+    const configPath = join8(configDir, filename);
+    if (existsSync12(configPath)) {
       try {
-        const content = readFileSync6(configPath, "utf-8");
+        const content = readFileSync11(configPath, "utf-8");
         const json = stripJsonComments(content);
         const config = JSON.parse(json);
         const plugins = config.plugin ?? [];
@@ -5204,7 +6547,7 @@ function _parseGeminiEnabledValue(block, scope) {
   return match[1] === "true";
 }
 function _getCodexHome(homeDir) {
-  return process.env.CODEX_HOME || join5(homeDir, ".codex");
+  return process.env.CODEX_HOME || join8(homeDir, ".codex");
 }
 function _parseCodexConfig(content) {
   const result = {};
@@ -5232,7 +6575,7 @@ function _parseCodexConfig(content) {
 }
 function _readCodexConfig(configPath, errors) {
   try {
-    return _parseCodexConfig(readFileSync6(configPath, "utf-8"));
+    return _parseCodexConfig(readFileSync11(configPath, "utf-8"));
   } catch (e) {
     errors.push(`Failed to read ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
     return {};
@@ -5240,9 +6583,9 @@ function _readCodexConfig(configPath, errors) {
 }
 function detectCodex(homeDir) {
   const codexHome = _getCodexHome(homeDir);
-  const pluginCachePath = join5(codexHome, "plugins", "cache", "cc-marketplace", "safety-net");
+  const pluginCachePath = join8(codexHome, "plugins", "cache", "cc-marketplace", "safety-net");
   const errors = [];
-  if (!existsSync6(pluginCachePath)) {
+  if (!existsSync12(pluginCachePath)) {
     return { platform: "codex", status: "n/a", configPath: pluginCachePath };
   }
   try {
@@ -5257,7 +6600,7 @@ function detectCodex(homeDir) {
       errors: [`Failed to read ${pluginCachePath}: ${e instanceof Error ? e.message : String(e)}`]
     };
   }
-  const configPath = join5(codexHome, "config.toml");
+  const configPath = join8(codexHome, "config.toml");
   const config = _readCodexConfig(configPath, errors);
   if (config.safetyNetEnabled !== true) {
     return {
@@ -5292,7 +6635,7 @@ function detectCodex(homeDir) {
 function _isSafetyNetCopilotCommand(command) {
   if (!command?.includes("cc-safety-net"))
     return false;
-  return /(^|\s)(--copilot-cli|-cp)(\s|$)/.test(command);
+  return /(^|\s)hook\s+(?:[^\s]+\s+)*(--copilot-cli|-cp)(\s|$)/.test(command);
 }
 function _parseSemver(version) {
   if (!version)
@@ -5329,7 +6672,7 @@ function _supportsCopilotInlineHooks(version) {
   return comparison >= 0;
 }
 function _getCopilotConfigHome(homeDir) {
-  return process.env.COPILOT_HOME || join5(homeDir, ".copilot");
+  return process.env.COPILOT_HOME || join8(homeDir, ".copilot");
 }
 function _hasSafetyNetCopilotHook(config) {
   const preToolUseHooks = config.hooks?.preToolUse ?? [];
@@ -5341,7 +6684,7 @@ function _hasSafetyNetCopilotHook(config) {
 }
 function _readCopilotConfigFile(configPath, errors) {
   try {
-    return JSON.parse(stripJsonComments(readFileSync6(configPath, "utf-8")));
+    return JSON.parse(stripJsonComments(readFileSync11(configPath, "utf-8")));
   } catch (e) {
     errors?.push(`Failed to parse ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
     return;
@@ -5356,11 +6699,11 @@ function _listJsonFiles(dirPath, errors) {
   }
 }
 function _collectSafetyNetCopilotHookFiles(dirPath, errors) {
-  if (!existsSync6(dirPath))
+  if (!existsSync12(dirPath))
     return [];
   const matches = [];
   for (const filename of _listJsonFiles(dirPath, errors)) {
-    const configPath = join5(dirPath, filename);
+    const configPath = join8(dirPath, filename);
     const config = _readCopilotConfigFile(configPath, errors);
     if (config && _hasSafetyNetCopilotHook(config)) {
       matches.push(configPath);
@@ -5369,7 +6712,7 @@ function _collectSafetyNetCopilotHookFiles(dirPath, errors) {
   return matches;
 }
 function _collectCopilotInlineConfig(configPath, errors) {
-  if (!existsSync6(configPath))
+  if (!existsSync12(configPath))
     return;
   const config = _readCopilotConfigFile(configPath, errors);
   if (!config)
@@ -5399,15 +6742,15 @@ function _resolveCopilotInlineDisableSource(inlineSources) {
 }
 function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   const configHome = _getCopilotConfigHome(homeDir);
-  const repoHookDir = join5(cwd, ".github", "hooks");
-  const userHookDir = join5(configHome, "hooks");
-  const repoConfigDir = join5(cwd, ".github", "copilot");
+  const repoHookDir = join8(cwd, ".github", "hooks");
+  const userHookDir = join8(configHome, "hooks");
+  const repoConfigDir = join8(cwd, ".github", "copilot");
   const inlineSupport = _supportsCopilotInlineHooks(copilotCliVersion);
   const inlineErrors = inlineSupport === true ? errors : undefined;
   const inlineSources = {
-    userConfig: _collectCopilotInlineConfig(join5(configHome, "config.json"), inlineErrors),
-    repoSettings: _collectCopilotInlineConfig(join5(repoConfigDir, "settings.json"), inlineErrors),
-    localSettings: _collectCopilotInlineConfig(join5(repoConfigDir, "settings.local.json"), inlineErrors)
+    userConfig: _collectCopilotInlineConfig(join8(configHome, "config.json"), inlineErrors),
+    repoSettings: _collectCopilotInlineConfig(join8(repoConfigDir, "settings.json"), inlineErrors),
+    localSettings: _collectCopilotInlineConfig(join8(repoConfigDir, "settings.local.json"), inlineErrors)
   };
   if (inlineSupport !== false) {
     const disableSource = _resolveCopilotInlineDisableSource(inlineSources);
@@ -5421,10 +6764,10 @@ function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   const repoHookPaths = _collectSafetyNetCopilotHookFiles(repoHookDir, errors);
   const userHookSupport = _supportsCopilotUserHookFiles(copilotCliVersion);
   const userHookErrors = userHookSupport === true ? errors : undefined;
-  const userHookFiles = existsSync6(userHookDir) ? _listJsonFiles(userHookDir, userHookErrors) : [];
+  const userHookFiles = existsSync12(userHookDir) ? _listJsonFiles(userHookDir, userHookErrors) : [];
   const userHookPaths = [];
   for (const filename of userHookFiles) {
-    const configPath = join5(userHookDir, filename);
+    const configPath = join8(userHookDir, filename);
     const config = _readCopilotConfigFile(configPath, userHookErrors);
     if (config && _hasSafetyNetCopilotHook(config)) {
       userHookPaths.push(configPath);
@@ -5463,7 +6806,7 @@ function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   };
 }
 function detectAllHooks(cwd, options) {
-  const homeDir = options?.homeDir ?? homedir4();
+  const homeDir = options?.homeDir ?? homedir5();
   const detectCopilotCLI = () => {
     const errors = [];
     const hooksCheck = _checkCopilotEnabled(homeDir, cwd, options?.copilotCliVersion, errors);
@@ -5517,7 +6860,7 @@ var defaultVersionFetcher = async (args) => {
   const [cmd, ...rest] = args;
   if (!cmd)
     return null;
-  return new Promise((resolve5) => {
+  return new Promise((resolve7) => {
     try {
       const proc = spawn(cmd, rest, {
         stdio: ["ignore", "pipe", "pipe"]
@@ -5536,7 +6879,7 @@ var defaultVersionFetcher = async (args) => {
           return;
         isSettled = true;
         clearTimeout(timeoutId);
-        resolve5(value);
+        resolve7(value);
       };
       const timeoutId = setTimeout(() => {
         proc.kill();
@@ -5549,7 +6892,7 @@ var defaultVersionFetcher = async (args) => {
         finish(null);
       });
     } catch {
-      resolve5(null);
+      resolve7(null);
     }
   });
 };
@@ -5732,20 +7075,12 @@ function printReport(report) {
 }
 
 // src/bin/explain/config.ts
-import { existsSync as existsSync7 } from "node:fs";
-import { resolve as resolve5 } from "node:path";
-
-// src/core/env.ts
-function envTruthy(name) {
-  const value = process.env[name];
-  return value === "1" || value?.toLowerCase() === "true";
-}
-
-// src/bin/explain/config.ts
+import { existsSync as existsSync13 } from "node:fs";
+import { resolve as resolve7 } from "node:path";
 function getConfigSource(options) {
   const projectPath = getProjectConfigPath(options?.cwd);
   let invalidProjectPath = null;
-  if (existsSync7(projectPath)) {
+  if (existsSync13(projectPath)) {
     const validation = validateConfigFile(projectPath);
     if (validation.errors.length === 0) {
       return { configSource: projectPath, configValid: true };
@@ -5753,7 +7088,7 @@ function getConfigSource(options) {
     invalidProjectPath = projectPath;
   }
   const userPath = options?.userConfigPath ?? getUserConfigPath();
-  if (existsSync7(userPath)) {
+  if (existsSync13(userPath)) {
     const validation = validateConfigFile(userPath);
     return { configSource: userPath, configValid: validation.errors.length === 0 };
   }
@@ -5763,12 +7098,12 @@ function getConfigSource(options) {
   return { configSource: null, configValid: true };
 }
 function buildAnalyzeOptions(explainOptions) {
-  const cwd = resolve5(explainOptions?.cwd ?? process.cwd());
+  const cwd = resolve7(explainOptions?.cwd ?? process.cwd());
   const paranoidAll = envTruthy("SAFETY_NET_PARANOID");
   return {
     cwd,
     effectiveCwd: cwd,
-    config: explainOptions?.config ?? loadConfig(cwd),
+    config: explainOptions?.config ?? loadConfig(cwd, { userConfigDir: explainOptions?.userConfigDir }),
     strict: explainOptions?.strict ?? envTruthy("SAFETY_NET_STRICT"),
     paranoidRm: paranoidAll || envTruthy("SAFETY_NET_PARANOID_RM"),
     paranoidInterpreters: paranoidAll || envTruthy("SAFETY_NET_PARANOID_INTERPRETERS"),
@@ -6015,7 +7350,7 @@ function explainSegment(tokens, depth, options, steps) {
     const reason = analyzeGit(strippedTokens, gitOptions);
     steps.push({
       type: "rule-check",
-      ruleModule: "rules-git.ts",
+      ruleModule: "git",
       ruleFunction: "analyzeGit",
       matched: !!reason || !!relaxation,
       reason: reason ?? relaxation?.originalReason
@@ -6183,7 +7518,6 @@ function explainSegment(tokens, depth, options, steps) {
   }
   return null;
 }
-
 // src/bin/explain/analyze.ts
 function explainCommand2(command, options) {
   const trace = { steps: [], segments: [] };
@@ -6297,8 +7631,33 @@ function explainCommand2(command, options) {
     result: blocked ? "blocked" : "allowed",
     reason: blockReason,
     segment: blockSegment,
+    customRule: getCustomRuleMetadata(blockReason, options, analyzeOpts.cwd ?? process.cwd()),
     configSource,
     configValid
+  };
+}
+function getCustomRuleMetadata(reason, options, cwd) {
+  const id = reason?.match(/^\[([^\]]+)]/)?.[1];
+  if (!id)
+    return;
+  if (options?.config) {
+    return options.config.rules.some((rule) => rule.name === id) ? { id } : undefined;
+  }
+  const policy = loadRulesPolicy({ cwd, userConfigDir: options?.userConfigDir });
+  if (!policy.rules.some((rule) => rule.name === id))
+    return;
+  const rulebook = policy.rulebooks.find((item) => item.rules.includes(id));
+  const override = {
+    ...policy.userConfig?.overrides ?? {},
+    ...policy.projectConfig?.overrides ?? {}
+  }[id];
+  return {
+    id,
+    ...rulebook ? {
+      rulebook: { name: rulebook.name, version: rulebook.version },
+      source: rulebook.spec
+    } : {},
+    ...override && typeof override === "object" ? { override: { type: "reason", reason: override.reason } } : {}
   };
 }
 // src/bin/explain/flags.ts
@@ -6472,7 +7831,7 @@ function formatStepStyleD(step, stepNum, box) {
     case "worktree-relaxation": {
       lines.push("");
       lines.push(`STEP ${stepNum} ${box.h} Worktree relaxation`);
-      lines.push(`  Mode:   SAFETY_NET_WORKTREE`);
+      lines.push(`  Mode:   ${ENV_FLAGS.worktree.name}`);
       lines.push(`  Git cwd: ${step.gitCwd}`);
       lines.push(`  Result: Allowed local discard in linked worktree`);
       return { lines, incrementStep: true };
@@ -6646,6 +8005,18 @@ function formatTraceHuman(result, options) {
   lines.push("RESULT");
   if (result.result === "blocked") {
     lines.push(`  Status: ${colors.red("BLOCKED")}`);
+    if (result.customRule) {
+      lines.push(`  Rule: ${result.customRule.id}`);
+      if (result.customRule.rulebook) {
+        lines.push(`  Rulebook: ${result.customRule.rulebook.name} ${result.customRule.rulebook.version}`);
+      }
+      if (result.customRule.source) {
+        lines.push(`  Source: ${result.customRule.source}`);
+      }
+      if (result.customRule.override) {
+        lines.push(`  Override: reason ${result.customRule.override.reason}`);
+      }
+    }
     if (result.reason) {
       const reasonLines = wrapReason(result.reason, "          ");
       lines.push(`  Reason: ${reasonLines[0]}`);
@@ -6677,6 +8048,9 @@ function formatOptionFlags(option) {
 function getOptionsColumnWidth(options) {
   return Math.max(...options.map((opt) => formatOptionFlags(opt).length));
 }
+function getSubcommandsColumnWidth(subcommands) {
+  return Math.max(...subcommands.map((subcommand) => subcommand.usage.length));
+}
 function formatCommandSummary(cmd, maxUsageWidth) {
   const usage = `${PROGRAM_NAME} ${cmd.usage}`;
   return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 3)}${cmd.description}`;
@@ -6690,6 +8064,14 @@ function printCommandHelp(command) {
   lines.push("USAGE:");
   lines.push(`${INDENT}${PROGRAM_NAME} ${command.usage}`);
   lines.push("");
+  if (command.subcommands && command.subcommands.length > 0) {
+    lines.push("SUBCOMMANDS:");
+    const subcommandWidth = getSubcommandsColumnWidth(command.subcommands);
+    for (const subcommand of command.subcommands) {
+      lines.push(`${INDENT}${subcommand.usage.padEnd(subcommandWidth + 2)}${subcommand.description}`);
+    }
+    lines.push("");
+  }
   if (command.options.length > 0) {
     lines.push("OPTIONS:");
     const optWidth = getOptionsColumnWidth(command.options);
@@ -6730,11 +8112,14 @@ function printHelp() {
   lines.push(`${INDENT}${PROGRAM_NAME} <command> --help   Show help for a specific command`);
   lines.push("");
   lines.push("ENVIRONMENT VARIABLES:");
-  lines.push(`${INDENT}SAFETY_NET_STRICT=1               Fail-closed on unparseable commands`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID=1             Enable all paranoid checks`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID_RM=1          Block non-temp rm -rf within cwd`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID_INTERPRETERS=1  Block interpreter one-liners`);
-  lines.push(`${INDENT}SAFETY_NET_WORKTREE=1             Allow local git discards in linked worktrees`);
+  lines.push(`${INDENT}${ENV_FLAGS.strict.name}=1               Fail-closed on unparseable commands`);
+  lines.push(`${INDENT}${ENV_FLAGS.paranoid.name}=1             Enable all paranoid checks`);
+  lines.push(`${INDENT}${ENV_FLAGS.paranoidRm.name}=1          Block non-temp rm -rf within cwd`);
+  lines.push(`${INDENT}${ENV_FLAGS.paranoidInterpreters.name}=1  Block interpreter one-liners`);
+  lines.push(`${INDENT}${ENV_FLAGS.worktree.name}=1             Allow local git discards in linked worktrees`);
+  lines.push(`${INDENT}${ENV_FLAGS.debug.name}=1              Log allowed hook commands for debugging`);
+  lines.push(`${INDENT}CC_SAFETY_NET_HOME             Override rule config home directory`);
+  lines.push(`${INDENT}Legacy SAFETY_NET_* names remain supported as fallbacks`);
   lines.push("");
   lines.push("CONFIG FILES:");
   lines.push(`${INDENT}~/.cc-safety-net/config.json      User-scope config`);
@@ -6750,14 +8135,17 @@ function showCommandHelp(commandName) {
   if (!command) {
     return false;
   }
+  if (command.hidden || command.name.toLowerCase() !== commandName.toLowerCase()) {
+    return false;
+  }
   printCommandHelp(command);
   return true;
 }
 
 // src/core/audit.ts
-import { appendFileSync, existsSync as existsSync8, mkdirSync } from "node:fs";
-import { homedir as homedir5 } from "node:os";
-import { join as join6 } from "node:path";
+import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync3 } from "node:fs";
+import { homedir as homedir6 } from "node:os";
+import { join as join9 } from "node:path";
 function sanitizeSessionIdForFilename(sessionId) {
   const raw = sessionId.trim();
   if (!raw) {
@@ -6775,15 +8163,16 @@ function writeAuditLog(sessionId, command, segment, reason, cwd, options = {}) {
   if (!safeSessionId) {
     return;
   }
-  const home = options.homeDir ?? homedir5();
-  const logsDir = join6(home, ".cc-safety-net", "logs");
+  const home = options.homeDir ?? homedir6();
+  const logsDir = join9(home, ".cc-safety-net", "logs");
   try {
-    if (!existsSync8(logsDir)) {
-      mkdirSync(logsDir, { recursive: true });
+    if (!existsSync14(logsDir)) {
+      mkdirSync3(logsDir, { recursive: true });
     }
-    const logFile = join6(logsDir, `${safeSessionId}.jsonl`);
+    const logFile = join9(logsDir, `${safeSessionId}.jsonl`);
     const entry = {
       ts: new Date().toISOString(),
+      decision: options.decision ?? "deny",
       command: redactSecrets(command).slice(0, 300),
       segment: redactSecrets(segment).slice(0, 300),
       reason,
@@ -6803,7 +8192,7 @@ function redactSecrets(text) {
   return result;
 }
 
-// src/bin/hooks/common.ts
+// src/bin/hook/common.ts
 async function readHookInput(outputDeny) {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -6819,25 +8208,28 @@ function parseHookJson(inputText, outputDeny, strictReason) {
   try {
     return JSON.parse(inputText);
   } catch {
-    if (envTruthy("SAFETY_NET_STRICT"))
+    if (envTruthy(ENV_FLAGS.strict))
       outputDeny(strictReason);
     return null;
   }
 }
 function analyzeHookCommand(command, cwd) {
-  const paranoidAll = envTruthy("SAFETY_NET_PARANOID");
+  const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
   return analyzeCommand(command, {
     cwd,
     config: loadConfig(cwd),
-    strict: envTruthy("SAFETY_NET_STRICT"),
-    paranoidRm: paranoidAll || envTruthy("SAFETY_NET_PARANOID_RM"),
-    paranoidInterpreters: paranoidAll || envTruthy("SAFETY_NET_PARANOID_INTERPRETERS"),
-    worktreeMode: envTruthy("SAFETY_NET_WORKTREE")
+    strict: envTruthy(ENV_FLAGS.strict),
+    paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
+    paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
+    worktreeMode: envTruthy(ENV_FLAGS.worktree)
   });
 }
 function handleBlockedHookCommand(command, cwd, sessionId, outputDeny) {
   const result = analyzeHookCommand(command, cwd);
   if (!result) {
+    if (sessionId && envTruthy(ENV_FLAGS.debug)) {
+      writeAuditLog(sessionId, command, command, "allowed", cwd, { decision: "allow" });
+    }
     return;
   }
   if (sessionId) {
@@ -6851,7 +8243,7 @@ function formatBlockedMessage(input) {
   const { reason, command, segment } = input;
   const maxLen = input.maxLen ?? 200;
   const redact = input.redact ?? ((t) => t);
-  let message = `BLOCKED by Safety Net
+  let message = `BLOCKED by CC SafetyNet
 
 Reason: ${reason}`;
   if (command) {
@@ -6866,22 +8258,25 @@ Command: ${excerpt(safeCommand, maxLen)}`;
 
 Segment: ${excerpt(safeSegment, maxLen)}`;
   }
-  message += `
+  if (input.manualPermissionAdvice !== false) {
+    message += `
 
 If this operation is truly needed, ask the user for explicit permission and have them run the command manually.`;
+  }
   return message;
 }
 function excerpt(text, maxLen) {
   return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
 }
 
-// src/bin/hooks/claude-code.ts
+// src/bin/hook/claude-code.ts
 function outputDeny(reason, command, segment) {
   const message = formatBlockedMessage({
     reason,
     command,
     segment,
-    redact: redactSecrets
+    redact: redactSecrets,
+    manualPermissionAdvice: reason.includes("rule sync") ? false : undefined
   });
   const output = {
     hookSpecificOutput: {
@@ -6907,7 +8302,7 @@ async function runClaudeCodeHook() {
   handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputDeny);
 }
 
-// src/bin/hooks/copilot-cli.ts
+// src/bin/hook/copilot-cli.ts
 function outputCopilotDeny(reason, command, segment) {
   const message = formatBlockedMessage({
     reason,
@@ -6940,7 +8335,7 @@ async function runCopilotCliHook() {
   handleBlockedHookCommand(command, input.cwd ?? process.cwd(), `copilot-${input.timestamp ?? Date.now()}`, outputCopilotDeny);
 }
 
-// src/bin/hooks/gemini-cli.ts
+// src/bin/hook/gemini-cli.ts
 function outputGeminiDeny(reason, command, segment) {
   const message = formatBlockedMessage({
     reason,
@@ -6973,15 +8368,1064 @@ async function runGeminiCLIHook() {
   handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputGeminiDeny);
 }
 
+// src/bin/hook/install.ts
+import { existsSync as existsSync15, mkdirSync as mkdirSync4, readFileSync as readFileSync12, writeFileSync as writeFileSync3 } from "node:fs";
+import { homedir as homedir7 } from "node:os";
+import { dirname as dirname8, join as join10 } from "node:path";
+var OPENCODE_PLUGIN = "cc-safety-net@latest";
+var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-cli";
+var KIMI_HOOK_BLOCK = `[[hooks]]
+event = "PreToolUse"
+matcher = "Shell"
+command = "${KIMI_HOOK_COMMAND}"`;
+var KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Shell", command = "${KIMI_HOOK_COMMAND}" }`;
+function getHomeDir() {
+  return process.env.HOME ?? homedir7();
+}
+function getOpenCodeConfigDir() {
+  return process.env.OPENCODE_CONFIG_DIR ?? join10(process.env.XDG_CONFIG_HOME ?? join10(getHomeDir(), ".config"), "opencode");
+}
+function getOpenCodeConfigPath() {
+  const configDir = getOpenCodeConfigDir();
+  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join10(configDir, file));
+  return candidates.find((path) => existsSync15(path)) ?? join10(configDir, "opencode.jsonc");
+}
+function getKimiConfigPath() {
+  return join10(process.env.KIMI_SHARE_DIR ?? join10(getHomeDir(), ".kimi"), "config.toml");
+}
+function isWhitespace(char) {
+  return char !== undefined && /\s/.test(char);
+}
+function skipWhitespace(content, index) {
+  let current = index;
+  while (isWhitespace(content[current]))
+    current++;
+  return current;
+}
+function skipWhitespaceAndComments(content, index) {
+  const whitespaceEnd = skipWhitespace(content, index);
+  const commentEnd = skipComment(content, whitespaceEnd);
+  if (commentEnd === whitespaceEnd)
+    return whitespaceEnd;
+  return skipWhitespaceAndComments(content, commentEnd);
+}
+function skipString(content, index) {
+  let current = index + 1;
+  let isEscaped = false;
+  while (current < content.length) {
+    const char = content[current];
+    if (isEscaped) {
+      isEscaped = false;
+      current++;
+      continue;
+    }
+    if (char === "\\") {
+      isEscaped = true;
+      current++;
+      continue;
+    }
+    if (char === '"')
+      return current + 1;
+    current++;
+  }
+  throw new Error("Unterminated string in OpenCode config");
+}
+function skipComment(content, index) {
+  if (content[index] === "/" && content[index + 1] === "/") {
+    const newlineIndex = content.indexOf(`
+`, index + 2);
+    return newlineIndex === -1 ? content.length : newlineIndex;
+  }
+  if (content[index] === "/" && content[index + 1] === "*") {
+    const endIndex = content.indexOf("*/", index + 2);
+    if (endIndex === -1)
+      throw new Error("Unterminated comment in OpenCode config");
+    return endIndex + 2;
+  }
+  return index;
+}
+function findMatchingBracket(content, openIndex) {
+  const open = content[openIndex];
+  const close = open === "[" ? "]" : "}";
+  let depth = 0;
+  let index = openIndex;
+  while (index < content.length) {
+    const nextIndex = skipComment(content, index);
+    if (nextIndex !== index) {
+      index = nextIndex;
+      continue;
+    }
+    if (content[index] === '"') {
+      index = skipString(content, index);
+      continue;
+    }
+    if (content[index] === open)
+      depth++;
+    if (content[index] === close) {
+      depth--;
+      if (depth === 0)
+        return index;
+    }
+    index++;
+  }
+  throw new Error("Unmatched bracket in OpenCode config");
+}
+function findTopLevelPropertyValue(content, propertyName) {
+  const rootStart = skipWhitespaceAndComments(content, 0);
+  if (content[rootStart] !== "{")
+    throw new Error("OpenCode config must be a JSON object");
+  let depth = 0;
+  let index = rootStart;
+  while (index < content.length) {
+    const nextIndex = skipComment(content, index);
+    if (nextIndex !== index) {
+      index = nextIndex;
+      continue;
+    }
+    if (content[index] === '"') {
+      const endIndex = skipString(content, index);
+      const colonIndex = skipWhitespace(content, endIndex);
+      if (depth === 1 && content[colonIndex] === ":" && content.slice(index, endIndex) === JSON.stringify(propertyName)) {
+        return skipWhitespace(content, colonIndex + 1);
+      }
+      index = endIndex;
+      continue;
+    }
+    if (content[index] === "{" || content[index] === "[")
+      depth++;
+    if (content[index] === "}" || content[index] === "]")
+      depth--;
+    index++;
+  }
+  return;
+}
+function findOpenCodePluginArray(content) {
+  const arrayStart = findTopLevelPropertyValue(content, "plugin");
+  if (arrayStart === undefined)
+    return;
+  if (content[arrayStart] !== "[")
+    throw new Error("OpenCode plugin must be an array");
+  return { start: arrayStart, end: findMatchingBracket(content, arrayStart) };
+}
+function getLineIndent(content, index) {
+  const lineStart = content.lastIndexOf(`
+`, index) + 1;
+  const match = /^[ \t]*/.exec(content.slice(lineStart));
+  return match?.[0] ?? "";
+}
+function insertOpenCodePlugin(content, pluginRange, plugins) {
+  const closingIndent = getLineIndent(content, pluginRange.end);
+  const itemIndent = `${closingIndent}  `;
+  if (plugins.length === 0) {
+    return `${content.slice(0, pluginRange.start + 1)}
+${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
+${closingIndent}${content.slice(pluginRange.end)}`;
+  }
+  const beforeClose = content.slice(0, pluginRange.end).trimEnd();
+  return `${beforeClose},
+${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(pluginRange.end)}`;
+}
+function parseOpenCodePluginItems(content, pluginRange) {
+  const items = [];
+  let index = pluginRange.start + 1;
+  while (index < pluginRange.end) {
+    const nextIndex = skipComment(content, index);
+    if (nextIndex !== index) {
+      index = nextIndex;
+      continue;
+    }
+    if (content[index] !== '"') {
+      index++;
+      continue;
+    }
+    const endIndex = skipString(content, index);
+    const value = JSON.parse(content.slice(index, endIndex));
+    items.push({ value, start: index, end: endIndex });
+    index = endIndex;
+  }
+  return items;
+}
+function removeArrayRangeItem(content, item) {
+  let removeStart = item.start;
+  let removeEnd = item.end;
+  let index = item.end;
+  while (isWhitespace(content[index]))
+    index++;
+  if (content[index] === ",") {
+    removeEnd = index + 1;
+    if (content[removeEnd] === `
+`)
+      removeEnd++;
+    return `${content.slice(0, removeStart)}${content.slice(removeEnd)}`;
+  }
+  index = item.start - 1;
+  while (isWhitespace(content[index]))
+    index--;
+  if (content[index] === ",") {
+    removeStart = index;
+    const lineStart = content.lastIndexOf(`
+`, removeStart - 1);
+    if (lineStart !== -1 && /^\s*$/.test(content.slice(lineStart + 1, removeStart))) {
+      removeStart = lineStart;
+    }
+  }
+  return `${content.slice(0, removeStart)}${content.slice(removeEnd)}`;
+}
+function removeOpenCodePlugin(content, pluginRange) {
+  return parseOpenCodePluginItems(content, pluginRange).filter((plugin) => isManagedOpenCodePlugin(plugin.value)).reverse().reduce((updated, plugin) => removeArrayRangeItem(updated, plugin), content);
+}
+function findRootObjectClose(content) {
+  return findMatchingBracket(content, skipWhitespaceAndComments(content, 0));
+}
+function addOpenCodePluginProperty(content, propertyCount) {
+  const rootClose = findRootObjectClose(content);
+  const closingIndent = getLineIndent(content, rootClose);
+  const propertyText = `"plugin": [
+${closingIndent}  ${JSON.stringify(OPENCODE_PLUGIN)}
+${closingIndent}]`;
+  if (propertyCount === 0) {
+    return `${content.slice(0, rootClose)}${propertyText}${content.slice(rootClose)}`;
+  }
+  const beforeClose = content.slice(0, rootClose).trimEnd();
+  return `${beforeClose},
+${closingIndent}${propertyText}${content.slice(rootClose)}`;
+}
+function parseOpenCodeConfig(content, configPath) {
+  try {
+    return JSON.parse(stripJsonComments(content));
+  } catch (e) {
+    throw new Error(`Failed to parse ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+function isManagedOpenCodePlugin(plugin) {
+  return typeof plugin === "string" && (plugin === "cc-safety-net" || plugin.startsWith("cc-safety-net@"));
+}
+function readOpenCodeConfig(configPath) {
+  const content = readFileSync12(configPath, "utf-8");
+  const config = parseOpenCodeConfig(content, configPath);
+  const plugins = config.plugin;
+  if (plugins !== undefined && !Array.isArray(plugins)) {
+    throw new Error("OpenCode plugin must be an array");
+  }
+  return { content, config, plugins };
+}
+function installOpenCode() {
+  const configPath = getOpenCodeConfigPath();
+  mkdirSync4(dirname8(configPath), { recursive: true });
+  if (!existsSync15(configPath)) {
+    writeFileSync3(configPath, `${JSON.stringify({ plugin: [OPENCODE_PLUGIN] }, null, 2)}
+`);
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const opencode = readOpenCodeConfig(configPath);
+  if (opencode.plugins?.some(isManagedOpenCodePlugin)) {
+    return { path: configPath, alreadyInstalled: true };
+  }
+  if (opencode.plugins === undefined) {
+    writeFileSync3(configPath, addOpenCodePluginProperty(opencode.content, Object.keys(opencode.config).length));
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const pluginRange = findOpenCodePluginArray(opencode.content);
+  if (!pluginRange)
+    throw new Error("OpenCode plugin property was not found");
+  writeFileSync3(configPath, insertOpenCodePlugin(opencode.content, pluginRange, opencode.plugins));
+  return { path: configPath, alreadyInstalled: false };
+}
+function uninstallOpenCode() {
+  const configPath = getOpenCodeConfigPath();
+  if (!existsSync15(configPath))
+    return { path: configPath, alreadyInstalled: false };
+  const opencode = readOpenCodeConfig(configPath);
+  if (!opencode.plugins?.some(isManagedOpenCodePlugin)) {
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const pluginRange = findOpenCodePluginArray(opencode.content);
+  if (!pluginRange)
+    throw new Error("OpenCode plugin property was not found");
+  writeFileSync3(configPath, removeOpenCodePlugin(opencode.content, pluginRange));
+  return { path: configPath, alreadyInstalled: true };
+}
+function removeTopLevelEmptyHooksArray(content) {
+  const result = content.split(`
+`).reduce((state, line) => {
+    if (/^\s*\[/.test(line)) {
+      state.activeTable = true;
+      state.lines.push(line);
+      return state;
+    }
+    if (!state.activeTable && /^\s*hooks\s*=\s*\[\s*]\s*(?:#.*)?$/.test(line))
+      return state;
+    state.lines.push(line);
+    return state;
+  }, { activeTable: false, lines: [] });
+  return result.lines.join(`
+`);
+}
+function findTopLevelInlineHooksArray(content) {
+  let activeTable = false;
+  let index = 0;
+  while (index < content.length) {
+    const lineEnd = content.indexOf(`
+`, index);
+    const end = lineEnd === -1 ? content.length : lineEnd;
+    const line = content.slice(index, end);
+    if (/^\s*\[/.test(line))
+      activeTable = true;
+    if (!activeTable) {
+      const match = /^(\s*)hooks\s*=\s*\[/.exec(line);
+      if (match) {
+        const arrayStart = index + match[0].lastIndexOf("[");
+        return { start: arrayStart, end: findTomlArrayClose(content, arrayStart) };
+      }
+    }
+    index = lineEnd === -1 ? content.length : lineEnd + 1;
+  }
+  return;
+}
+function findTomlArrayClose(content, openIndex) {
+  let depth = 0;
+  let index = openIndex;
+  while (index < content.length) {
+    if (content[index] === "#") {
+      const newlineIndex = content.indexOf(`
+`, index + 1);
+      index = newlineIndex === -1 ? content.length : newlineIndex + 1;
+      continue;
+    }
+    if (content[index] === '"') {
+      index = skipString(content, index);
+      continue;
+    }
+    if (content[index] === "[")
+      depth++;
+    if (content[index] === "]") {
+      depth--;
+      if (depth === 0)
+        return index;
+    }
+    index++;
+  }
+  throw new Error("Unmatched hooks array in Kimi CLI config");
+}
+function appendKimiInlineHook(content, hooksRange) {
+  const beforeClose = content.slice(0, hooksRange.end).trimEnd();
+  const closingIndent = getLineIndent(content, hooksRange.end);
+  const itemIndent = closingIndent === "" ? "     " : `${closingIndent}  `;
+  const needsComma = !beforeClose.endsWith("[") && !beforeClose.endsWith(",");
+  return `${beforeClose}${needsComma ? "," : ""}
+${itemIndent}${KIMI_INLINE_HOOK}${content.slice(hooksRange.end)}`;
+}
+function appendKimiHook(content) {
+  const inlineHooksRange = findTopLevelInlineHooksArray(content);
+  if (inlineHooksRange && content.slice(inlineHooksRange.start + 1, inlineHooksRange.end).trim()) {
+    return appendKimiInlineHook(content, inlineHooksRange);
+  }
+  const trimmed = removeTopLevelEmptyHooksArray(content).trimEnd();
+  if (trimmed === "")
+    return `${KIMI_HOOK_BLOCK}
+`;
+  return `${trimmed}
+
+${KIMI_HOOK_BLOCK}
+`;
+}
+function removeKimiTableHookBlocks(content) {
+  const blocks = content.split(/(?=^\s*\[\[hooks]]\s*$)/m);
+  return blocks.filter((block) => !/^\s*\[\[hooks]]\s*$/m.test(block) || !block.includes(KIMI_HOOK_COMMAND)).join("").trimEnd();
+}
+function removeKimiInlineHook(content, hooksRange) {
+  const itemStart = content.indexOf(KIMI_INLINE_HOOK, hooksRange.start);
+  if (itemStart === -1 || itemStart > hooksRange.end)
+    return content;
+  return removeArrayRangeItem(content, {
+    start: itemStart,
+    end: itemStart + KIMI_INLINE_HOOK.length
+  });
+}
+function installKimiCli() {
+  const configPath = getKimiConfigPath();
+  mkdirSync4(dirname8(configPath), { recursive: true });
+  if (!existsSync15(configPath)) {
+    writeFileSync3(configPath, `${KIMI_HOOK_BLOCK}
+`);
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const content = readFileSync12(configPath, "utf-8");
+  if (content.includes(KIMI_HOOK_COMMAND))
+    return { path: configPath, alreadyInstalled: true };
+  writeFileSync3(configPath, appendKimiHook(content));
+  return { path: configPath, alreadyInstalled: false };
+}
+function uninstallKimiCli() {
+  const configPath = getKimiConfigPath();
+  if (!existsSync15(configPath))
+    return { path: configPath, alreadyInstalled: false };
+  const content = readFileSync12(configPath, "utf-8");
+  if (!content.includes(KIMI_HOOK_COMMAND))
+    return { path: configPath, alreadyInstalled: false };
+  const inlineHooksRange = findTopLevelInlineHooksArray(content);
+  const updated = inlineHooksRange ? removeKimiInlineHook(content, inlineHooksRange) : `${removeKimiTableHookBlocks(content)}
+`;
+  writeFileSync3(configPath, updated);
+  return { path: configPath, alreadyInstalled: true };
+}
+function parseInstallTarget(args, action) {
+  const targets = [
+    args.includes("--opencode") ? "opencode" : undefined,
+    args.includes("--kimi-cli") ? "kimi-cli" : undefined
+  ].filter((target) => target !== undefined);
+  const unknownOption = args.find((arg) => arg.startsWith("-") && !["--opencode", "--kimi-cli"].includes(arg));
+  if (unknownOption)
+    throw new Error(`Unknown install option: ${unknownOption}`);
+  const unexpectedArg = args.find((arg) => !arg.startsWith("-"));
+  if (unexpectedArg)
+    throw new Error(`Unexpected argument for hook ${action}: ${unexpectedArg}`);
+  if (targets.length !== 1)
+    throw new Error("Choose exactly one install target: --opencode or --kimi-cli");
+  return targets[0];
+}
+function runHookInstallCommand(action, args) {
+  try {
+    const target = parseInstallTarget(args, action);
+    const result = target === "opencode" ? action === "install" ? installOpenCode() : uninstallOpenCode() : action === "install" ? installKimiCli() : uninstallKimiCli();
+    const name = target === "opencode" ? "OpenCode" : "Kimi CLI";
+    const pastTense = action === "install" ? "Installed" : "Uninstalled";
+    console.log(action === "install" && result.alreadyInstalled ? `${name} hook already installed in ${result.path}` : action === "uninstall" && !result.alreadyInstalled ? `${name} hook not installed in ${result.path}` : `${pastTense} ${name} hook ${action === "install" ? "in" : "from"} ${result.path}`);
+    return 0;
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
+}
+
+// src/bin/hook/kimi-cli.ts
+function outputKimiDeny(reason, command, segment, manualPermissionAdvice) {
+  const message = formatBlockedMessage({
+    reason,
+    command,
+    segment,
+    redact: redactSecrets,
+    manualPermissionAdvice
+  });
+  const output = {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: message
+    }
+  };
+  console.log(JSON.stringify(output));
+}
+async function runKimiCliHook() {
+  const input = await readHookInput(outputKimiDeny);
+  if (!input) {
+    return;
+  }
+  if (input.hook_event_name !== "PreToolUse") {
+    return;
+  }
+  if (input.tool_name !== "Shell") {
+    return;
+  }
+  const command = input.tool_input?.command;
+  if (!command) {
+    return;
+  }
+  handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputKimiDeny);
+}
+
+// src/bin/rule.ts
+import { existsSync as existsSync17 } from "node:fs";
+import { join as join12 } from "node:path";
+
+// src/bin/rule/format.ts
+function printSyncResult(result) {
+  if (!result.ok) {
+    printResultErrors(result);
+    return;
+  }
+  for (const entry of result.entries) {
+    const ruleCount = entry.ruleCount === undefined ? "" : ` (${entry.ruleCount} rules)`;
+    console.log(`${entry.name} ${entry.version} ${entry.digest} ${entry.spec}${ruleCount}`);
+  }
+}
+function printRuleChangeResult(result, action) {
+  if (!result.ok) {
+    printResultErrors(result);
+    return;
+  }
+  console.log(action);
+  console.log("Rule config synced.");
+  console.log("");
+  printActiveRulebookSummary(result.entries);
+}
+function printActiveRulebookSummary(entries) {
+  if (entries.length === 0) {
+    console.log("Active rulebooks: (none)");
+    return;
+  }
+  console.log(`Active rulebooks (${entries.length}):`);
+  for (const entry of entries) {
+    console.log(`  - ${entry.name} ${entry.version} (${formatRuleCount(entry.ruleCount ?? 0)})`);
+    console.log(`    Source: ${formatRulebookSource(entry, new Map)}`);
+  }
+}
+function formatRuleCount(count) {
+  return `${count} ${count === 1 ? "rule" : "rules"}`;
+}
+function formatRulebookSource(entry, sourceDisplayMap) {
+  return sourceDisplayMap.get(entry.spec) ?? getRulebookDisplaySource(entry);
+}
+function printRulesTestResult(result, sourceDisplayMap = new Map) {
+  if (!result.ok) {
+    printResultErrors(result);
+    return;
+  }
+  console.log("Rulebook tests passed.");
+  console.log("");
+  for (const entry of result.entries) {
+    console.log(`  ${entry.name} ${entry.version}`);
+    console.log(`    Source: ${formatRulebookSource(entry, sourceDisplayMap)}`);
+    console.log(`    Rules: ${entry.ruleCount ?? 0}`);
+    console.log(`    Tests: ${entry.testCount ?? 0}`);
+  }
+  if (result.entries.length < 2)
+    return;
+  console.log("");
+  console.log(`Tested ${result.entries.length} rulebooks, ${sumStats(result.entries, "ruleCount")} rules, ${sumStats(result.entries, "testCount")} tests.`);
+}
+function sumStats(entries, key) {
+  return entries.reduce((total, entry) => total + (entry[key] ?? 0), 0);
+}
+function printResultErrors(result) {
+  for (const error of result.errors)
+    console.error(error);
+}
+
+// src/bin/rule/verify.ts
+import { existsSync as existsSync16, readdirSync as readdirSync3, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname9, join as join11, resolve as resolve8 } from "node:path";
+var VERIFY_HEADER = "CC Safety Net Config";
+var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
+var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
+var RULES_DIR_RESERVED_ENTRIES = new Set(["rule.json", "rule.lock", "cache"]);
+function runRulesVerify(options = {}) {
+  const cwd = options.cwd ?? process.cwd();
+  const userConfig = options.userConfigPath ?? getUserRulesConfigPath();
+  const projectConfig = options.projectConfigPath ?? getProjectRulesConfigPath(cwd);
+  const legacyUserConfig = options.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
+  const legacyProjectConfig = options.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
+  const githubSourceRulesDir = resolve8(cwd, RULES_DIR);
+  const userConfigDir = dirname9(userConfig);
+  let hasErrors = false;
+  let hasWarnings = false;
+  const configsChecked = [];
+  const warnings = [];
+  const githubSourceRules = getGitHubSourceRulesValidation(githubSourceRulesDir);
+  printRulesVerifyHeader();
+  if (existsSync16(userConfig)) {
+    const result = validateRulesConfigFile(userConfig);
+    result.errors.push(...getRulesConfigRuntimeErrorsForConfig(userConfig, getUserRulesLockPath({ userConfigDir }), {
+      userConfigDir
+    }));
+    configsChecked.push({
+      scope: "User",
+      path: userConfig,
+      result,
+      schema: "rules",
+      sourceDisplayMap: getRulesConfigSourceDisplayMap(userConfig)
+    });
+    if (result.errors.length > 0)
+      hasErrors = true;
+  }
+  if (existsSync16(legacyUserConfig)) {
+    hasWarnings = true;
+    if (existsSync16(userConfig)) {
+      warnings.push(getLegacyRulesConfigWarning("user", "cleanup"));
+    } else {
+      const result = validateConfigFile(legacyUserConfig);
+      hasErrors = true;
+      configsChecked.push({
+        scope: "User",
+        path: legacyUserConfig,
+        result,
+        schema: "legacy",
+        sourceDisplayMap: new Map,
+        inactive: true
+      });
+      warnings.push(getLegacyRulesConfigWarning("user", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
+    }
+  }
+  if (existsSync16(projectConfig)) {
+    const result = validateRulesConfigFile(projectConfig);
+    result.errors.push(...getRulesConfigRuntimeErrorsForConfig(projectConfig, getRulesLockPathForConfigPath(projectConfig), {
+      userConfigDir
+    }));
+    configsChecked.push({
+      scope: "Project",
+      path: resolve8(projectConfig),
+      result,
+      schema: "rules",
+      sourceDisplayMap: getRulesConfigSourceDisplayMap(projectConfig)
+    });
+    if (result.errors.length > 0)
+      hasErrors = true;
+    if (existsSync16(legacyProjectConfig)) {
+      hasWarnings = true;
+      warnings.push(getLegacyRulesConfigWarning("project", "cleanup"));
+    }
+  } else if (existsSync16(legacyProjectConfig)) {
+    hasWarnings = true;
+    hasErrors = true;
+    const result = validateConfigFile(legacyProjectConfig);
+    configsChecked.push({
+      scope: "Project",
+      path: resolve8(legacyProjectConfig),
+      result,
+      schema: "legacy",
+      sourceDisplayMap: new Map,
+      inactive: true
+    });
+    warnings.push(getLegacyRulesConfigWarning("project", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
+  }
+  if (githubSourceRules?.result.errors.length)
+    hasErrors = true;
+  if (configsChecked.length === 0 && !githubSourceRules) {
+    console.log(`
+No config files found. Using built-in rules only.`);
+    return 0;
+  }
+  for (const config of configsChecked) {
+    if (config.inactive) {
+      printInactiveLegacyRulesConfig(config.scope, config.path, config.result, config.sourceDisplayMap);
+    } else if (config.result.errors.length > 0) {
+      printInvalidRulesConfig(config.scope, config.path, config.result.errors);
+    } else {
+      if (config.schema === "rules" && addRulesSchemaIfMissing(config.path)) {
+        console.log(`
+Added $schema to ${config.scope.toLowerCase()} config.`);
+      }
+      printValidRulesConfig(config.scope, config.path, config.result, config.schema, config.sourceDisplayMap);
+    }
+  }
+  for (const warning of warnings)
+    console.error(`
+${colors.red(warning)}`);
+  if (githubSourceRules) {
+    if (githubSourceRules.result.errors.length > 0) {
+      printInvalidGitHubSourceRules(githubSourceRules.path, githubSourceRules.result.errors);
+    } else {
+      printValidGitHubSourceRules(githubSourceRules.path, githubSourceRules.result);
+    }
+  }
+  if (hasErrors) {
+    console.error(`
+Config validation failed.`);
+    return 1;
+  }
+  console.log(hasWarnings ? `
+Configs valid with warnings.` : `
+All configs valid.`);
+  return 0;
+}
+function getLegacyRulesConfigWarning(scope, action) {
+  const label = `legacy ${scope} config`;
+  if (action === "cleanup") {
+    return `Warning: Legacy ${scope} config is no longer needed. Run \`npx -y cc-safety-net rule migrate --cleanup\` to clean it up safely.`;
+  }
+  if (action === "migrate") {
+    return `Warning: Legacy ${scope} config is ignored by CC Safety Net. Run \`npx -y cc-safety-net rule migrate\`.`;
+  }
+  return `Warning: Legacy ${scope} config is no longer supported. Fix or delete the ${label}, then run \`npx -y cc-safety-net rule migrate\`.`;
+}
+function getGitHubSourceRulesValidation(path) {
+  if (!existsSync16(path))
+    return null;
+  const result = validateGitHubSourceRules(path);
+  if (result.ruleNames.size === 0 && result.errors.length === 0)
+    return null;
+  return { path, result };
+}
+function validateGitHubSourceRules(path) {
+  const errors = [];
+  const ruleNames = new Set;
+  try {
+    if (!statSync2(path).isDirectory()) {
+      return { errors: [`${RULES_DIR} must be a directory`], ruleNames };
+    }
+  } catch (error) {
+    return {
+      errors: [
+        error instanceof Error ? `Failed to inspect ${RULES_DIR}: ${error.message}` : `Failed to inspect ${RULES_DIR}: ${String(error)}`
+      ],
+      ruleNames
+    };
+  }
+  const entries = readdirSync3(path, { withFileTypes: true }).filter((entry) => !RULES_DIR_RESERVED_ENTRIES.has(entry.name)).sort((a, b) => a.name.localeCompare(b.name));
+  if (entries.length === 0) {
+    return { errors, ruleNames };
+  }
+  for (const entry of entries) {
+    if (!NAME_PATTERN.test(entry.name)) {
+      errors.push(`rulebook directory names must match ${NAME_PATTERN}: ${entry.name}`);
+      continue;
+    }
+    if (!entry.isDirectory()) {
+      errors.push(`${entry.name} must be a rulebook directory`);
+      continue;
+    }
+    const rulebookPath = join11(path, entry.name, "rulebook.json");
+    if (!existsSync16(rulebookPath)) {
+      errors.push(`${entry.name}/rulebook.json is required`);
+      continue;
+    }
+    try {
+      const rulebook = assertValidRulebook(JSON.parse(readFileSync13(rulebookPath, "utf-8")));
+      if (rulebook.name !== entry.name) {
+        errors.push(`rulebook name "${rulebook.name}" must match folder "${entry.name}"`);
+        continue;
+      }
+      ruleNames.add(entry.name);
+    } catch (error) {
+      errors.push(error instanceof Error ? `${entry.name}/rulebook.json: ${error.message}` : `${entry.name}/rulebook.json: ${String(error)}`);
+    }
+  }
+  return { errors, ruleNames };
+}
+function printRulesVerifyHeader() {
+  console.log(VERIFY_HEADER);
+  console.log(VERIFY_SEPARATOR);
+}
+function printValidRulesConfig(scope, path, result, schema, sourceDisplayMap) {
+  console.log(`
+✓ ${scope} config: ${path}`);
+  console.log(`  Schema: ${schema === "rules" ? "rulebook sources" : "legacy inline rules"}`);
+  if (result.ruleNames.size > 0) {
+    console.log(`  ${schema === "rules" ? "Sources" : "Rules"}:`);
+    let i = 1;
+    for (const name of result.ruleNames) {
+      console.log(`    ${i}. ${sourceDisplayMap.get(name) ?? name}`);
+      i++;
+    }
+  } else {
+    console.log(`  ${schema === "rules" ? "Sources" : "Rules"}: (none)`);
+  }
+}
+function printInactiveLegacyRulesConfig(scope, path, result, sourceDisplayMap) {
+  console.error(`
+✗ Legacy ${scope.toLowerCase()} config: ${path}`);
+  console.error("  Schema: legacy inline rules");
+  console.error("  Status: ignored by CC Safety Net");
+  if (result.errors.length > 0) {
+    console.error("  Errors:");
+    let errorNum = 1;
+    for (const error of result.errors) {
+      for (const part of error.split("; ")) {
+        console.error(`    ${errorNum}. ${part}`);
+        errorNum++;
+      }
+    }
+    return;
+  }
+  if (result.ruleNames.size > 0) {
+    console.error("  Rules:");
+    let i = 1;
+    for (const name of result.ruleNames) {
+      console.error(`    ${i}. ${sourceDisplayMap.get(name) ?? name}`);
+      i++;
+    }
+    return;
+  }
+  console.error("  Rules: (none)");
+}
+function printInvalidRulesConfig(scope, path, errors) {
+  printInvalidVerifyTarget(`${scope} config`, path, errors);
+}
+function printValidGitHubSourceRules(path, result) {
+  console.log(`
+✓ GitHub source rules: ${path}`);
+  console.log("  Rulebooks:");
+  let i = 1;
+  for (const name of result.ruleNames) {
+    console.log(`    ${i}. ${name}`);
+    i++;
+  }
+}
+function printInvalidGitHubSourceRules(path, errors) {
+  printInvalidVerifyTarget("GitHub source rules", path, errors);
+}
+function printInvalidVerifyTarget(label, path, errors) {
+  console.error(`
+✗ ${label}: ${path}`);
+  console.error("  Errors:");
+  let errorNum = 1;
+  for (const error of errors) {
+    for (const part of error.split("; ")) {
+      console.error(`    ${errorNum}. ${part}`);
+      errorNum++;
+    }
+  }
+}
+function addRulesSchemaIfMissing(path) {
+  try {
+    const content = readFileSync13(path, "utf-8");
+    const parsed = JSON.parse(content);
+    if (parsed.$schema)
+      return false;
+    writeFileSync4(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// src/bin/rule-doc.ts
+var RULE_DOC = `# Custom Rules Reference
+
+Agent reference for generating \`.safety-net.json\` config files.
+
+## Config Locations
+
+| Scope | Path | Priority |
+|-------|------|----------|
+| User | \`~/.cc-safety-net/config.json\` | Lower |
+| Project | \`.safety-net.json\` (cwd) | Higher (overrides user) |
+
+Duplicate rule names (case-insensitive) → project wins.
+
+## Schema
+
+\`\`\`json
+{
+  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
+  "version": 1,
+  "rules": [...]
+}
+\`\`\`
+
+- \`$schema\`: Optional. Enables IDE autocomplete and inline validation.
+- \`version\`: Required. Must be \`1\`.
+- \`rules\`: Optional. Defaults to \`[]\`.
+
+**Always include \`$schema\`** when generating config files for IDE support.
+
+## Rule Fields
+
+| Field | Required | Constraints |
+|-------|----------|-------------|
+| \`name\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$\` — unique (case-insensitive) |
+| \`command\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]*$\` — basename only, not path |
+| \`subcommand\` | No | Same pattern as command. Omit to match any. |
+| \`block_args\` | Yes | Non-empty array of non-empty strings |
+| \`reason\` | Yes | Non-empty string, max 256 chars |
+
+## Guidelines:
+
+- \`name\`: kebab-case, descriptive (e.g., \`block-git-add-all\`)
+- \`command\`: binary name only, lowercase
+- \`subcommand\`: omit if rule applies to any subcommand
+- \`block_args\`: include all variants (e.g., both \`-g\` and \`--global\`)
+- \`reason\`: explain why blocked AND suggest alternative
+
+## Matching Behavior
+
+- **Command**: Normalized to basename (\`/usr/bin/git\` → \`git\`)
+- **Subcommand**: First non-option argument after command
+- **Arguments**: Matched literally. Command blocked if **any** \`block_args\` item present.
+- **Short options**: Expanded (\`-Ap\` matches \`-A\`)
+- **Long options**: Exact match (\`--all-files\` does NOT match \`--all\`)
+- **Execution order**: Built-in rules first, then custom rules (additive only)
+
+## Examples
+
+### Block \`git add -A\`
+
+\`\`\`json
+{
+  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
+  "version": 1,
+  "rules": [
+    {
+      "name": "block-git-add-all",
+      "command": "git",
+      "subcommand": "add",
+      "block_args": ["-A", "--all", "."],
+      "reason": "Use 'git add <specific-files>' instead."
+    }
+  ]
+}
+\`\`\`
+
+### Block global npm install
+
+\`\`\`json
+{
+  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
+  "version": 1,
+  "rules": [
+    {
+      "name": "block-npm-global",
+      "command": "npm",
+      "subcommand": "install",
+      "block_args": ["-g", "--global"],
+      "reason": "Use npx or local install."
+    }
+  ]
+}
+\`\`\`
+
+### Block docker system prune
+
+\`\`\`json
+{
+  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
+  "version": 1,
+  "rules": [
+    {
+      "name": "block-docker-prune",
+      "command": "docker",
+      "subcommand": "system",
+      "block_args": ["prune"],
+      "reason": "Use targeted cleanup instead."
+    }
+  ]
+}
+\`\`\`
+
+## Error Handling
+
+Invalid config → silent fallback to built-in rules only. No custom rules applied.
+`;
+
+// src/bin/rule.ts
+var RULE_SUBCOMMANDS = new Set([
+  "init",
+  "add",
+  "remove",
+  "update",
+  "sync",
+  "list",
+  "test",
+  "doc",
+  "verify"
+]);
+async function runRuleCommand(args) {
+  const flags = parseRuleFlags(args);
+  if (flags.errors.length > 0) {
+    for (const error of flags.errors)
+      console.error(error);
+    return 1;
+  }
+  const subcommand = flags.positionals[0];
+  if (!subcommand || flags.help) {
+    return 0;
+  }
+  const value = flags.positionals[1];
+  const options = { global: flags.global, check: flags.check };
+  if (subcommand === "init") {
+    const dir = flags.global ? getUserRulesDir() : getProjectRulesDir();
+    const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
+    const rulebookName = flags.global ? "user-rules" : "project-rules";
+    if (!existsSync17(configPath))
+      writeDefaultRulesConfig(configPath, [rulebookName]);
+    const rulebookPath = join12(dir, rulebookName, "rulebook.json");
+    if (!existsSync17(rulebookPath))
+      writeStarterRulebook(rulebookPath, rulebookName);
+    const result = await syncRulesConfig(options);
+    printRuleChangeResult(result, "Rule config initialized.");
+    return result.ok ? 0 : 1;
+  }
+  if (subcommand === "add") {
+    if (!value) {
+      console.error("rule add requires a source");
+      return 1;
+    }
+    const result = await addRulebookSource(value, options);
+    printRuleChangeResult(result, `Added rulebook source: ${value}`);
+    return result.ok ? 0 : 1;
+  }
+  if (subcommand === "remove") {
+    if (!value) {
+      console.error("rule remove requires a source");
+      return 1;
+    }
+    const result = await removeRulebookSource(value, options);
+    printRuleChangeResult(result, `Removed rulebook source: ${value}`);
+    return result.ok ? 0 : 1;
+  }
+  if (subcommand === "update" || subcommand === "sync") {
+    const result = await syncRulesConfig({
+      ...options,
+      only: subcommand === "update" ? value : undefined
+    });
+    printRuleChangeResult(result, flags.check ? "Rule config checked." : "Rule config synced.");
+    return result.ok ? 0 : 1;
+  }
+  if (subcommand === "list") {
+    const policy = loadRulesPolicy();
+    if (policy.errors.length > 0) {
+      for (const error of policy.errors)
+        console.error(error);
+      return 1;
+    }
+    printSyncResult({ ok: true, errors: [], entries: [] });
+    return 0;
+  }
+  if (subcommand === "test") {
+    const sources = value ? [value] : [];
+    const result = await testRulebookSources(sources, options);
+    printRulesTestResult(result);
+    return result.ok ? 0 : 1;
+  }
+  if (subcommand === "doc") {
+    console.log(RULE_DOC);
+    return 0;
+  }
+  if (subcommand === "verify") {
+    return runRulesVerify();
+  }
+  return 1;
+}
+function parseRuleFlags(args) {
+  const flags = {
+    global: false,
+    check: false,
+    help: false,
+    positionals: [],
+    errors: []
+  };
+  for (const arg of args) {
+    if (arg === "-g" || arg === "--global") {
+      flags.global = true;
+    } else if (arg === "--check") {
+      flags.check = true;
+    } else if (arg === "-h" || arg === "--help") {
+      flags.help = true;
+    } else if (arg.startsWith("-")) {
+      flags.errors.push(`Unknown rule option: ${arg}`);
+    } else {
+      flags.positionals.push(arg);
+    }
+  }
+  const [subcommand] = flags.positionals;
+  if (subcommand && !RULE_SUBCOMMANDS.has(subcommand)) {
+    flags.errors.push(`Unknown rule subcommand: ${subcommand}`);
+  }
+  if (flags.positionals.length > 2) {
+    flags.errors.push(`Unexpected rule argument: ${flags.positionals[2]}`);
+  }
+  return flags;
+}
+
 // src/bin/statusline.ts
-import { existsSync as existsSync9, readFileSync as readFileSync7 } from "node:fs";
-import { homedir as homedir6 } from "node:os";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync18, readFileSync as readFileSync14 } from "node:fs";
+import { homedir as homedir8 } from "node:os";
+import { join as join13 } from "node:path";
 async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
   }
-  return new Promise((resolve6) => {
+  return new Promise((resolve9) => {
     let data = "";
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", (chunk) => {
@@ -6989,10 +9433,10 @@ async function readStdinAsync() {
     });
     process.stdin.on("end", () => {
       const trimmed = data.trim();
-      resolve6(trimmed || null);
+      resolve9(trimmed || null);
     });
     process.stdin.on("error", () => {
-      resolve6(null);
+      resolve9(null);
     });
   });
 }
@@ -7000,15 +9444,15 @@ function getSettingsPath() {
   if (process.env.CLAUDE_SETTINGS_PATH) {
     return process.env.CLAUDE_SETTINGS_PATH;
   }
-  return join7(homedir6(), ".claude", "settings.json");
+  return join13(homedir8(), ".claude", "settings.json");
 }
 function isPluginEnabled() {
   const settingsPath = getSettingsPath();
-  if (!existsSync9(settingsPath)) {
+  if (!existsSync18(settingsPath)) {
     return false;
   }
   try {
-    const content = readFileSync7(settingsPath, "utf-8");
+    const content = readFileSync14(settingsPath, "utf-8");
     const settings = JSON.parse(content);
     if (!settings.enabledPlugins) {
       return false;
@@ -7059,8 +9503,8 @@ async function printStatusline() {
 }
 
 // src/bin/verify-config.ts
-import { existsSync as existsSync10, readFileSync as readFileSync8, writeFileSync } from "node:fs";
-import { resolve as resolve6 } from "node:path";
+import { existsSync as existsSync19, readFileSync as readFileSync15, writeFileSync as writeFileSync5 } from "node:fs";
+import { resolve as resolve9 } from "node:path";
 var HEADER = "Safety Net Config";
 var SEPARATOR = "═".repeat(HEADER.length);
 var SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -7086,23 +9530,20 @@ function printInvalidConfig(scope, path, errors) {
   console.error(`
 ✗ ${scope} config: ${path}`);
   console.error("  Errors:");
-  let errorNum = 1;
-  for (const error of errors) {
-    for (const part of error.split("; ")) {
-      console.error(`    ${errorNum}. ${part}`);
-      errorNum++;
-    }
+  const parts = errors.flatMap((error) => error.split("; "));
+  for (const [index, part] of parts.entries()) {
+    console.error(`    ${index + 1}. ${part}`);
   }
 }
 function addSchemaIfMissing(path) {
   try {
-    const content = readFileSync8(path, "utf-8");
+    const content = readFileSync15(path, "utf-8");
     const parsed = JSON.parse(content);
     if (parsed.$schema) {
       return false;
     }
     const updated = { $schema: SCHEMA_URL, ...parsed };
-    writeFileSync(path, JSON.stringify(updated, null, 2), "utf-8");
+    writeFileSync5(path, JSON.stringify(updated, null, 2), "utf-8");
     return true;
   } catch {
     return false;
@@ -7114,18 +9555,18 @@ function verifyConfig(options = {}) {
   let hasErrors = false;
   const configsChecked = [];
   printHeader();
-  if (existsSync10(userConfig)) {
+  if (existsSync19(userConfig)) {
     const result = validateConfigFile(userConfig);
     configsChecked.push({ scope: "User", path: userConfig, result });
     if (result.errors.length > 0) {
       hasErrors = true;
     }
   }
-  if (existsSync10(projectConfig)) {
+  if (existsSync19(projectConfig)) {
     const result = validateConfigFile(projectConfig);
     configsChecked.push({
       scope: "Project",
-      path: resolve6(projectConfig),
+      path: resolve9(projectConfig),
       result
     });
     if (result.errors.length > 0) {
@@ -7159,9 +9600,6 @@ All configs valid.`);
 }
 
 // src/bin/cc-safety-net.ts
-function printCustomRulesDoc() {
-  console.log(CUSTOM_RULES_DOC);
-}
 function hasHelpFlag(args) {
   return args.includes("--help") || args.includes("-h");
 }
@@ -7207,6 +9645,33 @@ function handleCliFlags() {
   if (args[0] === "explain") {
     return "explain";
   }
+  if (args[0] === "rule") {
+    return "rule";
+  }
+  if (args[0] === "statusline") {
+    if (args.includes("--claude-code") || args.includes("-cc"))
+      return "statusline";
+    showCommandHelp("statusline");
+    process.exit(1);
+  }
+  if (args[0] === "hook") {
+    if (args[1] === "install")
+      return "hook-install";
+    if (args[1] === "uninstall")
+      return "hook-uninstall";
+    if (args.includes("--claude-code") || args.includes("-cc"))
+      return "claude-code";
+    if (args.includes("--copilot-cli") || args.includes("-cp"))
+      return "copilot-cli";
+    if (args.includes("--gemini-cli") || args.includes("-gc"))
+      return "gemini-cli";
+    if (args.includes("--kimi-cli"))
+      return "kimi-cli";
+    if (args.includes("-kc"))
+      return "kimi-cli";
+    showCommandHelp("hook");
+    process.exit(1);
+  }
   if (args.length === 0 || hasHelpFlag(args)) {
     printHelp();
     process.exit(0);
@@ -7218,24 +9683,20 @@ function handleCliFlags() {
   if (args.includes("--verify-config") || args.includes("-vc")) {
     process.exit(verifyConfig());
   }
-  if (args.includes("--custom-rules-doc")) {
-    printCustomRulesDoc();
-    process.exit(0);
-  }
   if (args.includes("doctor") || args.includes("--doctor")) {
     return "doctor";
   }
-  if (args.includes("--statusline")) {
-    return "statusline";
-  }
-  if (args.includes("--claude-code") || args.includes("-cc")) {
+  if (args[0] === "--claude-code" || args[0] === "-cc") {
     return "claude-code";
   }
-  if (args.includes("--copilot-cli") || args.includes("-cp")) {
+  if (args[0] === "--copilot-cli" || args[0] === "-cp") {
     return "copilot-cli";
   }
-  if (args.includes("--gemini-cli") || args.includes("-gc")) {
+  if (args[0] === "--gemini-cli" || args[0] === "-gc") {
     return "gemini-cli";
+  }
+  if (args[0] === "--kimi-cli" || args[0] === "-kc") {
+    return "kimi-cli";
   }
   console.error(`Unknown option: ${args[0]}`);
   console.error("Run 'cc-safety-net --help' for usage.");
@@ -7249,6 +9710,14 @@ async function main() {
     await runCopilotCliHook();
   } else if (mode === "gemini-cli") {
     await runGeminiCLIHook();
+  } else if (mode === "kimi-cli") {
+    await runKimiCliHook();
+  } else if (mode === "hook-install") {
+    process.exit(runHookInstallCommand("install", process.argv.slice(4)));
+  } else if (mode === "hook-uninstall") {
+    process.exit(runHookInstallCommand("uninstall", process.argv.slice(4)));
+  } else if (mode === "rule") {
+    process.exit(await runRuleCommand(process.argv.slice(3)));
   } else if (mode === "statusline") {
     await printStatusline();
   } else if (mode === "doctor") {

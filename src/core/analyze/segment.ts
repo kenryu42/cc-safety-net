@@ -5,8 +5,8 @@ import { analyzeParallel } from '@/core/analyze/parallel';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { isTmpdirOverriddenToNonTemp } from '@/core/analyze/tmpdir';
 import { analyzeXargs } from '@/core/analyze/xargs';
+import { analyzeGit } from '@/core/git';
 import { checkCustomRules } from '@/core/rules-custom';
-import { analyzeGit } from '@/core/rules-git';
 import { analyzeRm } from '@/core/rules-rm';
 import {
   getBasename,
@@ -33,6 +33,28 @@ export type InternalOptions = AnalyzeOptions & {
   effectiveCwd: string | null | undefined;
   analyzeNested: (command: string, overrides?: AnalyzeNestedOverrides) => string | null;
 };
+
+interface CommandAnalysisContext {
+  tokens: string[];
+  head: string;
+  normalizedHead: string;
+  basename: string;
+  cwdForRm: string | undefined;
+  originalCwd: string | undefined;
+  envAssignments: ReadonlyMap<string, string>;
+  allowTmpdirVar: boolean;
+  options: InternalOptions;
+}
+
+type CommandAnalyzer = (context: CommandAnalysisContext) => string | null;
+
+const COMMAND_ANALYZERS: ReadonlyMap<string, CommandAnalyzer> = new Map([
+  ['git', analyzeGitCommand],
+  ['rm', analyzeRmCommand],
+  ['find', analyzeFindCommand],
+  ['xargs', analyzeXargsCommand],
+  ['parallel', analyzeParallelCommand],
+]);
 
 function deriveCwdContext(options: Pick<InternalOptions, 'cwd' | 'effectiveCwd'>): {
   cwdUnknown: boolean;
@@ -80,6 +102,10 @@ export function analyzeSegment(
     return null;
   }
 
+  if (options.config.failClosedReason) {
+    return options.config.failClosedReason;
+  }
+
   const normalizedHead = normalizeCommandToken(head);
   const basename = getBasename(head);
   const cwdForRm = wrapperCwd === null ? undefined : (wrapperCwd ?? baseCwdForRm);
@@ -125,72 +151,24 @@ export function analyzeSegment(
     });
   }
 
-  const isGit = basename.toLowerCase() === 'git';
-  const isRm = basename === 'rm';
-  const isFind = basename === 'find';
-  const isXargs = basename === 'xargs';
-  const isParallel = basename === 'parallel';
-
-  if (isGit) {
-    const gitResult = analyzeGit(stripped, {
-      cwd: cwdForRm,
-      envAssignments,
-      worktreeMode: options.worktreeMode,
-    });
-    if (gitResult) {
-      return gitResult;
-    }
+  const commandContext: CommandAnalysisContext = {
+    tokens: stripped,
+    head,
+    normalizedHead,
+    basename,
+    cwdForRm,
+    originalCwd,
+    envAssignments,
+    allowTmpdirVar,
+    options,
+  };
+  const commandAnalyzer = getCommandAnalyzer(commandContext);
+  const commandResult = commandAnalyzer?.(commandContext);
+  if (commandResult) {
+    return commandResult;
   }
 
-  if (isRm) {
-    const rmResult = analyzeRm(stripped, {
-      cwd: cwdForRm,
-      originalCwd,
-      paranoid: options.paranoidRm,
-      allowTmpdirVar,
-    });
-    if (rmResult) {
-      return rmResult;
-    }
-  }
-
-  if (isFind) {
-    const findResult = analyzeFind(stripped);
-    if (findResult) {
-      return findResult;
-    }
-  }
-
-  if (isXargs) {
-    const xargsResult = analyzeXargs(stripped, {
-      cwd: cwdForRm,
-      originalCwd,
-      paranoidRm: options.paranoidRm,
-      allowTmpdirVar,
-      envAssignments,
-      worktreeMode: options.worktreeMode,
-    });
-    if (xargsResult) {
-      return xargsResult;
-    }
-  }
-
-  if (isParallel) {
-    const parallelResult = analyzeParallel(stripped, {
-      cwd: cwdForRm,
-      originalCwd,
-      paranoidRm: options.paranoidRm,
-      allowTmpdirVar,
-      envAssignments,
-      worktreeMode: options.worktreeMode,
-      analyzeNested: options.analyzeNested,
-    });
-    if (parallelResult) {
-      return parallelResult;
-    }
-  }
-
-  const matchedKnown = isGit || isRm || isFind || isXargs || isParallel;
+  const matchedKnown = commandAnalyzer !== undefined;
 
   if (!matchedKnown) {
     // Fallback: scan tokens for embedded git/rm/find commands
@@ -202,42 +180,13 @@ export function analyzeSegment(
         const token = stripped[i];
         if (!token) continue;
 
-        const cmd = normalizeCommandToken(token);
-        if (cmd === 'rm') {
-          const rmTokens = ['rm', ...stripped.slice(i + 1)];
-          const reason = analyzeRm(rmTokens, {
-            cwd: cwdForRm,
-            originalCwd,
-            paranoid: options.paranoidRm,
-            allowTmpdirVar,
-          });
-          if (reason) {
-            return reason;
-          }
-        }
-        if (cmd === 'git') {
-          const gitTokens = ['git', ...stripped.slice(i + 1)];
-          const reason = analyzeGit(gitTokens, {
-            cwd: cwdForRm,
-            envAssignments,
-            worktreeMode: false,
-          });
-          if (reason) {
-            return reason;
-          }
-        }
-        if (cmd === 'find') {
-          const findTokens = ['find', ...stripped.slice(i + 1)];
-          const reason = analyzeFind(findTokens);
-          if (reason) {
-            return reason;
-          }
-        }
+        const reason = analyzeEmbeddedCommand(commandContext, i);
+        if (reason) return reason;
       }
     }
   }
 
-  const customRulesTopLevelOnly = isGit || isRm || isFind || isXargs || isParallel;
+  const customRulesTopLevelOnly = matchedKnown;
   if (depth === 0 || !customRulesTopLevelOnly) {
     const customResult = checkCustomRules(stripped, options.config.rules);
     if (customResult) {
@@ -246,6 +195,80 @@ export function analyzeSegment(
   }
 
   return null;
+}
+
+function getCommandAnalyzer(context: CommandAnalysisContext): CommandAnalyzer | undefined {
+  if (context.basename.toLowerCase() === 'git') {
+    return COMMAND_ANALYZERS.get('git');
+  }
+  return COMMAND_ANALYZERS.get(context.basename);
+}
+
+function analyzeEmbeddedCommand(context: CommandAnalysisContext, index: number): string | null {
+  const token = context.tokens[index];
+  if (!token) {
+    return null;
+  }
+
+  const cmd = normalizeCommandToken(token);
+  const analyzer = COMMAND_ANALYZERS.get(cmd);
+  if (!analyzer || cmd === 'xargs' || cmd === 'parallel') {
+    return null;
+  }
+
+  const embeddedContext: CommandAnalysisContext = {
+    ...context,
+    tokens: [cmd, ...context.tokens.slice(index + 1)],
+    head: cmd,
+    normalizedHead: cmd,
+    basename: cmd,
+    options: cmd === 'git' ? { ...context.options, worktreeMode: false } : context.options,
+  };
+  return analyzer(embeddedContext);
+}
+
+function analyzeGitCommand(context: CommandAnalysisContext): string | null {
+  return analyzeGit(context.tokens, {
+    cwd: context.cwdForRm,
+    envAssignments: context.envAssignments,
+    worktreeMode: context.options.worktreeMode,
+  });
+}
+
+function analyzeRmCommand(context: CommandAnalysisContext): string | null {
+  return analyzeRm(context.tokens, {
+    cwd: context.cwdForRm,
+    originalCwd: context.originalCwd,
+    paranoid: context.options.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+  });
+}
+
+function analyzeFindCommand(context: CommandAnalysisContext): string | null {
+  return analyzeFind(context.tokens);
+}
+
+function analyzeXargsCommand(context: CommandAnalysisContext): string | null {
+  return analyzeXargs(context.tokens, {
+    cwd: context.cwdForRm,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.options.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: context.envAssignments,
+    worktreeMode: context.options.worktreeMode,
+  });
+}
+
+function analyzeParallelCommand(context: CommandAnalysisContext): string | null {
+  return analyzeParallel(context.tokens, {
+    cwd: context.cwdForRm,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.options.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: context.envAssignments,
+    worktreeMode: context.options.worktreeMode,
+    analyzeNested: context.options.analyzeNested,
+  });
 }
 
 const CWD_CHANGE_REGEX =

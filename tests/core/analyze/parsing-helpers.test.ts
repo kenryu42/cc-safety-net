@@ -15,8 +15,13 @@ import {
 } from '@/core/analyze';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
-import { _extractGitSubcommandAndRest, _getCheckoutPositionalArgs } from '@/core/rules-git';
-import { extractShortOpts, splitShellCommands, stripWrappersWithInfo } from '@/core/shell';
+import { _extractGitSubcommandAndRest, _getCheckoutPositionalArgs } from '@/core/git';
+import {
+  extractShortOpts,
+  splitShellCommands,
+  splitShellCommandsWithInfo,
+  stripWrappersWithInfo,
+} from '@/core/shell';
 import { MAX_STRIP_ITERATIONS } from '@/types';
 import { createLinkedWorktreeFixture } from '../../helpers.ts';
 
@@ -212,10 +217,18 @@ describe('shell parsing helpers', () => {
       ]);
     });
 
-    test('marks attached command substitution after git as dynamic', () => {
+    test('reports attached command substitution metadata generically', () => {
       expect(splitShellCommands('git reset --hard$(printf HEAD~1)')).toEqual([
         ['printf', 'HEAD~1'],
-        ['git', 'reset', '--hard', '$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__'],
+        ['git', 'reset', '--hard'],
+      ]);
+      expect(splitShellCommandsWithInfo('git reset --hard$(printf HEAD~1)')).toEqual([
+        { tokens: ['printf', 'HEAD~1'], hasDynamicSubstitution: false },
+        { tokens: ['git', 'reset', '--hard'], hasDynamicSubstitution: true },
+      ]);
+      expect(splitShellCommandsWithInfo('rm -rf /tmp/$(printf x)')).toEqual([
+        { tokens: ['printf', 'x'], hasDynamicSubstitution: false },
+        { tokens: ['rm', '-rf', '/tmp/'], hasDynamicSubstitution: true },
       ]);
     });
 
@@ -887,7 +900,7 @@ describe('git rules helpers', () => {
 });
 
 describe('cwd tracking helpers', () => {
-  const { _segmentChangesCwd } = require('../../../src/core/analyze.ts');
+  const { _segmentChangesCwd } = require('../../../src/core/analyze/index.ts');
 
   test('cd returns true', () => {
     expect(_segmentChangesCwd(['cd', '..'])).toBe(true);
@@ -931,7 +944,7 @@ describe('cwd tracking helpers', () => {
 });
 
 describe('xargs parsing helpers', () => {
-  const { _extractXargsChildCommandWithInfo } = require('../../../src/core/analyze.ts');
+  const { _extractXargsChildCommandWithInfo } = require('../../../src/core/analyze/index.ts');
 
   test('replacement token from -I option', () => {
     const result = _extractXargsChildCommandWithInfo(['xargs', '-I', '{}', 'rm', '-rf', '{}']);

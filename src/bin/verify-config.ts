@@ -43,12 +43,9 @@ function printValidConfig(scope: string, path: string, result: ValidationResult)
 function printInvalidConfig(scope: string, path: string, errors: string[]): void {
   console.error(`\n✗ ${scope} config: ${path}`);
   console.error('  Errors:');
-  let errorNum = 1;
-  for (const error of errors) {
-    for (const part of error.split('; ')) {
-      console.error(`    ${errorNum}. ${part}`);
-      errorNum++;
-    }
+  const parts = errors.flatMap((error) => error.split('; '));
+  for (const [index, part] of parts.entries()) {
+    console.error(`    ${index + 1}. ${part}`);
   }
 }
 
@@ -69,10 +66,6 @@ function addSchemaIfMissing(path: string): boolean {
   }
 }
 
-/**
- * Verify config files and print results.
- * @returns Exit code (0 = success, 1 = errors found)
- */
 export function verifyConfig(options: VerifyConfigOptions = {}): number {
   const userConfig = options.userConfigPath ?? getUserConfigPath();
   const projectConfig = options.projectConfigPath ?? getProjectConfigPath();

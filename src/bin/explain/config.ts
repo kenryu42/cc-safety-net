@@ -63,7 +63,8 @@ export function buildAnalyzeOptions(explainOptions?: ExplainOptions): AnalyzeOpt
   return {
     cwd,
     effectiveCwd: cwd,
-    config: explainOptions?.config ?? loadConfig(cwd),
+    config:
+      explainOptions?.config ?? loadConfig(cwd, { userConfigDir: explainOptions?.userConfigDir }),
     strict: explainOptions?.strict ?? envTruthy('SAFETY_NET_STRICT'),
     paranoidRm: paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM'),
     paranoidInterpreters: paranoidAll || envTruthy('SAFETY_NET_PARANOID_INTERPRETERS'),

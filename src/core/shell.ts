@@ -1,9 +1,9 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute, parse as parsePath } from 'node:path';
 import { type ParseEntry, parse } from 'shell-quote';
+import { parseGitContextAppendEnvAssignment } from '@/core/git/env';
 import { resolveChdirTarget } from '@/core/path';
 import { MAX_STRIP_ITERATIONS, SHELL_OPERATORS } from '@/types';
-import { GIT_CONFIG_AFFECTING_ENV_NAMES, GIT_CONTEXT_ENV_OVERRIDES } from './worktree';
 
 // Proxy that preserves variable references as $VAR strings instead of expanding them
 const ENV_PROXY = new Proxy(
@@ -15,24 +15,37 @@ const ENV_PROXY = new Proxy(
 
 const ARITHMETIC_SENTINEL = '__CC_SAFETY_NET_ARITH_SENTINEL__';
 const BACKTICK_ATTACHED_SUFFIX_SENTINEL = '__CC_SAFETY_NET_BACKTICK_SUFFIX__';
-const DYNAMIC_SUBSTITUTION_TOKEN = '$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__';
+
+export interface ShellCommandSegmentInfo {
+  tokens: string[];
+  hasDynamicSubstitution: boolean;
+}
 
 export function splitShellCommands(command: string): string[][] {
+  return splitShellCommandsWithInfo(command).map((segment) => segment.tokens);
+}
+
+export function splitShellCommandsWithInfo(command: string): ShellCommandSegmentInfo[] {
   if (hasUnclosedQuotes(command)) {
-    return [[command]];
+    return [{ tokens: [command], hasDynamicSubstitution: false }];
   }
   const normalizedCommand = _stripAttachedIoNumbers(command.replace(/\n/g, ' ; '));
   const tokens = parse(normalizedCommand, ENV_PROXY);
-  const segments: string[][] = [];
+  const segments: ShellCommandSegmentInfo[] = [];
   let current: string[] = [];
+  let currentHasDynamicSubstitution = false;
   let i = 0;
 
   while (i < tokens.length) {
     const token = tokens[i] as ParseEntry;
     if (isOperator(token)) {
       if (current.length > 0) {
-        segments.push(current);
+        segments.push({
+          tokens: current,
+          hasDynamicSubstitution: currentHasDynamicSubstitution,
+        });
         current = [];
+        currentHasDynamicSubstitution = false;
       }
       i++;
       continue;
@@ -40,12 +53,16 @@ export function splitShellCommands(command: string): string[][] {
 
     if (_isProcessSubstitutionStart(tokens, i)) {
       if (current.length > 0) {
-        segments.push(current);
+        segments.push({
+          tokens: current,
+          hasDynamicSubstitution: currentHasDynamicSubstitution,
+        });
         current = [];
+        currentHasDynamicSubstitution = false;
       }
       const { innerSegments, endIndex } = extractProcessSubstitution(tokens, i);
       for (const seg of innerSegments) {
-        segments.push(seg);
+        segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
       i = endIndex + 1;
       continue;
@@ -54,7 +71,7 @@ export function splitShellCommands(command: string): string[][] {
     if (_isRedirectOp(token)) {
       const { redirectTarget, advance } = _getRedirectTargetInfo(tokens, i);
       if (redirectTarget !== null) {
-        _pushInlineSubstitutionSegments(segments, redirectTarget);
+        _pushInlineSubstitutionSegmentInfos(segments, redirectTarget);
       }
       i += advance;
       continue;
@@ -67,16 +84,18 @@ export function splitShellCommands(command: string): string[][] {
         attachedSuffix !== null && !_isRedirectOp(tokens[i - 1]) && !isOperatorToken(tokens[i - 1]);
 
       if (current.length > 0) {
-        if (_containsGitCommandToken(current)) {
-          current.push(DYNAMIC_SUBSTITUTION_TOKEN);
-        }
+        currentHasDynamicSubstitution = true;
         if (!shouldKeepCurrent) {
-          segments.push(current);
+          segments.push({
+            tokens: current,
+            hasDynamicSubstitution: currentHasDynamicSubstitution,
+          });
           current = [];
+          currentHasDynamicSubstitution = false;
         }
       }
       for (const seg of innerSegments) {
-        segments.push(seg);
+        segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
       if (shouldKeepCurrent && attachedSuffix) {
         current.push(attachedSuffix);
@@ -93,12 +112,10 @@ export function splitShellCommands(command: string): string[][] {
           current.push(prefix);
         }
       }
-      if (_containsGitCommandToken(current)) {
-        current.push(DYNAMIC_SUBSTITUTION_TOKEN);
-      }
+      currentHasDynamicSubstitution = current.length > 0;
       const { innerSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
       for (const seg of innerSegments) {
-        segments.push(seg);
+        segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
       i = endIndex + 1;
       continue;
@@ -110,13 +127,16 @@ export function splitShellCommands(command: string): string[][] {
       continue;
     }
 
-    _pushInlineSubstitutionSegments(segments, tokenText);
+    _pushInlineSubstitutionSegmentInfos(segments, tokenText);
     current.push(tokenText);
     i++;
   }
 
   if (current.length > 0) {
-    segments.push(current);
+    segments.push({
+      tokens: current,
+      hasDynamicSubstitution: currentHasDynamicSubstitution,
+    });
   }
 
   return segments;
@@ -205,10 +225,6 @@ function _getCommandTokenText(token: ParseEntry | undefined): string | null {
   }
 
   return null;
-}
-
-function _containsGitCommandToken(tokens: readonly string[]): boolean {
-  return tokens.some((token) => (token.split('/').pop() ?? token).toLowerCase() === 'git');
 }
 
 function extractCommandSubstitution(
@@ -427,6 +443,16 @@ function _pushInlineSubstitutionSegments(segments: string[][], token: string): v
   }
 }
 
+function _pushInlineSubstitutionSegmentInfos(
+  segments: ShellCommandSegmentInfo[],
+  token: string,
+): void {
+  const inlineSegments = extractInlineCommandSubstitutions(token);
+  for (const seg of inlineSegments) {
+    segments.push({ tokens: seg, hasDynamicSubstitution: false });
+  }
+}
+
 function hasUnclosedQuotes(command: string): boolean {
   let inSingle = false;
   let inDouble = false;
@@ -587,40 +613,12 @@ function _stripAttachedIoNumbers(command: string): string {
 }
 
 const ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const ENV_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
-const GIT_CONTEXT_ENV_OVERRIDE_NAMES: ReadonlySet<string> = new Set(GIT_CONTEXT_ENV_OVERRIDES);
 export function parseEnvAssignment(token: string): { name: string; value: string } | null {
   if (!ENV_ASSIGNMENT_RE.test(token)) {
     return null;
   }
   const eqIdx = token.indexOf('=');
   return { name: token.slice(0, eqIdx), value: token.slice(eqIdx + 1) };
-}
-
-function parseGitContextAppendEnvAssignment(token: string): { name: string; value: string } | null {
-  const match = token.match(ENV_APPEND_ASSIGNMENT_RE);
-  const name = match?.[1];
-  if (!name || !isTrackedGitEnvName(name)) {
-    return null;
-  }
-  const eqIdx = token.indexOf('=');
-  return { name, value: token.slice(eqIdx + 1) };
-}
-
-function isTrackedGitEnvName(name: string): boolean {
-  return (
-    GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name) ||
-    GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) ||
-    isGitConfigEnvName(name)
-  );
-}
-
-function isGitConfigEnvName(name: string): boolean {
-  return (
-    name === 'GIT_CONFIG_COUNT' ||
-    name === 'GIT_CONFIG_PARAMETERS' ||
-    /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name)
-  );
 }
 
 export interface EnvStrippingResult {

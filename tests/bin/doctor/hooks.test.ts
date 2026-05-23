@@ -11,7 +11,7 @@ import { withEnv } from '../../helpers.ts';
 
 function _writeCopilotHook(
   filePath: string,
-  command: string = 'npx -y cc-safety-net --copilot-cli',
+  command: string = 'npx -y cc-safety-net hook --copilot-cli',
   commandKey: 'bash' | 'powershell' = 'bash',
 ): void {
   writeFileSync(
@@ -34,7 +34,7 @@ function _writeCopilotHook(
 
 function _writeCopilotInlineConfig(
   filePath: string,
-  command: string = 'npx -y cc-safety-net --copilot-cli',
+  command: string = 'npx -y cc-safety-net hook --copilot-cli',
   options: {
     commandKey?: 'command' | 'bash' | 'powershell';
     disableAllHooks?: boolean;
@@ -897,7 +897,7 @@ describe('detectAllHooks', () => {
     mkdirSync(copilotDir, { recursive: true });
     _writeCopilotHook(
       join(copilotDir, 'powershell.json'),
-      'npx -y cc-safety-net --copilot-cli',
+      'npx -y cc-safety-net hook --copilot-cli',
       'powershell',
     );
 
@@ -934,14 +934,14 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Copilot CLI: supports the short -cp flag', () => {
+  test('Copilot CLI: supports the nested short -cp flag', () => {
     const tmpBase = join(tmpdir(), `doctor-copilot-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
     const copilotDir = join(projectDir, '.github', 'hooks');
     mkdirSync(homeDir, { recursive: true });
     mkdirSync(copilotDir, { recursive: true });
-    _writeCopilotHook(join(copilotDir, 'short-flag.json'), 'bunx cc-safety-net -cp');
+    _writeCopilotHook(join(copilotDir, 'short-flag.json'), 'bunx cc-safety-net hook -cp');
 
     try {
       const hooks = detectAllHooks(projectDir, { homeDir });
@@ -949,6 +949,26 @@ describe('detectAllHooks', () => {
 
       expect(copilot?.status).toBe('configured');
       expect(copilot?.configPath).toBe(join(copilotDir, 'short-flag.json'));
+    } finally {
+      rmSync(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  test('Copilot CLI: ignores old top-level -cp flag', () => {
+    const tmpBase = join(tmpdir(), `doctor-copilot-${Date.now()}`);
+    const homeDir = join(tmpBase, 'home');
+    const projectDir = join(tmpBase, 'project');
+    const copilotDir = join(projectDir, '.github', 'hooks');
+    mkdirSync(homeDir, { recursive: true });
+    mkdirSync(copilotDir, { recursive: true });
+    _writeCopilotHook(join(copilotDir, 'old-short-flag.json'), 'bunx cc-safety-net -cp');
+
+    try {
+      const hooks = detectAllHooks(projectDir, { homeDir });
+      const copilot = hooks.find((hook) => hook.platform === 'copilot-cli');
+
+      expect(copilot?.status).toBe('n/a');
+      expect(copilot?.selfTest).toBeUndefined();
     } finally {
       rmSync(tmpBase, { recursive: true, force: true });
     }

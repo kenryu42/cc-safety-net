@@ -26,6 +26,11 @@ describe('command registry', () => {
       expect(cmd).toBeUndefined();
     });
 
+    test('finds rule command and does not alias old rules command', () => {
+      expect(findCommand('rule')?.name).toBe('rule');
+      expect(findCommand('rules')).toBeUndefined();
+    });
+
     test('finds command by long alias', () => {
       const cmd = findCommand('--claude-code');
       expect(cmd).toBeDefined();
@@ -42,6 +47,7 @@ describe('command registry', () => {
       const names = visible.map((c) => c.name);
       expect(names).toContain('doctor');
       expect(names).toContain('explain');
+      expect(names).toContain('rule');
       expect(names).toContain('claude-code');
       expect(names).toContain('gemini-cli');
     });

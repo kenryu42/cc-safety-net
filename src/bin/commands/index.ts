@@ -1,15 +1,16 @@
 import { claudeCodeCommand } from './claude-code';
 import { copilotCliCommand } from './copilot-cli';
-import { customRulesDocCommand } from './custom-rules-doc';
 import { doctorCommand } from './doctor';
 import { explainCommand } from './explain';
 import { geminiCliCommand } from './gemini-cli';
+import { hookCommand } from './hook';
+import { ruleCommand } from './rule';
 import { statuslineCommand } from './statusline';
 import type { Command } from './types';
 import { verifyConfigCommand } from './verify-config';
 
 /** @internal Exported for testing */
-export type { Command, CommandOption } from './types';
+export type { Command, CommandOption, CommandSubcommand } from './types';
 
 /**
  * All registered commands.
@@ -19,11 +20,12 @@ export type { Command, CommandOption } from './types';
 export const commands: readonly Command[] = [
   doctorCommand,
   explainCommand,
+  ruleCommand,
+  hookCommand,
   claudeCodeCommand,
   copilotCliCommand,
   geminiCliCommand,
   verifyConfigCommand,
-  customRulesDocCommand,
   statuslineCommand,
 ];
 

@@ -507,7 +507,7 @@ function detectCodex(homeDir: string): HookStatus {
 
 function _isSafetyNetCopilotCommand(command: string | undefined): boolean {
   if (!command?.includes('cc-safety-net')) return false;
-  return /(^|\s)(--copilot-cli|-cp)(\s|$)/.test(command);
+  return /(^|\s)hook\s+(?:[^\s]+\s+)*(--copilot-cli|-cp)(\s|$)/.test(command);
 }
 
 function _parseSemver(version: string | null | undefined): [number, number, number] | null {

@@ -165,7 +165,9 @@ describe('writeAuditLog', () => {
     expect(entries[0]).toHaveProperty('segment');
     expect(entries[0]).toHaveProperty('reason');
     expect(entries[0]).toHaveProperty('cwd');
+    expect(entries[0]).toHaveProperty('decision');
 
+    expect(entries[0]?.decision).toBe('deny');
     expect(entries[0]?.cwd).toBe('/home/user/project');
     expect(entries[0]?.reason).toContain('git reset --hard');
   });
@@ -258,5 +260,18 @@ describe('writeAuditLog', () => {
     const entries = readLogEntries(sessionId);
     expect(entries.length).toBe(1);
     expect(entries[0]?.command.length).toBeLessThanOrEqual(300);
+  });
+
+  test('can write allowed debug log entry', () => {
+    const sessionId = 'test-session-allowed';
+    writeAuditLog(sessionId, 'git status', 'git status', 'allowed', '/home/user/project', {
+      homeDir: testDir,
+      decision: 'allow',
+    });
+
+    const entries = readLogEntries(sessionId);
+    expect(entries.length).toBe(1);
+    expect(entries[0]?.decision).toBe('allow');
+    expect(entries[0]?.reason).toBe('allowed');
   });
 });

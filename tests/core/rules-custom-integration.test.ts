@@ -149,8 +149,16 @@ describe('custom rules integration', () => {
     const path = join(tempDir, '.safety-net.json');
     writeFileSync(path, '{"version": 2}', 'utf-8');
 
-    assertBlocked('git reset --hard', 'git reset --hard destroys', tempDir);
-    assertAllowed('echo hello', tempDir);
+    assertBlocked(
+      'git reset --hard',
+      'legacy rules config location is no longer used; run `npx cc-safety-net rule migrate`',
+      tempDir,
+    );
+    assertBlocked(
+      'echo hello',
+      'legacy rules config location is no longer used; run `npx cc-safety-net rule migrate`',
+      tempDir,
+    );
   });
 
   test('custom rules not applied to embedded commands', () => {

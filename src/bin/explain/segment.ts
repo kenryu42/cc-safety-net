@@ -27,8 +27,8 @@ import {
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { isTmpdirOverriddenToNonTemp } from '@/core/analyze/tmpdir';
 import { analyzeXargs } from '@/core/analyze/xargs';
+import { analyzeGit, getGitWorktreeRelaxation } from '@/core/git';
 import { checkCustomRules } from '@/core/rules-custom';
-import { analyzeGit, getGitWorktreeRelaxation } from '@/core/rules-git';
 import { analyzeRm } from '@/core/rules-rm';
 import {
   normalizeCommandToken,
@@ -325,7 +325,7 @@ export function explainSegment(
     const reason = analyzeGit(strippedTokens, gitOptions);
     steps.push({
       type: 'rule-check',
-      ruleModule: 'rules-git.ts',
+      ruleModule: 'git',
       ruleFunction: 'analyzeGit',
       matched: !!reason || !!relaxation,
       reason: reason ?? relaxation?.originalReason,

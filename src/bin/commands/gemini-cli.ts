@@ -4,7 +4,7 @@ export const geminiCliCommand: Command = {
   name: 'gemini-cli',
   aliases: ['-gc', '--gemini-cli'],
   description: 'Run as Gemini CLI BeforeTool hook (reads JSON from stdin)',
-  usage: '-gc, --gemini-cli',
+  usage: 'hook -gc, hook --gemini-cli',
   options: [
     {
       flags: '-h, --help',

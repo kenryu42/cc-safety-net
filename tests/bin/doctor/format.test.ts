@@ -242,7 +242,7 @@ describe('formatEnvironmentSection', () => {
     // Should be a table with Variable and Status columns
     expect(output).toContain('Variable');
     expect(output).toContain('Status');
-    expect(output).toContain('SAFETY_NET_STRICT');
+    expect(output).toContain('CC_SAFETY_NET_STRICT');
     // Should have table borders
     expect(output).toContain('┌');
     expect(output).toContain('┘');
@@ -251,11 +251,14 @@ describe('formatEnvironmentSection', () => {
   test('shows ✓ for enabled variables', () => {
     const envVars = [
       {
-        name: 'SAFETY_NET_STRICT',
+        name: 'CC_SAFETY_NET_STRICT',
         description: 'Fail-closed',
         defaultBehavior: 'permissive',
         value: '1',
         isSet: true,
+        legacyName: 'SAFETY_NET_STRICT',
+        legacyValue: undefined,
+        legacyIsSet: false,
       },
     ];
     const output = formatEnvironmentSection(envVars);
@@ -265,11 +268,14 @@ describe('formatEnvironmentSection', () => {
   test('shows ✗ for disabled variables', () => {
     const envVars = [
       {
-        name: 'SAFETY_NET_STRICT',
+        name: 'CC_SAFETY_NET_STRICT',
         description: 'Fail-closed',
         defaultBehavior: 'permissive',
         value: undefined,
         isSet: false,
+        legacyName: 'SAFETY_NET_STRICT',
+        legacyValue: undefined,
+        legacyIsSet: false,
       },
     ];
     const output = formatEnvironmentSection(envVars);

@@ -8,6 +8,9 @@ import {
   NAME_PATTERN,
   type ValidationResult,
 } from '@/types';
+import { validateRulesConfig } from './rules-policy/config-file';
+import { loadRulesPolicy, rulesPolicyToConfig } from './rules-policy/scope-policy';
+import { repairLocalRulesPolicy } from './rules-policy/sync';
 
 const DEFAULT_CONFIG: Config = {
   version: 1,
@@ -17,18 +20,29 @@ const DEFAULT_CONFIG: Config = {
 export interface LoadConfigOptions {
   /** Override user config directory (for testing) */
   userConfigDir?: string;
+  /** Repair local rulebook lock/cache state before loading rule-backed rules. */
+  repairLocalRulebooks?: boolean;
 }
 
 export function loadConfig(cwd?: string, options?: LoadConfigOptions): Config {
   const safeCwd = typeof cwd === 'string' ? cwd : process.cwd();
+  if (options?.repairLocalRulebooks) {
+    repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options.userConfigDir });
+  }
   const userConfigDir = options?.userConfigDir ?? join(homedir(), '.cc-safety-net');
   const userConfigPath = join(userConfigDir, 'config.json');
   const projectConfigPath = join(safeCwd, '.safety-net.json');
 
   const userConfig = loadSingleConfig(userConfigPath);
   const projectConfig = loadSingleConfig(projectConfigPath);
+  let rulesPolicyConfig = rulesPolicyToConfig(
+    loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }),
+  );
+  if (rulesPolicyConfig.failClosedReason && (userConfig || projectConfig)) {
+    rulesPolicyConfig = DEFAULT_CONFIG;
+  }
 
-  return mergeConfigs(userConfig, projectConfig);
+  return mergeConfigs(mergeConfigs(userConfig, projectConfig), rulesPolicyConfig);
 }
 
 function loadSingleConfig(path: string): Config | null {
@@ -61,6 +75,14 @@ function loadSingleConfig(path: string): Config | null {
 }
 
 function mergeConfigs(userConfig: Config | null, projectConfig: Config | null): Config {
+  if (userConfig?.failClosedReason || projectConfig?.failClosedReason) {
+    return {
+      version: 1,
+      rules: [],
+      failClosedReason: userConfig?.failClosedReason ?? projectConfig?.failClosedReason,
+    };
+  }
+
   if (!userConfig && !projectConfig) {
     return DEFAULT_CONFIG;
   }
@@ -188,26 +210,31 @@ function validateRule(rule: unknown, index: number, ruleNames: Set<string>): str
 }
 
 export function validateConfigFile(path: string): ValidationResult {
+  return validateParsedConfigFile(path, validateConfig);
+}
+
+type ConfigFileInput = { ok: true; parsed: unknown } | { ok: false; result: ValidationResult };
+
+function readConfigFileInput(path: string): ConfigFileInput {
   const errors: string[] = [];
   const ruleNames = new Set<string>();
 
   if (!existsSync(path)) {
     errors.push(`File not found: ${path}`);
-    return { errors, ruleNames };
+    return { ok: false, result: { errors, ruleNames } };
   }
 
   try {
     const content = readFileSync(path, 'utf-8');
     if (!content.trim()) {
       errors.push('Config file is empty');
-      return { errors, ruleNames };
+      return { ok: false, result: { errors, ruleNames } };
     }
 
-    const parsed = JSON.parse(content) as unknown;
-    return validateConfig(parsed);
+    return { ok: true, parsed: JSON.parse(content) as unknown };
   } catch (e) {
     errors.push(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
-    return { errors, ruleNames };
+    return { ok: false, result: { errors, ruleNames } };
   }
 }
 
@@ -217,6 +244,26 @@ export function getUserConfigPath(): string {
 
 export function getProjectConfigPath(cwd?: string): string {
   return resolve(cwd ?? process.cwd(), '.safety-net.json');
+}
+
+export function getLegacyProjectConfigPath(cwd?: string): string {
+  return getProjectConfigPath(cwd);
+}
+
+export function validateRulesConfigFile(path: string): ValidationResult {
+  const loaded = readConfigFileInput(path);
+  if (!loaded.ok) return loaded.result;
+  const result = validateRulesConfig(loaded.parsed);
+  return { errors: result.errors, ruleNames: result.sources };
+}
+
+function validateParsedConfigFile(
+  path: string,
+  validate: (config: unknown) => ValidationResult,
+): ValidationResult {
+  const loaded = readConfigFileInput(path);
+  if (!loaded.ok) return loaded.result;
+  return validate(loaded.parsed);
 }
 
 export type { ValidationResult };

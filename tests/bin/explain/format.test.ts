@@ -3,9 +3,17 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { formatStepStyleD, getBoxChars } from '@/bin/explain/format-helpers';
-import { explainCommand, formatTraceHuman, formatTraceJson } from '@/bin/explain/index';
-import type { ExplainResult, TraceStep } from '@/types';
+import {
+  explainCommand as explainCommandBase,
+  formatTraceHuman,
+  formatTraceJson,
+} from '@/bin/explain/index';
+import type { ExplainOptions, ExplainResult, TraceStep } from '@/types';
 import { getTraceSteps, withEnv } from '../../helpers.ts';
+
+function explainCommand(command: string, options?: ExplainOptions) {
+  return explainCommandBase(command, { config: { version: 1, rules: [] }, ...options });
+}
 
 function mockExplainResult(
   input: string,
@@ -34,6 +42,28 @@ describe('formatTraceHuman', () => {
     expect(output).toContain('BLOCKED');
   });
 
+  test('includes custom rule metadata in blocked result', () => {
+    const result = mockExplainResult(
+      'git add -A',
+      [['git', 'add', '-A']],
+      { type: 'custom-rules-check', rulesChecked: true, matched: true },
+      'blocked',
+      '[git-rules/block-add-all] Stage precise files.',
+    );
+    result.customRule = {
+      id: 'git-rules/block-add-all',
+      rulebook: { name: 'git-rules', version: '1.0.0' },
+      source: 'git-rules',
+      override: { type: 'reason', reason: 'Stage precise files.' },
+    };
+
+    const output = formatTraceHuman(result);
+    expect(output).toContain('Rule: git-rules/block-add-all');
+    expect(output).toContain('Rulebook: git-rules 1.0.0');
+    expect(output).toContain('Source: git-rules');
+    expect(output).toContain('Override: reason Stage precise files.');
+  });
+
   test('includes Status: ALLOWED for allowed commands', () => {
     const result = explainCommand('git status');
     const output = formatTraceHuman(result);
@@ -60,7 +90,7 @@ describe('formatTraceHuman', () => {
   test('shows rule module and function annotation', () => {
     const result = explainCommand('git reset --hard');
     const output = formatTraceHuman(result);
-    expect(output).toContain('rules-git.ts:analyzeGit()');
+    expect(output).toContain('git:analyzeGit()');
   });
 
   test('includes CONFIG section with Path', () => {
@@ -181,7 +211,7 @@ describe('formatTraceHuman step formatting', () => {
       mockExplainResult('git reset --hard', [['git', 'reset', '--hard']], worktreeStep),
     );
     expect(output).toContain('Worktree relaxation');
-    expect(output).toContain('SAFETY_NET_WORKTREE');
+    expect(output).toContain('CC_SAFETY_NET_WORKTREE');
   });
 
   test('tmpdir-check is an internal detail not shown in human output', () => {

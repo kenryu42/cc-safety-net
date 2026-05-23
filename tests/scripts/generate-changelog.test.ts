@@ -180,7 +180,7 @@ describe('generateChangelog', () => {
         'eee111 feat: missing files',
         'fff222 chore: skip',
       ].join('\n'),
-      'git diff-tree --no-commit-id --name-only -r abc123': 'src/core/analyze.ts\n',
+      'git diff-tree --no-commit-id --name-only -r abc123': 'src/core/analyze/index.ts\n',
       'git diff-tree --no-commit-id --name-only -r bcd234': 'skills/example/SKILL.md\n',
       'git diff-tree --no-commit-id --name-only -r cde345': '.opencode/config.json\n',
       'git diff-tree --no-commit-id --name-only -r eee111': () => {
@@ -310,7 +310,7 @@ describe('runChangelog', () => {
       "gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty'":
         'v1.0.0\n',
       'git log v1.0.0..HEAD --oneline --format="%h %s"': 'abc123 feat: core change',
-      'git diff-tree --no-commit-id --name-only -r abc123': 'src/core/analyze.ts\n',
+      'git diff-tree --no-commit-id --name-only -r abc123': 'src/core/analyze/index.ts\n',
       'gh api "/repos/kenryu42/claude-code-safety-net/compare/v1.0.0...HEAD" --jq \'.commits[] | {login: .author.login, message: .commit.message}\'':
         compare,
     });

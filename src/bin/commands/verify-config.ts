@@ -5,6 +5,7 @@ export const verifyConfigCommand: Command = {
   aliases: ['-vc', '--verify-config'],
   description: 'Validate custom rules configuration files',
   usage: '-vc, --verify-config',
+  hidden: true,
   options: [
     {
       flags: '-h, --help',

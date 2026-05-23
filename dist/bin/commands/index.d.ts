@@ -1,6 +1,6 @@
 import type { Command } from './types';
 /** @internal Exported for testing */
-export type { Command, CommandOption } from './types';
+export type { Command, CommandOption, CommandSubcommand } from './types';
 /**
  * All registered commands.
  * Order determines display order in main help.

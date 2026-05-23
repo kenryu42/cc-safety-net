@@ -1,3 +1,4 @@
+import { ENV_FLAGS } from '@/core/env';
 import type { Command } from './commands';
 import { findCommand, getVisibleCommands } from './commands';
 
@@ -21,6 +22,13 @@ function formatOptionFlags(option: { flags: string; argument?: string }): string
  */
 function getOptionsColumnWidth(options: readonly { flags: string; argument?: string }[]): number {
   return Math.max(...options.map((opt) => formatOptionFlags(opt).length));
+}
+
+/**
+ * Calculate the maximum width of subcommand usage for alignment.
+ */
+function getSubcommandsColumnWidth(subcommands: readonly { usage: string }[]): number {
+  return Math.max(...subcommands.map((subcommand) => subcommand.usage.length));
 }
 
 /**
@@ -48,6 +56,18 @@ export function printCommandHelp(command: Command): void {
   lines.push('USAGE:');
   lines.push(`${INDENT}${PROGRAM_NAME} ${command.usage}`);
   lines.push('');
+
+  // Subcommands
+  if (command.subcommands && command.subcommands.length > 0) {
+    lines.push('SUBCOMMANDS:');
+    const subcommandWidth = getSubcommandsColumnWidth(command.subcommands);
+    for (const subcommand of command.subcommands) {
+      lines.push(
+        `${INDENT}${subcommand.usage.padEnd(subcommandWidth + 2)}${subcommand.description}`,
+      );
+    }
+    lines.push('');
+  }
 
   // Options
   if (command.options.length > 0) {
@@ -109,13 +129,20 @@ export function printHelp(): void {
 
   // Environment variables
   lines.push('ENVIRONMENT VARIABLES:');
-  lines.push(`${INDENT}SAFETY_NET_STRICT=1               Fail-closed on unparseable commands`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID=1             Enable all paranoid checks`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID_RM=1          Block non-temp rm -rf within cwd`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID_INTERPRETERS=1  Block interpreter one-liners`);
   lines.push(
-    `${INDENT}SAFETY_NET_WORKTREE=1             Allow local git discards in linked worktrees`,
+    `${INDENT}${ENV_FLAGS.strict.name}=1               Fail-closed on unparseable commands`,
   );
+  lines.push(`${INDENT}${ENV_FLAGS.paranoid.name}=1             Enable all paranoid checks`);
+  lines.push(`${INDENT}${ENV_FLAGS.paranoidRm.name}=1          Block non-temp rm -rf within cwd`);
+  lines.push(`${INDENT}${ENV_FLAGS.paranoidInterpreters.name}=1  Block interpreter one-liners`);
+  lines.push(
+    `${INDENT}${ENV_FLAGS.worktree.name}=1             Allow local git discards in linked worktrees`,
+  );
+  lines.push(
+    `${INDENT}${ENV_FLAGS.debug.name}=1              Log allowed hook commands for debugging`,
+  );
+  lines.push(`${INDENT}CC_SAFETY_NET_HOME             Override rule config home directory`);
+  lines.push(`${INDENT}Legacy SAFETY_NET_* names remain supported as fallbacks`);
   lines.push('');
 
   // Config files
@@ -140,6 +167,9 @@ export function printVersion(): void {
 export function showCommandHelp(commandName: string): boolean {
   const command = findCommand(commandName);
   if (!command) {
+    return false;
+  }
+  if (command.hidden || command.name.toLowerCase() !== commandName.toLowerCase()) {
     return false;
   }
   printCommandHelp(command);

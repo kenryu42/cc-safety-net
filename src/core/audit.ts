@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import type { AuditLogEntry } from '@/types';
 
+type AuditLogDecision = 'allow' | 'deny';
+
 /**
  * Sanitize session ID to prevent path traversal attacks.
  * Returns null if the session ID is invalid.
@@ -38,7 +40,7 @@ export function writeAuditLog(
   segment: string,
   reason: string,
   cwd: string | null,
-  options: { homeDir?: string } = {},
+  options: { homeDir?: string; decision?: AuditLogDecision } = {},
 ): void {
   const safeSessionId = sanitizeSessionIdForFilename(sessionId);
   if (!safeSessionId) {
@@ -56,6 +58,7 @@ export function writeAuditLog(
     const logFile = join(logsDir, `${safeSessionId}.jsonl`);
     const entry: AuditLogEntry = {
       ts: new Date().toISOString(),
+      decision: options.decision ?? 'deny',
       command: redactSecrets(command).slice(0, 300),
       segment: redactSecrets(segment).slice(0, 300),
       reason,

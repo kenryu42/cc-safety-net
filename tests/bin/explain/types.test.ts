@@ -74,7 +74,7 @@ describe('TraceStep discriminated union', () => {
   test('rule-check step type compiles', () => {
     const step: TraceStep = {
       type: 'rule-check',
-      ruleModule: 'rules-git.ts',
+      ruleModule: 'git',
       ruleFunction: 'analyzeGit',
       matched: true,
       reason: 'git reset --hard destroys uncommitted changes',

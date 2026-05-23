@@ -12,6 +12,7 @@ import type { AnalyzeOptions, Config, ExplainResult, TraceStep } from '@/types';
 // Default empty config for tests that don't specify a cwd
 // This prevents loading the project's .safety-net.json
 const DEFAULT_TEST_CONFIG: Config = { version: 1, rules: [] };
+const CLI_ENTRYPOINT = join(process.cwd(), 'src/bin/cc-safety-net.ts');
 
 function getOptionsFromEnv(cwd?: string, config?: Config): AnalyzeOptions {
   // If no cwd specified, use empty config to avoid loading project's config
@@ -77,15 +78,18 @@ export async function withTempDir<T>(prefix: string, fn: (dir: string) => T | Pr
 export async function runSafetyNetCli(
   args: string[],
   env?: Record<string, string>,
-): Promise<{ output: string; exitCode: number }> {
-  const proc = Bun.spawn(['bun', 'src/bin/cc-safety-net.ts', ...args], {
+  cwd?: string,
+): Promise<{ output: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env, ...(env ?? {}) },
+    cwd,
   });
   const output = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
   const exitCode = await proc.exited;
-  return { output, exitCode };
+  return { output, stderr, exitCode };
 }
 
 export function withStdoutColor<T>(enabled: boolean, fn: () => T): T {
@@ -176,7 +180,17 @@ export interface LinkedWorktreeFixture {
 }
 
 function runGit(args: readonly string[], cwd: string): void {
-  execFileSync('git', [...args], { cwd, stdio: 'ignore' });
+  execFileSync('git', [...args], {
+    cwd,
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Safety Net Test',
+      GIT_AUTHOR_EMAIL: 'safety-net@example.test',
+      GIT_COMMITTER_NAME: 'Safety Net Test',
+      GIT_COMMITTER_EMAIL: 'safety-net@example.test',
+    },
+  });
 }
 
 export function createLinkedWorktreeFixture(): LinkedWorktreeFixture {
@@ -188,6 +202,7 @@ export function createLinkedWorktreeFixture(): LinkedWorktreeFixture {
   runGit(['init'], mainWorktree);
   runGit(['config', 'user.email', 'safety-net@example.test'], mainWorktree);
   runGit(['config', 'user.name', 'Safety Net Test'], mainWorktree);
+  runGit(['config', 'commit.gpgsign', 'false'], mainWorktree);
   writeFileSync(join(mainWorktree, 'file.txt'), 'initial\n');
   runGit(['add', 'file.txt'], mainWorktree);
   runGit(['commit', '-m', 'initial'], mainWorktree);

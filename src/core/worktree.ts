@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { GIT_CONTEXT_ENV_OVERRIDES } from '@/core/git/env';
 import { resolveChdirTarget } from '@/core/path';
 
 export const GIT_GLOBAL_OPTS_WITH_VALUE: ReadonlySet<string> = new Set([
@@ -10,21 +11,6 @@ export const GIT_GLOBAL_OPTS_WITH_VALUE: ReadonlySet<string> = new Set([
   '--namespace',
   '--super-prefix',
   '--config-env',
-]);
-
-export const GIT_CONTEXT_ENV_OVERRIDES = [
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_COMMON_DIR',
-  'GIT_INDEX_FILE',
-] as const;
-
-export const GIT_CONFIG_AFFECTING_ENV_NAMES: ReadonlySet<string> = new Set([
-  'GIT_CONFIG_GLOBAL',
-  'GIT_CONFIG_NOSYSTEM',
-  'GIT_CONFIG_SYSTEM',
-  'HOME',
-  'XDG_CONFIG_HOME',
 ]);
 
 export interface GitExecutionContext {

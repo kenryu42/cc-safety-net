@@ -2,10 +2,9 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { analyzeCommand, loadConfig } from '@/core/analyze';
 import { envTruthy } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
-import { loadBuiltinCommands } from '@/features/builtin-commands/index';
+import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
 
 export const SafetyNetPlugin: Plugin = async ({ directory }) => {
-  const safetyNetConfig = loadConfig(directory);
   const strict = envTruthy('SAFETY_NET_STRICT');
   const paranoidAll = envTruthy('SAFETY_NET_PARANOID');
   const paranoidRm = paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM');
@@ -28,7 +27,7 @@ export const SafetyNetPlugin: Plugin = async ({ directory }) => {
         const command = output.args.command;
         const result = analyzeCommand(command, {
           cwd: directory,
-          config: safetyNetConfig,
+          config: loadConfig(directory, { repairLocalRulebooks: true }),
           strict,
           paranoidRm,
           paranoidInterpreters,
@@ -39,6 +38,7 @@ export const SafetyNetPlugin: Plugin = async ({ directory }) => {
             reason: result.reason,
             command,
             segment: result.segment,
+            manualPermissionAdvice: result.manualPermissionAdvice,
           });
 
           throw new Error(message);

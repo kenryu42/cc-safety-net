@@ -3,6 +3,7 @@ import { homedir, tmpdir } from 'node:os';
 import { normalize, resolve, sep } from 'node:path';
 
 import { hasRecursiveForceFlags } from '@/core/analyze/rm-flags';
+import { ENV_FLAGS } from '@/core/env';
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -167,7 +168,7 @@ function reasonForClassification(
       return REASON_RM_RF;
     case 'within_anchored_cwd':
       if (ctx.paranoid) {
-        return `${REASON_RM_RF} (SAFETY_NET_PARANOID_RM enabled)`;
+        return `${REASON_RM_RF} (${ENV_FLAGS.paranoidRm.name} enabled)`;
       }
       return null;
     case 'outside_anchored_cwd':

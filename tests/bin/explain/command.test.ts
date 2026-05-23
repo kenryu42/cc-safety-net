@@ -2,13 +2,14 @@
  * Tests for the explainCommand function.
  */
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getConfigSource } from '@/bin/explain/config';
 import { explainCommand } from '@/bin/explain/index';
 import { explainSegment } from '@/bin/explain/segment';
 import { REASON_RECURSION_LIMIT } from '@/core/analyze/analyze-command';
+import { syncRulesConfig } from '@/core/rules-policy';
 import type { TraceStep } from '@/types';
 import { MAX_RECURSION_DEPTH } from '@/types';
 import { getTraceSteps, toShellPath, withEnv, withLinkedWorktreeFixture } from '../../helpers.ts';
@@ -64,6 +65,30 @@ function expectParallelRuleStep(command: string) {
   expect(result.result).toBe('blocked');
   return getTraceSteps(result).find(
     (s) => s.type === 'rule-check' && s.ruleModule === 'analyze/parallel.ts',
+  );
+}
+
+function writeExplainRulebookFixture(tempDir: string): void {
+  mkdirSync(join(tempDir, '.cc-safetynet-rules', 'docker-rules'), { recursive: true });
+  writeFileSync(
+    join(tempDir, '.cc-safetynet-rules', 'docker-rules', 'rulebook.json'),
+    JSON.stringify({
+      rulebook_version: 1,
+      name: 'docker-rules',
+      version: '1.0.0',
+      allowed_commands: ['docker'],
+      rules: [
+        {
+          name: 'block-system-prune',
+          command: 'docker',
+          subcommand: 'system',
+          block_args: ['prune'],
+          reason: 'Use targeted cleanup.',
+        },
+      ],
+      tests: [{ command: 'docker system prune', expect: 'blocked', rule: 'block-system-prune' }],
+    }),
+    'utf-8',
   );
 }
 
@@ -521,6 +546,63 @@ describe('explainCommand guard parity fixes', () => {
     const result = explainCommand('echo hello', { config: customConfig });
     expect(result.result).toBe('blocked');
     expect(result.reason).toContain('custom echo block');
+  });
+
+  test('inline custom config reports matching rule id without rulebook metadata', () => {
+    const result = explainCommand('echo hello', {
+      config: {
+        version: 1,
+        rules: [
+          {
+            name: 'block-echo',
+            command: 'echo',
+            block_args: ['hello'],
+            reason: 'custom echo block',
+          },
+        ],
+      },
+    });
+
+    expect(result.customRule).toEqual({ id: 'block-echo' });
+  });
+
+  test('loaded rules policy reports rulebook and override metadata', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'explain-policy-metadata-'));
+
+    try {
+      writeExplainRulebookFixture(tempDir);
+      writeFileSync(
+        join(tempDir, '.cc-safetynet-rules', 'rule.json'),
+        JSON.stringify({
+          version: 1,
+          rules: ['docker-rules'],
+          overrides: {
+            'docker-rules/block-system-prune': { reason: 'Use docker image prune.' },
+          },
+        }),
+        'utf-8',
+      );
+
+      const syncResult = await syncRulesConfig({
+        cwd: tempDir,
+        userConfigDir: join(tempDir, 'home'),
+      });
+      expect(syncResult.ok).toBe(true);
+
+      const result = explainCommand('docker system prune', {
+        cwd: tempDir,
+        userConfigDir: join(tempDir, 'home'),
+      });
+
+      expect(result.customRule).toEqual({
+        id: 'docker-rules/block-system-prune',
+        rulebook: { name: 'docker-rules', version: '1.0.0' },
+        source: 'docker-rules',
+        override: { type: 'reason', reason: 'Use docker image prune.' },
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
 

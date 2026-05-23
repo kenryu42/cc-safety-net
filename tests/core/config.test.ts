@@ -3,12 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import {
+  getLegacyProjectConfigPath,
   getProjectConfigPath,
   getUserConfigPath,
   type LoadConfigOptions,
   loadConfig,
   validateConfig,
   validateConfigFile,
+  validateRulesConfigFile,
 } from '@/core/config';
 
 describe('config validation', () => {
@@ -647,6 +649,26 @@ describe('validate config file', () => {
     const result = validateConfigFile(path);
     expect(result.errors).toEqual(['Config file is empty']);
   });
+
+  test('validates rulebook source config files', () => {
+    const path = join(tempDir, 'rule.json');
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
+      'utf-8',
+    );
+
+    const result = validateRulesConfigFile(path);
+
+    expect(result.errors).toEqual([]);
+    expect(result.ruleNames).toEqual(new Set(['project-rules']));
+  });
+
+  test('rulebook source config validation returns file read errors', () => {
+    const result = validateRulesConfigFile(join(tempDir, 'missing-rule.json'));
+
+    expect(result.errors[0]).toContain('File not found');
+  });
 });
 
 describe('config path helpers', () => {
@@ -657,5 +679,9 @@ describe('config path helpers', () => {
 
   test('getProjectConfigPath resolves cwd', () => {
     expect(getProjectConfigPath('/tmp')).toBe(resolve('/tmp', '.safety-net.json'));
+  });
+
+  test('getLegacyProjectConfigPath matches project config path', () => {
+    expect(getLegacyProjectConfigPath('/tmp')).toBe(getProjectConfigPath('/tmp'));
   });
 });

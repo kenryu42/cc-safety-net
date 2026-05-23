@@ -2,14 +2,56 @@
  * Tests for the explain command CLI flag parsing.
  */
 import { describe, expect, test } from 'bun:test';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createLinkedWorktreeFixture, runSafetyNetCli, withTempDir } from '../../helpers.ts';
 
+function writeGitRulebook(dir: string): void {
+  mkdirSync(join(dir, '.cc-safetynet-rules', 'git-rules'), { recursive: true });
+  writeFileSync(
+    join(dir, '.cc-safetynet-rules', 'git-rules', 'rulebook.json'),
+    JSON.stringify({
+      rulebook_version: 1,
+      name: 'git-rules',
+      version: '1.0.0',
+      allowed_commands: ['git'],
+      rules: [
+        {
+          name: 'block-add-all',
+          command: 'git',
+          subcommand: 'add',
+          block_args: ['-A', '--all', '.'],
+          reason: 'Stage specific files.',
+        },
+      ],
+      tests: [
+        { command: 'git add -A', expect: 'blocked', rule: 'block-add-all' },
+        { command: 'git status', expect: 'allowed' },
+      ],
+    }),
+    'utf-8',
+  );
+}
+
 async function explainJson(args: string[]) {
-  const result = await runSafetyNetCli(['explain', '--json', ...args]);
-  return {
-    parsed: JSON.parse(result.output),
-    exitCode: result.exitCode,
-  };
+  return withTempDir('safety-net-explain-cli-', async (tempDir) => {
+    const result = await runSafetyNetCli(['explain', '--json', ...args], undefined, tempDir);
+    return {
+      parsed: JSON.parse(result.output),
+      exitCode: result.exitCode,
+    };
+  });
+}
+
+async function withGitRulebook(
+  fn: (tempDir: string, env: Record<string, string>) => Promise<void>,
+) {
+  await withTempDir('safety-net-explain-cli-', async (tempDir) => {
+    const env = { HOME: join(tempDir, 'home') };
+    writeGitRulebook(tempDir);
+    await runSafetyNetCli(['rule', 'add', 'git-rules'], env, tempDir);
+    await fn(tempDir, env);
+  });
 }
 
 describe('explain CLI flag parsing', () => {
@@ -77,7 +119,11 @@ describe('explain CLI flag parsing', () => {
         {
           stdout: 'pipe',
           stderr: 'pipe',
-          env: { ...process.env, SAFETY_NET_WORKTREE: '1' },
+          env: {
+            ...process.env,
+            HOME: join(fixture.mainWorktree, 'home'),
+            SAFETY_NET_WORKTREE: '1',
+          },
         },
       );
 
@@ -94,6 +140,54 @@ describe('explain CLI flag parsing', () => {
     } finally {
       fixture.cleanup();
     }
+  });
+
+  test('explain --json reports rulebook-backed custom rule metadata', async () => {
+    await withGitRulebook(async (tempDir, env) => {
+      const result = await runSafetyNetCli(['explain', '--json', 'git', 'add', '-A'], env, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.output).customRule).toEqual({
+        id: 'git-rules/block-add-all',
+        rulebook: { name: 'git-rules', version: '1.0.0' },
+        source: 'git-rules',
+      });
+    });
+  });
+
+  test('explain human output reports rulebook-backed custom rule metadata', async () => {
+    await withGitRulebook(async (tempDir, env) => {
+      const result = await runSafetyNetCli(['explain', 'git', 'add', '-A'], env, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain('Rule: git-rules/block-add-all');
+      expect(result.output).toContain('Rulebook: git-rules 1.0.0');
+      expect(result.output).toContain('Source: git-rules');
+    });
+  });
+
+  test('explain --json reports custom rule reason override metadata', async () => {
+    await withGitRulebook(async (tempDir, env) => {
+      const configPath = join(tempDir, '.cc-safetynet-rules', 'rule.json');
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          ...JSON.parse(readFileSync(configPath, 'utf-8')),
+          overrides: {
+            'git-rules/block-add-all': { reason: 'Stage precise files.' },
+          },
+        }),
+        'utf-8',
+      );
+
+      const result = await runSafetyNetCli(['explain', '--json', 'git', 'add', '-A'], env, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.output).customRule.override).toEqual({
+        type: 'reason',
+        reason: 'Stage precise files.',
+      });
+    });
   });
 
   test('explain --cwd without path shows error', async () => {

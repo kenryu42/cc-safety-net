@@ -5,6 +5,7 @@
 [![Version](https://img.shields.io/github/v/tag/kenryu42/claude-code-safety-net?label=version&color=blue)](https://github.com/kenryu42/claude-code-safety-net)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-D27656)](#claude-code-installation)
 [![OpenCode](https://img.shields.io/badge/OpenCode-black)](#opencode-installation)
+[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-111111)](#kimi-cli-installation)
 [![Gemini CLI](https://img.shields.io/badge/Gemini%20CLI-678AE3)](#gemini-cli-installation)
 [![Copilot CLI](https://img.shields.io/badge/Copilot%20CLI-4EA5C9)](#github-copilot-cli-installation)
 [![Codex](https://img.shields.io/badge/Codex-white)](#codex-installation)
@@ -27,6 +28,7 @@ A Claude Code plugin that acts as a safety net, catching destructive git and fil
 - [Quick Start](#quick-start)
   - [Claude Code Installation](#claude-code-installation)
   - [OpenCode Installation](#opencode-installation)
+  - [Kimi CLI Installation](#kimi-cli-installation)
   - [Gemini CLI Installation](#gemini-cli-installation)
   - [GitHub Copilot CLI Installation](#github-copilot-cli-installation)
   - [Codex Installation](#codex-installation)
@@ -178,23 +180,51 @@ Running both together provides defense-in-depth. Sandboxing handles unknown thre
 
 ### OpenCode Installation
 
-**Option A: Let an LLM do it**
+Install Safety Net into your OpenCode config:
 
-Paste this into any LLM agent (Claude Code, OpenCode, Cursor, etc.):
-
-```
-Install the cc-safety-net plugin in `~/.config/opencode/opencode.json` (or `.jsonc`) according to the schema at: https://opencode.ai/config.json
+```bash
+npx -y cc-safety-net hook install --opencode
 ```
 
-**Option B: Manual setup**
+This updates the first existing OpenCode config file in OpenCode's priority order:
 
-1. **Add the plugin to your config** `~/.config/opencode/opencode.json` (or `.jsonc`):
+1. `opencode.jsonc`
+2. `opencode.json`
+3. `config.json`
 
-  ```json
-  {
-    "plugin": ["cc-safety-net"]
-  }
-  ```
+If no config file exists, Safety Net creates `opencode.jsonc`.
+
+The config directory is `$OPENCODE_CONFIG_DIR` when set, otherwise `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`.
+
+To uninstall:
+
+```bash
+npx -y cc-safety-net hook uninstall --opencode
+```
+
+---
+
+### Kimi CLI Installation
+
+Install Safety Net into your Kimi CLI config:
+
+```bash
+npx -y cc-safety-net hook install --kimi-cli
+```
+
+This updates `$KIMI_SHARE_DIR/config.toml` when `KIMI_SHARE_DIR` is set, otherwise `~/.kimi/config.toml`.
+
+Safety Net preserves the existing Kimi hook syntax:
+
+- If your config already uses `hooks = [...]`, it adds a matching inline hook entry.
+- If your config has `hooks = []`, it removes that empty array and writes `[[hooks]]`.
+- Otherwise, it appends a `[[hooks]]` block.
+
+To uninstall:
+
+```bash
+npx -y cc-safety-net hook uninstall --kimi-cli
+```
 
 ---
 
@@ -252,7 +282,7 @@ Add the following to your `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "bunx cc-safety-net --statusline"
+    "command": "bunx cc-safety-net statusline --claude-code"
   }
 }
 ```
@@ -263,7 +293,7 @@ Add the following to your `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "BUN_BE_BUN=1 claude x cc-safety-net --statusline"
+    "command": "BUN_BE_BUN=1 claude x cc-safety-net statusline --claude-code"
   }
 }
 ```
@@ -278,7 +308,7 @@ Add the following to your `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "npx -y cc-safety-net --statusline"
+    "command": "npx -y cc-safety-net statusline --claude-code"
   }
 }
 ```
@@ -291,7 +321,7 @@ If you already have a status line command, you can pipe Safety Net at the end:
 {
   "statusLine": {
     "type": "command",
-    "command": "your-existing-command | bunx cc-safety-net --statusline"
+    "command": "your-existing-command | bunx cc-safety-net statusline --claude-code"
   }
 }
 ```

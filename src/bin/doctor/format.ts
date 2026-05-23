@@ -249,13 +249,19 @@ export function formatEnvironmentSection(envVars: EnvVarInfo[]): string {
  * Format environment variables as an ASCII table with ✓/✗ icons.
  */
 function formatEnvironmentTable(envVars: EnvVarInfo[]): string {
-  const headers = ['Variable', 'Status'];
+  const headers = ['Variable', 'Status', 'Legacy'];
   const rows = envVars.map((v) => {
     const statusIcon = v.isSet ? colors.green('✓') : colors.dim('✗');
-    return [v.name, statusIcon];
+    const legacyStatus =
+      v.legacyName && v.legacyIsSet ? `${v.legacyName} ${colors.green('✓')}` : (v.legacyName ?? '');
+    return [v.name, statusIcon, legacyStatus];
   });
 
-  const rawRows = envVars.map((v) => [v.name, v.isSet ? '✓' : '✗']);
+  const rawRows = envVars.map((v) => [
+    v.name,
+    v.isSet ? '✓' : '✗',
+    v.legacyName && v.legacyIsSet ? `${v.legacyName} ✓` : (v.legacyName ?? ''),
+  ]);
   return formatAsciiTable({ headers, rows, rawRows });
 }
 

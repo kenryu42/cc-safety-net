@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { findCommand } from '@/bin/commands';
-import { CUSTOM_RULES_DOC } from '@/bin/custom-rules-doc';
 import { parseDoctorFlags, runDoctor } from '@/bin/doctor/index';
 import {
   explainCommand,
@@ -9,20 +8,23 @@ import {
   parseExplainFlags,
 } from '@/bin/explain/index';
 import { printHelp, printVersion, showCommandHelp } from '@/bin/help';
-import { runClaudeCodeHook } from '@/bin/hooks/claude-code';
-import { runCopilotCliHook } from '@/bin/hooks/copilot-cli';
-import { runGeminiCLIHook } from '@/bin/hooks/gemini-cli';
+import { runClaudeCodeHook } from '@/bin/hook/claude-code';
+import { runCopilotCliHook } from '@/bin/hook/copilot-cli';
+import { runGeminiCLIHook } from '@/bin/hook/gemini-cli';
+import { runHookInstallCommand } from '@/bin/hook/install';
+import { runKimiCliHook } from '@/bin/hook/kimi-cli';
+import { runRuleCommand } from '@/bin/rule';
 import { printStatusline } from '@/bin/statusline';
 import { verifyConfig } from '@/bin/verify-config';
-
-function printCustomRulesDoc(): void {
-  console.log(CUSTOM_RULES_DOC);
-}
 
 type CommandMode =
   | 'claude-code'
   | 'copilot-cli'
   | 'gemini-cli'
+  | 'kimi-cli'
+  | 'hook-install'
+  | 'hook-uninstall'
+  | 'rule'
   | 'statusline'
   | 'doctor'
   | 'explain';
@@ -101,6 +103,28 @@ function handleCliFlags(): CommandMode | null {
     return 'explain';
   }
 
+  if (args[0] === 'rule') {
+    return 'rule';
+  }
+
+  if (args[0] === 'statusline') {
+    if (args.includes('--claude-code') || args.includes('-cc')) return 'statusline';
+    showCommandHelp('statusline');
+    process.exit(1);
+  }
+
+  if (args[0] === 'hook') {
+    if (args[1] === 'install') return 'hook-install';
+    if (args[1] === 'uninstall') return 'hook-uninstall';
+    if (args.includes('--claude-code') || args.includes('-cc')) return 'claude-code';
+    if (args.includes('--copilot-cli') || args.includes('-cp')) return 'copilot-cli';
+    if (args.includes('--gemini-cli') || args.includes('-gc')) return 'gemini-cli';
+    if (args.includes('--kimi-cli')) return 'kimi-cli';
+    if (args.includes('-kc')) return 'kimi-cli';
+    showCommandHelp('hook');
+    process.exit(1);
+  }
+
   if (args.length === 0 || hasHelpFlag(args)) {
     printHelp();
     process.exit(0);
@@ -115,29 +139,24 @@ function handleCliFlags(): CommandMode | null {
     process.exit(verifyConfig());
   }
 
-  if (args.includes('--custom-rules-doc')) {
-    printCustomRulesDoc();
-    process.exit(0);
-  }
-
   if (args.includes('doctor') || args.includes('--doctor')) {
     return 'doctor';
   }
 
-  if (args.includes('--statusline')) {
-    return 'statusline';
-  }
-
-  if (args.includes('--claude-code') || args.includes('-cc')) {
+  if (args[0] === '--claude-code' || args[0] === '-cc') {
     return 'claude-code';
   }
 
-  if (args.includes('--copilot-cli') || args.includes('-cp')) {
+  if (args[0] === '--copilot-cli' || args[0] === '-cp') {
     return 'copilot-cli';
   }
 
-  if (args.includes('--gemini-cli') || args.includes('-gc')) {
+  if (args[0] === '--gemini-cli' || args[0] === '-gc') {
     return 'gemini-cli';
+  }
+
+  if (args[0] === '--kimi-cli' || args[0] === '-kc') {
+    return 'kimi-cli';
   }
 
   console.error(`Unknown option: ${args[0]}`);
@@ -153,6 +172,14 @@ async function main(): Promise<void> {
     await runCopilotCliHook();
   } else if (mode === 'gemini-cli') {
     await runGeminiCLIHook();
+  } else if (mode === 'kimi-cli') {
+    await runKimiCliHook();
+  } else if (mode === 'hook-install') {
+    process.exit(runHookInstallCommand('install', process.argv.slice(4)));
+  } else if (mode === 'hook-uninstall') {
+    process.exit(runHookInstallCommand('uninstall', process.argv.slice(4)));
+  } else if (mode === 'rule') {
+    process.exit(await runRuleCommand(process.argv.slice(3)));
   } else if (mode === 'statusline') {
     await printStatusline();
   } else if (mode === 'doctor') {

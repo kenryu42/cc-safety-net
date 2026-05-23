@@ -64,6 +64,9 @@ export interface EnvVarInfo {
     name: string;
     value: string | undefined;
     isSet: boolean;
+    legacyName?: string;
+    legacyValue?: string;
+    legacyIsSet?: boolean;
     description: string;
     defaultBehavior: string;
 }

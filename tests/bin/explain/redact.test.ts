@@ -2,8 +2,17 @@
  * Tests for the explain command secret redaction.
  */
 import { describe, expect, test } from 'bun:test';
-import { explainCommand, formatTraceHuman, formatTraceJson } from '@/bin/explain/index';
+import {
+  explainCommand as explainCommandBase,
+  formatTraceHuman,
+  formatTraceJson,
+} from '@/bin/explain/index';
+import type { ExplainOptions } from '@/types';
 import { getTraceSteps } from '../../helpers.ts';
+
+function explainCommand(command: string, options?: ExplainOptions) {
+  return explainCommandBase(command, { config: { version: 1, rules: [] }, ...options });
+}
 
 function expectLeadingTokenRedacted(command: string, secret: string, redacted: string): void {
   const result = explainCommand(command);

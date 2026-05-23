@@ -1,7 +1,7 @@
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { analyzeSegment, segmentChangesCwd } from '@/core/analyze/segment';
-import { parseEnvAssignment, splitShellCommands } from '@/core/shell';
-import { GIT_CONFIG_AFFECTING_ENV_NAMES, GIT_CONTEXT_ENV_OVERRIDES } from '@/core/worktree';
+import { isTrackedGitEnvName, parseGitContextAppendEnvAssignment } from '@/core/git/env';
+import { getBasename, parseEnvAssignment, splitShellCommandsWithInfo } from '@/core/shell';
 import {
   type AnalyzeNestedOverrides,
   type AnalyzeOptions,
@@ -12,11 +12,10 @@ import {
 
 const REASON_STRICT_UNPARSEABLE =
   'Command could not be safely analyzed (strict mode). Verify manually.';
+const DYNAMIC_SUBSTITUTION_TOKEN = '$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__';
 
 export const REASON_RECURSION_LIMIT =
   'Command exceeds maximum recursion depth and cannot be safely analyzed.';
-const GIT_CONTEXT_ENV_OVERRIDE_NAMES: ReadonlySet<string> = new Set(GIT_CONTEXT_ENV_OVERRIDES);
-const GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
 
 export type InternalOptions = AnalyzeOptions & { config: Config };
 
@@ -29,15 +28,15 @@ export function analyzeCommandInternal(
     return { reason: REASON_RECURSION_LIMIT, segment: command };
   }
 
-  const segments = splitShellCommands(command);
+  const segments = splitShellCommandsWithInfo(command);
 
   // Strict mode: block if command couldn't be parsed (unclosed quotes, etc.)
   // Detected when splitShellCommands returns a single segment containing the raw command
   if (
     options.strict &&
     segments.length === 1 &&
-    segments[0]?.length === 1 &&
-    segments[0][0] === command &&
+    segments[0]?.tokens.length === 1 &&
+    segments[0].tokens[0] === command &&
     command.includes(' ')
   ) {
     return { reason: REASON_STRICT_UNPARSEABLE, segment: command };
@@ -50,7 +49,10 @@ export function analyzeCommandInternal(
     options.effectiveCwd !== undefined ? options.effectiveCwd : options.cwd;
   const shellGitContextState = createShellGitContextEnvState(options.envAssignments);
 
-  for (const segment of segments) {
+  for (const segmentInfo of segments) {
+    const segment = segmentInfo.hasDynamicSubstitution
+      ? appendDynamicSubstitutionSentinelForGit(segmentInfo.tokens)
+      : segmentInfo.tokens;
     const segmentStr = segment.join(' ');
     const segmentEnvAssignments = getSegmentGitContextEnvAssignments(segment, shellGitContextState);
 
@@ -98,6 +100,13 @@ export function analyzeCommandInternal(
   }
 
   return null;
+}
+
+function appendDynamicSubstitutionSentinelForGit(tokens: string[]): string[] {
+  if (!tokens.some((token) => getBasename(token).toLowerCase() === 'git')) {
+    return tokens;
+  }
+  return [...tokens, DYNAMIC_SUBSTITUTION_TOKEN];
 }
 
 export interface ShellGitContextEnvState {
@@ -303,32 +312,6 @@ function parseGitContextEnvAssignment(token: string): GitContextAssignment | nul
     return null;
   }
   return assignment;
-}
-
-function parseGitContextAppendEnvAssignment(token: string): GitContextAssignment | null {
-  const match = token.match(GIT_CONTEXT_APPEND_ASSIGNMENT_RE);
-  const name = match?.[1];
-  if (!name || !isTrackedGitEnvName(name)) {
-    return null;
-  }
-  const eqIdx = token.indexOf('=');
-  return { name, value: token.slice(eqIdx + 1) };
-}
-
-function isTrackedGitEnvName(name: string): boolean {
-  return (
-    GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name) ||
-    GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) ||
-    isGitConfigEnvName(name)
-  );
-}
-
-function isGitConfigEnvName(name: string): boolean {
-  return (
-    name === 'GIT_CONFIG_COUNT' ||
-    name === 'GIT_CONFIG_PARAMETERS' ||
-    /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name)
-  );
 }
 
 function getInitiallyExportedGitContextNames(

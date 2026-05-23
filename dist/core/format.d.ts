@@ -5,6 +5,7 @@ export interface FormatBlockedMessageInput {
     segment?: string;
     maxLen?: number;
     redact?: RedactFn;
+    manualPermissionAdvice?: boolean;
 }
 export declare function formatBlockedMessage(input: FormatBlockedMessageInput): string;
 export {};

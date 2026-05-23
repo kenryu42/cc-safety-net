@@ -2,7 +2,7 @@ import { collectCommandTemplate, normalizeChildCommand } from '@/core/analyze/ch
 import { analyzeFind } from '@/core/analyze/find';
 import { hasRecursiveForceFlags } from '@/core/analyze/rm-flags';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
-import { analyzeGit } from '@/core/rules-git';
+import { analyzeGit } from '@/core/git';
 import { analyzeRm } from '@/core/rules-rm';
 import { type AnalyzeNestedOverrides, SHELL_WRAPPERS } from '@/types';
 
@@ -114,34 +114,20 @@ export function analyzeParallel(
   if (childCommand.head === 'rm' && hasRecursiveForceFlags(childTokens)) {
     if (hasPlaceholder && args.length > 0) {
       // Expand template with each arg and analyze
-      for (const arg of args) {
-        const expandedTokens = childTokens.map((t) => t.replace(/{}/g, arg));
-        const rmResult = analyzeRm(expandedTokens, {
-          cwd: childCommand.cwd,
-          originalCwd: context.originalCwd,
-          paranoid: context.paranoidRm,
-          allowTmpdirVar: context.allowTmpdirVar,
-        });
-        if (rmResult) {
-          return rmResult;
-        }
-      }
-      return null;
+      return analyzeParallelRmExpansions(
+        args.map((arg) => childTokens.map((t) => t.replace(/{}/g, arg))),
+        childCommand.cwd,
+        context,
+      );
     }
     // No placeholder or no args - analyze template as-is
-    // If there are args (from :::), they get appended, analyze with first arg
+    // If there are args (from :::), they get appended, analyze each expansion
     if (args.length > 0) {
-      const expandedTokens = [...childTokens, args[0] ?? ''];
-      const rmResult = analyzeRm(expandedTokens, {
-        cwd: childCommand.cwd,
-        originalCwd: context.originalCwd,
-        paranoid: context.paranoidRm,
-        allowTmpdirVar: context.allowTmpdirVar,
-      });
-      if (rmResult) {
-        return rmResult;
-      }
-      return null;
+      return analyzeParallelRmExpansions(
+        args.map((arg) => [...childTokens, arg]),
+        childCommand.cwd,
+        context,
+      );
     }
     return REASON_PARALLEL_RM;
   }
@@ -173,6 +159,25 @@ export function analyzeParallel(
     }
   }
 
+  return null;
+}
+
+function analyzeParallelRmExpansions(
+  tokenSets: readonly string[][],
+  cwd: string | undefined,
+  context: ParallelAnalyzeContext,
+): string | null {
+  for (const tokens of tokenSets) {
+    const rmResult = analyzeRm(tokens, {
+      cwd,
+      originalCwd: context.originalCwd,
+      paranoid: context.paranoidRm,
+      allowTmpdirVar: context.allowTmpdirVar,
+    });
+    if (rmResult) {
+      return rmResult;
+    }
+  }
   return null;
 }
 
