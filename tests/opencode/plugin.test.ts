@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { syncRulesConfig } from '@/core/rules-policy';
+import { syncRulesConfig } from '@/core/rules/policy';
 import { SafetyNetPlugin } from '@/index';
 
 describe('OpenCode plugin', () => {
