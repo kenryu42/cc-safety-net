@@ -9,7 +9,7 @@ import { getConfigSource } from '@/bin/explain/config';
 import { explainCommand } from '@/bin/explain/index';
 import { explainSegment } from '@/bin/explain/segment';
 import { REASON_RECURSION_LIMIT } from '@/core/analyze/analyze-command';
-import { syncRulesConfig } from '@/core/rules-policy';
+import { syncRulesConfig } from '@/core/rules/policy';
 import type { TraceStep } from '@/types';
 import { MAX_RECURSION_DEPTH } from '@/types';
 import { getTraceSteps, toShellPath, withEnv, withLinkedWorktreeFixture } from '../../helpers.ts';
@@ -197,7 +197,7 @@ describe('explainCommand edge cases', () => {
     expect(result.result).toBe('blocked');
     const allSteps = getTraceSteps(result);
     const ruleStep = allSteps.find(
-      (s) => s.type === 'rule-check' && s.ruleModule === 'rules-rm.ts',
+      (s) => s.type === 'rule-check' && s.ruleModule === 'analyze/rm.ts',
     );
     expect(ruleStep).toBeDefined();
   });
@@ -362,7 +362,9 @@ describe('explainCommand rm with home directory', () => {
     const allSteps = getTraceSteps(result);
     const ruleStep = allSteps.find(
       (s) =>
-        s.type === 'rule-check' && s.ruleModule === 'rules-rm.ts' && s.ruleFunction === 'analyzeRm',
+        s.type === 'rule-check' &&
+        s.ruleModule === 'analyze/rm.ts' &&
+        s.ruleFunction === 'analyzeRm',
     );
     expect(ruleStep).toBeDefined();
   });
@@ -375,7 +377,9 @@ describe('explainCommand rm with home directory', () => {
     const allSteps = getTraceSteps(result);
     const analyzeRmStep = allSteps.find(
       (s) =>
-        s.type === 'rule-check' && s.ruleModule === 'rules-rm.ts' && s.ruleFunction === 'analyzeRm',
+        s.type === 'rule-check' &&
+        s.ruleModule === 'analyze/rm.ts' &&
+        s.ruleFunction === 'analyzeRm',
     );
     expect(analyzeRmStep).toBeDefined();
   });

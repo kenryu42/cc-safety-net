@@ -19,6 +19,7 @@ import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { analyzeFind } from '@/core/analyze/find';
 import { containsDangerousCode, extractInterpreterCodeArg } from '@/core/analyze/interpreters';
 import { analyzeParallel } from '@/core/analyze/parallel';
+import { analyzeRm } from '@/core/analyze/rm';
 import {
   REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS,
@@ -28,8 +29,7 @@ import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { isTmpdirOverriddenToNonTemp } from '@/core/analyze/tmpdir';
 import { analyzeXargs } from '@/core/analyze/xargs';
 import { analyzeGit, getGitWorktreeRelaxation } from '@/core/git';
-import { checkCustomRules } from '@/core/rules-custom';
-import { analyzeRm } from '@/core/rules-rm';
+import { checkCustomRules } from '@/core/rules/custom';
 import {
   normalizeCommandToken,
   splitShellCommands,
@@ -349,7 +349,7 @@ export function explainSegment(
     });
     steps.push({
       type: 'rule-check',
-      ruleModule: 'rules-rm.ts',
+      ruleModule: 'analyze/rm.ts',
       ruleFunction: 'analyzeRm',
       matched: !!reason,
       reason: reason ?? undefined,

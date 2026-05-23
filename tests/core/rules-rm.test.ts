@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { analyzeRm, isHomeDirectory } from '@/core/rules-rm';
+import { analyzeRm, isHomeDirectory } from '@/core/analyze/rm';
 import { assertAllowed, assertBlocked, toShellPath, withEnv } from '../helpers.ts';
 
 describe('rm -rf blocked', () => {

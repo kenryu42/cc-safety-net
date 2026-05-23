@@ -1,9 +1,9 @@
 import { collectCommandTemplate, normalizeChildCommand } from '@/core/analyze/child-command';
 import { analyzeFind } from '@/core/analyze/find';
+import { analyzeRm } from '@/core/analyze/rm';
 import { hasRecursiveForceFlags } from '@/core/analyze/rm-flags';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { analyzeGit } from '@/core/git';
-import { analyzeRm } from '@/core/rules-rm';
 import { type AnalyzeNestedOverrides, SHELL_WRAPPERS } from '@/types';
 
 const REASON_PARALLEL_RM =

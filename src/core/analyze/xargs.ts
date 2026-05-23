@@ -1,8 +1,8 @@
 import { normalizeChildCommand } from '@/core/analyze/child-command';
 import { analyzeFind } from '@/core/analyze/find';
+import { analyzeRm } from '@/core/analyze/rm';
 import { hasRecursiveForceFlags } from '@/core/analyze/rm-flags';
 import { analyzeGit } from '@/core/git';
-import { analyzeRm } from '@/core/rules-rm';
 import { SHELL_WRAPPERS } from '@/types';
 
 const REASON_XARGS_RM =

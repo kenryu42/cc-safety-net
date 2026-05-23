@@ -2,12 +2,12 @@ import { DISPLAY_COMMANDS } from '@/core/analyze/constants';
 import { analyzeFind } from '@/core/analyze/find';
 import { containsDangerousCode, extractInterpreterCodeArg } from '@/core/analyze/interpreters';
 import { analyzeParallel } from '@/core/analyze/parallel';
+import { analyzeRm } from '@/core/analyze/rm';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { isTmpdirOverriddenToNonTemp } from '@/core/analyze/tmpdir';
 import { analyzeXargs } from '@/core/analyze/xargs';
 import { analyzeGit } from '@/core/git';
-import { checkCustomRules } from '@/core/rules-custom';
-import { analyzeRm } from '@/core/rules-rm';
+import { checkCustomRules } from '@/core/rules/custom';
 import {
   getBasename,
   normalizeCommandToken,
