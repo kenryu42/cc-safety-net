@@ -374,18 +374,21 @@ var ruleCommand = {
     { usage: "sync", description: "Sync configured rulebooks" },
     { usage: "list", description: "List active rulebooks" },
     { usage: "test [source]", description: "Run rulebook fixtures" },
+    { usage: "migrate [--cleanup]", description: "Migrate legacy inline rules" },
     { usage: "doc", description: "Print the rulebook authoring guide" },
     { usage: "verify", description: "Validate rule config files" }
   ],
   options: [
     { flags: "-g, --global", description: "Use user-scope rule config" },
     { flags: "--check", description: "Check without changing lock/cache state" },
+    { flags: "--cleanup", description: "Delete legacy files after rule migrate verifies them" },
     { flags: "-h, --help", description: "Show this help" }
   ],
   examples: [
     "cc-safety-net rule init",
     "cc-safety-net rule add project-rules",
     "cc-safety-net rule sync",
+    "cc-safety-net rule migrate --cleanup",
     "cc-safety-net rule verify"
   ]
 };
@@ -8820,8 +8823,8 @@ async function runKimiCliHook() {
 }
 
 // src/bin/rule/index.ts
-import { existsSync as existsSync16 } from "node:fs";
-import { join as join12 } from "node:path";
+import { existsSync as existsSync17 } from "node:fs";
+import { join as join13 } from "node:path";
 
 // src/bin/rule/doc.ts
 var RULE_DOC = `# Custom Rules Reference
@@ -9017,9 +9020,178 @@ function printResultErrors(result) {
     console.error(error);
 }
 
+// src/bin/rule/migrate.ts
+import { existsSync as existsSync15, readFileSync as readFileSync13, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname9, join as join11 } from "node:path";
+var PROJECT_MIGRATED_FROM = ".safety-net.json";
+var USER_MIGRATED_FROM = "~/.cc-safety-net/config.json";
+async function runRulesMigrate(options) {
+  const results = [
+    await migrateRulesScope({
+      legacyPath: getLegacyProjectRulesConfigPath({ cwd: options.cwd }),
+      configPath: getProjectRulesConfigPath(options.cwd),
+      defaultRulebookName: "project-rules",
+      migratedFrom: PROJECT_MIGRATED_FROM,
+      cleanup: options.cleanup,
+      syncOptions: { cwd: options.cwd }
+    }),
+    await migrateRulesScope({
+      legacyPath: getLegacyUserRulesConfigPath(),
+      configPath: getUserRulesConfigPath(),
+      defaultRulebookName: "user-rules",
+      migratedFrom: USER_MIGRATED_FROM,
+      cleanup: options.cleanup,
+      syncOptions: { cwd: options.cwd, global: true }
+    })
+  ];
+  return results.every((result) => result) ? 0 : 1;
+}
+async function migrateRulesScope(options) {
+  if (!existsSync15(options.legacyPath)) {
+    console.log(`No legacy config found at ${options.legacyPath}`);
+    return true;
+  }
+  const legacy = readLegacyRulesConfig(options.legacyPath);
+  if (!legacy.ok) {
+    for (const error of legacy.errors)
+      console.error(error);
+    return false;
+  }
+  const loaded = readRulesConfig(options.configPath);
+  if (loaded.errors.length > 0) {
+    for (const error of loaded.errors)
+      console.error(error);
+    return false;
+  }
+  const config = loaded.config ?? { version: 1, rules: [], overrides: {} };
+  const rulebookName = getMigratedRulebookName(dirname9(options.configPath), config.rules, options.defaultRulebookName, options.migratedFrom);
+  const rulebookPath = join11(dirname9(options.configPath), rulebookName, "rulebook.json");
+  const snapshots = [
+    snapshotFile(options.configPath),
+    snapshotFile(rulebookPath),
+    snapshotFile(getRulesLockPathForConfigPath(options.configPath))
+  ];
+  const result = await writeAndSyncMigratedRulebook(options, rulebookPath, rulebookName, legacy.config.rules, config.rules.includes(rulebookName) ? config.rules : [...config.rules, rulebookName], config.overrides ?? {});
+  if (!result.ok) {
+    restoreFiles(snapshots);
+    for (const error of result.errors)
+      console.error(error);
+    return false;
+  }
+  if (!options.cleanup) {
+    console.log(`Migrated legacy config at ${options.legacyPath}. Legacy file is no longer used.`);
+    return true;
+  }
+  if (!isCleanupVerified(options.configPath, rulebookPath, rulebookName, options.migratedFrom, legacy.config.rules)) {
+    console.error(`Migration cleanup verification failed for ${options.legacyPath}`);
+    return false;
+  }
+  rmSync2(options.legacyPath, { force: true });
+  console.log(`Deleted legacy config at ${options.legacyPath}`);
+  return true;
+}
+async function writeAndSyncMigratedRulebook(options, rulebookPath, rulebookName, rules, configRules, overrides) {
+  try {
+    writeJsonAtomic(options.configPath, {
+      version: 1,
+      rules: configRules,
+      overrides
+    });
+    writeJsonAtomic(rulebookPath, getMigratedRulebook(rulebookName, options.migratedFrom, rules));
+    return await syncRulesConfig(options.syncOptions);
+  } catch (error) {
+    return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
+  }
+}
+function readLegacyRulesConfig(path) {
+  try {
+    const parsed = JSON.parse(readFileSync13(path, "utf-8"));
+    const validation = validateConfig(parsed);
+    if (validation.errors.length > 0)
+      return { ok: false, errors: validation.errors };
+    return {
+      ok: true,
+      config: {
+        version: 1,
+        rules: parsed.rules ?? []
+      }
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`]
+    };
+  }
+}
+function getMigratedRulebookName(configDir, sources, defaultRulebookName, migratedFrom) {
+  const existing = sources.find((source) => getRulebookMigratedFrom(configDir, source) === migratedFrom);
+  if (existing)
+    return existing;
+  if (!existsSync15(join11(configDir, defaultRulebookName, "rulebook.json")))
+    return defaultRulebookName;
+  for (let i = 2;; i++) {
+    const name = `${defaultRulebookName}-${i}`;
+    if (!existsSync15(join11(configDir, name, "rulebook.json")))
+      return name;
+  }
+}
+function getRulebookMigratedFrom(configDir, source) {
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(source))
+    return null;
+  const path = join11(configDir, source, "rulebook.json");
+  if (!existsSync15(path))
+    return null;
+  try {
+    const rulebook = JSON.parse(readFileSync13(path, "utf-8"));
+    return typeof rulebook.migrated_from === "string" ? rulebook.migrated_from : null;
+  } catch {
+    return null;
+  }
+}
+function getMigratedRulebook(name, migratedFrom, rules) {
+  return {
+    rulebook_version: 1,
+    name,
+    version: "1.0.0",
+    description: "Migrated CC SafetyNet rules.",
+    author: "project",
+    migrated_from: migratedFrom,
+    allowed_commands: [...new Set(rules.map((rule) => rule.command))],
+    rules,
+    tests: rules.map((rule) => ({
+      command: [rule.command, rule.subcommand, rule.block_args[0]].filter(Boolean).join(" "),
+      expect: "blocked",
+      rule: rule.name
+    }))
+  };
+}
+function isCleanupVerified(configPath, rulebookPath, rulebookName, migratedFrom, legacyRules) {
+  const config = readRulesConfig(configPath).config;
+  if (!config?.rules.includes(rulebookName) || !existsSync15(rulebookPath))
+    return false;
+  try {
+    const rulebook = JSON.parse(readFileSync13(rulebookPath, "utf-8"));
+    return rulebook.migrated_from === migratedFrom && JSON.stringify(rulebook.rules) === JSON.stringify(legacyRules);
+  } catch {
+    return false;
+  }
+}
+function snapshotFile(path) {
+  return { path, content: existsSync15(path) ? readFileSync13(path, "utf-8") : null };
+}
+function restoreFiles(snapshots) {
+  for (const snapshot of snapshots) {
+    if (snapshot.content === null) {
+      rmSync2(snapshot.path, { force: true });
+      continue;
+    }
+    writeFileSync4(snapshot.path, snapshot.content, "utf-8");
+  }
+}
+
 // src/bin/rule/verify.ts
-import { existsSync as existsSync15, readdirSync as readdirSync3, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname9, join as join11, resolve as resolve8 } from "node:path";
+import { existsSync as existsSync16, readdirSync as readdirSync3, readFileSync as readFileSync14, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname10, join as join12, resolve as resolve8 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -9031,14 +9203,14 @@ function runRulesVerify(options = {}) {
   const legacyUserConfig = options.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
   const legacyProjectConfig = options.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
   const githubSourceRulesDir = resolve8(cwd, RULES_DIR);
-  const userConfigDir = dirname9(userConfig);
+  const userConfigDir = dirname10(userConfig);
   let hasErrors = false;
   let hasWarnings = false;
   const configsChecked = [];
   const warnings = [];
   const githubSourceRules = getGitHubSourceRulesValidation(githubSourceRulesDir);
   printRulesVerifyHeader();
-  if (existsSync15(userConfig)) {
+  if (existsSync16(userConfig)) {
     const result = validateRulesConfigFile(userConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(userConfig, getUserRulesLockPath({ userConfigDir }), {
       userConfigDir
@@ -9053,9 +9225,9 @@ function runRulesVerify(options = {}) {
     if (result.errors.length > 0)
       hasErrors = true;
   }
-  if (existsSync15(legacyUserConfig)) {
+  if (existsSync16(legacyUserConfig)) {
     hasWarnings = true;
-    if (existsSync15(userConfig)) {
+    if (existsSync16(userConfig)) {
       warnings.push(getLegacyRulesConfigWarning("user", "cleanup"));
     } else {
       const result = validateConfigFile(legacyUserConfig);
@@ -9071,7 +9243,7 @@ function runRulesVerify(options = {}) {
       warnings.push(getLegacyRulesConfigWarning("user", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
     }
   }
-  if (existsSync15(projectConfig)) {
+  if (existsSync16(projectConfig)) {
     const result = validateRulesConfigFile(projectConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(projectConfig, getRulesLockPathForConfigPath(projectConfig), {
       userConfigDir
@@ -9085,11 +9257,11 @@ function runRulesVerify(options = {}) {
     });
     if (result.errors.length > 0)
       hasErrors = true;
-    if (existsSync15(legacyProjectConfig)) {
+    if (existsSync16(legacyProjectConfig)) {
       hasWarnings = true;
       warnings.push(getLegacyRulesConfigWarning("project", "cleanup"));
     }
-  } else if (existsSync15(legacyProjectConfig)) {
+  } else if (existsSync16(legacyProjectConfig)) {
     hasWarnings = true;
     hasErrors = true;
     const result = validateConfigFile(legacyProjectConfig);
@@ -9154,7 +9326,7 @@ function getLegacyRulesConfigWarning(scope, action) {
   return `Warning: Legacy ${scope} config is no longer supported. Fix or delete the ${label}, then run \`npx -y cc-safety-net rule migrate\`.`;
 }
 function getGitHubSourceRulesValidation(path) {
-  if (!existsSync15(path))
+  if (!existsSync16(path))
     return null;
   const result = validateGitHubSourceRules(path);
   if (result.ruleNames.size === 0 && result.errors.length === 0)
@@ -9189,13 +9361,13 @@ function validateGitHubSourceRules(path) {
       errors.push(`${entry.name} must be a rulebook directory`);
       continue;
     }
-    const rulebookPath = join11(path, entry.name, "rulebook.json");
-    if (!existsSync15(rulebookPath)) {
+    const rulebookPath = join12(path, entry.name, "rulebook.json");
+    if (!existsSync16(rulebookPath)) {
       errors.push(`${entry.name}/rulebook.json is required`);
       continue;
     }
     try {
-      const rulebook = assertValidRulebook(JSON.parse(readFileSync13(rulebookPath, "utf-8")));
+      const rulebook = assertValidRulebook(JSON.parse(readFileSync14(rulebookPath, "utf-8")));
       if (rulebook.name !== entry.name) {
         errors.push(`rulebook name "${rulebook.name}" must match folder "${entry.name}"`);
         continue;
@@ -9283,11 +9455,11 @@ function printInvalidVerifyTarget(label, path, errors) {
 }
 function addRulesSchemaIfMissing(path) {
   try {
-    const content = readFileSync13(path, "utf-8");
+    const content = readFileSync14(path, "utf-8");
     const parsed = JSON.parse(content);
     if (parsed.$schema)
       return false;
-    writeFileSync4(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
+    writeFileSync5(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
     return true;
   } catch {
     return false;
@@ -9303,6 +9475,7 @@ var RULE_SUBCOMMANDS = new Set([
   "sync",
   "list",
   "test",
+  "migrate",
   "doc",
   "verify"
 ]);
@@ -9323,10 +9496,10 @@ async function runRuleCommand(args) {
     const dir = flags.global ? getUserRulesDir() : getProjectRulesDir();
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
     const rulebookName = flags.global ? "user-rules" : "project-rules";
-    if (!existsSync16(configPath))
+    if (!existsSync17(configPath))
       writeDefaultRulesConfig(configPath, [rulebookName]);
-    const rulebookPath = join12(dir, rulebookName, "rulebook.json");
-    if (!existsSync16(rulebookPath))
+    const rulebookPath = join13(dir, rulebookName, "rulebook.json");
+    if (!existsSync17(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
     const result = await syncRulesConfig(options);
     printRuleChangeResult(result, "Rule config initialized.");
@@ -9374,6 +9547,9 @@ async function runRuleCommand(args) {
     printRulesTestResult(result);
     return result.ok ? 0 : 1;
   }
+  if (subcommand === "migrate") {
+    return runRulesMigrate({ cleanup: flags.cleanup, cwd: process.cwd() });
+  }
   if (subcommand === "doc") {
     console.log(RULE_DOC);
     return 0;
@@ -9387,12 +9563,21 @@ function parseRuleFlags(args) {
   const flags = {
     global: false,
     check: false,
+    cleanup: false,
     help: false,
     positionals: [],
     errors: []
   };
   for (const arg of args) {
-    if (arg === "-g" || arg === "--global") {
+    if (flags.positionals[0] === "migrate" && arg.startsWith("-")) {
+      if (arg === "--cleanup") {
+        flags.cleanup = true;
+      } else if (arg === "-h" || arg === "--help") {
+        flags.help = true;
+      } else {
+        flags.errors.push(`Unknown option for rule migrate: ${arg}`);
+      }
+    } else if (arg === "-g" || arg === "--global") {
       flags.global = true;
     } else if (arg === "--check") {
       flags.check = true;
@@ -9408,16 +9593,24 @@ function parseRuleFlags(args) {
   if (subcommand && !RULE_SUBCOMMANDS.has(subcommand)) {
     flags.errors.push(`Unknown rule subcommand: ${subcommand}`);
   }
-  if (flags.positionals.length > 2) {
+  if (subcommand === "migrate") {
+    if (flags.global)
+      flags.errors.push("Unknown option for rule migrate: --global");
+    if (flags.check)
+      flags.errors.push("Unknown option for rule migrate: --check");
+    if (flags.positionals.length > 1) {
+      flags.errors.push(`Unexpected rule migrate argument: ${flags.positionals[1]}`);
+    }
+  } else if (flags.positionals.length > 2) {
     flags.errors.push(`Unexpected rule argument: ${flags.positionals[2]}`);
   }
   return flags;
 }
 
 // src/bin/statusline.ts
-import { existsSync as existsSync17, readFileSync as readFileSync14 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync15 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
@@ -9441,15 +9634,15 @@ function getSettingsPath() {
   if (process.env.CLAUDE_SETTINGS_PATH) {
     return process.env.CLAUDE_SETTINGS_PATH;
   }
-  return join13(homedir8(), ".claude", "settings.json");
+  return join14(homedir8(), ".claude", "settings.json");
 }
 function isPluginEnabled() {
   const settingsPath = getSettingsPath();
-  if (!existsSync17(settingsPath)) {
+  if (!existsSync18(settingsPath)) {
     return false;
   }
   try {
-    const content = readFileSync14(settingsPath, "utf-8");
+    const content = readFileSync15(settingsPath, "utf-8");
     const settings = JSON.parse(content);
     if (!settings.enabledPlugins) {
       return false;
