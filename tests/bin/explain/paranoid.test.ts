@@ -32,4 +32,12 @@ describe('explainCommand paranoid mode', () => {
       expect(result.reason).toContain('paranoid');
     });
   });
+
+  test('CC_SAFETY_NET_PARANOID enables paranoid interpreters', () => {
+    withEnv({ CC_SAFETY_NET_PARANOID: '1' }, () => {
+      const result = explainCommand('node -e "console.log(1)"');
+      expect(result.result).toBe('blocked');
+      expect(result.reason).toContain('paranoid');
+    });
+  });
 });

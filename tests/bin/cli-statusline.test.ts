@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { runSafetyNetCli } from '../helpers.ts';
 
 function clearEnv(): void {
+  delete process.env.CC_SAFETY_NET_STRICT;
+  delete process.env.CC_SAFETY_NET_PARANOID;
+  delete process.env.CC_SAFETY_NET_PARANOID_RM;
+  delete process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS;
+  delete process.env.CC_SAFETY_NET_WORKTREE;
   delete process.env.SAFETY_NET_STRICT;
   delete process.env.SAFETY_NET_PARANOID;
   delete process.env.SAFETY_NET_PARANOID_RM;
@@ -54,6 +59,11 @@ describe('statusline command', () => {
     {
       name: 'SAFETY_NET_PARANOID=1',
       env: { SAFETY_NET_PARANOID: '1' },
+      output: '🛡️ Safety Net 👁️',
+    },
+    {
+      name: 'CC_SAFETY_NET_PARANOID=1',
+      env: { CC_SAFETY_NET_PARANOID: '1' },
       output: '🛡️ Safety Net 👁️',
     },
     {

@@ -6,6 +6,34 @@ import { syncRulesConfig } from '@/core/rules/policy';
 import { SafetyNetPlugin } from '@/index';
 
 describe('OpenCode plugin', () => {
+  test('reads current environment mode names', async () => {
+    const original = process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS;
+    process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS = '1';
+    try {
+      const plugin = (await SafetyNetPlugin({
+        directory: process.cwd(),
+      } as Parameters<typeof SafetyNetPlugin>[0])) as unknown as {
+        'tool.execute.before': (
+          input: { tool: string },
+          output: { args: { command: string } },
+        ) => Promise<void>;
+      };
+
+      await expect(
+        plugin['tool.execute.before'](
+          { tool: 'bash' },
+          { args: { command: 'node -e "console.log(1)"' } },
+        ),
+      ).rejects.toThrow('paranoid');
+    } finally {
+      if (original === undefined) {
+        delete process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS;
+      } else {
+        process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS = original;
+      }
+    }
+  });
+
   test('registers built-in commands without removing existing commands', async () => {
     const plugin = (await SafetyNetPlugin({
       directory: process.cwd(),
