@@ -7,7 +7,6 @@ import { hookCommand } from './hook';
 import { ruleCommand } from './rule';
 import { statuslineCommand } from './statusline';
 import type { Command } from './types';
-import { verifyConfigCommand } from './verify-config';
 
 /** @internal Exported for testing */
 export type { Command, CommandOption, CommandSubcommand } from './types';
@@ -25,7 +24,6 @@ export const commands: readonly Command[] = [
   claudeCodeCommand,
   copilotCliCommand,
   geminiCliCommand,
-  verifyConfigCommand,
   statuslineCommand,
 ];
 

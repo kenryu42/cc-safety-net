@@ -15,7 +15,6 @@ import { runHookInstallCommand } from '@/bin/hook/install';
 import { runKimiCliHook } from '@/bin/hook/kimi-cli';
 import { runRuleCommand } from '@/bin/rule';
 import { printStatusline } from '@/bin/statusline';
-import { verifyConfig } from '@/bin/verify-config';
 
 type CommandMode =
   | 'claude-code'
@@ -133,10 +132,6 @@ function handleCliFlags(): CommandMode | null {
   if (args.includes('--version') || args.includes('-V')) {
     printVersion();
     process.exit(0);
-  }
-
-  if (args.includes('--verify-config') || args.includes('-vc')) {
-    process.exit(verifyConfig());
   }
 
   if (args.includes('doctor') || args.includes('--doctor')) {

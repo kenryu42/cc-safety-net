@@ -408,22 +408,6 @@ var statuslineCommand = {
   examples: ["cc-safety-net statusline -cc", "cc-safety-net statusline --claude-code"]
 };
 
-// src/bin/commands/verify-config.ts
-var verifyConfigCommand = {
-  name: "verify-config",
-  aliases: ["-vc", "--verify-config"],
-  description: "Validate custom rules configuration files",
-  usage: "-vc, --verify-config",
-  hidden: true,
-  options: [
-    {
-      flags: "-h, --help",
-      description: "Show this help"
-    }
-  ],
-  examples: ["cc-safety-net -vc", "cc-safety-net --verify-config"]
-};
-
 // src/bin/commands/index.ts
 var commands = [
   doctorCommand,
@@ -433,7 +417,6 @@ var commands = [
   claudeCodeCommand,
   copilotCliCommand,
   geminiCliCommand,
-  verifyConfigCommand,
   statuslineCommand
 ];
 function findCommand(nameOrAlias) {
@@ -9515,103 +9498,6 @@ async function printStatusline() {
   }
 }
 
-// src/bin/verify-config.ts
-import { existsSync as existsSync19, readFileSync as readFileSync15, writeFileSync as writeFileSync5 } from "node:fs";
-import { resolve as resolve9 } from "node:path";
-var HEADER = "Safety Net Config";
-var SEPARATOR = "═".repeat(HEADER.length);
-var SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
-function printHeader() {
-  console.log(HEADER);
-  console.log(SEPARATOR);
-}
-function printValidConfig(scope, path, result) {
-  console.log(`
-✓ ${scope} config: ${path}`);
-  if (result.ruleNames.size > 0) {
-    console.log("  Rules:");
-    let i = 1;
-    for (const name of result.ruleNames) {
-      console.log(`    ${i}. ${name}`);
-      i++;
-    }
-  } else {
-    console.log("  Rules: (none)");
-  }
-}
-function printInvalidConfig(scope, path, errors) {
-  console.error(`
-✗ ${scope} config: ${path}`);
-  console.error("  Errors:");
-  const parts = errors.flatMap((error) => error.split("; "));
-  for (const [index, part] of parts.entries()) {
-    console.error(`    ${index + 1}. ${part}`);
-  }
-}
-function addSchemaIfMissing(path) {
-  try {
-    const content = readFileSync15(path, "utf-8");
-    const parsed = JSON.parse(content);
-    if (parsed.$schema) {
-      return false;
-    }
-    const updated = { $schema: SCHEMA_URL, ...parsed };
-    writeFileSync5(path, JSON.stringify(updated, null, 2), "utf-8");
-    return true;
-  } catch {
-    return false;
-  }
-}
-function verifyConfig(options = {}) {
-  const userConfig = options.userConfigPath ?? getUserConfigPath();
-  const projectConfig = options.projectConfigPath ?? getProjectConfigPath();
-  let hasErrors = false;
-  const configsChecked = [];
-  printHeader();
-  if (existsSync19(userConfig)) {
-    const result = validateConfigFile(userConfig);
-    configsChecked.push({ scope: "User", path: userConfig, result });
-    if (result.errors.length > 0) {
-      hasErrors = true;
-    }
-  }
-  if (existsSync19(projectConfig)) {
-    const result = validateConfigFile(projectConfig);
-    configsChecked.push({
-      scope: "Project",
-      path: resolve9(projectConfig),
-      result
-    });
-    if (result.errors.length > 0) {
-      hasErrors = true;
-    }
-  }
-  if (configsChecked.length === 0) {
-    console.log(`
-No config files found. Using built-in rules only.`);
-    return 0;
-  }
-  for (const { scope, path, result } of configsChecked) {
-    if (result.errors.length > 0) {
-      printInvalidConfig(scope, path, result.errors);
-    } else {
-      if (addSchemaIfMissing(path)) {
-        console.log(`
-Added $schema to ${scope.toLowerCase()} config.`);
-      }
-      printValidConfig(scope, path, result);
-    }
-  }
-  if (hasErrors) {
-    console.error(`
-Config validation failed.`);
-    return 1;
-  }
-  console.log(`
-All configs valid.`);
-  return 0;
-}
-
 // src/bin/cc-safety-net.ts
 function hasHelpFlag(args) {
   return args.includes("--help") || args.includes("-h");
@@ -9692,9 +9578,6 @@ function handleCliFlags() {
   if (args.includes("--version") || args.includes("-V")) {
     printVersion();
     process.exit(0);
-  }
-  if (args.includes("--verify-config") || args.includes("-vc")) {
-    process.exit(verifyConfig());
   }
   if (args.includes("doctor") || args.includes("--doctor")) {
     return "doctor";

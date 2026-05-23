@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { findCommand } from '@/bin/commands';
 import { printCommandHelp, printHelp, printVersion, showCommandHelp } from '@/bin/help';
+import { runSafetyNetCli } from '../helpers';
 
 /**
  * Capture console.log output during a function call.
@@ -20,6 +21,22 @@ function captureOutput<T>(fn: () => T) {
 }
 
 describe('help output', () => {
+  describe('removed legacy flags', () => {
+    test('rejects --verify-config as unknown', async () => {
+      const result = await runSafetyNetCli(['--verify-config']);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Unknown option: --verify-config');
+    });
+
+    test('rejects -vc as unknown', async () => {
+      const result = await runSafetyNetCli(['-vc']);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Unknown option: -vc');
+    });
+  });
+
   describe('printHelp (main help)', () => {
     test('contains version header', () => {
       const { output } = captureOutput(() => printHelp());

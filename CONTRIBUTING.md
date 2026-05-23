@@ -212,8 +212,7 @@ claude-code-safety-net/
 │       ├── rules-git.ts      # Git subcommand analysis
 │       ├── rules-rm.ts       # rm command analysis
 │       ├── rules-custom.ts   # Custom rule evaluation
-│       ├── shell.ts          # Shell parsing utilities
-│       └── verify-config.ts  # Config validator
+│       └── shell.ts          # Shell parsing utilities
 ├── tests/
 │   ├── helpers.ts            # Test utilities
 │   ├── analyze-coverage.test.ts
@@ -225,8 +224,7 @@ claude-code-safety-net/
 │   ├── find.test.ts
 │   ├── parsing-helpers.test.ts
 │   ├── rules-git.test.ts
-│   ├── rules-rm.test.ts
-│   └── verify-config.test.ts
+│   └── rules-rm.test.ts
 ├── .lintstagedrc.json        # Lint-staged config (biome + ast-grep)
 ├── biome.json                # Linter/formatter config
 ├── knip.ts                   # Dead code detection config
@@ -251,7 +249,6 @@ claude-code-safety-net/
 | `rules-rm.ts` | rm analysis (cwd-relative, temp paths, root/home detection) |
 | `rules-custom.ts` | Custom rule matching |
 | `shell.ts` | Shell parsing (`splitShellCommands`, `shlexSplit`, `stripWrappers`) |
-| `verify-config.ts` | Config file validation |
 
 ## Development Workflow
 
