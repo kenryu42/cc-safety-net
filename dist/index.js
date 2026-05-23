@@ -5449,7 +5449,7 @@ Use information already provided in the user's prompt. Do not ask for scope, act
    - GitHub: edits or creates a shareable rulebook structure in the current repository.
 4. Determine whether the user wants to add a rule or edit an existing rule from the prompt when possible. Ask only if the prompt does not already make the action clear:
    - For User or Project scope, add or edit rules in the selected local rulebook.
-   - For GitHub scope, add or edit rules in \`cc-safetynet-rules/<rulebook-name>/rulebook.json\` in the current repository.
+   - For GitHub scope, add or edit rules in \`.cc-safetynet-rules/<rulebook-name>/rulebook.json\` in the current repository.
    - Do not offer to add a GitHub source with \`owner/repo\`; installing rules from a GitHub source is outside this workflow.
    - If GitHub scope is selected and no GitHub rulebook structure exists in the current repository, show the intended path and create it only after confirming the rule with the user.
 5. Inspect the project before suggesting rules. Use manifests, lockfiles, build files, scripts, and infrastructure files for any language or ecosystem, including:
@@ -5471,7 +5471,7 @@ Use information already provided in the user's prompt. Do not ask for scope, act
 9. For local rules, write both files only after user confirmation:
    - Selected-scope \`rule.json\`
    - Selected-scope \`<rulebook-name>/rulebook.json\`
-10. For GitHub rules, ensure the repository layout is \`cc-safetynet-rules/<rulebook-name>/rulebook.json\`, and ensure the source name, directory name, and rulebook \`name\` match exactly.
+10. For GitHub rules, ensure the repository layout is \`.cc-safetynet-rules/<rulebook-name>/rulebook.json\`, and ensure the source name, directory name, and rulebook \`name\` match exactly.
 11. After edits, run:
    - \`npx -y cc-safety-net rule sync\`
    - \`npx -y cc-safety-net rule verify\`

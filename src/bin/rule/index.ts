@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { RULE_DOC } from '@/bin/rule/doc';
 import { printRuleChangeResult, printRulesTestResult, printSyncResult } from '@/bin/rule/format';
 import { runRulesVerify } from '@/bin/rule/verify';
-import { RULE_DOC } from '@/bin/rule-doc';
 import {
   addRulebookSource,
   getProjectRulesConfigPath,

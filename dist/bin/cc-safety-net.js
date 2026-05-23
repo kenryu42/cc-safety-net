@@ -8122,8 +8122,9 @@ function printHelp() {
   lines.push(`${INDENT}Legacy SAFETY_NET_* names remain supported as fallbacks`);
   lines.push("");
   lines.push("CONFIG FILES:");
-  lines.push(`${INDENT}~/.cc-safety-net/config.json      User-scope config`);
-  lines.push(`${INDENT}.safety-net.json                  Project-scope config`);
+  lines.push(`${INDENT}~/.cc-safetynet-rules/rule.json       User-scope rule config`);
+  lines.push(`${INDENT}.cc-safetynet-rules/rule.json         Project-scope rule config`);
+  lines.push(`${INDENT}.safety-net.json                      Legacy project config`);
   console.log(lines.join(`
 `));
 }
@@ -8834,9 +8835,139 @@ async function runKimiCliHook() {
   handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputKimiDeny);
 }
 
-// src/bin/rule.ts
+// src/bin/rule/index.ts
 import { existsSync as existsSync17 } from "node:fs";
 import { join as join12 } from "node:path";
+
+// src/bin/rule/doc.ts
+var RULE_DOC = `# Custom Rules Reference
+
+Agent reference for generating CC Safety Net rulebook configuration.
+
+## Config Locations
+
+| Scope | Config path | Rulebook path | Priority |
+|-------|-------------|---------------|----------|
+| User | \`~/.cc-safetynet-rules/rule.json\` | \`~/.cc-safetynet-rules/<rulebook-name>/rulebook.json\` | Lower |
+| Project | \`.cc-safetynet-rules/rule.json\` | \`.cc-safetynet-rules/<rulebook-name>/rulebook.json\` | Higher |
+| GitHub source | Listed in a local \`rule.json\` | \`.cc-safetynet-rules/<rulebook-name>/rulebook.json\` in the source repository | Source order |
+
+Use \`cc-safety-net rule init\` to create a starter local config and rulebook. Use \`--global\` for user scope.
+
+Legacy inline \`.safety-net.json\` custom rules are deprecated. Do not create them for new rule configuration.
+
+## rule.json Schema
+
+\`\`\`json
+{
+  "version": 1,
+  "rules": ["project-rules", "owner/repo#main/team-rules"],
+  "overrides": {
+    "project-rules/block-docker-system-prune": {
+      "reason": "Use targeted Docker cleanup commands."
+    },
+    "team-rules/block-npm-global": "off"
+  }
+}
+\`\`\`
+
+- \`version\`: Required. Must be \`1\`.
+- \`rules\`: Optional array of rulebook source strings. Missing \`rules\` is treated as \`[]\`.
+- \`overrides\`: Optional object keyed by \`<rulebook-name>/<rule-name>\`.
+- Override values are either \`"off"\` to disable a rule or \`{ "reason": "..." }\` to replace the rule reason.
+
+## Rulebook Sources
+
+- Local sources are bare rulebook names such as \`project-rules\`; the rulebook file is \`.cc-safetynet-rules/project-rules/rulebook.json\`.
+- GitHub sources use \`owner/repo#ref/<rulebook-name>\`.
+- GitHub refs must be one path segment, such as a tag, SHA, or branch name without \`/\`.
+- Rulebook source names must be unique in a config.
+
+## rulebook.json Schema
+
+\`\`\`json
+{
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "description": "Project-specific CC Safety Net rules.",
+  "author": "project",
+  "allowed_commands": ["docker"],
+  "rules": [
+    {
+      "name": "block-docker-system-prune",
+      "command": "docker",
+      "subcommand": "system",
+      "block_args": ["prune"],
+      "reason": "Use targeted cleanup instead."
+    }
+  ],
+  "tests": [
+    {
+      "command": "docker system prune",
+      "expect": "blocked",
+      "rule": "block-docker-system-prune"
+    },
+    {
+      "command": "docker ps",
+      "expect": "allowed"
+    }
+  ]
+}
+\`\`\`
+
+### Rulebook Fields
+
+| Field | Required | Constraints |
+|-------|----------|-------------|
+| \`rulebook_version\` | Yes | Must be \`1\` |
+| \`name\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$\` |
+| \`version\` | Yes | Non-empty string |
+| \`description\` | No | String |
+| \`author\` | No | String |
+| \`allowed_commands\` | Yes | Unique command names matching \`^[a-zA-Z][a-zA-Z0-9_-]*$\` |
+| \`rules\` | Yes | Array of rule objects |
+| \`tests\` | Yes | Array of fixtures |
+
+### Rule Fields
+
+| Field | Required | Constraints |
+|-------|----------|-------------|
+| \`name\` | Yes | Unique within the rulebook; same pattern as rulebook \`name\` |
+| \`command\` | Yes | Must be listed in \`allowed_commands\`; basename only, not path |
+| \`subcommand\` | No | Same pattern as \`command\`; omit to match any subcommand |
+| \`block_args\` | Yes | Non-empty array of non-empty strings |
+| \`reason\` | Yes | Non-empty string, max 256 chars |
+
+### Test Fixture Fields
+
+| Field | Required | Constraints |
+|-------|----------|-------------|
+| \`command\` | Yes | Non-empty shell command string |
+| \`expect\` | Yes | \`"blocked"\` or \`"allowed"\` |
+| \`rule\` | Required for blocked fixtures | Rule name expected to block the command |
+
+Every rule must have at least one blocked fixture. Add allowed fixtures for close-but-safe commands.
+
+## Matching Behavior
+
+- **Command**: Normalized to basename (\`/usr/bin/git\` → \`git\`).
+- **Subcommand**: First non-option argument after command.
+- **Arguments**: Matched literally. Command blocked if **any** \`block_args\` item is present.
+- **Short options**: Expanded (\`-Ap\` matches \`-A\`).
+- **Long options**: Exact match (\`--all-files\` does not match \`--all\`).
+- **Execution order**: Built-in rules first, then custom rulebooks. Custom rules only add restrictions.
+
+## Workflow
+
+1. Run \`cc-safety-net rule init\` or create \`rule.json\` and \`rulebook.json\` manually.
+2. Run \`cc-safety-net rule sync\` after adding or changing rulebook sources.
+3. Run \`cc-safety-net rule verify\` to validate config, lock/cache state, local rulebooks, and GitHub source rulebooks.
+4. Run \`cc-safety-net rule test\` to execute rulebook fixtures.
+5. Run \`cc-safety-net rule list\` to inspect active rulebooks.
+
+Invalid rule config, corrupt cache, invalid local rulebooks, or remote rulebook repair failures fail closed until repaired with \`cc-safety-net rule sync\`.
+`;
 
 // src/bin/rule/format.ts
 function printSyncResult(result) {
@@ -9179,125 +9310,7 @@ function addRulesSchemaIfMissing(path) {
   }
 }
 
-// src/bin/rule-doc.ts
-var RULE_DOC = `# Custom Rules Reference
-
-Agent reference for generating \`.safety-net.json\` config files.
-
-## Config Locations
-
-| Scope | Path | Priority |
-|-------|------|----------|
-| User | \`~/.cc-safety-net/config.json\` | Lower |
-| Project | \`.safety-net.json\` (cwd) | Higher (overrides user) |
-
-Duplicate rule names (case-insensitive) → project wins.
-
-## Schema
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [...]
-}
-\`\`\`
-
-- \`$schema\`: Optional. Enables IDE autocomplete and inline validation.
-- \`version\`: Required. Must be \`1\`.
-- \`rules\`: Optional. Defaults to \`[]\`.
-
-**Always include \`$schema\`** when generating config files for IDE support.
-
-## Rule Fields
-
-| Field | Required | Constraints |
-|-------|----------|-------------|
-| \`name\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$\` — unique (case-insensitive) |
-| \`command\` | Yes | \`^[a-zA-Z][a-zA-Z0-9_-]*$\` — basename only, not path |
-| \`subcommand\` | No | Same pattern as command. Omit to match any. |
-| \`block_args\` | Yes | Non-empty array of non-empty strings |
-| \`reason\` | Yes | Non-empty string, max 256 chars |
-
-## Guidelines:
-
-- \`name\`: kebab-case, descriptive (e.g., \`block-git-add-all\`)
-- \`command\`: binary name only, lowercase
-- \`subcommand\`: omit if rule applies to any subcommand
-- \`block_args\`: include all variants (e.g., both \`-g\` and \`--global\`)
-- \`reason\`: explain why blocked AND suggest alternative
-
-## Matching Behavior
-
-- **Command**: Normalized to basename (\`/usr/bin/git\` → \`git\`)
-- **Subcommand**: First non-option argument after command
-- **Arguments**: Matched literally. Command blocked if **any** \`block_args\` item present.
-- **Short options**: Expanded (\`-Ap\` matches \`-A\`)
-- **Long options**: Exact match (\`--all-files\` does NOT match \`--all\`)
-- **Execution order**: Built-in rules first, then custom rules (additive only)
-
-## Examples
-
-### Block \`git add -A\`
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [
-    {
-      "name": "block-git-add-all",
-      "command": "git",
-      "subcommand": "add",
-      "block_args": ["-A", "--all", "."],
-      "reason": "Use 'git add <specific-files>' instead."
-    }
-  ]
-}
-\`\`\`
-
-### Block global npm install
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [
-    {
-      "name": "block-npm-global",
-      "command": "npm",
-      "subcommand": "install",
-      "block_args": ["-g", "--global"],
-      "reason": "Use npx or local install."
-    }
-  ]
-}
-\`\`\`
-
-### Block docker system prune
-
-\`\`\`json
-{
-  "$schema": "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json",
-  "version": 1,
-  "rules": [
-    {
-      "name": "block-docker-prune",
-      "command": "docker",
-      "subcommand": "system",
-      "block_args": ["prune"],
-      "reason": "Use targeted cleanup instead."
-    }
-  ]
-}
-\`\`\`
-
-## Error Handling
-
-Invalid config → silent fallback to built-in rules only. No custom rules applied.
-`;
-
-// src/bin/rule.ts
+// src/bin/rule/index.ts
 var RULE_SUBCOMMANDS = new Set([
   "init",
   "add",
