@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertValidRulebook, type Rulebook } from '@/core/rulebook';
+import { assertValidRulebook, type Rulebook } from '@/core/rules/rulebook';
 import { getRulebookCachePath, RULE_SYNC_COMMAND, RULEBOOK_FILE, RULES_DIR } from './paths';
 import {
   assertBareRulebookName,

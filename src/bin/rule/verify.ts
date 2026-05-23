@@ -7,7 +7,6 @@ import {
   validateConfigFile,
   validateRulesConfigFile,
 } from '@/core/config';
-import { assertValidRulebook } from '@/core/rulebook';
 import {
   getLegacyUserRulesConfigPath,
   getProjectRulesConfigPath,
@@ -17,7 +16,8 @@ import {
   getUserRulesConfigPath,
   getUserRulesLockPath,
   RULES_DIR,
-} from '@/core/rules-policy';
+} from '@/core/rules/policy';
+import { assertValidRulebook } from '@/core/rules/rulebook';
 import { NAME_PATTERN } from '@/types';
 
 const VERIFY_HEADER = 'CC Safety Net Config';

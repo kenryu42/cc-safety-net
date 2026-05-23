@@ -8,9 +8,9 @@ import {
   NAME_PATTERN,
   type ValidationResult,
 } from '@/types';
-import { validateRulesConfig } from './rules-policy/config-file';
-import { loadRulesPolicy, rulesPolicyToConfig } from './rules-policy/scope-policy';
-import { repairLocalRulesPolicy } from './rules-policy/sync';
+import { validateRulesConfig } from './rules/policy/config-file';
+import { loadRulesPolicy, rulesPolicyToConfig } from './rules/policy/scope-policy';
+import { repairLocalRulesPolicy } from './rules/policy/sync';
 
 const DEFAULT_CONFIG: Config = {
   version: 1,

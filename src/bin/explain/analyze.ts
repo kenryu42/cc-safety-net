@@ -16,7 +16,7 @@ import {
 } from '@/core/analyze/analyze-command';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { segmentChangesCwd } from '@/core/analyze/segment';
-import { loadRulesPolicy } from '@/core/rules-policy';
+import { loadRulesPolicy } from '@/core/rules/policy';
 import { splitShellCommands } from '@/core/shell';
 import type { ExplainOptions, ExplainResult, ExplainTrace, TraceStep } from '@/types';
 

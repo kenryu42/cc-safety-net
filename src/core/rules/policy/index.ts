@@ -3,7 +3,7 @@ export {
   validateRulesConfig,
   writeDefaultRulesConfig,
   writeStarterRulebook,
-} from './rules-policy/config-file';
+} from './config-file';
 export {
   getLegacyUserRulesConfigPath,
   getProjectRulesConfigPath,
@@ -16,22 +16,22 @@ export {
   getUserRulesDir,
   getUserRulesLockPath,
   RULES_DIR,
-} from './rules-policy/paths';
+} from './paths';
 export {
   getRulesConfigRuntimeErrorsForConfig,
   getRulesConfigSourceDisplayMap,
   getUnknownOverrideErrorsForConfig,
   loadRulesPolicy,
   rulesPolicyToConfig,
-} from './rules-policy/scope-policy';
-export { parseGitHubSource } from './rules-policy/sources';
+} from './scope-policy';
+export { parseGitHubSource } from './sources';
 export {
   addRulebookSource,
   removeRulebookSource,
   repairLocalRulesPolicy,
   syncRulesConfig,
   testRulebookSources,
-} from './rules-policy/sync';
+} from './sync';
 export type {
   LoadedRulebookInfo,
   LoadedRulesPolicy,
@@ -44,4 +44,4 @@ export type {
   RulesPolicyOptions,
   SyncRulesConfigOptions,
   SyncRulesConfigResult,
-} from './rules-policy/types';
+} from './types';

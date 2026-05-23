@@ -1,4 +1,4 @@
-import { getRulebookDisplaySource, type RulebookLockEntryWithStats } from '@/core/rules-policy';
+import { getRulebookDisplaySource, type RulebookLockEntryWithStats } from '@/core/rules/policy';
 
 export function printSyncResult(result: {
   ok: boolean;

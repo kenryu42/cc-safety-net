@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { runRulebookFixtures } from '@/core/rulebook';
+import { runRulebookFixtures } from '@/core/rules/rulebook';
 import { readRulesConfig, readScopeRulesConfig, writeJsonAtomic } from './config-file';
 import { readLockfile } from './lockfile';
 import { getRulebookCachePath, getScopePaths, RULE_SYNC_COMMAND } from './paths';

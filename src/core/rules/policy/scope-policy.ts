@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { assertValidRulebook, type Rulebook } from '@/core/rulebook';
+import { assertValidRulebook, type Rulebook } from '@/core/rules/rulebook';
 import type { Config, CustomRule } from '@/types';
 import { readRulesConfig } from './config-file';
 import { readLockfile } from './lockfile';

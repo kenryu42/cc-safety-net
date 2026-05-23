@@ -1,4 +1,4 @@
-import { checkCustomRules } from '@/core/rules-custom';
+import { checkCustomRules } from '@/core/rules/custom';
 import { splitShellCommands } from '@/core/shell';
 import {
   COMMAND_PATTERN,

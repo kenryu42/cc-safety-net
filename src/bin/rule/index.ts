@@ -15,7 +15,7 @@ import {
   testRulebookSources,
   writeDefaultRulesConfig,
   writeStarterRulebook,
-} from '@/core/rules-policy';
+} from '@/core/rules/policy';
 
 interface RuleFlags {
   global: boolean;

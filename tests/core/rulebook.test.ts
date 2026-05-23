@@ -4,7 +4,7 @@ import {
   type Rulebook,
   runRulebookFixtures,
   validateRulebook,
-} from '@/core/rulebook';
+} from '@/core/rules/rulebook';
 
 function rulebook(input: Partial<Rulebook> = {}): Rulebook {
   return {

@@ -28,14 +28,14 @@ import {
   validateRulesConfig,
   writeDefaultRulesConfig,
   writeStarterRulebook,
-} from '@/core/rules-policy';
-import { readLockfile } from '@/core/rules-policy/lockfile';
+} from '@/core/rules/policy';
+import { readLockfile } from '@/core/rules/policy/lockfile';
 import {
   discoverGitHubRepositoryRulebooks,
   resolveRulebookSource,
   resolveRulebookSourceForSync,
   sha256Digest,
-} from '@/core/rules-policy/resolver';
+} from '@/core/rules/policy/resolver';
 import {
   assertBareRulebookName,
   getRemoveMatches,
@@ -43,7 +43,7 @@ import {
   getSelectedUpdateSpecs,
   isGitHubRepositorySource,
   isGitHubRulebookSource,
-} from '@/core/rules-policy/sources';
+} from '@/core/rules/policy/sources';
 
 function makeTempDir(name: string) {
   return mkdtempSync(join(tmpdir(), `${name}-`));
