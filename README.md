@@ -477,20 +477,41 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this 
 Beyond the built-in protections, you can define your own blocking rules to enforce team conventions or project-specific safety policies.
 
 > [!TIP]
-> Use the `set-custom-rules` skill to create custom rules interactively with natural language.
+> Use the `cc-safetynet-rules` skill to create custom rules interactively with natural language.
 >
 > If your agent does not support skills, prompt it with:
 > ```text
-> run npx cc-safety-net --custom-rules-doc and help me set up custom rules
+> run npx -y cc-safety-net rule doc and help me set up custom rules
 > ```
 
 ### Quick Example
 
-Create `.safety-net.json` in your project root:
+Create a starter project rule config and rulebook:
+
+```bash
+npx -y cc-safety-net rule init
+```
+
+This creates `.cc-safetynet-rules/rule.json`:
 
 ```json
 {
   "version": 1,
+  "rules": ["project-rules"],
+  "overrides": {}
+}
+```
+
+Rule definitions live in `.cc-safetynet-rules/project-rules/rulebook.json`:
+
+```json
+{
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "description": "Project-specific CC Safety Net rules.",
+  "author": "project",
+  "allowed_commands": ["git"],
   "rules": [
     {
       "name": "block-git-add-all",
@@ -499,8 +520,27 @@ Create `.safety-net.json` in your project root:
       "block_args": ["-A", "--all", "."],
       "reason": "Use 'git add <specific-files>' instead of blanket add."
     }
+  ],
+  "tests": [
+    {
+      "command": "git add -A",
+      "expect": "blocked",
+      "rule": "block-git-add-all"
+    },
+    {
+      "command": "git add README.md",
+      "expect": "allowed"
+    }
   ]
 }
+```
+
+After editing rulebooks, run:
+
+```bash
+npx -y cc-safety-net rule sync
+npx -y cc-safety-net rule verify
+npx -y cc-safety-net rule test
 ```
 
 Now `git add -A`, `git add --all`, and `git add .` will be blocked with your custom message.
@@ -509,15 +549,17 @@ Now `git add -A`, `git add --all`, and `git add .` will be blocked with your cus
 
 Config files are loaded from two scopes and merged:
 
-1. **User scope**: `~/.cc-safety-net/config.json` (always loaded if exists)
-2. **Project scope**: `.safety-net.json` in the current working directory (loaded if exists)
+1. **User scope**: `~/.cc-safetynet-rules/rule.json` (use `rule init --global`)
+2. **Project scope**: `.cc-safetynet-rules/rule.json` in the current working directory
+
+Local rulebook sources are bare names like `project-rules`. GitHub rulebook sources use `owner/repo#ref/<rulebook-name>` and point to `.cc-safetynet-rules/<rulebook-name>/rulebook.json` in that repository.
 
 **Merging behavior**:
-- Rules from both scopes are combined
-- If the same rule name exists in both scopes, **project scope wins**
-- Rule name comparison is case-insensitive (`MyRule` and `myrule` are considered duplicates)
+- Rulebooks from both scopes are combined
+- Duplicate active rulebook names are invalid
+- Project overrides win over user overrides for the same `<rulebook-name>/<rule-name>` key
 
-This allows you to define personal defaults in user scope while letting projects override specific rules.
+This allows you to define personal defaults in user scope while letting projects disable or replace reasons for specific rules.
 
 If no config file is found in either location, only built-in rules apply.
 
@@ -526,17 +568,43 @@ If no config file is found in either location, only built-in rules apply.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `version` | integer | Yes | Schema version (must be `1`) |
-| `rules` | array | No | List of custom blocking rules (defaults to empty) |
+| `rules` | array | No | List of rulebook source strings (defaults to empty) |
+| `overrides` | object | No | Rule overrides keyed by `<rulebook-name>/<rule-name>` |
+
+Override values are either `"off"` to disable a rule or `{ "reason": "..." }` to replace the rule reason.
+
+### Rulebook Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rulebook_version` | integer | Yes | Rulebook schema version (must be `1`) |
+| `name` | string | Yes | Rulebook name; must match the local directory name or GitHub source name |
+| `version` | string | Yes | Rulebook version |
+| `description` | string | No | Human-readable description |
+| `author` | string | No | Rulebook author |
+| `allowed_commands` | array | Yes | Commands this rulebook is allowed to define rules for |
+| `rules` | array | Yes | Custom blocking rules |
+| `tests` | array | Yes | Rulebook fixtures |
 
 ### Rule Schema
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | Yes | Unique identifier (letters, numbers, hyphens, underscores; max 64 chars) |
-| `command` | string | Yes | Base command to match (e.g., `git`, `npm`, `docker`) |
+| `name` | string | Yes | Unique within the rulebook (letters, numbers, hyphens, underscores; max 64 chars) |
+| `command` | string | Yes | Base command to match; must be listed in `allowed_commands` |
 | `subcommand` | string | No | Subcommand to match (e.g., `add`, `install`). If omitted, matches any. |
 | `block_args` | array | Yes | Arguments that trigger the block (at least one required) |
 | `reason` | string | Yes | Message shown when blocked (max 256 chars) |
+
+### Fixture Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `command` | string | Yes | Shell command fixture |
+| `expect` | string | Yes | Either `blocked` or `allowed` |
+| `rule` | string | For blocked fixtures | Rule expected to block the command |
+
+Every rule must have at least one blocked fixture. Add allowed fixtures for close-but-safe commands.
 
 ### Matching Behavior
 
@@ -556,9 +624,24 @@ If no config file is found in either location, only built-in rules apply.
 
 #### Block global npm installs
 
+`.cc-safetynet-rules/rule.json`:
+
 ```json
 {
   "version": 1,
+  "rules": ["project-rules"],
+  "overrides": {}
+}
+```
+
+`.cc-safetynet-rules/project-rules/rulebook.json`:
+
+```json
+{
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "allowed_commands": ["npm"],
   "rules": [
     {
       "name": "block-npm-global",
@@ -566,6 +649,17 @@ If no config file is found in either location, only built-in rules apply.
       "subcommand": "install",
       "block_args": ["-g", "--global"],
       "reason": "Global npm installs can cause version conflicts. Use npx or local install."
+    }
+  ],
+  "tests": [
+    {
+      "command": "npm install -g typescript",
+      "expect": "blocked",
+      "rule": "block-npm-global"
+    },
+    {
+      "command": "npm install typescript",
+      "expect": "allowed"
     }
   ]
 }
@@ -575,7 +669,10 @@ If no config file is found in either location, only built-in rules apply.
 
 ```json
 {
-  "version": 1,
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "allowed_commands": ["docker"],
   "rules": [
     {
       "name": "block-docker-system-prune",
@@ -583,6 +680,17 @@ If no config file is found in either location, only built-in rules apply.
       "subcommand": "system",
       "block_args": ["prune"],
       "reason": "docker system prune removes all unused data. Use targeted cleanup instead."
+    }
+  ],
+  "tests": [
+    {
+      "command": "docker system prune",
+      "expect": "blocked",
+      "rule": "block-docker-system-prune"
+    },
+    {
+      "command": "docker ps",
+      "expect": "allowed"
     }
   ]
 }
@@ -592,7 +700,10 @@ If no config file is found in either location, only built-in rules apply.
 
 ```json
 {
-  "version": 1,
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "allowed_commands": ["git", "npm"],
   "rules": [
     {
       "name": "block-git-add-all",
@@ -608,26 +719,37 @@ If no config file is found in either location, only built-in rules apply.
       "block_args": ["-g", "--global"],
       "reason": "Use npx or local install instead of global."
     }
+  ],
+  "tests": [
+    {
+      "command": "git add -A",
+      "expect": "blocked",
+      "rule": "block-git-add-all"
+    },
+    {
+      "command": "npm install -g typescript",
+      "expect": "blocked",
+      "rule": "block-npm-global"
+    }
   ]
 }
 ```
 
 ### Error Handling
 
-Custom rules use **silent fallback** error handling. If your config file is invalid, the safety net silently falls back to built-in rules only:
+Rulebook-backed custom rules fail closed when configured rulebooks cannot be loaded safely:
 
 | Scenario | Behavior |
 |----------|----------|
 | Config file not found | Silent — use built-in rules only |
-| Empty config file | Silent — use built-in rules only |
-| Invalid JSON syntax | Silent — use built-in rules only |
-| Missing required field | Silent — use built-in rules only |
-| Invalid field format | Silent — use built-in rules only |
-| Duplicate rule name | Silent — use built-in rules only |
+| Invalid rule config | Fail closed until fixed |
+| Missing or stale lock/cache | Fail closed until `rule sync` repairs it |
+| Invalid local rulebook | Fail closed until the rulebook is fixed and synced |
+| Invalid GitHub rulebook | Fail closed until the source is fixed or removed |
 
 
 > [!IMPORTANT]  
-> If you add or modify custom rules manually, always validate them with `npx -y cc-safety-net --verify-config` or the `verify-custom-rules` skill in your coding agent.
+> If you add or modify custom rules manually, always validate them with `npx -y cc-safety-net rule verify` and `npx -y cc-safety-net rule test`.
 
 ### Block Output Format
 
