@@ -45,7 +45,6 @@ export interface AnalyzeRmOptions {
   originalCwd?: string;
   paranoid?: boolean;
   allowTmpdirVar?: boolean;
-  tmpdirOverridden?: boolean;
 }
 
 interface RmContext {
@@ -65,21 +64,14 @@ type TargetClassification =
   | { kind: 'outside_anchored_cwd' };
 
 export function analyzeRm(tokens: string[], options: AnalyzeRmOptions = {}): string | null {
-  const {
-    cwd,
-    originalCwd,
-    paranoid = false,
-    allowTmpdirVar = true,
-    tmpdirOverridden = false,
-  } = options;
+  const { cwd, originalCwd, paranoid = false, allowTmpdirVar = true } = options;
   const anchoredCwd = originalCwd ?? cwd ?? null;
   const resolvedCwd = cwd ?? null;
-  const trustTmpdirVar = allowTmpdirVar && !tmpdirOverridden;
   const ctx: RmContext = {
     anchoredCwd,
     resolvedCwd,
     paranoid,
-    trustTmpdirVar,
+    trustTmpdirVar: allowTmpdirVar,
     homeDir: getHomeDirForRmPolicy(),
   };
 

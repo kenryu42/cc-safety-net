@@ -1,9 +1,8 @@
+import { analyzeChildCommand } from '@/core/analyze/child-analyzer';
 import { collectCommandTemplate, normalizeChildCommand } from '@/core/analyze/child-command';
-import { analyzeFind } from '@/core/analyze/find';
 import { analyzeRm } from '@/core/analyze/rm';
 import { hasRecursiveForceFlags } from '@/core/analyze/rm-flags';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
-import { analyzeGit } from '@/core/git';
 import { type AnalyzeNestedOverrides, SHELL_WRAPPERS } from '@/types';
 
 const REASON_PARALLEL_RM =
@@ -132,30 +131,27 @@ export function analyzeParallel(
     return REASON_PARALLEL_RM;
   }
 
-  if (childCommand.head === 'find') {
-    const findResult = analyzeFind(childTokens);
-    if (findResult) {
-      return findResult;
-    }
-  }
-
-  if (childCommand.head === 'git') {
-    const gitTokenSets =
-      hasPlaceholder && args.length > 0
-        ? args.map((arg) => childTokens.map((token) => replaceParallelPlaceholder(token, arg)))
-        : !hasPlaceholder && args.length > 0
-          ? args.map((arg) => [...childTokens, arg])
-          : [childTokens];
-    const dynamicGitArgs = usesStdin || hasPlaceholder;
-    for (const gitTokens of gitTokenSets) {
-      const gitResult = analyzeGit(gitTokens, {
+  const tokenSets = getParallelChildTokenSets(childTokens, hasPlaceholder, args);
+  for (const tokens of tokenSets) {
+    const result = analyzeChildCommand(
+      tokens,
+      {
         cwd: childCommand.cwd,
+        originalCwd: context.originalCwd,
+        paranoidRm: context.paranoidRm,
+        allowTmpdirVar: context.allowTmpdirVar,
         envAssignments: childCommand.envAssignments,
-        worktreeMode: runsRemotely || dynamicGitArgs ? false : context.worktreeMode,
-      });
-      if (gitResult) {
-        return gitResult;
-      }
+        worktreeMode: runsRemotely || usesStdin || hasPlaceholder ? false : context.worktreeMode,
+        analyzeNested: context.analyzeNested,
+      },
+      {
+        dynamicInput: usesStdin || hasPlaceholder,
+        shellDynamicReason: REASON_PARALLEL_SHELL,
+        rmDynamicReason: REASON_PARALLEL_RM,
+      },
+    );
+    if (result) {
+      return result;
     }
   }
 
@@ -179,6 +175,22 @@ function analyzeParallelRmExpansions(
     }
   }
   return null;
+}
+
+function getParallelChildTokenSets(
+  childTokens: readonly string[],
+  hasPlaceholder: boolean,
+  args: readonly string[],
+): string[][] {
+  if (hasPlaceholder && args.length > 0) {
+    return args.map((arg) => childTokens.map((token) => replaceParallelPlaceholder(token, arg)));
+  }
+
+  if (!hasPlaceholder && args.length > 0) {
+    return args.map((arg) => [...childTokens, arg]);
+  }
+
+  return [[...childTokens]];
 }
 
 function buildNestedOverrides(
@@ -216,6 +228,7 @@ function buildCommandsModeOverrides(
 interface ParallelParseResult {
   template: string[];
   args: string[];
+  childCommandTokens: string[];
   hasPlaceholder: boolean;
   runsRemotely: boolean;
   usesStdin: boolean;
@@ -252,6 +265,7 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult | 
 
   let i = 1;
   const templateTokens: string[] = [];
+  let childCommandTokens: string[] = [];
   let markerIndex = -1;
   let runsRemotely = false;
 
@@ -269,6 +283,7 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult | 
       // Everything after -- until ::: is the template
       const template = collectCommandTemplate(tokens, i + 1);
       templateTokens.push(...template.templateTokens);
+      childCommandTokens = [...tokens.slice(i + 1)];
       markerIndex = template.markerIndex;
       break;
     }
@@ -331,6 +346,7 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult | 
       // Start of template
       const template = collectCommandTemplate(tokens, i);
       templateTokens.push(...template.templateTokens);
+      childCommandTokens = [...tokens.slice(i)];
       markerIndex = template.markerIndex;
       break;
     }
@@ -358,6 +374,7 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult | 
   return {
     template: templateTokens,
     args,
+    childCommandTokens,
     hasPlaceholder,
     runsRemotely,
     usesStdin: markerIndex === -1,
@@ -365,60 +382,5 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult | 
 }
 
 export function extractParallelChildCommand(tokens: readonly string[]): string[] {
-  // Legacy behavior: return everything after options until end
-  // This includes ::: marker and args if present
-  const parallelOptsWithValue = new Set([
-    '-S',
-    '--sshlogin',
-    '--slf',
-    '--sshloginfile',
-    '-a',
-    '--arg-file',
-    '--colsep',
-    '-I',
-    '--replace',
-    '--results',
-    '--result',
-    '--res',
-  ]);
-
-  let i = 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) break;
-
-    if (token === ':::') {
-      // ::: as first non-option means no template
-      return [];
-    }
-
-    if (token === '--') {
-      return [...tokens.slice(i + 1)];
-    }
-
-    if (token.startsWith('-')) {
-      if (token.startsWith('-j') && token.length > 2 && /^\d+$/.test(token.slice(2))) {
-        i++;
-        continue;
-      }
-      if (token.startsWith('--') && token.includes('=')) {
-        i++;
-        continue;
-      }
-      if (parallelOptsWithValue.has(token)) {
-        i += 2;
-        continue;
-      }
-      if (token === '-j' || token === '--jobs') {
-        i += 2;
-        continue;
-      }
-      i++;
-    } else {
-      // Return everything from here to end (including ::: and args)
-      return [...tokens.slice(i)];
-    }
-  }
-
-  return [];
+  return parseParallelCommand(tokens)?.childCommandTokens ?? [];
 }
