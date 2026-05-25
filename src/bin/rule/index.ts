@@ -29,6 +29,7 @@ interface RuleFlags {
   global: boolean;
   check: boolean;
   cleanup: boolean;
+  deleteSource: boolean;
   help: boolean;
   positionals: string[];
   errors: string[];
@@ -88,7 +89,10 @@ export async function runRuleCommand(args: readonly string[]): Promise<number> {
       console.error('rule remove requires a source');
       return 1;
     }
-    const result = await removeRulebookSource(value, options);
+    const result = await removeRulebookSource(value, {
+      ...options,
+      deleteSource: flags.deleteSource,
+    });
     printRuleChangeResult(result, `Removed rulebook source: ${value}`);
     return result.ok ? 0 : 1;
   }
@@ -139,6 +143,7 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
     global: false,
     check: false,
     cleanup: false,
+    deleteSource: false,
     help: false,
     positionals: [],
     errors: [],
@@ -157,6 +162,14 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
       flags.global = true;
     } else if (arg === '--check') {
       flags.check = true;
+    } else if (arg === '--delete-source') {
+      if (flags.positionals[0] === 'remove') {
+        flags.deleteSource = true;
+      } else if (flags.positionals[0] && RULE_SUBCOMMANDS.has(flags.positionals[0])) {
+        flags.errors.push(`Unknown option for rule ${flags.positionals[0]}: ${arg}`);
+      } else {
+        flags.errors.push(`Unknown rule option: ${arg}`);
+      }
     } else if (arg === '-h' || arg === '--help') {
       flags.help = true;
     } else if (arg.startsWith('-')) {
