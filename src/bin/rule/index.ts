@@ -16,12 +16,14 @@ import {
   getUserRulesConfigPath,
   getUserRulesDir,
   loadRulesPolicy,
+  readRulesConfig,
   removeRulebookSource,
   syncRulesConfig,
   testRulebookSources,
   writeDefaultRulesConfig,
   writeStarterRulebook,
 } from '@/core/rules/policy';
+import { writeJsonAtomic } from '@/core/rules/policy/config-file';
 
 interface RuleFlags {
   global: boolean;
@@ -63,7 +65,7 @@ export async function runRuleCommand(args: readonly string[]): Promise<number> {
     const dir = flags.global ? getUserRulesDir() : getProjectRulesDir();
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
     const rulebookName = flags.global ? 'user-rules' : 'project-rules';
-    if (!existsSync(configPath)) writeDefaultRulesConfig(configPath, [rulebookName]);
+    ensureDefaultRulebookSource(configPath, rulebookName);
     const rulebookPath = join(dir, rulebookName, 'rulebook.json');
     if (!existsSync(rulebookPath)) writeStarterRulebook(rulebookPath, rulebookName);
     const result = await syncRulesConfig(options);
@@ -182,4 +184,20 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
   }
 
   return flags;
+}
+
+function ensureDefaultRulebookSource(configPath: string, rulebookName: string): void {
+  if (!existsSync(configPath)) {
+    writeDefaultRulesConfig(configPath, [rulebookName]);
+    return;
+  }
+
+  const loaded = readRulesConfig(configPath);
+  if (!loaded.config || loaded.config.rules.includes(rulebookName)) return;
+
+  writeJsonAtomic(configPath, {
+    version: 1,
+    rules: [...loaded.config.rules, rulebookName],
+    overrides: loaded.config.overrides ?? {},
+  });
 }

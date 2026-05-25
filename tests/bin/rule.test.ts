@@ -35,8 +35,7 @@ describe('rule command docs', () => {
         tempDir,
       );
 
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe('');
+      expectSuccessfulCli(result);
       expectCanonicalRulesLayout(tempDir, 'project-rules');
     });
   });
@@ -48,9 +47,98 @@ describe('rule command docs', () => {
         HOME: join(tempDir, 'home'),
       });
 
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe('');
+      expectSuccessfulCli(result);
       expectCanonicalRulesLayout(tempDir, 'user-rules');
+    });
+  });
+
+  test('reinitializes project rules after removing the default source', async () => {
+    await withTempDir('safety-net-rule-init-removed-', async (tempDir) => {
+      const env = { HOME: join(tempDir, 'home') };
+
+      expect((await runSafetyNetCli(['rule', 'init'], env, tempDir)).exitCode).toBe(0);
+      expect(
+        (await runSafetyNetCli(['rule', 'remove', 'project-rules'], env, tempDir)).exitCode,
+      ).toBe(0);
+      const result = await runSafetyNetCli(['rule', 'init'], env, tempDir);
+
+      expectSuccessfulCli(result);
+      expectProjectRulesConfigRules(tempDir, ['project-rules']);
+      expectCanonicalRulesLayout(tempDir, 'project-rules');
+    });
+  });
+
+  test('reinitializes global rules after removing the default source', async () => {
+    await withTempDir('safety-net-rule-init-global-removed-', async (tempDir) => {
+      const env = {
+        CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
+        HOME: join(tempDir, 'home'),
+      };
+
+      expect((await runSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
+      expect(
+        (await runSafetyNetCli(['rule', 'remove', 'user-rules', '--global'], env)).exitCode,
+      ).toBe(0);
+      const result = await runSafetyNetCli(['rule', 'init', '--global'], env);
+
+      expectSuccessfulCli(result);
+      expect(readRulesConfig(join(tempDir, '.cc-safety-net', 'rules', 'rule.json')).rules).toEqual([
+        'user-rules',
+      ]);
+      expectCanonicalRulesLayout(tempDir, 'user-rules');
+    });
+  });
+
+  test('initialization preserves existing sources and appends the default source', async () => {
+    await withTempDir('safety-net-rule-init-existing-', async (tempDir) => {
+      writeLocalRulebook(
+        join(tempDir, '.cc-safety-net', 'rules', 'team-rules', 'rulebook.json'),
+        'team-rules',
+      );
+      writeFileSync(
+        join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
+        JSON.stringify({
+          version: 1,
+          rules: ['team-rules'],
+          overrides: {
+            'team-rules/team-rules-rule': 'off',
+          },
+        }),
+      );
+
+      const result = await runSafetyNetCli(
+        ['rule', 'init'],
+        { HOME: join(tempDir, 'home') },
+        tempDir,
+      );
+
+      expectSuccessfulCli(result);
+      expect(readRulesConfig(join(tempDir, '.cc-safety-net', 'rules', 'rule.json'))).toEqual({
+        version: 1,
+        rules: ['team-rules', 'project-rules'],
+        overrides: {
+          'team-rules/team-rules-rule': 'off',
+        },
+      });
+    });
+  });
+
+  test('initialization does not duplicate an existing default source', async () => {
+    await withTempDir('safety-net-rule-init-no-duplicate-', async (tempDir) => {
+      const result = await runSafetyNetCli(
+        ['rule', 'init'],
+        { HOME: join(tempDir, 'home') },
+        tempDir,
+      );
+      const secondResult = await runSafetyNetCli(
+        ['rule', 'init'],
+        { HOME: join(tempDir, 'home') },
+        tempDir,
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(secondResult.exitCode).toBe(0);
+      expectProjectRulesConfigRules(tempDir, ['project-rules']);
     });
   });
 });
@@ -187,9 +275,7 @@ describe('rule migrate', () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stderr).toBe('');
-      expect(readRulesConfig(join(tempDir, '.cc-safety-net', 'rules', 'rule.json')).rules).toEqual([
-        'project-rules',
-      ]);
+      expectProjectRulesConfigRules(tempDir, ['project-rules']);
       expect(
         readRulesConfig(join(tempDir, '.cc-safety-net', 'rules', 'rule.json')).overrides,
       ).toEqual({});
@@ -324,6 +410,15 @@ function expectCanonicalRulesLayout(dir: string, rulebookName: string): void {
   );
   expect(existsSync(join(dir, '.cc-safety-net', 'cache', 'rulebooks'))).toBe(true);
   expect(existsSync(join(dir, '.cc-safety-net', 'rules', 'cache'))).toBe(false);
+}
+
+function expectSuccessfulCli(result: Awaited<ReturnType<typeof runSafetyNetCli>>): void {
+  expect(result.exitCode).toBe(0);
+  expect(result.stderr).toBe('');
+}
+
+function expectProjectRulesConfigRules(dir: string, rules: string[]): void {
+  expect(readRulesConfig(join(dir, '.cc-safety-net', 'rules', 'rule.json')).rules).toEqual(rules);
 }
 
 function writeLegacyConfig(path: string, name: string, command: string): void {

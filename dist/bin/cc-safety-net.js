@@ -9479,8 +9479,7 @@ async function runRuleCommand(args) {
     const dir = flags.global ? getUserRulesDir() : getProjectRulesDir();
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
     const rulebookName = flags.global ? "user-rules" : "project-rules";
-    if (!existsSync17(configPath))
-      writeDefaultRulesConfig(configPath, [rulebookName]);
+    ensureDefaultRulebookSource(configPath, rulebookName);
     const rulebookPath = join13(dir, rulebookName, "rulebook.json");
     if (!existsSync17(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
@@ -9589,6 +9588,20 @@ function parseRuleFlags(args) {
     flags.errors.push("Unknown option for rule list: --global");
   }
   return flags;
+}
+function ensureDefaultRulebookSource(configPath, rulebookName) {
+  if (!existsSync17(configPath)) {
+    writeDefaultRulesConfig(configPath, [rulebookName]);
+    return;
+  }
+  const loaded = readRulesConfig(configPath);
+  if (!loaded.config || loaded.config.rules.includes(rulebookName))
+    return;
+  writeJsonAtomic(configPath, {
+    version: 1,
+    rules: [...loaded.config.rules, rulebookName],
+    overrides: loaded.config.overrides ?? {}
+  });
 }
 
 // src/bin/statusline.ts
