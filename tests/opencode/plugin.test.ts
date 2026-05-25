@@ -3,16 +3,16 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syncRulesConfig } from '@/core/rules/policy';
-import { SafetyNetPlugin } from '@/index';
+import { CCSafetyNetPlugin } from '@/index';
 
 describe('OpenCode plugin', () => {
   test('reads current environment mode names', async () => {
     const original = process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS;
     process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS = '1';
     try {
-      const plugin = (await SafetyNetPlugin({
+      const plugin = (await CCSafetyNetPlugin({
         directory: process.cwd(),
-      } as Parameters<typeof SafetyNetPlugin>[0])) as unknown as {
+      } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as {
         'tool.execute.before': (
           input: { tool: string },
           output: { args: { command: string } },
@@ -35,9 +35,9 @@ describe('OpenCode plugin', () => {
   });
 
   test('registers built-in commands without removing existing commands', async () => {
-    const plugin = (await SafetyNetPlugin({
+    const plugin = (await CCSafetyNetPlugin({
       directory: process.cwd(),
-    } as Parameters<typeof SafetyNetPlugin>[0])) as unknown as {
+    } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as {
       config: (opencodeConfig: Record<string, unknown>) => Promise<void>;
     };
     const opencodeConfig = {
@@ -48,7 +48,7 @@ describe('OpenCode plugin', () => {
 
     await plugin.config(opencodeConfig);
 
-    expect(Object.keys(opencodeConfig.command)).toContain('cc-safetynet-rules');
+    expect(Object.keys(opencodeConfig.command)).toContain('cc-safety-net');
     expect(opencodeConfig.command.existing).toEqual({
       description: 'Existing command',
       template: 'keep',
@@ -70,9 +70,9 @@ describe('OpenCode plugin', () => {
         cwd: dir,
         userConfigDir: join(dir, 'home', '.cc-safety-net', 'rules'),
       });
-      const plugin = (await SafetyNetPlugin({
+      const plugin = (await CCSafetyNetPlugin({
         directory: dir,
-      } as Parameters<typeof SafetyNetPlugin>[0])) as unknown as {
+      } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as {
         'tool.execute.before': (
           input: { tool: string },
           output: { args: { command: string } },

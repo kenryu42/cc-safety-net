@@ -5382,14 +5382,13 @@ function excerpt(text, maxLen) {
   return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
 }
 
-// src/opencode/builtin-commands/templates/cc-safetynet-rules.ts
-var CC_SAFETYNET_RULES_TEMPLATE = `# Coding CLI SafetyNet Custom Rules
-
+// src/opencode/builtin-commands/templates/cc-safety-net.ts
+var CC_SAFETY_NET_TEMPLATE = `
 ## Workflow
 
 **STRICT**: Use ask questions tool if possible
 
-Help the user configure custom blocking rules for Coding CLI SafetyNet.
+Help the user configure custom blocking rules for CC Safety Net.
 
 Use information already provided in the user's prompt. Do not ask for scope, action, rule intent, rulebook name, or target command again when the prompt already provides enough information to proceed confidently.
 
@@ -5449,13 +5448,13 @@ Use information already provided in the user's prompt. Do not ask for scope, act
 `;
 
 // src/opencode/builtin-commands/commands.ts
-var COMMAND_NAME = "cc-safetynet-rules";
+var COMMAND_NAME = "cc-safety-net";
 function loadBuiltinCommands(disabledCommands) {
   const disabled = new Set(disabledCommands ?? []);
   const commands = {};
   const definition = {
     description: "Manage Safety Net rulebooks",
-    template: CC_SAFETYNET_RULES_TEMPLATE.slice(CC_SAFETYNET_RULES_TEMPLATE.indexOf("## Workflow"))
+    template: CC_SAFETY_NET_TEMPLATE.slice(CC_SAFETY_NET_TEMPLATE.indexOf("## Workflow"))
   };
   if (!disabled.has(COMMAND_NAME)) {
     commands[COMMAND_NAME] = definition;
@@ -5463,7 +5462,7 @@ function loadBuiltinCommands(disabledCommands) {
   return commands;
 }
 // src/index.ts
-var SafetyNetPlugin = async ({ directory }) => {
+var CCSafetyNetPlugin = async ({ directory }) => {
   const modes = getSafetyNetEnvModes();
   return {
     config: async (opencodeConfig) => {
@@ -5499,5 +5498,5 @@ var SafetyNetPlugin = async ({ directory }) => {
   };
 };
 export {
-  SafetyNetPlugin
+  CCSafetyNetPlugin
 };

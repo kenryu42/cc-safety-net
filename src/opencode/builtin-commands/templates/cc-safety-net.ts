@@ -1,10 +1,9 @@
-export const CC_SAFETYNET_RULES_TEMPLATE = `# Coding CLI SafetyNet Custom Rules
-
+export const CC_SAFETY_NET_TEMPLATE = `
 ## Workflow
 
 **STRICT**: Use ask questions tool if possible
 
-Help the user configure custom blocking rules for Coding CLI SafetyNet.
+Help the user configure custom blocking rules for CC Safety Net.
 
 Use information already provided in the user's prompt. Do not ask for scope, action, rule intent, rulebook name, or target command again when the prompt already provides enough information to proceed confidently.
 

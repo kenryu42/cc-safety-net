@@ -1,13 +1,13 @@
 ---
-name: cc-safetynet-rules
-description: Configure Safety Net rulebooks for user, project, or shareable GitHub scope.
+name: cc-safety-net
+description: Configure CC Safety Net rulebooks for user, project, or shareable GitHub scope.
 ---
 
 ## Workflow
 
 **STRICT**: Use ask questions tool if possible
 
-Help the user configure custom blocking rules for Coding CLI SafetyNet.
+Help the user configure custom blocking rules for CC Safety Net.
 
 Use information already provided in the user's prompt. Do not ask for scope, action, rule intent, rulebook name, or target command again when the prompt already provides enough information to proceed confidently.
 

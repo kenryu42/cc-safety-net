@@ -4,7 +4,7 @@ import { getSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
 
-export const SafetyNetPlugin: Plugin = async ({ directory }) => {
+export const CCSafetyNetPlugin: Plugin = async ({ directory }) => {
   const modes = getSafetyNetEnvModes();
 
   return {

@@ -477,7 +477,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this 
 Beyond the built-in protections, you can define your own blocking rules to enforce team conventions or project-specific safety policies.
 
 > [!TIP]
-> Use the `cc-safetynet-rules` skill to create custom rules interactively with natural language.
+> Use the `cc-safety-net` skill to create custom rules interactively with natural language.
 >
 > If your agent does not support skills, prompt it with:
 > ```text

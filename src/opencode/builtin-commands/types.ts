@@ -1,4 +1,4 @@
-export type BuiltinCommandName = 'cc-safetynet-rules';
+export type BuiltinCommandName = 'cc-safety-net';
 
 export interface CommandDefinition {
   description?: string;

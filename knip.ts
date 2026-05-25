@@ -3,7 +3,7 @@ import type { KnipConfig } from 'knip';
 const config: KnipConfig = {
   entry: ['src/index.ts!', 'src/bin/cc-safety-net.ts!', 'scripts/**/*.ts'],
   project: ['src/**/*.ts!', 'scripts/**/*.ts!'],
-  ignore: ['src/opencode/builtin-commands/templates/cc-safetynet-rules.ts'],
+  ignore: ['src/opencode/builtin-commands/templates/cc-safety-net.ts'],
   ignoreIssues: {
     'src/bin/hook/common.ts': ['exports'],
     'src/bin/rule/format.ts': ['exports'],
