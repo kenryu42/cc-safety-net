@@ -1000,94 +1000,80 @@ function writeJsonAtomic(path, value) {
 import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
 import { dirname as dirname4, isAbsolute as isAbsolute3, join as join4, relative, resolve as resolve2, sep as sep2 } from "node:path";
 
-// src/core/shell.ts
-import { realpathSync as realpathSync2 } from "node:fs";
-import { isAbsolute as isAbsolute2, parse as parsePath2 } from "node:path";
-
+// src/core/shell/command.ts
+function normalizeCommandToken(token) {
+  return getBasename(token).toLowerCase();
+}
+function getBasename(token) {
+  return token.includes("/") ? token.split("/").pop() ?? token : token;
+}
+// src/core/shell/options.ts
+function extractShortOpts(tokens, options) {
+  const opts = new Set;
+  let pastDoubleDash = false;
+  for (const token of tokens) {
+    if (token === "--") {
+      pastDoubleDash = true;
+      continue;
+    }
+    if (pastDoubleDash)
+      continue;
+    if (token.startsWith("-") && !token.startsWith("--") && token.length > 1) {
+      for (let i = 1;i < token.length; i++) {
+        const char = token[i];
+        if (!char || !/[a-zA-Z]/.test(char)) {
+          break;
+        }
+        const shortOpt = `-${char}`;
+        opts.add(shortOpt);
+        if (options?.shortOptsWithValue?.has(shortOpt)) {
+          break;
+        }
+      }
+    }
+  }
+  return opts;
+}
 // node_modules/shell-quote/index.js
 var $quote = require_quote();
 var $parse = require_parse();
 
-// src/core/git/env.ts
-var GIT_CONTEXT_ENV_OVERRIDES = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_COMMON_DIR",
-  "GIT_INDEX_FILE"
-];
-var GIT_CONTEXT_ENV_OVERRIDE_NAMES = new Set(GIT_CONTEXT_ENV_OVERRIDES);
-var GIT_CONFIG_AFFECTING_ENV_NAMES = new Set([
-  "GIT_CONFIG_GLOBAL",
-  "GIT_CONFIG_NOSYSTEM",
-  "GIT_CONFIG_SYSTEM",
-  "HOME",
-  "XDG_CONFIG_HOME"
-]);
-var GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
-function isGitContextEnvOverrideName(name) {
-  return GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name);
-}
-function isGitConfigEnvName(name) {
-  return name === "GIT_CONFIG_COUNT" || name === "GIT_CONFIG_PARAMETERS" || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name);
-}
-function isTrackedGitEnvName(name) {
-  return isGitContextEnvOverrideName(name) || GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) || isGitConfigEnvName(name);
-}
-function parseGitContextAppendEnvAssignment(token) {
-  const match = token.match(GIT_CONTEXT_APPEND_ASSIGNMENT_RE);
-  const name = match?.[1];
-  if (!name || !isTrackedGitEnvName(name)) {
-    return null;
-  }
-  const eqIdx = token.indexOf("=");
-  return { name, value: token.slice(eqIdx + 1) };
-}
-function hasConfigAffectingEnvAssignment(envAssignments) {
-  if (!envAssignments) {
-    return false;
-  }
-  for (const key of envAssignments.keys()) {
-    if (GIT_CONFIG_AFFECTING_ENV_NAMES.has(key)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// src/core/path.ts
-import { lstatSync, realpathSync } from "node:fs";
-import { dirname as dirname3, isAbsolute, parse as parsePath, sep } from "node:path";
-function resolveChdirTarget(baseCwd, target) {
-  const root = isAbsolute(target) ? getPathRoot(target) : "";
-  let current = root || baseCwd;
-  for (const component of getPathComponents(root ? target.slice(root.length) : target)) {
-    if (component === "" || component === ".") {
-      continue;
-    }
-    if (component === "..") {
-      current = dirname3(current);
-      continue;
-    }
-    const candidate = appendPathWithoutNormalizing(current, component);
-    current = lstatSync(candidate).isSymbolicLink() ? realpathSync(candidate) : candidate;
-  }
-  return current;
-}
-function appendPathWithoutNormalizing(base, target) {
-  return base.endsWith("/") || base.endsWith("\\") ? `${base}${target}` : `${base}${sep}${target}`;
-}
-function getPathRoot(target) {
-  return parsePath(target).root;
-}
-function getPathComponents(target) {
-  const separator = process.platform === "win32" ? /[\\/]+/ : /\/+/;
-  return target.split(separator);
-}
-
-// src/core/shell.ts
+// src/core/shell/shared.ts
 var ENV_PROXY = new Proxy({}, {
   get: (_, name) => `$${String(name)}`
 });
+function hasUnclosedQuotes(command) {
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+  for (const char of command) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "'" && !inDouble) {
+      inSingle = !inSingle;
+    } else if (char === '"' && !inSingle) {
+      inDouble = !inDouble;
+    }
+  }
+  return inSingle || inDouble;
+}
+function getCommandTokenText(token) {
+  if (typeof token === "string") {
+    return token;
+  }
+  if (token && typeof token === "object" && "pattern" in token && typeof token.pattern === "string") {
+    return token.pattern;
+  }
+  return null;
+}
+
+// src/core/shell/segments.ts
 var ARITHMETIC_SENTINEL = "__CC_SAFETY_NET_ARITH_SENTINEL__";
 var BACKTICK_ATTACHED_SUFFIX_SENTINEL = "__CC_SAFETY_NET_BACKTICK_SUFFIX__";
 function splitShellCommands(command) {
@@ -1142,12 +1128,10 @@ function splitShellCommandsWithInfo(command) {
       continue;
     }
     if (_isCommandSubstitutionStart(tokens, i)) {
-      const { innerSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
-      const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
-      const shouldKeepCurrent = attachedSuffix !== null && !_isRedirectOp(tokens[i - 1]) && !isOperatorToken(tokens[i - 1]);
+      const substitution = getCommandSubstitution(tokens, i);
       if (current.length > 0) {
         currentHasDynamicSubstitution = true;
-        if (!shouldKeepCurrent) {
+        if (!substitution.shouldKeepCurrent) {
           segments.push({
             tokens: current,
             hasDynamicSubstitution: currentHasDynamicSubstitution
@@ -1156,13 +1140,13 @@ function splitShellCommandsWithInfo(command) {
           currentHasDynamicSubstitution = false;
         }
       }
-      for (const seg of innerSegments) {
+      for (const seg of substitution.innerSegments) {
         segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
-      if (shouldKeepCurrent && attachedSuffix) {
-        current.push(attachedSuffix);
+      if (substitution.shouldKeepCurrent && substitution.attachedSuffix) {
+        current.push(substitution.attachedSuffix);
       }
-      i = endIndex + (attachedSuffix !== null ? 2 : 1);
+      i = substitution.endIndex + (substitution.attachedSuffix !== null ? 2 : 1);
       continue;
     }
     if (_isAttachedCommandSubstitutionStart(tokens, i)) {
@@ -1181,7 +1165,7 @@ function splitShellCommandsWithInfo(command) {
       i = endIndex + 1;
       continue;
     }
-    const tokenText = _getCommandTokenText(token);
+    const tokenText = getCommandTokenText(token);
     if (tokenText === null) {
       i++;
       continue;
@@ -1201,35 +1185,17 @@ function splitShellCommandsWithInfo(command) {
 function extractInlineCommandSubstitutions(token) {
   const segments = [];
   let i = 0;
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
+  const quoteState = { inSingle: false, inDouble: false, escaped: false };
   while (i < token.length) {
     const char = token[i];
     if (!char) {
       break;
     }
-    if (escaped) {
-      escaped = false;
+    if (advanceQuotedScanState(char, quoteState)) {
       i++;
       continue;
     }
-    if (char === "\\") {
-      escaped = true;
-      i++;
-      continue;
-    }
-    if (!inDouble && char === "'") {
-      inSingle = !inSingle;
-      i++;
-      continue;
-    }
-    if (!inSingle && char === '"') {
-      inDouble = !inDouble;
-      i++;
-      continue;
-    }
-    if (!inSingle && char === "$" && token[i + 1] === "(" && token[i + 2] !== "(") {
+    if (!quoteState.inSingle && char === "$" && token[i + 1] === "(" && token[i + 2] !== "(") {
       const end = _findInlineCommandSubstitutionEnd(token, i + 2);
       if (end === -1) {
         break;
@@ -1254,14 +1220,15 @@ function isParenOpen(token) {
 function isParenClose(token) {
   return typeof token === "object" && token !== null && "op" in token && token.op === ")";
 }
-function _getCommandTokenText(token) {
-  if (typeof token === "string") {
-    return token;
-  }
-  if (token && typeof token === "object" && "pattern" in token && typeof token.pattern === "string") {
-    return token.pattern;
-  }
-  return null;
+function getCommandSubstitution(tokens, index) {
+  const { innerSegments, endIndex } = extractCommandSubstitution(tokens, index + 2);
+  const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
+  return {
+    innerSegments,
+    endIndex,
+    attachedSuffix,
+    shouldKeepCurrent: attachedSuffix !== null && !_isRedirectOp(tokens[index - 1]) && !isOperatorToken(tokens[index - 1])
+  };
 }
 function extractCommandSubstitution(tokens, startIndex) {
   if (tokens[startIndex] === ARITHMETIC_SENTINEL) {
@@ -1314,20 +1281,18 @@ function extractCommandSubstitution(tokens, startIndex) {
       continue;
     }
     if (depth === 1 && _isCommandSubstitutionStart(tokens, i)) {
-      const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
-      const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
-      const shouldKeepCurrent = attachedSuffix !== null && !_isRedirectOp(tokens[i - 1]) && !isOperatorToken(tokens[i - 1]);
-      if (!shouldKeepCurrent && currentSegment.length > 0) {
+      const substitution = getCommandSubstitution(tokens, i);
+      if (!substitution.shouldKeepCurrent && currentSegment.length > 0) {
         innerSegments.push(currentSegment);
         currentSegment = [];
       }
-      for (const seg of nestedSegments) {
+      for (const seg of substitution.innerSegments) {
         innerSegments.push(seg);
       }
-      if (shouldKeepCurrent && attachedSuffix) {
-        currentSegment.push(attachedSuffix);
+      if (substitution.shouldKeepCurrent && substitution.attachedSuffix) {
+        currentSegment.push(substitution.attachedSuffix);
       }
-      i = endIndex + (attachedSuffix !== null ? 2 : 1);
+      i = substitution.endIndex + (substitution.attachedSuffix !== null ? 2 : 1);
       continue;
     }
     if (depth === 1 && _isAttachedCommandSubstitutionStart(tokens, i)) {
@@ -1344,7 +1309,7 @@ function extractCommandSubstitution(tokens, startIndex) {
       i = endIndex + 1;
       continue;
     }
-    const tokenText = _getCommandTokenText(token);
+    const tokenText = getCommandTokenText(token);
     if (tokenText !== null) {
       currentSegment.push(tokenText);
     }
@@ -1363,28 +1328,19 @@ function _extractArithmeticSubstitution(tokens, startIndex) {
   while (i < tokens.length) {
     const token = tokens[i];
     if (_isCommandSubstitutionStart(tokens, i)) {
-      if (expression) {
-        innerSegments.push([expression]);
-        expression = "";
-      }
-      const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
-      for (const seg of nestedSegments) {
-        innerSegments.push(seg);
-      }
-      i = endIndex + 1;
+      const nested = extractArithmeticNestedCommand(innerSegments, expression, tokens, i + 2);
+      expression = nested.expression;
+      i = nested.endIndex + 1;
       continue;
     }
-    if (typeof token === "string" && token !== "$" && token.endsWith("$") && isParenOpen(tokens[i + 1])) {
-      expression += token.slice(0, -1);
-      if (expression) {
-        innerSegments.push([expression]);
-        expression = "";
+    if (_isAttachedCommandSubstitutionStart(tokens, i)) {
+      const tokenText = tokens[i];
+      if (typeof tokenText === "string") {
+        expression += tokenText.slice(0, -1);
       }
-      const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
-      for (const seg of nestedSegments) {
-        innerSegments.push(seg);
-      }
-      i = endIndex + 1;
+      const nested = extractArithmeticNestedCommand(innerSegments, expression, tokens, i + 2);
+      expression = nested.expression;
+      i = nested.endIndex + 1;
       continue;
     }
     if (isParenOpen(token)) {
@@ -1428,6 +1384,16 @@ function _extractArithmeticSubstitution(tokens, startIndex) {
     endIndex: i
   };
 }
+function extractArithmeticNestedCommand(innerSegments, expression, tokens, startIndex) {
+  if (expression) {
+    innerSegments.push([expression]);
+  }
+  const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(tokens, startIndex);
+  for (const seg of nestedSegments) {
+    innerSegments.push(seg);
+  }
+  return { expression: "", endIndex };
+}
 function _pushInlineSubstitutionSegments(segments, token) {
   const inlineSegments = extractInlineCommandSubstitutions(token);
   for (const seg of inlineSegments) {
@@ -1439,27 +1405,6 @@ function _pushInlineSubstitutionSegmentInfos(segments, token) {
   for (const seg of inlineSegments) {
     segments.push({ tokens: seg, hasDynamicSubstitution: false });
   }
-}
-function hasUnclosedQuotes(command) {
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
-  for (const char of command) {
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === "'" && !inDouble) {
-      inSingle = !inSingle;
-    } else if (char === '"' && !inSingle) {
-      inDouble = !inDouble;
-    }
-  }
-  return inSingle || inDouble;
 }
 function _stripAttachedIoNumbers(command) {
   let result = "";
@@ -1577,6 +1522,268 @@ function _stripAttachedIoNumbers(command) {
   }
   return result;
 }
+function isOperator(token) {
+  return typeof token === "object" && token !== null && "op" in token && SHELL_OPERATORS.has(token.op);
+}
+function isOperatorToken(token) {
+  return token !== undefined && isOperator(token);
+}
+var REDIRECT_OPS = new Set([">", ">>", "<", ">&", "<&", ">|"]);
+var RAW_REDIRECT_OPS = [">>", ">&", "<&", ">|", ">", "<"];
+function _isRedirectOp(token) {
+  return typeof token === "object" && token !== null && "op" in token && REDIRECT_OPS.has(token.op);
+}
+function _isCommandSubstitutionStart(tokens, index) {
+  return tokens[index] === "$" && isParenOpen(tokens[index + 1]);
+}
+function _isAttachedCommandSubstitutionStart(tokens, index) {
+  const token = tokens[index];
+  return typeof token === "string" && token !== "$" && token.endsWith("$") && isParenOpen(tokens[index + 1]);
+}
+function _getBacktickAttachedSuffix(token) {
+  return typeof token === "string" && token.startsWith(BACKTICK_ATTACHED_SUFFIX_SENTINEL) ? token.slice(BACKTICK_ATTACHED_SUFFIX_SENTINEL.length) : null;
+}
+function _isProcessSubstitutionStart(tokens, index) {
+  const token = tokens[index];
+  return typeof token === "object" && token !== null && "op" in token && (token.op === "<(" || token.op === ">" && isParenOpen(tokens[index + 1]));
+}
+function extractProcessSubstitution(tokens, startIndex) {
+  const token = tokens[startIndex];
+  if (typeof token === "object" && token !== null && "op" in token && token.op === "<(") {
+    return extractCommandSubstitution(tokens, startIndex + 1);
+  }
+  if (_isProcessSubstitutionStart(tokens, startIndex)) {
+    return extractCommandSubstitution(tokens, startIndex + 2);
+  }
+  return { innerSegments: [], endIndex: startIndex };
+}
+function _getRedirectTargetInfo(tokens, index) {
+  if (_isCommandSubstitutionStart(tokens, index + 1) || _isProcessSubstitutionStart(tokens, index + 1)) {
+    return { redirectTarget: null, advance: 1 };
+  }
+  const firstTarget = tokens[index + 1];
+  if (typeof firstTarget !== "string") {
+    const isGlobTarget = firstTarget && typeof firstTarget === "object" && "pattern" in firstTarget && typeof firstTarget.pattern === "string";
+    return { redirectTarget: null, advance: isGlobTarget ? 2 : 1 };
+  }
+  let redirectTarget = firstTarget;
+  let nextIndex = index + 2;
+  if (firstTarget.endsWith("$") && isParenOpen(tokens[nextIndex])) {
+    const { text, consumed } = _collectParenthesizedTokens(tokens, nextIndex);
+    if (consumed > 0) {
+      redirectTarget += text;
+      nextIndex += consumed;
+    }
+  }
+  return {
+    redirectTarget,
+    advance: nextIndex - index
+  };
+}
+function _findInlineCommandSubstitutionEnd(token, startIndex) {
+  let depth = 1;
+  const quoteState = { inSingle: false, inDouble: false, escaped: false };
+  for (let i = startIndex;i < token.length; i++) {
+    const char = token[i];
+    if (!char) {
+      break;
+    }
+    if (advanceQuotedScanState(char, quoteState)) {
+      continue;
+    }
+    if (!quoteState.inSingle && !quoteState.inDouble) {
+      if (char === "(") {
+        depth++;
+      } else if (char === ")") {
+        depth--;
+        if (depth === 0) {
+          return i;
+        }
+      }
+    }
+  }
+  return -1;
+}
+function advanceQuotedScanState(char, state) {
+  if (state.escaped) {
+    state.escaped = false;
+    return true;
+  }
+  if (char === "\\") {
+    state.escaped = true;
+    return true;
+  }
+  if (!state.inDouble && char === "'") {
+    state.inSingle = !state.inSingle;
+    return true;
+  }
+  if (!state.inSingle && char === '"') {
+    state.inDouble = !state.inDouble;
+    return true;
+  }
+  return false;
+}
+function _findBacktickEnd(command, startIndex) {
+  let escaped = false;
+  for (let i = startIndex;i < command.length; i++) {
+    const char = command[i];
+    if (!char) {
+      break;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "`") {
+      return i;
+    }
+  }
+  return -1;
+}
+function _collectParenthesizedTokens(tokens, startIndex) {
+  if (!isParenOpen(tokens[startIndex])) {
+    return { text: "", consumed: 0 };
+  }
+  const parts = [];
+  let depth = 0;
+  let i = startIndex;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (isParenOpen(token)) {
+      depth++;
+    } else if (isParenClose(token)) {
+      depth--;
+    }
+    const piece = _stringifyParseEntry(token);
+    if (piece) {
+      parts.push(piece);
+    }
+    i++;
+    if (depth === 0) {
+      break;
+    }
+  }
+  return { text: parts.join(" "), consumed: i - startIndex };
+}
+function _stringifyParseEntry(token) {
+  if (typeof token === "string") {
+    return token;
+  }
+  if (token && typeof token === "object") {
+    if ("pattern" in token && typeof token.pattern === "string") {
+      return token.pattern;
+    }
+    if ("op" in token) {
+      return String(token.op);
+    }
+  }
+  return "";
+}
+function _getRawRedirectOpLength(command, index) {
+  for (const op of RAW_REDIRECT_OPS) {
+    if (command.startsWith(op, index)) {
+      return op.length;
+    }
+  }
+  return 0;
+}
+function _isWhitespaceChar(char) {
+  return /\s/.test(char);
+}
+function _isAsciiDigit(char) {
+  return char >= "0" && char <= "9";
+}
+function _isPathLikeBacktickSuffix(char) {
+  return char === "/" || char === ".";
+}
+function _isShellTokenBoundaryChar(char) {
+  return _isWhitespaceChar(char) || ";|&()<>".includes(char);
+}
+// src/core/shell/wrappers.ts
+import { realpathSync as realpathSync2 } from "node:fs";
+import { isAbsolute as isAbsolute2, parse as parsePath2 } from "node:path";
+
+// src/core/git/env.ts
+var GIT_CONTEXT_ENV_OVERRIDES = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE"
+];
+var GIT_CONTEXT_ENV_OVERRIDE_NAMES = new Set(GIT_CONTEXT_ENV_OVERRIDES);
+var GIT_CONFIG_AFFECTING_ENV_NAMES = new Set([
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_CONFIG_SYSTEM",
+  "HOME",
+  "XDG_CONFIG_HOME"
+]);
+var GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
+function isGitContextEnvOverrideName(name) {
+  return GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name);
+}
+function isGitConfigEnvName(name) {
+  return name === "GIT_CONFIG_COUNT" || name === "GIT_CONFIG_PARAMETERS" || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name);
+}
+function isTrackedGitEnvName(name) {
+  return isGitContextEnvOverrideName(name) || GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) || isGitConfigEnvName(name);
+}
+function parseGitContextAppendEnvAssignment(token) {
+  const match = token.match(GIT_CONTEXT_APPEND_ASSIGNMENT_RE);
+  const name = match?.[1];
+  if (!name || !isTrackedGitEnvName(name)) {
+    return null;
+  }
+  const eqIdx = token.indexOf("=");
+  return { name, value: token.slice(eqIdx + 1) };
+}
+function hasConfigAffectingEnvAssignment(envAssignments) {
+  if (!envAssignments) {
+    return false;
+  }
+  for (const key of envAssignments.keys()) {
+    if (GIT_CONFIG_AFFECTING_ENV_NAMES.has(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// src/core/path.ts
+import { lstatSync, realpathSync } from "node:fs";
+import { dirname as dirname3, isAbsolute, parse as parsePath, sep } from "node:path";
+function resolveChdirTarget(baseCwd, target) {
+  const root = isAbsolute(target) ? getPathRoot(target) : "";
+  let current = root || baseCwd;
+  for (const component of getPathComponents(root ? target.slice(root.length) : target)) {
+    if (component === "" || component === ".") {
+      continue;
+    }
+    if (component === "..") {
+      current = dirname3(current);
+      continue;
+    }
+    const candidate = appendPathWithoutNormalizing(current, component);
+    current = lstatSync(candidate).isSymbolicLink() ? realpathSync(candidate) : candidate;
+  }
+  return current;
+}
+function appendPathWithoutNormalizing(base, target) {
+  return base.endsWith("/") || base.endsWith("\\") ? `${base}${target}` : `${base}${sep}${target}`;
+}
+function getPathRoot(target) {
+  return parsePath(target).root;
+}
+function getPathComponents(target) {
+  const separator = process.platform === "win32" ? /[\\/]+/ : /\/+/;
+  return target.split(separator);
+}
+
+// src/core/shell/wrappers.ts
 var ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 function parseEnvAssignment(token) {
   if (!ENV_ASSIGNMENT_RE.test(token)) {
@@ -1737,11 +1944,7 @@ function stripEnvWithInfo(tokens, cwd) {
         i += 2;
         continue;
       }
-      expandedTokens = [
-        ...expandedTokens.slice(0, i),
-        ...splitTokens,
-        ...expandedTokens.slice(i + 2)
-      ];
+      expandedTokens = replaceEnvSplitTokens(expandedTokens, i, 2, splitTokens);
       continue;
     }
     if (token.startsWith("-S") && token.length > 2) {
@@ -1751,11 +1954,7 @@ function stripEnvWithInfo(tokens, cwd) {
         i++;
         continue;
       }
-      expandedTokens = [
-        ...expandedTokens.slice(0, i),
-        ...splitTokens,
-        ...expandedTokens.slice(i + 1)
-      ];
+      expandedTokens = replaceEnvSplitTokens(expandedTokens, i, 1, splitTokens);
       continue;
     }
     if (token.startsWith("--split-string=")) {
@@ -1765,11 +1964,7 @@ function stripEnvWithInfo(tokens, cwd) {
         i++;
         continue;
       }
-      expandedTokens = [
-        ...expandedTokens.slice(0, i),
-        ...splitTokens,
-        ...expandedTokens.slice(i + 1)
-      ];
+      expandedTokens = replaceEnvSplitTokens(expandedTokens, i, 1, splitTokens);
       continue;
     }
     if (ENV_OPTS_WITH_VALUE.has(token)) {
@@ -1814,13 +2009,16 @@ function parseEnvSplitString(value) {
   const parsed = $parse(value, ENV_PROXY);
   const result = [];
   for (const entry of parsed) {
-    const token = _getCommandTokenText(entry);
+    const token = getCommandTokenText(entry);
     if (token === null) {
       return null;
     }
     result.push(token);
   }
   return result;
+}
+function replaceEnvSplitTokens(tokens, index, consumed, splitTokens) {
+  return [...tokens.slice(0, index), ...splitTokens, ...tokens.slice(index + consumed)];
 }
 function resolveWrapperCwd(cwd, target) {
   if (target === "") {
@@ -1864,232 +2062,16 @@ function stripCommand(tokens) {
   }
   return tokens.slice(i);
 }
-function extractShortOpts(tokens, options) {
-  const opts = new Set;
-  let pastDoubleDash = false;
-  for (const token of tokens) {
-    if (token === "--") {
-      pastDoubleDash = true;
-      continue;
-    }
-    if (pastDoubleDash)
-      continue;
-    if (token.startsWith("-") && !token.startsWith("--") && token.length > 1) {
-      for (let i = 1;i < token.length; i++) {
-        const char = token[i];
-        if (!char || !/[a-zA-Z]/.test(char)) {
-          break;
-        }
-        const shortOpt = `-${char}`;
-        opts.add(shortOpt);
-        if (options?.shortOptsWithValue?.has(shortOpt)) {
-          break;
-        }
-      }
-    }
-  }
-  return opts;
-}
-function normalizeCommandToken(token) {
-  return getBasename(token).toLowerCase();
-}
-function getBasename(token) {
-  return token.includes("/") ? token.split("/").pop() ?? token : token;
-}
-function isOperator(token) {
-  return typeof token === "object" && token !== null && "op" in token && SHELL_OPERATORS.has(token.op);
-}
-function isOperatorToken(token) {
-  return token !== undefined && isOperator(token);
-}
-var REDIRECT_OPS = new Set([">", ">>", "<", ">&", "<&", ">|"]);
-var RAW_REDIRECT_OPS = [">>", ">&", "<&", ">|", ">", "<"];
-function _isRedirectOp(token) {
-  return typeof token === "object" && token !== null && "op" in token && REDIRECT_OPS.has(token.op);
-}
-function _isCommandSubstitutionStart(tokens, index) {
-  return tokens[index] === "$" && isParenOpen(tokens[index + 1]);
-}
-function _isAttachedCommandSubstitutionStart(tokens, index) {
-  const token = tokens[index];
-  return typeof token === "string" && token !== "$" && token.endsWith("$") && isParenOpen(tokens[index + 1]);
-}
-function _getBacktickAttachedSuffix(token) {
-  return typeof token === "string" && token.startsWith(BACKTICK_ATTACHED_SUFFIX_SENTINEL) ? token.slice(BACKTICK_ATTACHED_SUFFIX_SENTINEL.length) : null;
-}
-function _isProcessSubstitutionStart(tokens, index) {
-  const token = tokens[index];
-  return typeof token === "object" && token !== null && "op" in token && (token.op === "<(" || token.op === ">" && isParenOpen(tokens[index + 1]));
-}
-function extractProcessSubstitution(tokens, startIndex) {
-  const token = tokens[startIndex];
-  if (typeof token === "object" && token !== null && "op" in token && token.op === "<(") {
-    return extractCommandSubstitution(tokens, startIndex + 1);
-  }
-  if (_isProcessSubstitutionStart(tokens, startIndex)) {
-    return extractCommandSubstitution(tokens, startIndex + 2);
-  }
-  return { innerSegments: [], endIndex: startIndex };
-}
-function _getRedirectTargetInfo(tokens, index) {
-  if (_isCommandSubstitutionStart(tokens, index + 1) || _isProcessSubstitutionStart(tokens, index + 1)) {
-    return { redirectTarget: null, advance: 1 };
-  }
-  const firstTarget = tokens[index + 1];
-  if (typeof firstTarget !== "string") {
-    const isGlobTarget = firstTarget && typeof firstTarget === "object" && "pattern" in firstTarget && typeof firstTarget.pattern === "string";
-    return { redirectTarget: null, advance: isGlobTarget ? 2 : 1 };
-  }
-  let redirectTarget = firstTarget;
-  let nextIndex = index + 2;
-  if (firstTarget.endsWith("$") && isParenOpen(tokens[nextIndex])) {
-    const { text, consumed } = _collectParenthesizedTokens(tokens, nextIndex);
-    if (consumed > 0) {
-      redirectTarget += text;
-      nextIndex += consumed;
-    }
-  }
-  return {
-    redirectTarget,
-    advance: nextIndex - index
-  };
-}
-function _findInlineCommandSubstitutionEnd(token, startIndex) {
-  let depth = 1;
-  let i = startIndex;
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
-  while (i < token.length) {
-    const char = token[i];
-    if (!char) {
-      break;
-    }
-    if (escaped) {
-      escaped = false;
-      i++;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      i++;
-      continue;
-    }
-    if (!inDouble && char === "'") {
-      inSingle = !inSingle;
-      i++;
-      continue;
-    }
-    if (!inSingle && char === '"') {
-      inDouble = !inDouble;
-      i++;
-      continue;
-    }
-    if (!inSingle && !inDouble) {
-      if (char === "(") {
-        depth++;
-      } else if (char === ")") {
-        depth--;
-        if (depth === 0) {
-          return i;
-        }
-      }
-    }
-    i++;
-  }
-  return -1;
-}
-function _findBacktickEnd(command, startIndex) {
-  let escaped = false;
-  for (let i = startIndex;i < command.length; i++) {
-    const char = command[i];
-    if (!char) {
-      break;
-    }
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === "`") {
-      return i;
-    }
-  }
-  return -1;
-}
-function _collectParenthesizedTokens(tokens, startIndex) {
-  if (!isParenOpen(tokens[startIndex])) {
-    return { text: "", consumed: 0 };
-  }
-  const parts = [];
-  let depth = 0;
-  let i = startIndex;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (isParenOpen(token)) {
-      depth++;
-    } else if (isParenClose(token)) {
-      depth--;
-    }
-    const piece = _stringifyParseEntry(token);
-    if (piece) {
-      parts.push(piece);
-    }
-    i++;
-    if (depth === 0) {
-      break;
-    }
-  }
-  return { text: parts.join(" "), consumed: i - startIndex };
-}
-function _stringifyParseEntry(token) {
-  if (typeof token === "string") {
-    return token;
-  }
-  if (token && typeof token === "object") {
-    if ("pattern" in token && typeof token.pattern === "string") {
-      return token.pattern;
-    }
-    if ("op" in token) {
-      return String(token.op);
-    }
-  }
-  return "";
-}
-function _getRawRedirectOpLength(command, index) {
-  for (const op of RAW_REDIRECT_OPS) {
-    if (command.startsWith(op, index)) {
-      return op.length;
-    }
-  }
-  return 0;
-}
-function _isWhitespaceChar(char) {
-  return /\s/.test(char);
-}
-function _isAsciiDigit(char) {
-  return char >= "0" && char <= "9";
-}
-function _isPathLikeBacktickSuffix(char) {
-  return char === "/" || char === ".";
-}
-function _isShellTokenBoundaryChar(char) {
-  return _isWhitespaceChar(char) || ";|&()<>".includes(char);
-}
-
 // src/core/rules/custom.ts
 function checkCustomRules(tokens, rules) {
   if (tokens.length === 0 || rules.length === 0) {
     return null;
   }
-  const command = getBasename(tokens[0] ?? "");
+  const command2 = getBasename(tokens[0] ?? "");
   const subcommand = extractSubcommand(tokens);
   const shortOpts = extractShortOpts(tokens);
   for (const rule of rules) {
-    if (!matchesCommand(command, rule.command)) {
+    if (!matchesCommand(command2, rule.command)) {
       continue;
     }
     if (rule.subcommand && subcommand !== rule.subcommand) {
@@ -2101,8 +2083,8 @@ function checkCustomRules(tokens, rules) {
   }
   return null;
 }
-function matchesCommand(command, ruleCommand2) {
-  return command === ruleCommand2;
+function matchesCommand(command2, ruleCommand2) {
+  return command2 === ruleCommand2;
 }
 var OPTIONS_WITH_VALUES = new Set([
   "-c",
@@ -2208,16 +2190,16 @@ function validateRulebook(rulebook) {
 function validateAllowedCommands(commands2, errors) {
   const seen = new Set;
   for (let i = 0;i < commands2.length; i++) {
-    const command = commands2[i];
-    if (typeof command !== "string" || !COMMAND_PATTERN.test(command)) {
+    const command2 = commands2[i];
+    if (typeof command2 !== "string" || !COMMAND_PATTERN.test(command2)) {
       errors.push(`allowed_commands[${i}]: must match command pattern`);
       continue;
     }
-    if (seen.has(command)) {
-      errors.push(`allowed_commands[${i}]: duplicate command "${command}"`);
+    if (seen.has(command2)) {
+      errors.push(`allowed_commands[${i}]: duplicate command "${command2}"`);
       continue;
     }
-    seen.add(command);
+    seen.add(command2);
   }
 }
 function validateFixtures(tests, rules, errors) {
@@ -2260,13 +2242,13 @@ function validateFixtures(tests, rules, errors) {
 }
 function runRulebookFixtures(rulebook) {
   const failures = rulebook.tests.flatMap((fixture) => {
-    const segments = splitShellCommands(fixture.command).map((tokens) => {
+    const segments2 = splitShellCommands(fixture.command).map((tokens) => {
       const result = checkCustomRules(tokens, rulebook.rules);
       return { tokens, result, matchedRule: result?.match(/^\[([^\]]+)]/)?.[1] ?? null };
     });
-    const firstSegment = segments[0] ?? { tokens: [], result: null, matchedRule: null };
+    const firstSegment = segments2[0] ?? { tokens: [], result: null, matchedRule: null };
     if (fixture.expect === "allowed") {
-      const blockedSegment = segments.find((segment) => segment.result);
+      const blockedSegment = segments2.find((segment) => segment.result);
       return blockedSegment ? [
         {
           command: fixture.command,
@@ -2275,7 +2257,7 @@ function runRulebookFixtures(rulebook) {
         }
       ] : [];
     }
-    const firstBlockedSegment = segments.find((segment) => segment.result);
+    const firstBlockedSegment = segments2.find((segment) => segment.result);
     if (!firstBlockedSegment) {
       return [
         {
@@ -2432,21 +2414,21 @@ function requiredString(candidate, field) {
 import { createHash } from "node:crypto";
 import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
 import { join as join3 } from "node:path";
-async function resolveRulebookSource(spec, configDir, options) {
+async function resolveRulebookSource(spec, configDir, options2) {
   if (isGitHubRulebookSource(spec)) {
     return resolveGitHubRulebook(spec);
   }
-  return resolveLocalRulebook(spec, configDir, options);
+  return resolveLocalRulebook(spec, configDir, options2);
 }
-async function resolveRulebookSourceForSync(spec, configDir, options, previousLock) {
-  if (!isGitHubRulebookSource(spec) || options.refresh) {
-    return resolveRulebookSource(spec, configDir, options);
+async function resolveRulebookSourceForSync(spec, configDir, options2, previousLock) {
+  if (!isGitHubRulebookSource(spec) || options2.refresh) {
+    return resolveRulebookSource(spec, configDir, options2);
   }
   const locked = previousLock?.rulebooks.find((entry) => entry.spec === spec);
   if (!locked || locked.kind !== "github") {
-    return resolveRulebookSource(spec, configDir, options);
+    return resolveRulebookSource(spec, configDir, options2);
   }
-  return readLockedGitHubRulebook(locked, configDir, options);
+  return readLockedGitHubRulebook(locked, configDir, options2);
 }
 async function discoverGitHubRepositoryRulebooks(source) {
   const [owner, repo] = source.split("/");
@@ -2534,8 +2516,8 @@ async function resolveGitHubRulebook(spec) {
     }
   };
 }
-async function readLockedGitHubRulebook(entry, configDir, options) {
-  const cachePath = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
+async function readLockedGitHubRulebook(entry, configDir, options2) {
+  const cachePath = getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir });
   if (existsSync4(cachePath)) {
     const content = readFileSync4(cachePath, "utf-8");
     if (sha256Digest(content) === entry.digest) {
@@ -2581,17 +2563,17 @@ function sha256Digest(content) {
 }
 
 // src/core/rules/policy/scope-policy.ts
-function loadRulesPolicy(options = {}) {
-  const paths = getPolicyPaths(options);
+function loadRulesPolicy(options2 = {}) {
+  const paths = getPolicyPaths(options2);
   const user = readRulesConfig(paths.userConfigPath);
   const project = readRulesConfig(paths.projectConfigPath);
   const errors = [
-    ...getLegacyRulesConfigErrors(paths, options),
+    ...getLegacyRulesConfigErrors(paths, options2),
     ...user.errors.map((error) => `${paths.userConfigPath}: ${error}`),
     ...project.errors.map((error) => `${paths.projectConfigPath}: ${error}`)
   ];
-  const userPolicy = user.config ? loadScopePolicy(user.config, paths.userLockPath, dirname4(paths.userConfigPath), options, "user") : emptyScopePolicy();
-  const projectPolicy = project.config ? loadScopePolicy(project.config, paths.projectLockPath, dirname4(paths.projectConfigPath), options, "project") : emptyScopePolicy();
+  const userPolicy = user.config ? loadScopePolicy(user.config, paths.userLockPath, dirname4(paths.userConfigPath), options2, "user") : emptyScopePolicy();
+  const projectPolicy = project.config ? loadScopePolicy(project.config, paths.projectLockPath, dirname4(paths.projectConfigPath), options2, "project") : emptyScopePolicy();
   const duplicateNames = getDuplicateRulebookNames([
     ...user.config ? getConfiguredLockEntries(user.config, paths.userLockPath) : [],
     ...project.config ? getConfiguredLockEntries(project.config, paths.projectLockPath) : []
@@ -2621,26 +2603,26 @@ function getRulesConfigSourceDisplayMap(configPath) {
   const configuredSources = new Set(config.rules);
   return new Map(lock.rulebooks.filter((entry) => configuredSources.has(entry.spec)).map((entry) => [entry.spec, getRulebookDisplaySource(entry)]));
 }
-function getRulesConfigRuntimeErrorsForConfig(configPath, lockPath, options) {
-  const loaded = loadScopePolicyForConfig(configPath, lockPath, options);
+function getRulesConfigRuntimeErrorsForConfig(configPath, lockPath, options2) {
+  const loaded = loadScopePolicyForConfig(configPath, lockPath, options2);
   if (!loaded)
     return [];
   return [...loaded.scope.errors, ...getUnknownOverrideErrorsForScope(loaded.config, loaded.scope)];
 }
-function loadScopePolicyForConfig(configPath, lockPath, options) {
+function loadScopePolicyForConfig(configPath, lockPath, options2) {
   const config = readRulesConfig(configPath).config;
   if (!config) {
     return null;
   }
   return {
     config,
-    scope: loadScopePolicy(config, lockPath, dirname4(configPath), options, "project")
+    scope: loadScopePolicy(config, lockPath, dirname4(configPath), options2, "project")
   };
 }
 function getUnknownOverrideErrorsForScope(config, scope) {
   return scope.canValidateOverrides ? getUnknownOverrideErrors(config.overrides ?? {}, scope.knownRuleIds) : [];
 }
-function loadScopePolicy(config, lockPath, configDir, options, source) {
+function loadScopePolicy(config, lockPath, configDir, options2, source) {
   const lockResult = readLockfile(lockPath);
   if (lockResult.errors.length > 0) {
     return { ...emptyScopePolicy(), errors: lockResult.errors, canValidateOverrides: false };
@@ -2662,12 +2644,12 @@ function loadScopePolicy(config, lockPath, configDir, options, source) {
       errors.push(`missing lock entry for ${spec}; run ${RULE_SYNC_COMMAND}`);
       return [];
     }
-    const validationErrors = validateLockedRulebook(entry, configDir, options);
+    const validationErrors = validateLockedRulebook(entry, configDir, options2);
     if (validationErrors.length > 0) {
       errors.push(...validationErrors);
       return [];
     }
-    const rulebook = JSON.parse(readFileSync5(getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir }), "utf-8"));
+    const rulebook = JSON.parse(readFileSync5(getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir }), "utf-8"));
     return [
       {
         rules: rulebook.rules.map((rule) => ({ ...rule, name: `${rulebook.name}/${rule.name}` })),
@@ -2691,9 +2673,9 @@ function loadScopePolicy(config, lockPath, configDir, options, source) {
     canValidateOverrides: errors.length === 0
   };
 }
-function validateLockedRulebook(entry, configDir, options) {
+function validateLockedRulebook(entry, configDir, options2) {
   const errors = [];
-  const cachePath = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
+  const cachePath = getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir });
   if (!existsSync5(cachePath)) {
     return [`missing cache entry for ${entry.spec}; run ${RULE_SYNC_COMMAND}`];
   }
@@ -2735,10 +2717,10 @@ function rulesPolicyToConfig(policy) {
   }
   return { version: 1, rules: policy.rules };
 }
-function getLegacyRulesConfigErrors(paths, options) {
+function getLegacyRulesConfigErrors(paths, options2) {
   return Array.from(new Set([
-    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath, "~/.cc-safety-net/config.json"),
-    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options), paths.projectConfigPath, ".safety-net.json")
+    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options2), paths.userConfigPath, "~/.cc-safety-net/config.json"),
+    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options2), paths.projectConfigPath, ".safety-net.json")
   ]));
 }
 function getLegacyRulesConfigError(legacyPath, configPath, migratedFrom) {
@@ -2832,27 +2814,27 @@ import {
   writeFileSync as writeFileSync2
 } from "node:fs";
 import { dirname as dirname5, isAbsolute as isAbsolute4, join as join5, relative as relative2, resolve as resolve3, sep as sep3 } from "node:path";
-async function syncRulesConfig(options = {}) {
-  const internalOptions = options;
-  const scope = getScopePaths(options);
+async function syncRulesConfig(options2 = {}) {
+  const internalOptions = options2;
+  const scope = getScopePaths(options2);
   const scopeConfig = readScopeRulesConfig(scope.configPath);
   if (!scopeConfig.ok)
     return scopeConfig.result;
   const config = scopeConfig.config;
-  if (options.check) {
-    return checkRulesConfig(config, scope.configDir, scope.lockPath, options);
+  if (options2.check) {
+    return checkRulesConfig(config, scope.configDir, scope.lockPath, options2);
   }
   try {
     const existingLockResult = readLockfile(scope.lockPath);
-    if (options.only && existingLockResult.errors.length > 0) {
+    if (options2.only && existingLockResult.errors.length > 0) {
       return { ok: false, errors: existingLockResult.errors, warnings: [], entries: [] };
     }
     const previousLock = existingLockResult.errors.length > 0 ? null : existingLockResult.lock;
-    const selectedSpecs = options.only ? getSelectedUpdateSpecs(config, previousLock, options.only) : { ok: true, specs: config.rules };
+    const selectedSpecs = options2.only ? getSelectedUpdateSpecs(config, previousLock, options2.only) : { ok: true, specs: config.rules };
     if (!selectedSpecs.ok) {
       return selectedSpecs.result;
     }
-    if (options.only && !previousLock && selectedSpecs.specs.length < config.rules.length) {
+    if (options2.only && !previousLock && selectedSpecs.specs.length < config.rules.length) {
       return {
         ok: false,
         errors: [`No lockfile available for partial update; run ${RULE_SYNC_COMMAND}`],
@@ -2860,14 +2842,14 @@ async function syncRulesConfig(options = {}) {
         entries: []
       };
     }
-    const resolved = (await Promise.all(selectedSpecs.specs.map((spec) => resolveRulebookSourceForSync(spec, scope.configDir, options, previousLock)))).map((item) => preserveDisplayRef(item, previousLock, internalOptions.discoveredDisplayRefs));
+    const resolved = (await Promise.all(selectedSpecs.specs.map((spec) => resolveRulebookSourceForSync(spec, scope.configDir, options2, previousLock)))).map((item) => preserveDisplayRef(item, previousLock, internalOptions.discoveredDisplayRefs));
     for (const item of resolved) {
-      writeCache(item.content, item.entry, scope.configDir, options);
+      writeCache(item.content, item.entry, scope.configDir, options2);
     }
-    const entries = options.only ? mergeSelectedLockEntries(config, previousLock, resolved) : resolved.map((item) => item.entry);
+    const entries = options2.only ? mergeSelectedLockEntries(config, previousLock, resolved) : resolved.map((item) => item.entry);
     writeJsonAtomic(scope.lockPath, { version: 1, rulebooks: entries });
     const ruleCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.rules.length]));
-    const warnings = pruneUnreferencedRulebookCaches(entries, scope.configDir, options);
+    const warnings = pruneUnreferencedRulebookCaches(entries, scope.configDir, options2);
     return {
       ok: true,
       errors: [],
@@ -2878,10 +2860,10 @@ async function syncRulesConfig(options = {}) {
     return failWithError(error);
   }
 }
-async function testRulebookSources(sources, options = {}) {
-  const scope = getScopePaths(options);
+async function testRulebookSources(sources, options2 = {}) {
+  const scope = getScopePaths(options2);
   try {
-    const resolved = await Promise.all(sources.map((spec) => resolveRulebookSource(spec, scope.configDir, options)));
+    const resolved = await Promise.all(sources.map((spec) => resolveRulebookSource(spec, scope.configDir, options2)));
     const ruleCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.rules.length]));
     const testCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.tests.length]));
     const fixtureErrors = resolved.flatMap((item) => runRulebookFixtures(item.rulebook).failures.map((failure) => [
@@ -2902,8 +2884,8 @@ async function testRulebookSources(sources, options = {}) {
     return failWithError(error);
   }
 }
-async function addRulebookSource(source, options = {}) {
-  const scope = getScopePaths(options);
+async function addRulebookSource(source, options2 = {}) {
+  const scope = getScopePaths(options2);
   mkdirSync2(scope.configDir, { recursive: true });
   const before = existsSync6(scope.configPath) ? readFileSync6(scope.configPath, "utf-8") : null;
   const scopeConfig = readScopeRulesConfig(scope.configPath);
@@ -2931,7 +2913,7 @@ async function addRulebookSource(source, options = {}) {
     });
   }
   const result = await syncRulesConfig({
-    ...options,
+    ...options2,
     discoveredDisplayRefs: new Map(discoveredSources.filter((item) => !!item.display_ref).map((item) => [item.spec, item.display_ref]))
   });
   if (!result.ok) {
@@ -2939,8 +2921,8 @@ async function addRulebookSource(source, options = {}) {
   }
   return result;
 }
-async function removeRulebookSource(match, options = {}) {
-  const scope = getScopePaths(options);
+async function removeRulebookSource(match, options2 = {}) {
+  const scope = getScopePaths(options2);
   const loaded = readRulesConfig(scope.configPath);
   if (loaded.errors.length > 0) {
     return { ok: false, errors: loaded.errors, warnings: [], entries: [] };
@@ -2960,7 +2942,7 @@ async function removeRulebookSource(match, options = {}) {
   const matches = getRemoveMatches(loaded.config.rules, lockResult.lock, match);
   if (!matches.ok)
     return matches.result;
-  const sourceDirs = options.deleteSource ? getLocalSourceDirsForDelete(scope.configDir, matches.specs, lockResult.lock) : { ok: true, dirs: [] };
+  const sourceDirs = options2.deleteSource ? getLocalSourceDirsForDelete(scope.configDir, matches.specs, lockResult.lock) : { ok: true, dirs: [] };
   if (!sourceDirs.ok)
     return sourceDirs.result;
   const before = readFileSync6(scope.configPath, "utf-8");
@@ -2969,7 +2951,7 @@ async function removeRulebookSource(match, options = {}) {
     rules: loaded.config.rules.filter((spec) => !matches.specs.includes(spec)),
     overrides: loaded.config.overrides ?? {}
   });
-  const result = await syncRulesConfig(options);
+  const result = await syncRulesConfig(options2);
   if (!result.ok) {
     restoreConfig(scope.configPath, before);
     return result;
@@ -2977,7 +2959,7 @@ async function removeRulebookSource(match, options = {}) {
   const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
   if (!deleteResult.ok) {
     restoreConfig(scope.configPath, before);
-    const rollback = await syncRulesConfig(options);
+    const rollback = await syncRulesConfig(options2);
     if (!rollback.ok) {
       return {
         ok: false,
@@ -2990,12 +2972,12 @@ async function removeRulebookSource(match, options = {}) {
   }
   return result;
 }
-function repairLocalRulesPolicy(options = {}) {
-  repairLocalRulesScope({ ...options, global: true });
-  repairLocalRulesScope({ ...options, global: false });
+function repairLocalRulesPolicy(options2 = {}) {
+  repairLocalRulesScope({ ...options2, global: true });
+  repairLocalRulesScope({ ...options2, global: false });
 }
-async function checkRulesConfig(config, configDir, lockPath, options) {
-  const result = loadScopePolicy(config, lockPath, configDir, options, "project");
+async function checkRulesConfig(config, configDir, lockPath, options2) {
+  const result = loadScopePolicy(config, lockPath, configDir, options2, "project");
   return {
     ok: result.errors.length === 0,
     errors: result.errors,
@@ -3003,8 +2985,8 @@ async function checkRulesConfig(config, configDir, lockPath, options) {
     entries: result.entries
   };
 }
-function repairLocalRulesScope(options) {
-  const scope = getScopePaths(options);
+function repairLocalRulesScope(options2) {
+  const scope = getScopePaths(options2);
   const loaded = readRulesConfig(scope.configPath);
   if (!loaded.config || loaded.errors.length > 0 || loaded.config.rules.length === 0) {
     return;
@@ -3013,9 +2995,9 @@ function repairLocalRulesScope(options) {
     return;
   }
   try {
-    const resolved = loaded.config.rules.map((spec) => resolveLocalRulebook(spec, scope.configDir, options));
+    const resolved = loaded.config.rules.map((spec) => resolveLocalRulebook(spec, scope.configDir, options2));
     for (const item of resolved) {
-      writeCache(item.content, item.entry, scope.configDir, options);
+      writeCache(item.content, item.entry, scope.configDir, options2);
     }
     writeJsonAtomic(scope.lockPath, {
       version: 1,
@@ -3045,16 +3027,16 @@ function addRuleCount(entry, ruleCountsBySpec) {
     ruleCount: ruleCountsBySpec.get(entry.spec)
   };
 }
-function writeCache(content, entry, configDir, options) {
-  const path = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
+function writeCache(content, entry, configDir, options2) {
+  const path = getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir });
   mkdirSync2(dirname5(path), { recursive: true });
   writeFileSync2(path, content, "utf-8");
 }
-function pruneUnreferencedRulebookCaches(entries, configDir, options) {
+function pruneUnreferencedRulebookCaches(entries, configDir, options2) {
   const cacheRoot = join5(dirname5(configDir), "cache", "rulebooks");
   if (!existsSync6(cacheRoot))
     return [];
-  const keep = new Set(entries.map((entry) => dirname5(getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir }))));
+  const keep = new Set(entries.map((entry) => dirname5(getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir }))));
   return readdirSync2(cacheRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).flatMap((entry) => {
     const path = join5(cacheRoot, entry.name);
     if (keep.has(path))
@@ -3143,12 +3125,12 @@ function failWithError(error) {
 }
 
 // src/core/config.ts
-function loadConfig(cwd, options) {
+function loadConfig(cwd, options2) {
   const safeCwd = typeof cwd === "string" ? cwd : process.cwd();
-  if (options?.repairLocalRulebooks) {
-    repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options.userConfigDir });
+  if (options2?.repairLocalRulebooks) {
+    repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options2.userConfigDir });
   }
-  return rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }));
+  return rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options2?.userConfigDir }));
 }
 function validateConfig(config) {
   const errors = [];
@@ -3235,9 +3217,9 @@ function toEffectiveRule(rule, source) {
     reason: rule.reason
   };
 }
-function getConfigInfo(cwd, options) {
-  const userPath = options?.userConfigPath ?? getUserRulesConfigPath();
-  const projectPath = options?.projectConfigPath ?? getProjectRulesConfigPath(cwd);
+function getConfigInfo(cwd, options2) {
+  const userPath = options2?.userConfigPath ?? getUserRulesConfigPath();
+  const projectPath = options2?.projectConfigPath ?? getProjectRulesConfigPath(cwd);
   const userConfigDir = dirname6(userPath);
   const policy = loadRulesPolicy({
     cwd,
@@ -3439,20 +3421,20 @@ var PLATFORM_NAMES = {
   "copilot-cli": "Copilot CLI",
   codex: "Codex"
 };
-function formatAsciiTable(options) {
-  const rawRows = options.rawRows ?? options.rows;
-  const colWidths = (options.headers ?? rawRows[0] ?? []).map((h, i) => {
+function formatAsciiTable(options2) {
+  const rawRows = options2.rawRows ?? options2.rows;
+  const colWidths = (options2.headers ?? rawRows[0] ?? []).map((h, i) => {
     const maxDataWidth = Math.max(...rawRows.map((r) => r[i]?.length ?? 0));
     return Math.max(h.length, maxDataWidth);
   });
   const pad = (s, w, raw) => s + " ".repeat(Math.max(0, w - raw.length));
   const line = (char, corners) => corners[0] + colWidths.map((w) => char.repeat(w + 2)).join(corners[1]) + corners[2];
   const formatRow = (cells, rawCells) => `│ ${cells.map((c, i) => pad(c, colWidths[i] ?? 0, rawCells[i] ?? "")).join(" │ ")} │`;
-  const headerLines = options.headers ? [`   ${formatRow(options.headers, options.headers)}`, `   ${line("─", ["├", "┼", "┤"])}`] : [];
+  const headerLines = options2.headers ? [`   ${formatRow(options2.headers, options2.headers)}`, `   ${line("─", ["├", "┼", "┤"])}`] : [];
   return [
     `   ${line("─", ["┌", "┬", "┐"])}`,
     ...headerLines,
-    ...options.rows.map((r, i) => `   ${formatRow(r, rawRows[i] ?? [])}`),
+    ...options2.rows.map((r, i) => `   ${formatRow(r, rawRows[i] ?? [])}`),
     `   ${line("─", ["└", "┴", "┘"])}`
   ].join(`
 `);
@@ -4097,14 +4079,14 @@ function normalizePathForComparison(p) {
 var REASON_RM_RF = "rm -rf outside cwd is blocked. Use explicit paths within the current directory, or delete manually.";
 var REASON_RM_RF_ROOT_HOME = "rm -rf targeting root or home directory is extremely dangerous and always blocked.";
 var REASON_RM_HOME_CWD = "rm -rf in home directory is dangerous. Change to a project directory first.";
-function analyzeRm(tokens, options = {}) {
+function analyzeRm(tokens, options2 = {}) {
   const {
     cwd,
     originalCwd,
     paranoid = false,
     allowTmpdirVar = true,
     tmpdirOverridden = false
-  } = options;
+  } = options2;
   const anchoredCwd = originalCwd ?? cwd ?? null;
   const resolvedCwd = cwd ?? null;
   const trustTmpdirVar = allowTmpdirVar && !tmpdirOverridden;
@@ -4890,8 +4872,8 @@ function extractGitSubcommandAndRest(tokens) {
     return { subcommand: null, rest: [] };
   }
   const firstToken = tokens[0];
-  const command = firstToken ? getBasename(firstToken).toLowerCase() : null;
-  if (command !== "git") {
+  const command2 = firstToken ? getBasename(firstToken).toLowerCase() : null;
+  if (command2 !== "git") {
     return { subcommand: null, rest: [] };
   }
   let i = 1;
@@ -5207,18 +5189,18 @@ function analyzeGitWorktree(tokens) {
 }
 
 // src/core/git/worktree-relaxation.ts
-function getGitWorktreeRelaxationForMatch(tokens, match, options) {
-  if (!match.localDiscard || !options.worktreeMode || hasGitContextEnvOverride(options.envAssignments)) {
+function getGitWorktreeRelaxationForMatch(tokens, match, options2) {
+  if (!match.localDiscard || !options2.worktreeMode || hasGitContextEnvOverride(options2.envAssignments)) {
     return null;
   }
-  const context = getGitExecutionContext(tokens, options.cwd);
+  const context = getGitExecutionContext(tokens, options2.cwd);
   if (!context.gitCwd || context.hasExplicitGitContext) {
     return null;
   }
   if (!isLinkedWorktree(context.gitCwd)) {
     return null;
   }
-  if (isNonRelaxableLocalDiscard(tokens, options, context.gitCwd)) {
+  if (isNonRelaxableLocalDiscard(tokens, options2, context.gitCwd)) {
     return null;
   }
   return {
@@ -5226,10 +5208,10 @@ function getGitWorktreeRelaxationForMatch(tokens, match, options) {
     gitCwd: context.gitCwd
   };
 }
-function isNonRelaxableLocalDiscard(tokens, options, gitCwd) {
+function isNonRelaxableLocalDiscard(tokens, options2, gitCwd) {
   const { subcommand, rest } = extractGitSubcommandAndRest(tokens);
   const normalizedSubcommand = subcommand?.toLowerCase();
-  if (hasDynamicGitArgument(rest) || hasRecursiveSubmoduleConfig(tokens, options.envAssignments, gitCwd) || hasRecurseSubmodulesOption(rest) || isForcedBranchReset(normalizedSubcommand, rest)) {
+  if (hasDynamicGitArgument(rest) || hasRecursiveSubmoduleConfig(tokens, options2.envAssignments, gitCwd) || hasRecurseSubmodulesOption(rest) || isForcedBranchReset(normalizedSubcommand, rest)) {
     return true;
   }
   return normalizedSubcommand === "clean" && countCleanForceFlags(rest) > 1;
@@ -5284,22 +5266,22 @@ function countCleanForceFlags(tokens) {
 }
 
 // src/core/git/index.ts
-function analyzeGit(tokens, options = {}) {
+function analyzeGit(tokens, options2 = {}) {
   const match = analyzeGitRule(tokens);
   if (!match) {
     return null;
   }
-  if (getGitWorktreeRelaxationForMatch(tokens, match, options)) {
+  if (getGitWorktreeRelaxationForMatch(tokens, match, options2)) {
     return null;
   }
   return match.reason;
 }
-function getGitWorktreeRelaxation(tokens, options = {}) {
+function getGitWorktreeRelaxation(tokens, options2 = {}) {
   const match = analyzeGitRule(tokens);
   if (!match) {
     return null;
   }
-  return getGitWorktreeRelaxationForMatch(tokens, match, options);
+  return getGitWorktreeRelaxationForMatch(tokens, match, options2);
 }
 
 // src/core/analyze/parallel.ts
@@ -5690,24 +5672,24 @@ var COMMAND_ANALYZERS = new Map([
   ["xargs", analyzeXargsCommand],
   ["parallel", analyzeParallelCommand]
 ]);
-function deriveCwdContext(options) {
-  const cwdUnknown = options.effectiveCwd === null;
-  const cwdForRm = cwdUnknown ? undefined : options.effectiveCwd ?? options.cwd;
-  const originalCwd = cwdUnknown ? undefined : options.cwd;
+function deriveCwdContext(options2) {
+  const cwdUnknown = options2.effectiveCwd === null;
+  const cwdForRm = cwdUnknown ? undefined : options2.effectiveCwd ?? options2.cwd;
+  const originalCwd = cwdUnknown ? undefined : options2.cwd;
   return { cwdUnknown, cwdForRm, originalCwd };
 }
-function analyzeSegment(tokens, depth, options) {
+function analyzeSegment(tokens, depth, options2) {
   if (tokens.length === 0) {
     return null;
   }
-  const { cwdForRm: baseCwdForRm, originalCwd } = deriveCwdContext(options);
+  const { cwdForRm: baseCwdForRm, originalCwd } = deriveCwdContext(options2);
   const { tokens: strippedEnv, envAssignments: leadingEnvAssignments } = stripEnvAssignmentsWithInfo(tokens);
   const {
     tokens: stripped,
     envAssignments: wrapperEnvAssignments,
     cwd: wrapperCwd
   } = stripWrappersWithInfo(strippedEnv, baseCwdForRm);
-  const envAssignments = new Map(options.envAssignments ?? []);
+  const envAssignments = new Map(options2.envAssignments ?? []);
   for (const [k, v] of leadingEnvAssignments) {
     envAssignments.set(k, v);
   }
@@ -5721,18 +5703,18 @@ function analyzeSegment(tokens, depth, options) {
   if (!head) {
     return null;
   }
-  if (options.config.failClosedReason) {
-    return options.config.failClosedReason;
+  if (options2.config.failClosedReason) {
+    return options2.config.failClosedReason;
   }
   const normalizedHead = normalizeCommandToken(head);
   const basename = getBasename(head);
   const cwdForRm = wrapperCwd === null ? undefined : wrapperCwd ?? baseCwdForRm;
-  const nestedEffectiveCwd = wrapperCwd === undefined ? options.effectiveCwd : wrapperCwd;
+  const nestedEffectiveCwd = wrapperCwd === undefined ? options2.effectiveCwd : wrapperCwd;
   const allowTmpdirVar = !isTmpdirOverriddenToNonTemp(envAssignments);
   if (SHELL_WRAPPERS.has(normalizedHead)) {
     const dashCArg = extractDashCArg(stripped);
     if (dashCArg) {
-      return options.analyzeNested(dashCArg, {
+      return options2.analyzeNested(dashCArg, {
         effectiveCwd: nestedEffectiveCwd,
         envAssignments
       });
@@ -5741,10 +5723,10 @@ function analyzeSegment(tokens, depth, options) {
   if (INTERPRETERS.has(normalizedHead)) {
     const codeArg = extractInterpreterCodeArg(stripped);
     if (codeArg) {
-      if (options.paranoidInterpreters) {
+      if (options2.paranoidInterpreters) {
         return REASON_INTERPRETER_BLOCKED + PARANOID_INTERPRETERS_SUFFIX;
       }
-      const innerReason = options.analyzeNested(codeArg, {
+      const innerReason = options2.analyzeNested(codeArg, {
         effectiveCwd: nestedEffectiveCwd,
         envAssignments
       });
@@ -5758,7 +5740,7 @@ function analyzeSegment(tokens, depth, options) {
   }
   if (normalizedHead === "busybox" && stripped.length > 1) {
     return analyzeSegment(stripped.slice(1), depth, {
-      ...options,
+      ...options2,
       effectiveCwd: nestedEffectiveCwd,
       envAssignments
     });
@@ -5772,7 +5754,7 @@ function analyzeSegment(tokens, depth, options) {
     originalCwd,
     envAssignments,
     allowTmpdirVar,
-    options
+    options: options2
   };
   const commandAnalyzer = getCommandAnalyzer(commandContext);
   const commandResult = commandAnalyzer?.(commandContext);
@@ -5794,7 +5776,7 @@ function analyzeSegment(tokens, depth, options) {
   }
   const customRulesTopLevelOnly = matchedKnown;
   if (depth === 0 || !customRulesTopLevelOnly) {
-    const customResult = checkCustomRules(stripped, options.config.rules);
+    const customResult = checkCustomRules(stripped, options2.config.rules);
     if (customResult) {
       return customResult;
     }
@@ -5900,18 +5882,18 @@ function stripLeadingGrouping(tokens) {
 var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Verify manually.";
 var DYNAMIC_SUBSTITUTION_TOKEN = "$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__";
 var REASON_RECURSION_LIMIT = "Command exceeds maximum recursion depth and cannot be safely analyzed.";
-function analyzeCommandInternal(command, depth, options) {
+function analyzeCommandInternal(command2, depth, options2) {
   if (depth >= MAX_RECURSION_DEPTH) {
-    return { reason: REASON_RECURSION_LIMIT, segment: command };
+    return { reason: REASON_RECURSION_LIMIT, segment: command2 };
   }
-  const segments = splitShellCommandsWithInfo(command);
-  if (options.strict && segments.length === 1 && segments[0]?.tokens.length === 1 && segments[0].tokens[0] === command && command.includes(" ")) {
-    return { reason: REASON_STRICT_UNPARSEABLE, segment: command };
+  const segments2 = splitShellCommandsWithInfo(command2);
+  if (options2.strict && segments2.length === 1 && segments2[0]?.tokens.length === 1 && segments2[0].tokens[0] === command2 && command2.includes(" ")) {
+    return { reason: REASON_STRICT_UNPARSEABLE, segment: command2 };
   }
-  const originalCwd = options.cwd;
-  let effectiveCwd = options.effectiveCwd !== undefined ? options.effectiveCwd : options.cwd;
-  const shellGitContextState = createShellGitContextEnvState(options.envAssignments);
-  for (const segmentInfo of segments) {
+  const originalCwd = options2.cwd;
+  let effectiveCwd = options2.effectiveCwd !== undefined ? options2.effectiveCwd : options2.cwd;
+  const shellGitContextState = createShellGitContextEnvState(options2.envAssignments);
+  for (const segmentInfo of segments2) {
     const segment = segmentInfo.hasDynamicSubstitution ? appendDynamicSubstitutionSentinelForGit(segmentInfo.tokens) : segmentInfo.tokens;
     const segmentStr = segment.join(" ");
     const segmentEnvAssignments = getSegmentGitContextEnvAssignments(segment, shellGitContextState);
@@ -5926,17 +5908,17 @@ function analyzeCommandInternal(command, depth, options) {
       continue;
     }
     const reason = analyzeSegment(segment, depth, {
-      ...options,
+      ...options2,
       cwd: originalCwd,
       effectiveCwd,
       envAssignments: segmentEnvAssignments,
       analyzeNested: (nestedCommand, overrides) => {
         const nestedEffectiveCwd = overrides && Object.hasOwn(overrides, "effectiveCwd") ? overrides.effectiveCwd : effectiveCwd;
         return analyzeCommandInternal(nestedCommand, depth + 1, {
-          ...options,
+          ...options2,
           effectiveCwd: nestedEffectiveCwd,
           envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
-          worktreeMode: overrides?.worktreeMode ?? options.worktreeMode
+          worktreeMode: overrides?.worktreeMode ?? options2.worktreeMode
         })?.reason ?? null;
       }
     });
@@ -5970,14 +5952,14 @@ function applyShellGitContextEnvSegment(tokens, state) {
   if (!commandInfo) {
     return;
   }
-  const { command, commandIndex, leadingAssignments } = commandInfo;
-  if (command === null) {
+  const { command: command2, commandIndex, leadingAssignments } = commandInfo;
+  if (command2 === null) {
     for (const assignment of leadingAssignments.values()) {
       setShellGitContextAssignment(state, assignment);
     }
     return;
   }
-  if (command === "set") {
+  if (command2 === "set") {
     const changes = getSetOptionChanges(tokens, commandIndex);
     if (changes.allexport !== null) {
       state.allexport = changes.allexport;
@@ -5987,13 +5969,13 @@ function applyShellGitContextEnvSegment(tokens, state) {
     }
     return;
   }
-  if (command !== "export" && command !== "typeset" && command !== "declare" && command !== "readonly") {
+  if (command2 !== "export" && command2 !== "typeset" && command2 !== "declare" && command2 !== "readonly") {
     return;
   }
   for (const assignment of leadingAssignments.values()) {
     setShellGitContextAssignment(state, assignment);
   }
-  if (command === "export") {
+  if (command2 === "export") {
     const operandsStart = getExportOperandsStart(tokens, commandIndex);
     if (operandsStart === null) {
       return;
@@ -6008,7 +5990,7 @@ function applyShellGitContextEnvSegment(tokens, state) {
     return;
   }
   for (const token of tokens.slice(operandsInfo.operandsStart)) {
-    addTypesetGitContextEnvAssignment(state, token, operandsInfo.exports, command === "readonly" ? leadingAssignments : undefined);
+    addTypesetGitContextEnvAssignment(state, token, operandsInfo.exports, command2 === "readonly" ? leadingAssignments : undefined);
   }
 }
 function getSegmentGitContextEnvAssignments(tokens, state) {
@@ -6047,26 +6029,26 @@ function getShellCommandInfo(tokens) {
     return { command: null, commandIndex: i, leadingAssignments };
   }
   let commandIndex = i;
-  let command = tokens[commandIndex] ?? null;
-  if (command === "builtin") {
+  let command2 = tokens[commandIndex] ?? null;
+  if (command2 === "builtin") {
     commandIndex++;
     if (tokens[commandIndex] === "--") {
       commandIndex++;
     }
-    command = tokens[commandIndex] ?? null;
+    command2 = tokens[commandIndex] ?? null;
   }
-  if (command === "command") {
+  if (command2 === "command") {
     const commandBuiltinInfo = getCommandBuiltinTarget(tokens, commandIndex);
     if (!commandBuiltinInfo) {
       return null;
     }
     commandIndex = commandBuiltinInfo.commandIndex;
-    command = commandBuiltinInfo.command;
+    command2 = commandBuiltinInfo.command;
   }
-  if (command === null) {
+  if (command2 === null) {
     return null;
   }
-  return { command, commandIndex, leadingAssignments };
+  return { command: command2, commandIndex, leadingAssignments };
 }
 function getCommandBuiltinTarget(tokens, commandIndex) {
   let i = commandIndex + 1;
@@ -6088,8 +6070,8 @@ function getCommandBuiltinTarget(tokens, commandIndex) {
     }
     break;
   }
-  const command = tokens[i];
-  return command ? { command, commandIndex: i } : null;
+  const command2 = tokens[i];
+  return command2 ? { command: command2, commandIndex: i } : null;
 }
 function parseShellAssignment(token) {
   return parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment(token);
@@ -6266,9 +6248,9 @@ function getSetOptionChanges(tokens, commandIndex) {
 }
 
 // src/core/analyze/index.ts
-function analyzeCommand(command, options = {}) {
-  const config = options.config ?? loadConfig(options.cwd);
-  return analyzeCommandInternal(command, 0, { ...options, config });
+function analyzeCommand(command2, options2 = {}) {
+  const config = options2.config ?? loadConfig(options2.cwd);
+  return analyzeCommandInternal(command2, 0, { ...options2, config });
 }
 
 // src/bin/doctor/hooks.ts
@@ -6615,10 +6597,10 @@ function detectCodex(homeDir) {
     errors: errors.length > 0 ? errors : undefined
   };
 }
-function _isSafetyNetCopilotCommand(command) {
-  if (!command?.includes("cc-safety-net"))
+function _isSafetyNetCopilotCommand(command2) {
+  if (!command2?.includes("cc-safety-net"))
     return false;
-  return /(^|\s)hook\s+(?:[^\s]+\s+)*(--copilot-cli|-cp)(\s|$)/.test(command);
+  return /(^|\s)hook\s+(?:[^\s]+\s+)*(--copilot-cli|-cp)(\s|$)/.test(command2);
 }
 function _parseSemver(version) {
   if (!version)
@@ -6788,11 +6770,11 @@ function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
     ]
   };
 }
-function detectAllHooks(cwd, options) {
-  const homeDir = options?.homeDir ?? homedir4();
+function detectAllHooks(cwd, options2) {
+  const homeDir = options2?.homeDir ?? homedir4();
   const detectCopilotCLI = () => {
     const errors = [];
-    const hooksCheck = _checkCopilotEnabled(homeDir, cwd, options?.copilotCliVersion, errors);
+    const hooksCheck = _checkCopilotEnabled(homeDir, cwd, options2?.copilotCliVersion, errors);
     if (hooksCheck.disabledBy) {
       return {
         platform: "copilot-cli",
@@ -6803,8 +6785,8 @@ function detectAllHooks(cwd, options) {
         errors: errors.length > 0 ? errors : undefined
       };
     }
-    if (options?.copilotPluginInstalled === true || hooksCheck.activeConfigPaths.length > 0) {
-      const viaPlugin = options?.copilotPluginInstalled === true;
+    if (options2?.copilotPluginInstalled === true || hooksCheck.activeConfigPaths.length > 0) {
+      const viaPlugin = options2?.copilotPluginInstalled === true;
       const primaryConfigPath = hooksCheck.activeConfigPaths[0];
       return {
         platform: "copilot-cli",
@@ -6823,9 +6805,9 @@ function detectAllHooks(cwd, options) {
     };
   };
   return [
-    detectClaudeCode(options?.claudePluginListOutput),
+    detectClaudeCode(options2?.claudePluginListOutput),
     detectOpenCode(homeDir),
-    detectGeminiCLI(options?.geminiExtensionsListOutput),
+    detectGeminiCLI(options2?.geminiExtensionsListOutput),
     detectCopilotCLI(),
     detectCodex(homeDir)
   ];
@@ -7005,8 +6987,8 @@ function parseDoctorFlags(args) {
 }
 
 // src/bin/doctor/index.ts
-async function runDoctor(options = {}) {
-  const cwd = options.cwd ?? process.cwd();
+async function runDoctor(options2 = {}) {
+  const cwd = options2.cwd ?? process.cwd();
   const system = await getSystemInfo();
   const hooks = detectAllHooks(cwd, {
     claudePluginListOutput: system.claudePluginListOutput,
@@ -7017,7 +6999,7 @@ async function runDoctor(options = {}) {
   const configInfo = getConfigInfo(cwd);
   const environment = getEnvironmentInfo();
   const activity = getActivitySummary(7);
-  const update = options.skipUpdateCheck ? {
+  const update = options2.skipUpdateCheck ? {
     currentVersion: getPackageVersion(),
     latestVersion: null,
     updateAvailable: false
@@ -7033,7 +7015,7 @@ async function runDoctor(options = {}) {
     update,
     system
   };
-  if (options.json) {
+  if (options2.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
     printReport(report);
@@ -7060,8 +7042,8 @@ function printReport(report) {
 // src/bin/explain/config.ts
 import { existsSync as existsSync12 } from "node:fs";
 import { resolve as resolve8 } from "node:path";
-function getConfigSource(options) {
-  const projectPath = getProjectRulesConfigPath(options?.cwd);
+function getConfigSource(options2) {
+  const projectPath = getProjectRulesConfigPath(options2?.cwd);
   let invalidProjectPath = null;
   if (existsSync12(projectPath)) {
     const validation = validateRulesConfigFile(projectPath);
@@ -7070,7 +7052,7 @@ function getConfigSource(options) {
     }
     invalidProjectPath = projectPath;
   }
-  const userPath = options?.userConfigPath ?? getUserRulesConfigPath(options);
+  const userPath = options2?.userConfigPath ?? getUserRulesConfigPath(options2);
   if (existsSync12(userPath)) {
     const validation = validateRulesConfigFile(userPath);
     return { configSource: userPath, configValid: validation.errors.length === 0 };
@@ -7118,10 +7100,10 @@ function redactEnvAssignmentTokens(tokens) {
 
 // src/bin/explain/segment.ts
 var REASON_STRICT_UNPARSEABLE2 = "Command could not be safely analyzed (strict mode). Verify manually.";
-function isUnparseableCommand(command, segments) {
-  return segments.length === 1 && segments[0]?.length === 1 && segments[0][0] === command && command.includes(" ");
+function isUnparseableCommand(command2, segments2) {
+  return segments2.length === 1 && segments2[0]?.length === 1 && segments2[0][0] === command2 && command2.includes(" ");
 }
-function explainInnerSegments(innerCmd, depth, options, steps) {
+function explainInnerSegments(innerCmd, depth, options2, steps) {
   if (depth + 1 >= MAX_RECURSION_DEPTH) {
     steps.push({
       type: "error",
@@ -7130,7 +7112,7 @@ function explainInnerSegments(innerCmd, depth, options, steps) {
     return { reason: REASON_RECURSION_LIMIT };
   }
   const innerSegments = splitShellCommands(innerCmd);
-  if (options.strict && isUnparseableCommand(innerCmd, innerSegments)) {
+  if (options2.strict && isUnparseableCommand(innerCmd, innerSegments)) {
     steps.push({
       type: "strict-unparseable",
       rawCommand: redactEnvAssignmentsInString(innerCmd),
@@ -7138,8 +7120,8 @@ function explainInnerSegments(innerCmd, depth, options, steps) {
     });
     return { reason: REASON_STRICT_UNPARSEABLE2 };
   }
-  let effectiveCwd = options.effectiveCwd === undefined ? options.cwd : options.effectiveCwd;
-  const shellGitContextState = createShellGitContextEnvState(options.envAssignments);
+  let effectiveCwd = options2.effectiveCwd === undefined ? options2.cwd : options2.effectiveCwd;
+  const shellGitContextState = createShellGitContextEnvState(options2.envAssignments);
   for (const segment of innerSegments) {
     if (segment.length === 1 && segment[0]?.includes(" ")) {
       const textReason = dangerousInText(segment[0]);
@@ -7168,7 +7150,7 @@ function explainInnerSegments(innerCmd, depth, options, steps) {
       continue;
     }
     const result = explainSegment(segment, depth + 1, {
-      ...options,
+      ...options2,
       effectiveCwd,
       envAssignments: getSegmentGitContextEnvAssignments(segment, shellGitContextState)
     }, steps);
@@ -7186,7 +7168,7 @@ function explainInnerSegments(innerCmd, depth, options, steps) {
   }
   return null;
 }
-function explainSegment(tokens, depth, options, steps) {
+function explainSegment(tokens, depth, options2, steps) {
   if (depth >= MAX_RECURSION_DEPTH) {
     steps.push({
       type: "error",
@@ -7203,10 +7185,10 @@ function explainSegment(tokens, depth, options, steps) {
       output: envResult.tokens
     });
   }
-  const effectiveCwd = options.effectiveCwd === undefined ? options.cwd : options.effectiveCwd;
+  const effectiveCwd = options2.effectiveCwd === undefined ? options2.cwd : options2.effectiveCwd;
   const cwdUnknown = effectiveCwd === null;
-  const baseCwdForRm = cwdUnknown ? undefined : effectiveCwd ?? options.cwd;
-  const originalCwd = cwdUnknown ? undefined : options.cwd;
+  const baseCwdForRm = cwdUnknown ? undefined : effectiveCwd ?? options2.cwd;
+  const originalCwd = cwdUnknown ? undefined : options2.cwd;
   const wrapperResult = stripWrappersWithInfo(envResult.tokens, baseCwdForRm);
   const removed = envResult.tokens.slice(0, envResult.tokens.length - wrapperResult.tokens.length);
   if (removed.length > 0) {
@@ -7218,7 +7200,7 @@ function explainSegment(tokens, depth, options, steps) {
     });
   }
   const strippedTokens = wrapperResult.tokens;
-  const envAssignments = new Map(options.envAssignments ?? []);
+  const envAssignments = new Map(options2.envAssignments ?? []);
   for (const [k, v] of envResult.envAssignments) {
     envAssignments.set(k, v);
   }
@@ -7226,9 +7208,9 @@ function explainSegment(tokens, depth, options, steps) {
     envAssignments.set(k, v);
   }
   const cwdForRm = wrapperResult.cwd === null ? undefined : wrapperResult.cwd ?? baseCwdForRm;
-  const nestedEffectiveCwd = wrapperResult.cwd === undefined ? options.effectiveCwd : wrapperResult.cwd;
+  const nestedEffectiveCwd = wrapperResult.cwd === undefined ? options2.effectiveCwd : wrapperResult.cwd;
   const nestedOptions = {
-    ...options,
+    ...options2,
     effectiveCwd: nestedEffectiveCwd,
     envAssignments
   };
@@ -7261,7 +7243,7 @@ function explainSegment(tokens, depth, options, steps) {
   if (INTERPRETERS.has(baseNameLower)) {
     const codeArg = extractInterpreterCodeArg(strippedTokens);
     if (codeArg) {
-      const paranoidBlocked = !!options.paranoidInterpreters;
+      const paranoidBlocked = !!options2.paranoidInterpreters;
       const redactedCodeArg = redactEnvAssignmentsInString(codeArg);
       steps.push({
         type: "interpreter",
@@ -7327,7 +7309,7 @@ function explainSegment(tokens, depth, options, steps) {
     const gitOptions = {
       cwd: cwdForRm,
       envAssignments,
-      worktreeMode: options.worktreeMode
+      worktreeMode: options2.worktreeMode
     };
     const relaxation = getGitWorktreeRelaxation(strippedTokens, gitOptions);
     const reason = analyzeGit(strippedTokens, gitOptions);
@@ -7352,7 +7334,7 @@ function explainSegment(tokens, depth, options, steps) {
     const reason = analyzeRm(strippedTokens, {
       cwd: cwdForRm,
       originalCwd,
-      paranoid: options.paranoidRm,
+      paranoid: options2.paranoidRm,
       allowTmpdirVar
     });
     steps.push({
@@ -7381,10 +7363,10 @@ function explainSegment(tokens, depth, options, steps) {
     const reason = analyzeXargs(strippedTokens, {
       cwd: cwdForRm,
       originalCwd,
-      paranoidRm: options.paranoidRm,
+      paranoidRm: options2.paranoidRm,
       allowTmpdirVar,
       envAssignments,
-      worktreeMode: options.worktreeMode
+      worktreeMode: options2.worktreeMode
     });
     steps.push({
       type: "rule-check",
@@ -7410,10 +7392,10 @@ function explainSegment(tokens, depth, options, steps) {
     const reason = analyzeParallel(strippedTokens, {
       cwd: cwdForRm,
       originalCwd,
-      paranoidRm: options.paranoidRm,
+      paranoidRm: options2.paranoidRm,
       allowTmpdirVar,
       envAssignments,
-      worktreeMode: options.worktreeMode,
+      worktreeMode: options2.worktreeMode,
       analyzeNested
     });
     steps.push({
@@ -7444,7 +7426,7 @@ function explainSegment(tokens, depth, options, steps) {
         fallbackReason = analyzeRm(rmTokens, {
           cwd: cwdForRm,
           originalCwd,
-          paranoid: options.paranoidRm,
+          paranoid: options2.paranoidRm,
           allowTmpdirVar
         });
       }
@@ -7481,9 +7463,9 @@ function explainSegment(tokens, depth, options, steps) {
   if (fallbackReason)
     return { reason: fallbackReason };
   const shouldCheckCustomRules = depth === 0 || !matchedKnown;
-  const hasRules = options.config?.rules && options.config.rules.length > 0;
-  if (shouldCheckCustomRules && hasRules && options.config) {
-    const customResult = checkCustomRules(strippedTokens, options.config.rules);
+  const hasRules = options2.config?.rules && options2.config.rules.length > 0;
+  if (shouldCheckCustomRules && hasRules && options2.config) {
+    const customResult = checkCustomRules(strippedTokens, options2.config.rules);
     steps.push({
       type: "custom-rules-check",
       rulesChecked: true,
@@ -7503,14 +7485,14 @@ function explainSegment(tokens, depth, options, steps) {
 }
 
 // src/bin/explain/analyze.ts
-function explainCommand2(command, options) {
+function explainCommand2(command2, options2) {
   const trace = { steps: [], segments: [] };
-  const analyzeOpts = buildAnalyzeOptions(options);
+  const analyzeOpts = buildAnalyzeOptions(options2);
   const { configSource, configValid } = getConfigSource({
-    cwd: options?.cwd,
-    userConfigDir: options?.userConfigDir
+    cwd: options2?.cwd,
+    userConfigDir: options2?.userConfigDir
   });
-  if (!command || !command.trim()) {
+  if (!command2 || !command2.trim()) {
     trace.steps.push({ type: "error", message: "No command provided" });
     return {
       trace,
@@ -7519,15 +7501,15 @@ function explainCommand2(command, options) {
       configValid
     };
   }
-  const segments = splitShellCommands(command);
-  const redactedInput = command.replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, "$1=<redacted>");
-  const redactedSegments = segments.map((seg) => redactEnvAssignmentTokens(seg));
+  const segments2 = splitShellCommands(command2);
+  const redactedInput = command2.replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, "$1=<redacted>");
+  const redactedSegments = segments2.map((seg) => redactEnvAssignmentTokens(seg));
   trace.steps.push({
     type: "parse",
     input: redactedInput,
     segments: redactedSegments
   });
-  if (analyzeOpts.strict && isUnparseableCommand(command, segments)) {
+  if (analyzeOpts.strict && isUnparseableCommand(command2, segments2)) {
     trace.steps.push({
       type: "strict-unparseable",
       rawCommand: redactedInput,
@@ -7537,7 +7519,7 @@ function explainCommand2(command, options) {
       trace,
       result: "blocked",
       reason: REASON_STRICT_UNPARSEABLE2,
-      segment: redactEnvAssignmentsInString(command),
+      segment: redactEnvAssignmentsInString(command2),
       configSource,
       configValid
     };
@@ -7547,8 +7529,8 @@ function explainCommand2(command, options) {
   let blockSegment;
   let effectiveCwd = analyzeOpts.effectiveCwd;
   const shellGitContextState = createShellGitContextEnvState(analyzeOpts.envAssignments);
-  for (let i = 0;i < segments.length; i++) {
-    const segment = segments[i];
+  for (let i = 0;i < segments2.length; i++) {
+    const segment = segments2[i];
     if (!segment)
       continue;
     const segmentSteps = [];
@@ -7618,19 +7600,19 @@ function explainCommand2(command, options) {
     result: blocked ? "blocked" : "allowed",
     reason: blockReason,
     segment: blockSegment,
-    customRule: getCustomRuleMetadata(blockReason, options, analyzeOpts.cwd ?? process.cwd()),
+    customRule: getCustomRuleMetadata(blockReason, options2, analyzeOpts.cwd ?? process.cwd()),
     configSource,
     configValid
   };
 }
-function getCustomRuleMetadata(reason, options, cwd) {
+function getCustomRuleMetadata(reason, options2, cwd) {
   const id = reason?.match(/^\[([^\]]+)]/)?.[1];
   if (!id)
     return;
-  if (options?.config) {
-    return options.config.rules.some((rule) => rule.name === id) ? { id } : undefined;
+  if (options2?.config) {
+    return options2.config.rules.some((rule) => rule.name === id) ? { id } : undefined;
   }
-  const policy = loadRulesPolicy({ cwd, userConfigDir: options?.userConfigDir });
+  const policy = loadRulesPolicy({ cwd, userConfigDir: options2?.userConfigDir });
   if (!policy.rules.some((rule) => rule.name === id))
     return;
   const rulebook = policy.rulebooks.find((item) => item.rules.includes(id));
@@ -7683,13 +7665,13 @@ function parseExplainFlags(args) {
       break;
     }
   }
-  const command = remaining.length === 1 ? remaining[0] : $quote(remaining);
-  if (!command) {
+  const command2 = remaining.length === 1 ? remaining[0] : $quote(remaining);
+  if (!command2) {
     console.error("Error: No command provided");
     console.error("Usage: cc-safety-net explain [--json] [--cwd <path>] <command>");
     return null;
   }
-  return { json, cwd, command };
+  return { json, cwd, command: command2 };
 }
 // src/bin/explain/format-helpers.ts
 function getBoxChars(asciiOnly) {
@@ -7879,8 +7861,8 @@ function formatStepStyleD(step, stepNum, box) {
 }
 
 // src/bin/explain/format.ts
-function formatTraceHuman(result, options) {
-  const box = getBoxChars(options?.asciiOnly ?? false);
+function formatTraceHuman(result, options2) {
+  const box = getBoxChars(options2?.asciiOnly ?? false);
   const width = 58;
   const lines = [];
   let stepNum = 1;
@@ -7915,9 +7897,9 @@ function formatTraceHuman(result, options) {
       }
     }
   }
-  const segments = result.trace.segments;
-  const hasMultipleSegments = segments.length > 1;
-  for (const seg of segments) {
+  const segments2 = result.trace.segments;
+  const hasMultipleSegments = segments2.length > 1;
+  for (const seg of segments2) {
     if (hasMultipleSegments) {
       lines.push("");
       let segCommand = "";
@@ -8032,8 +8014,8 @@ var PROGRAM_NAME = "cc-safety-net";
 function formatOptionFlags(option) {
   return option.argument ? `${option.flags} ${option.argument}` : option.flags;
 }
-function getOptionsColumnWidth(options) {
-  return Math.max(...options.map((opt) => formatOptionFlags(opt).length));
+function getOptionsColumnWidth(options2) {
+  return Math.max(...options2.map((opt) => formatOptionFlags(opt).length));
 }
 function getSubcommandsColumnWidth(subcommands) {
   return Math.max(...subcommands.map((subcommand) => subcommand.usage.length));
@@ -8048,35 +8030,35 @@ function formatCommandSummary(cmd, maxUsageWidth) {
 function formatEnvironmentVariable(name, description) {
   return `${INDENT}${name.padEnd(40)}${description}`;
 }
-function printCommandHelp(command) {
+function printCommandHelp(command2) {
   const lines = [];
-  lines.push(`${PROGRAM_NAME} ${command.name}`);
+  lines.push(`${PROGRAM_NAME} ${command2.name}`);
   lines.push("");
-  lines.push(`${INDENT}${command.description}`);
+  lines.push(`${INDENT}${command2.description}`);
   lines.push("");
   lines.push("USAGE:");
-  lines.push(`${INDENT}${PROGRAM_NAME} ${command.usage}`);
+  lines.push(`${INDENT}${PROGRAM_NAME} ${command2.usage}`);
   lines.push("");
-  if (command.subcommands && command.subcommands.length > 0) {
+  if (command2.subcommands && command2.subcommands.length > 0) {
     lines.push("SUBCOMMANDS:");
-    const subcommandWidth = getSubcommandsColumnWidth(command.subcommands);
-    for (const subcommand of command.subcommands) {
+    const subcommandWidth = getSubcommandsColumnWidth(command2.subcommands);
+    for (const subcommand of command2.subcommands) {
       lines.push(`${INDENT}${subcommand.usage.padEnd(subcommandWidth + 2)}${subcommand.description}`);
     }
     lines.push("");
   }
-  if (command.options.length > 0) {
+  if (command2.options.length > 0) {
     lines.push("OPTIONS:");
-    const optWidth = getOptionsColumnWidth(command.options);
-    for (const opt of command.options) {
+    const optWidth = getOptionsColumnWidth(command2.options);
+    for (const opt of command2.options) {
       const flags = formatOptionFlags(opt);
       lines.push(`${INDENT}${flags.padEnd(optWidth + 2)}${opt.description}`);
     }
     lines.push("");
   }
-  if (command.examples && command.examples.length > 0) {
+  if (command2.examples && command2.examples.length > 0) {
     lines.push("EXAMPLES:");
-    for (const example of command.examples) {
+    for (const example of command2.examples) {
       lines.push(`${INDENT}${example}`);
     }
   }
@@ -8119,14 +8101,14 @@ function printVersion() {
   console.log(version);
 }
 function showCommandHelp(commandName) {
-  const command = findCommand(commandName);
-  if (!command) {
+  const command2 = findCommand(commandName);
+  if (!command2) {
     return false;
   }
-  if (command.hidden || command.name.toLowerCase() !== commandName.toLowerCase()) {
+  if (command2.hidden || command2.name.toLowerCase() !== commandName.toLowerCase()) {
     return false;
   }
-  printCommandHelp(command);
+  printCommandHelp(command2);
   return true;
 }
 
@@ -8146,12 +8128,12 @@ function sanitizeSessionIdForFilename(sessionId) {
   }
   return safe;
 }
-function writeAuditLog(sessionId, command, segment, reason, cwd, options = {}) {
+function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {}) {
   const safeSessionId = sanitizeSessionIdForFilename(sessionId);
   if (!safeSessionId) {
     return;
   }
-  const home = options.homeDir ?? homedir5();
+  const home = options2.homeDir ?? homedir5();
   const logsDir = join9(home, ".cc-safety-net", "logs");
   try {
     if (!existsSync13(logsDir)) {
@@ -8160,8 +8142,8 @@ function writeAuditLog(sessionId, command, segment, reason, cwd, options = {}) {
     const logFile = join9(logsDir, `${safeSessionId}.jsonl`);
     const entry = {
       ts: new Date().toISOString(),
-      decision: options.decision ?? "deny",
-      command: redactSecrets(command).slice(0, 300),
+      decision: options2.decision ?? "deny",
+      command: redactSecrets(command2).slice(0, 300),
       segment: redactSecrets(segment).slice(0, 300),
       reason,
       cwd
@@ -8201,9 +8183,9 @@ function parseHookJson(inputText, outputDeny, strictReason) {
     return null;
   }
 }
-function analyzeHookCommand(command, cwd) {
+function analyzeHookCommand(command2, cwd) {
   const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
-  return analyzeCommand(command, {
+  return analyzeCommand(command2, {
     cwd,
     config: loadConfig(cwd),
     strict: envTruthy(ENV_FLAGS.strict),
@@ -8212,35 +8194,35 @@ function analyzeHookCommand(command, cwd) {
     worktreeMode: envTruthy(ENV_FLAGS.worktree)
   });
 }
-function handleBlockedHookCommand(command, cwd, sessionId, outputDeny) {
-  const result = analyzeHookCommand(command, cwd);
+function handleBlockedHookCommand(command2, cwd, sessionId, outputDeny) {
+  const result = analyzeHookCommand(command2, cwd);
   if (!result) {
     if (sessionId && envTruthy(ENV_FLAGS.debug)) {
-      writeAuditLog(sessionId, command, command, "allowed", cwd, { decision: "allow" });
+      writeAuditLog(sessionId, command2, command2, "allowed", cwd, { decision: "allow" });
     }
     return;
   }
   if (sessionId) {
-    writeAuditLog(sessionId, command, result.segment, result.reason, cwd);
+    writeAuditLog(sessionId, command2, result.segment, result.reason, cwd);
   }
-  outputDeny(result.reason, command, result.segment);
+  outputDeny(result.reason, command2, result.segment);
 }
 
 // src/core/format.ts
 function formatBlockedMessage(input) {
-  const { reason, command, segment } = input;
+  const { reason, command: command2, segment } = input;
   const maxLen = input.maxLen ?? 200;
   const redact = input.redact ?? ((t) => t);
   let message = `BLOCKED by CC SafetyNet
 
 Reason: ${reason}`;
-  if (command) {
-    const safeCommand = redact(command);
+  if (command2) {
+    const safeCommand = redact(command2);
     message += `
 
 Command: ${excerpt(safeCommand, maxLen)}`;
   }
-  if (segment && segment !== command) {
+  if (segment && segment !== command2) {
     const safeSegment = redact(segment);
     message += `
 
@@ -8258,10 +8240,10 @@ function excerpt(text, maxLen) {
 }
 
 // src/bin/hook/claude-code.ts
-function outputDeny(reason, command, segment) {
+function outputDeny(reason, command2, segment) {
   const message = formatBlockedMessage({
     reason,
-    command,
+    command: command2,
     segment,
     redact: redactSecrets,
     manualPermissionAdvice: reason.includes("rule sync") ? false : undefined
@@ -8283,18 +8265,18 @@ async function runClaudeCodeHook() {
   if (input.tool_name !== "Bash") {
     return;
   }
-  const command = input.tool_input?.command;
-  if (!command) {
+  const command2 = input.tool_input?.command;
+  if (!command2) {
     return;
   }
-  handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputDeny);
+  handleBlockedHookCommand(command2, input.cwd ?? process.cwd(), input.session_id, outputDeny);
 }
 
 // src/bin/hook/copilot-cli.ts
-function outputCopilotDeny(reason, command, segment) {
+function outputCopilotDeny(reason, command2, segment) {
   const message = formatBlockedMessage({
     reason,
-    command,
+    command: command2,
     segment,
     redact: redactSecrets
   });
@@ -8316,18 +8298,18 @@ async function runCopilotCliHook() {
   if (!toolArgs) {
     return;
   }
-  const command = toolArgs.command;
-  if (!command) {
+  const command2 = toolArgs.command;
+  if (!command2) {
     return;
   }
-  handleBlockedHookCommand(command, input.cwd ?? process.cwd(), `copilot-${input.timestamp ?? Date.now()}`, outputCopilotDeny);
+  handleBlockedHookCommand(command2, input.cwd ?? process.cwd(), `copilot-${input.timestamp ?? Date.now()}`, outputCopilotDeny);
 }
 
 // src/bin/hook/gemini-cli.ts
-function outputGeminiDeny(reason, command, segment) {
+function outputGeminiDeny(reason, command2, segment) {
   const message = formatBlockedMessage({
     reason,
-    command,
+    command: command2,
     segment,
     redact: redactSecrets
   });
@@ -8349,11 +8331,11 @@ async function runGeminiCLIHook() {
   if (input.tool_name !== "run_shell_command") {
     return;
   }
-  const command = input.tool_input?.command;
-  if (!command) {
+  const command2 = input.tool_input?.command;
+  if (!command2) {
     return;
   }
-  handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputGeminiDeny);
+  handleBlockedHookCommand(command2, input.cwd ?? process.cwd(), input.session_id, outputGeminiDeny);
 }
 
 // src/bin/hook/install.ts
@@ -8787,10 +8769,10 @@ function runHookInstallCommand(action, args) {
 }
 
 // src/bin/hook/kimi-cli.ts
-function outputKimiDeny(reason, command, segment, manualPermissionAdvice) {
+function outputKimiDeny(reason, command2, segment, manualPermissionAdvice) {
   const message = formatBlockedMessage({
     reason,
-    command,
+    command: command2,
     segment,
     redact: redactSecrets,
     manualPermissionAdvice
@@ -8815,11 +8797,11 @@ async function runKimiCliHook() {
   if (input.tool_name !== "Shell") {
     return;
   }
-  const command = input.tool_input?.command;
-  if (!command) {
+  const command2 = input.tool_input?.command;
+  if (!command2) {
     return;
   }
-  handleBlockedHookCommand(command, input.cwd ?? process.cwd(), input.session_id, outputKimiDeny);
+  handleBlockedHookCommand(command2, input.cwd ?? process.cwd(), input.session_id, outputKimiDeny);
 }
 
 // src/bin/rule/index.ts
@@ -9069,80 +9051,80 @@ import { existsSync as existsSync15, readFileSync as readFileSync12, rmSync as r
 import { dirname as dirname10, join as join11 } from "node:path";
 var PROJECT_MIGRATED_FROM = ".safety-net.json";
 var USER_MIGRATED_FROM = "~/.cc-safety-net/config.json";
-async function runRulesMigrate(options) {
+async function runRulesMigrate(options2) {
   const results = [
     await migrateRulesScope({
-      legacyPath: getLegacyProjectRulesConfigPath({ cwd: options.cwd }),
-      configPath: getProjectRulesConfigPath(options.cwd),
+      legacyPath: getLegacyProjectRulesConfigPath({ cwd: options2.cwd }),
+      configPath: getProjectRulesConfigPath(options2.cwd),
       defaultRulebookName: "project-rules",
       migratedFrom: PROJECT_MIGRATED_FROM,
-      cleanup: options.cleanup,
-      syncOptions: { cwd: options.cwd }
+      cleanup: options2.cleanup,
+      syncOptions: { cwd: options2.cwd }
     }),
     await migrateRulesScope({
       legacyPath: getLegacyUserRulesConfigPath(),
       configPath: getUserRulesConfigPath(),
       defaultRulebookName: "user-rules",
       migratedFrom: USER_MIGRATED_FROM,
-      cleanup: options.cleanup,
-      syncOptions: { cwd: options.cwd, global: true }
+      cleanup: options2.cleanup,
+      syncOptions: { cwd: options2.cwd, global: true }
     })
   ];
   return results.every((result) => result) ? 0 : 1;
 }
-async function migrateRulesScope(options) {
-  if (!existsSync15(options.legacyPath)) {
-    console.log(`No legacy config found at ${options.legacyPath}`);
+async function migrateRulesScope(options2) {
+  if (!existsSync15(options2.legacyPath)) {
+    console.log(`No legacy config found at ${options2.legacyPath}`);
     return true;
   }
-  const legacy = readLegacyRulesConfig(options.legacyPath);
+  const legacy = readLegacyRulesConfig(options2.legacyPath);
   if (!legacy.ok) {
     for (const error of legacy.errors)
       console.error(error);
     return false;
   }
-  const loaded = readRulesConfig(options.configPath);
+  const loaded = readRulesConfig(options2.configPath);
   if (loaded.errors.length > 0) {
     for (const error of loaded.errors)
       console.error(error);
     return false;
   }
   const config = loaded.config ?? { version: 1, rules: [], overrides: {} };
-  const rulebookName = getMigratedRulebookName(dirname10(options.configPath), config.rules, options.defaultRulebookName, options.migratedFrom);
-  const rulebookPath = join11(dirname10(options.configPath), rulebookName, "rulebook.json");
+  const rulebookName = getMigratedRulebookName(dirname10(options2.configPath), config.rules, options2.defaultRulebookName, options2.migratedFrom);
+  const rulebookPath = join11(dirname10(options2.configPath), rulebookName, "rulebook.json");
   const snapshots = [
-    snapshotFile(options.configPath),
+    snapshotFile(options2.configPath),
     snapshotFile(rulebookPath),
-    snapshotFile(getRulesLockPathForConfigPath(options.configPath))
+    snapshotFile(getRulesLockPathForConfigPath(options2.configPath))
   ];
-  const result = await writeAndSyncMigratedRulebook(options, rulebookPath, rulebookName, legacy.config.rules, config.rules.includes(rulebookName) ? config.rules : [...config.rules, rulebookName], config.overrides ?? {});
+  const result = await writeAndSyncMigratedRulebook(options2, rulebookPath, rulebookName, legacy.config.rules, config.rules.includes(rulebookName) ? config.rules : [...config.rules, rulebookName], config.overrides ?? {});
   if (!result.ok) {
     restoreFiles(snapshots);
     for (const error of result.errors)
       console.error(error);
     return false;
   }
-  if (!options.cleanup) {
-    console.log(`Migrated legacy config at ${options.legacyPath}. Legacy file is no longer used.`);
+  if (!options2.cleanup) {
+    console.log(`Migrated legacy config at ${options2.legacyPath}. Legacy file is no longer used.`);
     return true;
   }
-  if (!isCleanupVerified(options.configPath, rulebookPath, rulebookName, options.migratedFrom, legacy.config.rules)) {
-    console.error(`Migration cleanup verification failed for ${options.legacyPath}`);
+  if (!isCleanupVerified(options2.configPath, rulebookPath, rulebookName, options2.migratedFrom, legacy.config.rules)) {
+    console.error(`Migration cleanup verification failed for ${options2.legacyPath}`);
     return false;
   }
-  rmSync2(options.legacyPath, { force: true });
-  console.log(`Deleted legacy config at ${options.legacyPath}`);
+  rmSync2(options2.legacyPath, { force: true });
+  console.log(`Deleted legacy config at ${options2.legacyPath}`);
   return true;
 }
-async function writeAndSyncMigratedRulebook(options, rulebookPath, rulebookName, rules, configRules, overrides) {
+async function writeAndSyncMigratedRulebook(options2, rulebookPath, rulebookName, rules, configRules, overrides) {
   try {
-    writeJsonAtomic(options.configPath, {
+    writeJsonAtomic(options2.configPath, {
       version: 1,
       rules: configRules,
       overrides
     });
-    writeJsonAtomic(rulebookPath, getMigratedRulebook(rulebookName, options.migratedFrom, rules));
-    return await syncRulesConfig(options.syncOptions);
+    writeJsonAtomic(rulebookPath, getMigratedRulebook(rulebookName, options2.migratedFrom, rules));
+    return await syncRulesConfig(options2.syncOptions);
   } catch (error) {
     return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
   }
@@ -9227,12 +9209,12 @@ var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
 var RULES_DIR_RESERVED_ENTRIES = new Set(["rule.json", "rule.lock", "cache"]);
-function runRulesVerify(options = {}) {
-  const cwd = options.cwd ?? process.cwd();
-  const userConfig = options.userConfigPath ?? getUserRulesConfigPath();
-  const projectConfig = options.projectConfigPath ?? getProjectRulesConfigPath(cwd);
-  const legacyUserConfig = options.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
-  const legacyProjectConfig = options.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
+function runRulesVerify(options2 = {}) {
+  const cwd = options2.cwd ?? process.cwd();
+  const userConfig = options2.userConfigPath ?? getUserRulesConfigPath();
+  const projectConfig = options2.projectConfigPath ?? getProjectRulesConfigPath(cwd);
+  const legacyUserConfig = options2.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
+  const legacyProjectConfig = options2.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
   const githubSourceRulesDir = resolve9(cwd, RULES_DIR);
   const userConfigDir = dirname11(userConfig);
   let hasErrors = false;
@@ -9522,7 +9504,7 @@ async function runRuleCommand(args) {
     return 0;
   }
   const value = flags.positionals[1];
-  const options = { global: flags.global, check: flags.check };
+  const options2 = { global: flags.global, check: flags.check };
   if (subcommand === "init") {
     const dir = flags.global ? getUserRulesDir() : getProjectRulesDir();
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
@@ -9531,7 +9513,7 @@ async function runRuleCommand(args) {
     const rulebookPath = join13(dir, rulebookName, "rulebook.json");
     if (!existsSync17(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
-    const result = await syncRulesConfig(options);
+    const result = await syncRulesConfig(options2);
     printRuleChangeResult(result, "Rule config initialized.");
     return result.ok ? 0 : 1;
   }
@@ -9540,7 +9522,7 @@ async function runRuleCommand(args) {
       console.error("rule add requires a source");
       return 1;
     }
-    const result = await addRulebookSource(value, options);
+    const result = await addRulebookSource(value, options2);
     printRuleChangeResult(result, `Added rulebook source: ${value}`);
     return result.ok ? 0 : 1;
   }
@@ -9550,7 +9532,7 @@ async function runRuleCommand(args) {
       return 1;
     }
     const result = await removeRulebookSource(value, {
-      ...options,
+      ...options2,
       deleteSource: flags.deleteSource
     });
     printRuleChangeResult(result, `Removed rulebook source: ${value}`);
@@ -9558,7 +9540,7 @@ async function runRuleCommand(args) {
   }
   if (subcommand === "update" || subcommand === "sync") {
     const result = await syncRulesConfig({
-      ...options,
+      ...options2,
       only: subcommand === "update" ? value : undefined
     });
     printRuleChangeResult(result, flags.check ? "Rule config checked." : "Rule config synced.");
@@ -9574,7 +9556,7 @@ async function runRuleCommand(args) {
   }
   if (subcommand === "test") {
     const sources = value ? [value] : [];
-    const result = await testRulebookSources(sources, options);
+    const result = await testRulebookSources(sources, options2);
     printRulesTestResult(result);
     return result.ok ? 0 : 1;
   }
@@ -9773,8 +9755,8 @@ function handleCommandHelp(args) {
   if (!commandName || commandName.startsWith("-")) {
     return false;
   }
-  const command = findCommand(commandName);
-  if (command) {
+  const command2 = findCommand(commandName);
+  if (command2) {
     showCommandHelp(commandName);
     process.exit(0);
   }

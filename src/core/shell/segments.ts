@@ -1,17 +1,6 @@
-import { realpathSync } from 'node:fs';
-import { isAbsolute, parse as parsePath } from 'node:path';
 import { type ParseEntry, parse } from 'shell-quote';
-import { parseGitContextAppendEnvAssignment } from '@/core/git/env';
-import { resolveChdirTarget } from '@/core/path';
-import { MAX_STRIP_ITERATIONS, SHELL_OPERATORS } from '@/types';
-
-// Proxy that preserves variable references as $VAR strings instead of expanding them
-const ENV_PROXY = new Proxy(
-  {},
-  {
-    get: (_, name) => `$${String(name)}`,
-  },
-);
+import { SHELL_OPERATORS } from '@/types';
+import { ENV_PROXY, getCommandTokenText, hasUnclosedQuotes } from './shared';
 
 const ARITHMETIC_SENTINEL = '__CC_SAFETY_NET_ARITH_SENTINEL__';
 const BACKTICK_ATTACHED_SUFFIX_SENTINEL = '__CC_SAFETY_NET_BACKTICK_SUFFIX__';
@@ -78,14 +67,11 @@ export function splitShellCommandsWithInfo(command: string): ShellCommandSegment
     }
 
     if (_isCommandSubstitutionStart(tokens, i)) {
-      const { innerSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
-      const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
-      const shouldKeepCurrent =
-        attachedSuffix !== null && !_isRedirectOp(tokens[i - 1]) && !isOperatorToken(tokens[i - 1]);
+      const substitution = getCommandSubstitution(tokens, i);
 
       if (current.length > 0) {
         currentHasDynamicSubstitution = true;
-        if (!shouldKeepCurrent) {
+        if (!substitution.shouldKeepCurrent) {
           segments.push({
             tokens: current,
             hasDynamicSubstitution: currentHasDynamicSubstitution,
@@ -94,13 +80,13 @@ export function splitShellCommandsWithInfo(command: string): ShellCommandSegment
           currentHasDynamicSubstitution = false;
         }
       }
-      for (const seg of innerSegments) {
+      for (const seg of substitution.innerSegments) {
         segments.push({ tokens: seg, hasDynamicSubstitution: false });
       }
-      if (shouldKeepCurrent && attachedSuffix) {
-        current.push(attachedSuffix);
+      if (substitution.shouldKeepCurrent && substitution.attachedSuffix) {
+        current.push(substitution.attachedSuffix);
       }
-      i = endIndex + (attachedSuffix !== null ? 2 : 1);
+      i = substitution.endIndex + (substitution.attachedSuffix !== null ? 2 : 1);
       continue;
     }
 
@@ -121,7 +107,7 @@ export function splitShellCommandsWithInfo(command: string): ShellCommandSegment
       continue;
     }
 
-    const tokenText = _getCommandTokenText(token);
+    const tokenText = getCommandTokenText(token);
     if (tokenText === null) {
       i++;
       continue;
@@ -142,12 +128,16 @@ export function splitShellCommandsWithInfo(command: string): ShellCommandSegment
   return segments;
 }
 
+interface QuoteScanState {
+  inSingle: boolean;
+  inDouble: boolean;
+  escaped: boolean;
+}
+
 function extractInlineCommandSubstitutions(token: string): string[][] {
   const segments: string[][] = [];
   let i = 0;
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
+  const quoteState: QuoteScanState = { inSingle: false, inDouble: false, escaped: false };
 
   while (i < token.length) {
     const char = token[i];
@@ -155,31 +145,12 @@ function extractInlineCommandSubstitutions(token: string): string[][] {
       break;
     }
 
-    if (escaped) {
-      escaped = false;
+    if (advanceQuotedScanState(char, quoteState)) {
       i++;
       continue;
     }
 
-    if (char === '\\') {
-      escaped = true;
-      i++;
-      continue;
-    }
-
-    if (!inDouble && char === "'") {
-      inSingle = !inSingle;
-      i++;
-      continue;
-    }
-
-    if (!inSingle && char === '"') {
-      inDouble = !inDouble;
-      i++;
-      continue;
-    }
-
-    if (!inSingle && char === '$' && token[i + 1] === '(' && token[i + 2] !== '(') {
+    if (!quoteState.inSingle && char === '$' && token[i + 1] === '(' && token[i + 2] !== '(') {
       const end = _findInlineCommandSubstitutionEnd(token, i + 2);
       if (end === -1) {
         break;
@@ -210,21 +181,18 @@ function isParenClose(token: ParseEntry | undefined): boolean {
   return typeof token === 'object' && token !== null && 'op' in token && token.op === ')';
 }
 
-function _getCommandTokenText(token: ParseEntry | undefined): string | null {
-  if (typeof token === 'string') {
-    return token;
-  }
-
-  if (
-    token &&
-    typeof token === 'object' &&
-    'pattern' in token &&
-    typeof token.pattern === 'string'
-  ) {
-    return token.pattern;
-  }
-
-  return null;
+function getCommandSubstitution(tokens: ParseEntry[], index: number) {
+  const { innerSegments, endIndex } = extractCommandSubstitution(tokens, index + 2);
+  const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
+  return {
+    innerSegments,
+    endIndex,
+    attachedSuffix,
+    shouldKeepCurrent:
+      attachedSuffix !== null &&
+      !_isRedirectOp(tokens[index - 1]) &&
+      !isOperatorToken(tokens[index - 1]),
+  };
 }
 
 function extractCommandSubstitution(
@@ -288,22 +256,19 @@ function extractCommandSubstitution(
     }
 
     if (depth === 1 && _isCommandSubstitutionStart(tokens, i)) {
-      const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(tokens, i + 2);
-      const attachedSuffix = _getBacktickAttachedSuffix(tokens[endIndex + 1]);
-      const shouldKeepCurrent =
-        attachedSuffix !== null && !_isRedirectOp(tokens[i - 1]) && !isOperatorToken(tokens[i - 1]);
+      const substitution = getCommandSubstitution(tokens, i);
 
-      if (!shouldKeepCurrent && currentSegment.length > 0) {
+      if (!substitution.shouldKeepCurrent && currentSegment.length > 0) {
         innerSegments.push(currentSegment);
         currentSegment = [];
       }
-      for (const seg of nestedSegments) {
+      for (const seg of substitution.innerSegments) {
         innerSegments.push(seg);
       }
-      if (shouldKeepCurrent && attachedSuffix) {
-        currentSegment.push(attachedSuffix);
+      if (substitution.shouldKeepCurrent && substitution.attachedSuffix) {
+        currentSegment.push(substitution.attachedSuffix);
       }
-      i = endIndex + (attachedSuffix !== null ? 2 : 1);
+      i = substitution.endIndex + (substitution.attachedSuffix !== null ? 2 : 1);
       continue;
     }
 
@@ -325,7 +290,7 @@ function extractCommandSubstitution(
       continue;
     }
 
-    const tokenText = _getCommandTokenText(token);
+    const tokenText = getCommandTokenText(token);
     if (tokenText !== null) {
       currentSegment.push(tokenText);
     }
@@ -352,40 +317,20 @@ function _extractArithmeticSubstitution(
     const token = tokens[i];
 
     if (_isCommandSubstitutionStart(tokens, i)) {
-      if (expression) {
-        innerSegments.push([expression]);
-        expression = '';
-      }
-      const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(
-        tokens as ParseEntry[],
-        i + 2,
-      );
-      for (const seg of nestedSegments) {
-        innerSegments.push(seg);
-      }
-      i = endIndex + 1;
+      const nested = extractArithmeticNestedCommand(innerSegments, expression, tokens, i + 2);
+      expression = nested.expression;
+      i = nested.endIndex + 1;
       continue;
     }
 
-    if (
-      typeof token === 'string' &&
-      token !== '$' &&
-      token.endsWith('$') &&
-      isParenOpen(tokens[i + 1])
-    ) {
-      expression += token.slice(0, -1);
-      if (expression) {
-        innerSegments.push([expression]);
-        expression = '';
+    if (_isAttachedCommandSubstitutionStart(tokens, i)) {
+      const tokenText = tokens[i];
+      if (typeof tokenText === 'string') {
+        expression += tokenText.slice(0, -1);
       }
-      const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(
-        tokens as ParseEntry[],
-        i + 2,
-      );
-      for (const seg of nestedSegments) {
-        innerSegments.push(seg);
-      }
-      i = endIndex + 1;
+      const nested = extractArithmeticNestedCommand(innerSegments, expression, tokens, i + 2);
+      expression = nested.expression;
+      i = nested.endIndex + 1;
       continue;
     }
 
@@ -436,6 +381,25 @@ function _extractArithmeticSubstitution(
   };
 }
 
+function extractArithmeticNestedCommand(
+  innerSegments: string[][],
+  expression: string,
+  tokens: readonly ParseEntry[],
+  startIndex: number,
+): { expression: string; endIndex: number } {
+  if (expression) {
+    innerSegments.push([expression]);
+  }
+  const { innerSegments: nestedSegments, endIndex } = extractCommandSubstitution(
+    tokens as ParseEntry[],
+    startIndex,
+  );
+  for (const seg of nestedSegments) {
+    innerSegments.push(seg);
+  }
+  return { expression: '', endIndex };
+}
+
 function _pushInlineSubstitutionSegments(segments: string[][], token: string): void {
   const inlineSegments = extractInlineCommandSubstitutions(token);
   for (const seg of inlineSegments) {
@@ -451,30 +415,6 @@ function _pushInlineSubstitutionSegmentInfos(
   for (const seg of inlineSegments) {
     segments.push({ tokens: seg, hasDynamicSubstitution: false });
   }
-}
-
-function hasUnclosedQuotes(command: string): boolean {
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
-
-  for (const char of command) {
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (char === "'" && !inDouble) {
-      inSingle = !inSingle;
-    } else if (char === '"' && !inSingle) {
-      inDouble = !inDouble;
-    }
-  }
-
-  return inSingle || inDouble;
 }
 
 function _stripAttachedIoNumbers(command: string): string {
@@ -612,405 +552,6 @@ function _stripAttachedIoNumbers(command: string): string {
   return result;
 }
 
-const ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
-export function parseEnvAssignment(token: string): { name: string; value: string } | null {
-  if (!ENV_ASSIGNMENT_RE.test(token)) {
-    return null;
-  }
-  const eqIdx = token.indexOf('=');
-  return { name: token.slice(0, eqIdx), value: token.slice(eqIdx + 1) };
-}
-
-export interface EnvStrippingResult {
-  tokens: string[];
-  envAssignments: Map<string, string>;
-  cwd?: string | null;
-}
-
-export function stripEnvAssignmentsWithInfo(tokens: string[]): EnvStrippingResult {
-  const envAssignments = new Map<string, string>();
-  let i = 0;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      break;
-    }
-    const assignment = parseEnvAssignment(token);
-    if (!assignment) {
-      break;
-    }
-    envAssignments.set(assignment.name, assignment.value);
-    i++;
-  }
-  return { tokens: tokens.slice(i), envAssignments };
-}
-
-export interface WrapperStrippingResult {
-  tokens: string[];
-  envAssignments: Map<string, string>;
-  cwd?: string | null;
-}
-
-export function stripWrappers(tokens: string[], cwd?: string | null): string[] {
-  return stripWrappersWithInfo(tokens, cwd).tokens;
-}
-
-export function stripWrappersWithInfo(
-  tokens: string[],
-  cwd?: string | null,
-): WrapperStrippingResult {
-  let result = [...tokens];
-  const allEnvAssignments = new Map<string, string>();
-  let currentCwd = cwd;
-
-  for (let iteration = 0; iteration < MAX_STRIP_ITERATIONS; iteration++) {
-    const before = result.join(' ');
-
-    const { tokens: strippedTokens, envAssignments } = stripEnvAssignmentsWithInfo(result);
-    for (const [k, v] of envAssignments) {
-      allEnvAssignments.set(k, v);
-    }
-    result = strippedTokens;
-    if (result.length === 0) break;
-
-    while (
-      result.length > 0 &&
-      result[0]?.includes('=') &&
-      !ENV_ASSIGNMENT_RE.test(result[0] ?? '')
-    ) {
-      const appendAssignment = parseGitContextAppendEnvAssignment(result[0] ?? '');
-      if (appendAssignment) {
-        allEnvAssignments.set(appendAssignment.name, appendAssignment.value);
-      }
-      // Other non-strict leading assignments are dropped to reach the executable token.
-      // Git context append assignments are preserved above so worktree relaxation fails closed.
-      result = result.slice(1);
-    }
-    if (result.length === 0) break;
-
-    const head = result[0]?.toLowerCase();
-
-    // Guard: unknown wrapper type, exit loop
-    if (head !== 'sudo' && head !== 'env' && head !== 'command') {
-      break;
-    }
-
-    if (head === 'sudo') {
-      const sudoResult = stripSudoWithInfo(result, currentCwd);
-      result = sudoResult.tokens;
-      if (sudoResult.cwd !== undefined) {
-        currentCwd = sudoResult.cwd;
-      }
-    }
-    if (head === 'env') {
-      const envResult = stripEnvWithInfo(result, currentCwd);
-      result = envResult.tokens;
-      if (envResult.cwd !== undefined) {
-        currentCwd = envResult.cwd;
-      }
-      for (const [k, v] of envResult.envAssignments) {
-        allEnvAssignments.set(k, v);
-      }
-    }
-    if (head === 'command') {
-      result = stripCommand(result);
-    }
-
-    if (result.join(' ') === before) break;
-  }
-
-  const { tokens: finalTokens, envAssignments: finalAssignments } =
-    stripEnvAssignmentsWithInfo(result);
-  for (const [k, v] of finalAssignments) {
-    allEnvAssignments.set(k, v);
-  }
-
-  return { tokens: finalTokens, envAssignments: allEnvAssignments, cwd: currentCwd };
-}
-
-const SUDO_OPTS_WITH_VALUE = new Set(['-u', '-g', '-C', '-D', '-h', '-p', '-r', '-t', '-T', '-U']);
-
-function stripSudoWithInfo(
-  tokens: string[],
-  cwd?: string | null,
-): { tokens: string[]; cwd?: string | null } {
-  let i = 1;
-  let currentCwd = cwd;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) break;
-
-    if (token === '--') {
-      return { tokens: tokens.slice(i + 1), cwd: currentCwd };
-    }
-
-    // Guard: not an option, exit loop
-    if (!token.startsWith('-')) {
-      break;
-    }
-
-    if (token === '-D' || token === '--chdir') {
-      const target = tokens[i + 1];
-      currentCwd = target ? resolveWrapperCwd(currentCwd, target) : null;
-      i += 2;
-      continue;
-    }
-
-    if (token.startsWith('--chdir=')) {
-      currentCwd = resolveWrapperCwd(currentCwd, token.slice('--chdir='.length));
-      i++;
-      continue;
-    }
-
-    if (token.startsWith('-D') && token.length > 2) {
-      currentCwd = resolveWrapperCwd(currentCwd, token.slice(2));
-      i++;
-      continue;
-    }
-
-    if (token === '-i' || token === '--login') {
-      currentCwd = null;
-      i++;
-      continue;
-    }
-
-    if (SUDO_OPTS_WITH_VALUE.has(token)) {
-      i += 2;
-      continue;
-    }
-
-    i++;
-  }
-  return { tokens: tokens.slice(i), cwd: currentCwd };
-}
-
-const ENV_OPTS_NO_VALUE = new Set(['-i', '-0', '--null']);
-const ENV_OPTS_WITH_VALUE = new Set([
-  '-u',
-  '--unset',
-  '-C',
-  '--chdir',
-  '-S',
-  '--split-string',
-  '-P',
-]);
-
-function stripEnvWithInfo(tokens: string[], cwd?: string | null): EnvStrippingResult {
-  const envAssignments = new Map<string, string>();
-  let currentCwd = cwd;
-  let expandedTokens = tokens;
-  let i = 1;
-  while (i < expandedTokens.length) {
-    const token = expandedTokens[i];
-    if (!token) break;
-
-    if (token === '--') {
-      return { tokens: expandedTokens.slice(i + 1), envAssignments, cwd: currentCwd };
-    }
-
-    if (ENV_OPTS_NO_VALUE.has(token)) {
-      i++;
-      continue;
-    }
-
-    if (token === '-S' || token === '--split-string') {
-      const splitValue = expandedTokens[i + 1];
-      const splitTokens = splitValue !== undefined ? parseEnvSplitString(splitValue) : null;
-      if (!splitTokens) {
-        currentCwd = null;
-        i += 2;
-        continue;
-      }
-      expandedTokens = [
-        ...expandedTokens.slice(0, i),
-        ...splitTokens,
-        ...expandedTokens.slice(i + 2),
-      ];
-      continue;
-    }
-
-    if (token.startsWith('-S') && token.length > 2) {
-      const splitTokens = parseEnvSplitString(token.slice('-S'.length));
-      if (!splitTokens) {
-        currentCwd = null;
-        i++;
-        continue;
-      }
-      expandedTokens = [
-        ...expandedTokens.slice(0, i),
-        ...splitTokens,
-        ...expandedTokens.slice(i + 1),
-      ];
-      continue;
-    }
-
-    if (token.startsWith('--split-string=')) {
-      const splitTokens = parseEnvSplitString(token.slice('--split-string='.length));
-      if (!splitTokens) {
-        currentCwd = null;
-        i++;
-        continue;
-      }
-      expandedTokens = [
-        ...expandedTokens.slice(0, i),
-        ...splitTokens,
-        ...expandedTokens.slice(i + 1),
-      ];
-      continue;
-    }
-
-    if (ENV_OPTS_WITH_VALUE.has(token)) {
-      if (token === '-C' || token === '--chdir') {
-        const target = expandedTokens[i + 1];
-        currentCwd = target ? resolveWrapperCwd(currentCwd, target) : null;
-      }
-      i += 2;
-      continue;
-    }
-
-    if (token.startsWith('-u=') || token.startsWith('--unset=')) {
-      i++;
-      continue;
-    }
-
-    if ((token.startsWith('-C') && token.length > 2) || token.startsWith('--chdir=')) {
-      const target = token.startsWith('--chdir=')
-        ? token.slice('--chdir='.length)
-        : token.startsWith('-C=')
-          ? token.slice('-C='.length)
-          : token.slice('-C'.length);
-      currentCwd = resolveWrapperCwd(currentCwd, target);
-      i++;
-      continue;
-    }
-
-    if (token.startsWith('-P')) {
-      i++;
-      continue;
-    }
-
-    if (token.startsWith('-')) {
-      i++;
-      continue;
-    }
-
-    // Not an option - try to parse as env assignment
-    const assignment = parseEnvAssignment(token);
-    if (!assignment) {
-      break;
-    }
-    envAssignments.set(assignment.name, assignment.value);
-    i++;
-  }
-  return { tokens: expandedTokens.slice(i), envAssignments, cwd: currentCwd };
-}
-
-function parseEnvSplitString(value: string): string[] | null {
-  if (hasUnclosedQuotes(value)) {
-    return null;
-  }
-
-  const parsed = parse(value, ENV_PROXY);
-  const result: string[] = [];
-  for (const entry of parsed) {
-    const token = _getCommandTokenText(entry as ParseEntry);
-    if (token === null) {
-      return null;
-    }
-    result.push(token);
-  }
-  return result;
-}
-
-function resolveWrapperCwd(cwd: string | null | undefined, target: string): string | null {
-  if (target === '') {
-    return null;
-  }
-  try {
-    if (!cwd && !isAbsolute(target)) {
-      return null;
-    }
-    const baseCwd = isAbsolute(target) ? getPathRoot(target) : realpathSync(cwd ?? '/');
-    return resolveChdirTarget(baseCwd, target);
-  } catch {
-    return null;
-  }
-}
-
-function getPathRoot(target: string): string {
-  return parsePath(target).root;
-}
-
-function stripCommand(tokens: string[]): string[] {
-  let i = 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) break;
-
-    if (token === '-p' || token === '-v' || token === '-V') {
-      i++;
-      continue;
-    }
-
-    if (token === '--') {
-      return tokens.slice(i + 1);
-    }
-
-    // Check for combined short opts like -pv
-    if (token.startsWith('-') && !token.startsWith('--') && token.length > 1) {
-      const chars = token.slice(1);
-      if (!/^[pvV]+$/.test(chars)) {
-        break;
-      }
-      i++;
-      continue;
-    }
-
-    break;
-  }
-  return tokens.slice(i);
-}
-
-export function extractShortOpts(
-  tokens: readonly string[],
-  options?: { readonly shortOptsWithValue?: ReadonlySet<string> },
-): Set<string> {
-  const opts = new Set<string>();
-  let pastDoubleDash = false;
-
-  for (const token of tokens) {
-    if (token === '--') {
-      pastDoubleDash = true;
-      continue;
-    }
-    if (pastDoubleDash) continue;
-
-    if (token.startsWith('-') && !token.startsWith('--') && token.length > 1) {
-      for (let i = 1; i < token.length; i++) {
-        const char = token[i];
-        if (!char || !/[a-zA-Z]/.test(char)) {
-          break;
-        }
-        const shortOpt = `-${char}`;
-        opts.add(shortOpt);
-        if (options?.shortOptsWithValue?.has(shortOpt)) {
-          break;
-        }
-      }
-    }
-  }
-
-  return opts;
-}
-
-export function normalizeCommandToken(token: string): string {
-  return getBasename(token).toLowerCase();
-}
-
-export function getBasename(token: string): string {
-  return token.includes('/') ? (token.split('/').pop() ?? token) : token;
-}
-
 function isOperator(token: ParseEntry): boolean {
   return (
     typeof token === 'object' &&
@@ -1125,42 +666,19 @@ function _getRedirectTargetInfo(
 
 function _findInlineCommandSubstitutionEnd(token: string, startIndex: number): number {
   let depth = 1;
-  let i = startIndex;
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
+  const quoteState: QuoteScanState = { inSingle: false, inDouble: false, escaped: false };
 
-  while (i < token.length) {
+  for (let i = startIndex; i < token.length; i++) {
     const char = token[i];
     if (!char) {
       break;
     }
 
-    if (escaped) {
-      escaped = false;
-      i++;
+    if (advanceQuotedScanState(char, quoteState)) {
       continue;
     }
 
-    if (char === '\\') {
-      escaped = true;
-      i++;
-      continue;
-    }
-
-    if (!inDouble && char === "'") {
-      inSingle = !inSingle;
-      i++;
-      continue;
-    }
-
-    if (!inSingle && char === '"') {
-      inDouble = !inDouble;
-      i++;
-      continue;
-    }
-
-    if (!inSingle && !inDouble) {
+    if (!quoteState.inSingle && !quoteState.inDouble) {
       if (char === '(') {
         depth++;
       } else if (char === ')') {
@@ -1170,11 +688,33 @@ function _findInlineCommandSubstitutionEnd(token: string, startIndex: number): n
         }
       }
     }
-
-    i++;
   }
 
   return -1;
+}
+
+function advanceQuotedScanState(char: string, state: QuoteScanState): boolean {
+  if (state.escaped) {
+    state.escaped = false;
+    return true;
+  }
+
+  if (char === '\\') {
+    state.escaped = true;
+    return true;
+  }
+
+  if (!state.inDouble && char === "'") {
+    state.inSingle = !state.inSingle;
+    return true;
+  }
+
+  if (!state.inSingle && char === '"') {
+    state.inDouble = !state.inDouble;
+    return true;
+  }
+
+  return false;
 }
 
 function _findBacktickEnd(command: string, startIndex: number): number {
