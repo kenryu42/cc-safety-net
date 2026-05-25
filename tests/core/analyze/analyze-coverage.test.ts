@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
 import { analyzeCommand } from '@/core/analyze';
+import { analyzeChildCommand } from '@/core/analyze/child-analyzer';
+import { analyzeFind } from '@/core/analyze/find';
 import type { Config } from '@/types';
 import {
   createLinkedWorktreeFixture,
@@ -399,6 +401,81 @@ describe('analyzeCommand (coverage)', () => {
         config: EMPTY_CONFIG,
       });
       expect(result).toBeNull();
+    });
+  });
+
+  describe('child command analyzer branches', () => {
+    const childContext = {
+      cwd: '/tmp',
+      originalCwd: '/tmp',
+      paranoidRm: false,
+      allowTmpdirVar: true,
+      envAssignments: new Map<string, string>(),
+    };
+    const analyzeNested = (command: string) =>
+      analyzeCommand(command, { cwd: '/tmp', config: EMPTY_CONFIG })?.reason ?? null;
+
+    test('empty child head returns null', () => {
+      expect(analyzeChildCommand([''], childContext)).toBeNull();
+    });
+
+    test('shell child without dynamic input analyzes dash c script', () => {
+      const result = analyzeChildCommand(['sh', '-c', 'git reset --hard'], {
+        ...childContext,
+        analyzeNested,
+      });
+      expect(result).toContain('git reset --hard');
+    });
+
+    test('shell child without dash c script returns null', () => {
+      expect(analyzeChildCommand(['sh'], childContext)).toBeNull();
+    });
+
+    test('dynamic rm child falls back to caller reason when target is otherwise allowed', () => {
+      expect(
+        analyzeChildCommand(['rm', '-rf', '/tmp/a'], childContext, {
+          dynamicInput: true,
+          rmDynamicReason: 'dynamic rm denied',
+        }),
+      ).toBe('dynamic rm denied');
+    });
+
+    test('find exec supports analyzeNested fallback when token analyzer is absent', () => {
+      const result = analyzeFind(['find', '.', '-exec', 'git', 'reset', '--hard', ';'], {
+        cwd: '/tmp',
+        envAssignments: new Map<string, string>(),
+        analyzeNested,
+      });
+      expect(result).toContain('git reset --hard');
+    });
+
+    test('find child command reuses child analyzer for exec commands', () => {
+      expect(
+        analyzeChildCommand(['find', '.', '-exec', 'git', 'reset', '--hard', ';'], {
+          ...childContext,
+          analyzeNested,
+        }),
+      ).toContain('git reset --hard');
+    });
+
+    test('find exec analyzeNested fallback continues when command is safe', () => {
+      expect(
+        analyzeFind(['find', '.', '-exec', 'echo', '{}', ';'], {
+          cwd: '/tmp',
+          envAssignments: new Map<string, string>(),
+          analyzeNested,
+        }),
+      ).toBeNull();
+    });
+
+    test('find exec direct fallback still handles wrapped rm commands', () => {
+      expect(analyzeFind(['find', '.', '-exec', 'busybox', 'rm', '-rf', '{}', ';'])).toContain(
+        'find -exec rm -rf',
+      );
+    });
+
+    test('find exec direct fallback allows safe command', () => {
+      expect(analyzeFind(['find', '.', '-exec', 'echo', '{}', ';'])).toBeNull();
     });
   });
 });
