@@ -535,7 +535,7 @@ import { dirname as dirname6 } from "node:path";
 
 // src/core/config.ts
 import { existsSync as existsSync7, readFileSync as readFileSync7 } from "node:fs";
-import { resolve as resolve3 } from "node:path";
+import { resolve as resolve4 } from "node:path";
 
 // src/types.ts
 var MAX_RECURSION_DEPTH = 10;
@@ -2798,8 +2798,18 @@ function withTerminalPeriod(message) {
 }
 
 // src/core/rules/policy/sync.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync6, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname5, join as join5 } from "node:path";
+import {
+  existsSync as existsSync6,
+  mkdirSync as mkdirSync2,
+  readdirSync as readdirSync2,
+  readFileSync as readFileSync6,
+  rmdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { dirname as dirname5, isAbsolute as isAbsolute4, join as join5, relative as relative2, resolve as resolve3, sep as sep3 } from "node:path";
 async function syncRulesConfig(options = {}) {
   const internalOptions = options;
   const scope = getScopePaths(options);
@@ -2928,6 +2938,9 @@ async function removeRulebookSource(match, options = {}) {
   const matches = getRemoveMatches(loaded.config.rules, lockResult.lock, match);
   if (!matches.ok)
     return matches.result;
+  const sourceDirs = options.deleteSource ? getLocalSourceDirsForDelete(scope.configDir, matches.specs, lockResult.lock) : { ok: true, dirs: [] };
+  if (!sourceDirs.ok)
+    return sourceDirs.result;
   const before = readFileSync6(scope.configPath, "utf-8");
   writeJsonAtomic(scope.configPath, {
     version: 1,
@@ -2937,6 +2950,11 @@ async function removeRulebookSource(match, options = {}) {
   const result = await syncRulesConfig(options);
   if (!result.ok) {
     restoreConfig(scope.configPath, before);
+    return result;
+  }
+  const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
+  if (!deleteResult.ok) {
+    return deleteResult.result;
   }
   return result;
 }
@@ -3018,6 +3036,63 @@ function pruneUnreferencedRulebookCaches(entries, configDir, options) {
       ];
     }
   });
+}
+function getLocalSourceDirsForDelete(configDir, specs, lock) {
+  const entriesBySpec = new Map(lock?.rulebooks.map((entry) => [entry.spec, entry]) ?? []);
+  const errors = specs.flatMap((spec) => {
+    const entry = entriesBySpec.get(spec);
+    if (!entry) {
+      return NAME_PATTERN.test(spec) ? [] : ["--delete-source can only delete local rulebook sources"];
+    }
+    return entry.kind === "local-directory" ? [] : ["--delete-source can only delete local rulebook sources"];
+  });
+  const dirs = specs.map((spec) => {
+    const entry = entriesBySpec.get(spec);
+    return join5(configDir, entry?.kind === "local-directory" ? entry.path : spec);
+  });
+  const dirErrors = errors.length > 0 ? [] : dirs.flatMap((dir) => getLocalSourceDirDeleteError(configDir, dir));
+  const allErrors = [...errors, ...dirErrors];
+  return allErrors.length > 0 ? { ok: false, result: { ok: false, errors: allErrors, warnings: [], entries: [] } } : { ok: true, dirs };
+}
+function getLocalSourceDirDeleteError(configDir, dir) {
+  const resolvedConfigDir = resolve3(configDir);
+  const resolvedDir = resolve3(dir);
+  const relativeDir = relative2(resolvedConfigDir, resolvedDir);
+  if (relativeDir === "" || relativeDir === ".." || relativeDir.startsWith(`..${sep3}`) || isAbsolute4(relativeDir)) {
+    return [`Refusing to delete local rulebook source outside ${configDir}: ${dir}`];
+  }
+  if (!existsSync6(resolvedDir))
+    return [`Local rulebook source directory not found: ${dir}`];
+  if (!statSync(resolvedDir).isDirectory()) {
+    return [`Local rulebook source is not a directory: ${dir}`];
+  }
+  const entries = readdirSync2(resolvedDir);
+  if (!entries.includes("rulebook.json")) {
+    return [`Local rulebook source directory is missing rulebook.json: ${dir}`];
+  }
+  if (!statSync(join5(resolvedDir, "rulebook.json")).isFile()) {
+    return [`Local rulebook source rulebook.json is not a file: ${dir}`];
+  }
+  if (entries.length > 1) {
+    return [
+      `Local rulebook source directory contains extra files: ${dir}. delete manually if you really want to remove the directory.`
+    ];
+  }
+  return [];
+}
+function deleteLocalSourceDirs(dirs) {
+  const errors = dirs.flatMap((dir) => {
+    try {
+      unlinkSync(join5(dir, "rulebook.json"));
+      rmdirSync(dir);
+      return [];
+    } catch (error) {
+      return [
+        `Failed to delete local rulebook source ${dir}: ${error instanceof Error ? error.message : String(error)}`
+      ];
+    }
+  });
+  return errors.length > 0 ? { ok: false, result: { ok: false, errors, warnings: [], entries: [] } } : { ok: true };
 }
 function restoreConfig(path, content) {
   if (content === null) {
@@ -3147,7 +3222,7 @@ function readConfigFileInput(path) {
   }
 }
 function getLegacyProjectConfigPath(cwd) {
-  return resolve3(cwd ?? process.cwd(), ".safety-net.json");
+  return resolve4(cwd ?? process.cwd(), ".safety-net.json");
 }
 function validateRulesConfigFile(path) {
   const loaded = readConfigFileInput(path);
@@ -4029,7 +4104,7 @@ function collectCommandTemplate(tokens, start) {
 // src/core/analyze/rm.ts
 import { realpathSync as realpathSync3 } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
-import { normalize, resolve as resolve4, sep as sep3 } from "node:path";
+import { normalize, resolve as resolve5, sep as sep4 } from "node:path";
 var IS_WINDOWS = process.platform === "win32";
 function normalizePathForComparison(p) {
   let normalized = normalize(p);
@@ -4173,7 +4248,7 @@ function isTempTarget(path, allowTmpdirVar) {
   const systemTmpdir = tmpdir();
   const normalizedTmpdir = normalizePathForComparison(systemTmpdir);
   const pathToCompare = normalizePathForComparison(normalized);
-  if (pathToCompare.startsWith(`${normalizedTmpdir}${sep3}`) || pathToCompare === normalizedTmpdir) {
+  if (pathToCompare.startsWith(`${normalizedTmpdir}${sep4}`) || pathToCompare === normalizedTmpdir) {
     return true;
   }
   if (allowTmpdirVar) {
@@ -4201,13 +4276,13 @@ function isCwdSelfTarget(target, cwd) {
     return true;
   }
   try {
-    const resolved = resolve4(cwd, target);
+    const resolved = resolve5(cwd, target);
     const realCwd = realpathSync3(cwd);
     const realResolved = realpathSync3(resolved);
     return normalizePathForComparison(realResolved) === normalizePathForComparison(realCwd);
   } catch {
     try {
-      const resolved = resolve4(cwd, target);
+      const resolved = resolve5(cwd, target);
       return normalizePathForComparison(resolved) === normalizePathForComparison(cwd);
     } catch {
       return false;
@@ -4225,7 +4300,7 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
   if (target.startsWith("/") || /^[A-Za-z]:[\\/]/.test(target)) {
     try {
       const normalizedTarget = normalizePathForComparison(target);
-      const normalizedCwd = `${normalizePathForComparison(originalCwd)}${sep3}`;
+      const normalizedCwd = `${normalizePathForComparison(originalCwd)}${sep4}`;
       return normalizedTarget.startsWith(normalizedCwd);
     } catch {
       return false;
@@ -4233,10 +4308,10 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
   }
   if (target.startsWith("./") || target.startsWith(".\\") || !target.includes("/") && !target.includes("\\")) {
     try {
-      const resolved = resolve4(resolveCwd, target);
+      const resolved = resolve5(resolveCwd, target);
       const normalizedResolved = normalizePathForComparison(resolved);
       const normalizedOriginalCwd = normalizePathForComparison(originalCwd);
-      return normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep3}`) || normalizedResolved === normalizedOriginalCwd;
+      return normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep4}`) || normalizedResolved === normalizedOriginalCwd;
     } catch {
       return false;
     }
@@ -4245,10 +4320,10 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
     return false;
   }
   try {
-    const resolved = resolve4(resolveCwd, target);
+    const resolved = resolve5(resolveCwd, target);
     const normalizedResolved = normalizePathForComparison(resolved);
     const normalizedCwd = normalizePathForComparison(originalCwd);
-    return normalizedResolved.startsWith(`${normalizedCwd}${sep3}`) || normalizedResolved === normalizedCwd;
+    return normalizedResolved.startsWith(`${normalizedCwd}${sep4}`) || normalizedResolved === normalizedCwd;
   } catch {
     return false;
   }
@@ -4276,11 +4351,11 @@ function extractDashCArg(tokens) {
 // src/core/git/config.ts
 import { execFileSync } from "node:child_process";
 import { existsSync as existsSync10, readFileSync as readFileSync9 } from "node:fs";
-import { dirname as dirname8, isAbsolute as isAbsolute5, join as join7, resolve as resolve6 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute6, join as join7, resolve as resolve7 } from "node:path";
 
 // src/core/git/worktree.ts
-import { existsSync as existsSync9, lstatSync as lstatSync2, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync } from "node:fs";
-import { dirname as dirname7, isAbsolute as isAbsolute4, join as join6, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync9, lstatSync as lstatSync2, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync as statSync2 } from "node:fs";
+import { dirname as dirname7, isAbsolute as isAbsolute5, join as join6, resolve as resolve6 } from "node:path";
 var GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
   "-c",
   "-C",
@@ -4304,7 +4379,7 @@ function getGitExecutionContext(tokens, cwd) {
   }
   let gitCwd;
   try {
-    gitCwd = realpathSync4(resolve5(cwd));
+    gitCwd = realpathSync4(resolve6(cwd));
   } catch {
     return { gitCwd: null, hasExplicitGitContext: false };
   }
@@ -4384,7 +4459,7 @@ function isLinkedWorktree(cwd) {
     if (rawGitDir === "") {
       return false;
     }
-    const gitDir = isAbsolute4(rawGitDir) ? rawGitDir : resolve5(dirname7(dotGitPath), rawGitDir);
+    const gitDir = isAbsolute5(rawGitDir) ? rawGitDir : resolve6(dirname7(dotGitPath), rawGitDir);
     if (!existsSync9(join6(gitDir, "commondir"))) {
       return false;
     }
@@ -4405,7 +4480,7 @@ function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
   if (rawBacklink === "") {
     return false;
   }
-  const linkedDotGitPath = isAbsolute4(rawBacklink) ? rawBacklink : resolve5(gitDir, rawBacklink);
+  const linkedDotGitPath = isAbsolute5(rawBacklink) ? rawBacklink : resolve6(gitDir, rawBacklink);
   try {
     return sameFilesystemPath(linkedDotGitPath, dotGitPath);
   } catch {
@@ -4421,7 +4496,7 @@ function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
   if (configuredWorktree === null) {
     return true;
   }
-  const resolvedConfiguredWorktree = isAbsolute4(configuredWorktree) ? configuredWorktree : resolve5(gitDir, configuredWorktree);
+  const resolvedConfiguredWorktree = isAbsolute5(configuredWorktree) ? configuredWorktree : resolve6(gitDir, configuredWorktree);
   try {
     return sameFilesystemPath(resolvedConfiguredWorktree, worktreeRoot);
   } catch {
@@ -4430,8 +4505,8 @@ function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
 }
 function sameFilesystemPath(left, right) {
   try {
-    const leftStat = statSync(left);
-    const rightStat = statSync(right);
+    const leftStat = statSync2(left);
+    const rightStat = statSync2(right);
     if (leftStat.ino !== 0 && rightStat.ino !== 0 && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino) {
       return true;
     }
@@ -4525,7 +4600,7 @@ function resolveGitCwd(baseCwd, target) {
 }
 function isDirectory(path) {
   try {
-    return statSync(path).isDirectory();
+    return statSync2(path).isDirectory();
   } catch {
     return false;
   }
@@ -4733,7 +4808,7 @@ function resolveGitDirFromDotGit(dotGitPath) {
     if (rawGitDir === "") {
       return null;
     }
-    return isAbsolute5(rawGitDir) ? rawGitDir : resolve6(dirname8(dotGitPath), rawGitDir);
+    return isAbsolute6(rawGitDir) ? rawGitDir : resolve7(dirname8(dotGitPath), rawGitDir);
   } catch {
     return null;
   }
@@ -4748,7 +4823,7 @@ function resolveCommonGitDir(gitDir) {
     if (rawCommonDir === "") {
       return null;
     }
-    return isAbsolute5(rawCommonDir) ? rawCommonDir : resolve6(gitDir, rawCommonDir);
+    return isAbsolute6(rawCommonDir) ? rawCommonDir : resolve7(gitDir, rawCommonDir);
   } catch {
     return null;
   }
@@ -5492,7 +5567,7 @@ function parseParallelCommand(tokens) {
 
 // src/core/analyze/tmpdir.ts
 import { tmpdir as tmpdir2 } from "node:os";
-import { normalize as normalize2, sep as sep4 } from "node:path";
+import { normalize as normalize2, sep as sep5 } from "node:path";
 function isTmpdirOverriddenToNonTemp(envAssignments) {
   if (!envAssignments.has("TMPDIR")) {
     return false;
@@ -5512,7 +5587,7 @@ function isPathOrSubpath(path, basePath) {
   if (path === basePath) {
     return true;
   }
-  const baseWithSlash = basePath.endsWith(sep4) ? basePath : `${basePath}${sep4}`;
+  const baseWithSlash = basePath.endsWith(sep5) ? basePath : `${basePath}${sep5}`;
   return path.startsWith(baseWithSlash);
 }
 
@@ -6795,7 +6870,7 @@ var defaultVersionFetcher = async (args) => {
   const [cmd, ...rest] = args;
   if (!cmd)
     return null;
-  return new Promise((resolve7) => {
+  return new Promise((resolve8) => {
     try {
       const proc = spawn(cmd, rest, {
         stdio: ["ignore", "pipe", "pipe"]
@@ -6814,7 +6889,7 @@ var defaultVersionFetcher = async (args) => {
           return;
         isSettled = true;
         clearTimeout(timeoutId);
-        resolve7(value);
+        resolve8(value);
       };
       const timeoutId = setTimeout(() => {
         proc.kill();
@@ -6827,7 +6902,7 @@ var defaultVersionFetcher = async (args) => {
         finish(null);
       });
     } catch {
-      resolve7(null);
+      resolve8(null);
     }
   });
 };
@@ -7011,7 +7086,7 @@ function printReport(report) {
 
 // src/bin/explain/config.ts
 import { existsSync as existsSync12 } from "node:fs";
-import { resolve as resolve7 } from "node:path";
+import { resolve as resolve8 } from "node:path";
 function getConfigSource(options) {
   const projectPath = getProjectRulesConfigPath(options?.cwd);
   let invalidProjectPath = null;
@@ -7033,7 +7108,7 @@ function getConfigSource(options) {
   return { configSource: null, configValid: true };
 }
 function buildAnalyzeOptions(explainOptions) {
-  const cwd = resolve7(explainOptions?.cwd ?? process.cwd());
+  const cwd = resolve8(explainOptions?.cwd ?? process.cwd());
   const modes = getSafetyNetEnvModes();
   return {
     cwd,
@@ -9173,8 +9248,8 @@ function restoreFiles(snapshots) {
 }
 
 // src/bin/rule/verify.ts
-import { existsSync as existsSync16, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname11, join as join12, resolve as resolve8 } from "node:path";
+import { existsSync as existsSync16, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync3, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname11, join as join12, resolve as resolve9 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -9185,7 +9260,7 @@ function runRulesVerify(options = {}) {
   const projectConfig = options.projectConfigPath ?? getProjectRulesConfigPath(cwd);
   const legacyUserConfig = options.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
   const legacyProjectConfig = options.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
-  const githubSourceRulesDir = resolve8(cwd, RULES_DIR);
+  const githubSourceRulesDir = resolve9(cwd, RULES_DIR);
   const userConfigDir = dirname11(userConfig);
   let hasErrors = false;
   let hasWarnings = false;
@@ -9233,7 +9308,7 @@ function runRulesVerify(options = {}) {
     }));
     configsChecked.push({
       scope: "Project",
-      path: resolve8(projectConfig),
+      path: resolve9(projectConfig),
       result,
       schema: "rules",
       sourceDisplayMap: getRulesConfigSourceDisplayMap(projectConfig)
@@ -9250,7 +9325,7 @@ function runRulesVerify(options = {}) {
     const result = validateConfigFile(legacyProjectConfig);
     configsChecked.push({
       scope: "Project",
-      path: resolve8(legacyProjectConfig),
+      path: resolve9(legacyProjectConfig),
       result,
       schema: "legacy",
       sourceDisplayMap: new Map,
@@ -9320,7 +9395,7 @@ function validateGitHubSourceRules(path) {
   const errors = [];
   const ruleNames = new Set;
   try {
-    if (!statSync2(path).isDirectory()) {
+    if (!statSync3(path).isDirectory()) {
       return { errors: [`${RULES_DIR} must be a directory`], ruleNames };
     }
   } catch (error) {
@@ -9501,7 +9576,10 @@ async function runRuleCommand(args) {
       console.error("rule remove requires a source");
       return 1;
     }
-    const result = await removeRulebookSource(value, options);
+    const result = await removeRulebookSource(value, {
+      ...options,
+      deleteSource: flags.deleteSource
+    });
     printRuleChangeResult(result, `Removed rulebook source: ${value}`);
     return result.ok ? 0 : 1;
   }
@@ -9544,6 +9622,7 @@ function parseRuleFlags(args) {
     global: false,
     check: false,
     cleanup: false,
+    deleteSource: false,
     help: false,
     positionals: [],
     errors: []
@@ -9561,6 +9640,14 @@ function parseRuleFlags(args) {
       flags.global = true;
     } else if (arg === "--check") {
       flags.check = true;
+    } else if (arg === "--delete-source") {
+      if (flags.positionals[0] === "remove") {
+        flags.deleteSource = true;
+      } else if (flags.positionals[0] && RULE_SUBCOMMANDS.has(flags.positionals[0])) {
+        flags.errors.push(`Unknown option for rule ${flags.positionals[0]}: ${arg}`);
+      } else {
+        flags.errors.push(`Unknown rule option: ${arg}`);
+      }
     } else if (arg === "-h" || arg === "--help") {
       flags.help = true;
     } else if (arg.startsWith("-")) {
@@ -9612,7 +9699,7 @@ async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
   }
-  return new Promise((resolve9) => {
+  return new Promise((resolve10) => {
     let data = "";
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", (chunk) => {
@@ -9620,10 +9707,10 @@ async function readStdinAsync() {
     });
     process.stdin.on("end", () => {
       const trimmed = data.trim();
-      resolve9(trimmed || null);
+      resolve10(trimmed || null);
     });
     process.stdin.on("error", () => {
-      resolve9(null);
+      resolve10(null);
     });
   });
 }

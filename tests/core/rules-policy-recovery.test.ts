@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -86,6 +87,50 @@ function writeProjectRulebook(tempDir: string, name = 'project-rules') {
   mkdirSync(dirname(path), { recursive: true });
   writeRulebook(path, name);
   return path;
+}
+
+function writeProjectRulebookConfig(tempDir: string): void {
+  writeProjectRulebook(tempDir);
+  writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['project-rules']);
+}
+
+function writeProjectConfigOnly(tempDir: string): void {
+  mkdirSync(getProjectRulesDir(tempDir), { recursive: true });
+  writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['project-rules']);
+}
+
+async function expectProjectRulesDeleteSourceRemoved(tempDir: string): Promise<void> {
+  const removed = await removeRulebookSource('project-rules', {
+    cwd: tempDir,
+    deleteSource: true,
+  });
+
+  expect(removed.ok).toBe(true);
+  expect(readRulesConfig(getProjectRulesConfigPath(tempDir)).config?.rules).toEqual([]);
+  expect(existsSync(join(getProjectRulesDir(tempDir), 'project-rules'))).toBe(false);
+}
+
+async function expectProjectRulesDeleteSourcePreflightError(
+  name: string,
+  setup: (tempDir: string) => void,
+  message: string,
+): Promise<void> {
+  const tempDir = makeTempDir(name);
+  try {
+    setup(tempDir);
+    const result = await removeRulebookSource('project-rules', {
+      cwd: tempDir,
+      deleteSource: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]).toContain(message);
+    expect(readRulesConfig(getProjectRulesConfigPath(tempDir)).config?.rules).toEqual([
+      'project-rules',
+    ]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function mockGitHubRepoRulebooksFetch(
@@ -355,6 +400,147 @@ describe('rules policy recovery coverage', () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  test('removes clean local rulebook source directory when requested', async () => {
+    const tempDir = makeTempDir('rules-policy-remove-delete-source');
+
+    try {
+      writeProjectRulebookConfig(tempDir);
+      const synced = await syncRulesConfig({ cwd: tempDir });
+      expect(synced.ok).toBe(true);
+      const cachePath = getRulebookCachePath(synced.entries[0] as RulebookLockEntry, {
+        cacheConfigDir: getProjectRulesDir(tempDir),
+      });
+      expect(existsSync(cachePath)).toBe(true);
+
+      await expectProjectRulesDeleteSourceRemoved(tempDir);
+      expect(readdirSync(join(tempDir, '.cc-safety-net', 'cache', 'rulebooks'))).toEqual([]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('removes clean bare local source without a lockfile when requested', async () => {
+    const tempDir = makeTempDir('rules-policy-remove-delete-source-bare');
+
+    try {
+      writeProjectRulebookConfig(tempDir);
+      await expectProjectRulesDeleteSourceRemoved(tempDir);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses to delete dirty local or GitHub rulebook sources', async () => {
+    const tempDir = makeTempDir('rules-policy-remove-delete-source-refuse');
+    const githubEntry = {
+      spec: 'owner/repo#main/alpha',
+      kind: 'github' as const,
+      owner: 'owner',
+      repo: 'repo',
+      ref: 'main',
+      commit: 'abc123',
+      path: '.cc-safety-net/rules/alpha/rulebook.json',
+      name: 'alpha',
+      version: '1.0.0',
+      digest: 'sha256:'.padEnd(71, 'a'),
+    };
+
+    try {
+      writeProjectRulebook(tempDir);
+      writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['project-rules']);
+      expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
+      writeFileSync(join(getProjectRulesDir(tempDir), 'project-rules', 'notes.txt'), 'keep me');
+
+      const dirtyResult = await removeRulebookSource('project-rules', {
+        cwd: tempDir,
+        deleteSource: true,
+      });
+
+      expect(dirtyResult.ok).toBe(false);
+      expect(dirtyResult.errors[0]).toContain('delete manually');
+      expect(readRulesConfig(getProjectRulesConfigPath(tempDir)).config?.rules).toEqual([
+        'project-rules',
+      ]);
+
+      writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['owner/repo#main/alpha']);
+      writeFileSync(
+        getProjectRulesLockPath(tempDir),
+        JSON.stringify({ version: 1, rulebooks: [githubEntry] }),
+      );
+      const githubResult = await removeRulebookSource('alpha', {
+        cwd: tempDir,
+        deleteSource: true,
+      });
+
+      expect(githubResult.ok).toBe(false);
+      expect(githubResult.errors).toContain(
+        '--delete-source can only delete local rulebook sources',
+      );
+      expect(readRulesConfig(getProjectRulesConfigPath(tempDir)).config?.rules).toEqual([
+        'owner/repo#main/alpha',
+      ]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses unsafe local source directory shapes before changing config', async () => {
+    await expectProjectRulesDeleteSourcePreflightError(
+      'rules-policy-remove-delete-source-missing-dir',
+      writeProjectConfigOnly,
+      'directory not found',
+    );
+    await expectProjectRulesDeleteSourcePreflightError(
+      'rules-policy-remove-delete-source-not-dir',
+      (tempDir) => {
+        writeProjectConfigOnly(tempDir);
+        writeFileSync(join(getProjectRulesDir(tempDir), 'project-rules'), 'not a directory');
+      },
+      'not a directory',
+    );
+    await expectProjectRulesDeleteSourcePreflightError(
+      'rules-policy-remove-delete-source-missing-rulebook',
+      (tempDir) => {
+        writeProjectConfigOnly(tempDir);
+        mkdirSync(join(getProjectRulesDir(tempDir), 'project-rules'));
+      },
+      'missing rulebook.json',
+    );
+    await expectProjectRulesDeleteSourcePreflightError(
+      'rules-policy-remove-delete-source-rulebook-dir',
+      (tempDir) => {
+        writeProjectConfigOnly(tempDir);
+        mkdirSync(join(getProjectRulesDir(tempDir), 'project-rules', 'rulebook.json'), {
+          recursive: true,
+        });
+      },
+      'rulebook.json is not a file',
+    );
+    await expectProjectRulesDeleteSourcePreflightError(
+      'rules-policy-remove-delete-source-outside',
+      (tempDir) => {
+        writeProjectRulebookConfig(tempDir);
+        writeFileSync(
+          getProjectRulesLockPath(tempDir),
+          JSON.stringify({
+            version: 1,
+            rulebooks: [
+              {
+                spec: 'project-rules',
+                kind: 'local-directory',
+                path: '../outside',
+                name: 'project-rules',
+                version: '1.0.0',
+                digest: 'sha256:'.padEnd(71, 'a'),
+              },
+            ],
+          }),
+        );
+      },
+      'outside',
+    );
   });
 
   test('tests local fixtures and handles GitHub repository inspection errors', async () => {
