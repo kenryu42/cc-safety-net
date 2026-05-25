@@ -1,12 +1,7 @@
 import { checkCustomRules } from '@/core/rules/custom';
+import { validateCustomRule } from '@/core/rules/custom-rule-validation';
 import { splitShellCommands } from '@/core/shell';
-import {
-  COMMAND_PATTERN,
-  type CustomRule,
-  MAX_REASON_LENGTH,
-  NAME_PATTERN,
-  type ValidationResult,
-} from '@/types';
+import { COMMAND_PATTERN, type CustomRule, NAME_PATTERN, type ValidationResult } from '@/types';
 
 export interface RulebookFixture {
   command: string;
@@ -64,7 +59,7 @@ export function validateRulebook(rulebook: unknown): ValidationResult {
     errors.push('rules: required array');
   } else {
     for (let i = 0; i < rb.rules.length; i++) {
-      errors.push(...validateRulebookRule(rb.rules[i], i, ruleNames));
+      errors.push(...validateCustomRule(rb.rules[i], i, ruleNames, { messageStyle: 'rulebook' }));
     }
   }
   if (!Array.isArray(rb.tests)) {
@@ -100,51 +95,6 @@ function validateAllowedCommands(commands: unknown[], errors: string[]): void {
     }
     seen.add(command);
   }
-}
-
-function validateRulebookRule(candidate: unknown, index: number, ruleNames: Set<string>): string[] {
-  const errorsForRule: string[] = [];
-  const prefix = `rules[${index}]`;
-
-  if (!candidate || typeof candidate !== 'object') return [`${prefix}: must be an object`];
-
-  const r = candidate as Record<string, unknown>;
-  const namePrefix = `${prefix}.name`;
-  const ruleName = typeof r.name === 'string' ? r.name : null;
-  if (!ruleName) {
-    errorsForRule.push(`${namePrefix}: required string`);
-  } else if (!NAME_PATTERN.test(ruleName)) {
-    errorsForRule.push(`${namePrefix}: must match rule name pattern`);
-  } else if (ruleNames.has(ruleName)) {
-    errorsForRule.push(`${namePrefix}: duplicate rule name "${ruleName}"`);
-  } else {
-    ruleNames.add(ruleName);
-  }
-  if (typeof r.command !== 'string' || !COMMAND_PATTERN.test(r.command)) {
-    errorsForRule.push(`${prefix}.command: required string matching command pattern`);
-  }
-  if (
-    r.subcommand !== undefined &&
-    (typeof r.subcommand !== 'string' || !COMMAND_PATTERN.test(r.subcommand))
-  ) {
-    errorsForRule.push(`${prefix}.subcommand: must match command pattern`);
-  }
-  if (!Array.isArray(r.block_args) || r.block_args.length === 0) {
-    errorsForRule.push(`${prefix}.block_args: required non-empty array`);
-  } else {
-    for (let i = 0; i < r.block_args.length; i++) {
-      if (typeof r.block_args[i] !== 'string' || r.block_args[i] === '') {
-        errorsForRule.push(`${prefix}.block_args[${i}]: must be a non-empty string`);
-      }
-    }
-  }
-  if (typeof r.reason !== 'string' || r.reason === '' || r.reason.length > MAX_REASON_LENGTH) {
-    errorsForRule.push(
-      `${prefix}.reason: required non-empty string up to ${MAX_REASON_LENGTH} characters`,
-    );
-  }
-
-  return errorsForRule;
 }
 
 function validateFixtures(tests: unknown[], rules: unknown, errors: string[]): void {

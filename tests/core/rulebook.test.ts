@@ -82,6 +82,38 @@ describe('rulebook validation', () => {
     expect(result.errors).toContain('tests: blocked fixture references unknown rule "missing"');
   });
 
+  test('rejects rule names that differ only by case', () => {
+    const result = validateRulebook(
+      rulebook({
+        rules: [
+          {
+            name: 'block-docker-prune',
+            command: 'docker',
+            subcommand: 'system',
+            block_args: ['prune'],
+            reason: 'Use targeted cleanup.',
+          },
+          {
+            name: 'BLOCK-DOCKER-PRUNE',
+            command: 'docker',
+            subcommand: 'system',
+            block_args: ['prune'],
+            reason: 'Use targeted cleanup.',
+          },
+        ],
+        tests: [
+          {
+            command: 'docker system prune',
+            expect: 'blocked',
+            rule: 'block-docker-prune',
+          },
+        ],
+      }),
+    );
+
+    expect(result.errors).toContain('rules[1].name: duplicate rule name "BLOCK-DOCKER-PRUNE"');
+  });
+
   test('fixture failures distinguish allowed, missing block, and wrong rule matches', () => {
     const result = runRulebookFixtures(
       rulebook({
