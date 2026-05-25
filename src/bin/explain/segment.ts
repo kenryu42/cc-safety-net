@@ -8,12 +8,7 @@ import {
   redactEnvAssignmentTokens,
   redactEnvVars,
 } from '@/bin/explain/redact';
-import {
-  applyShellGitContextEnvSegment,
-  createShellGitContextEnvState,
-  getSegmentGitContextEnvAssignments,
-  REASON_RECURSION_LIMIT,
-} from '@/core/analyze/analyze-command';
+import { REASON_RECURSION_LIMIT } from '@/core/analyze/analyze-command';
 import { DISPLAY_COMMANDS } from '@/core/analyze/constants';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { analyzeFind } from '@/core/analyze/find';
@@ -25,6 +20,11 @@ import {
   REASON_INTERPRETER_DANGEROUS,
   segmentChangesCwd,
 } from '@/core/analyze/segment';
+import {
+  applyShellGitContextEnvSegment,
+  createShellGitContextEnvState,
+  getSegmentGitContextEnvAssignments,
+} from '@/core/analyze/shell-git-env';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { isTmpdirOverriddenToNonTemp } from '@/core/analyze/tmpdir';
 import { analyzeXargs } from '@/core/analyze/xargs';

@@ -9,13 +9,13 @@ import {
   isUnparseableCommand,
   REASON_STRICT_UNPARSEABLE,
 } from '@/bin/explain/segment';
+import { dangerousInText } from '@/core/analyze/dangerous-text';
+import { segmentChangesCwd } from '@/core/analyze/segment';
 import {
   applyShellGitContextEnvSegment,
   createShellGitContextEnvState,
   getSegmentGitContextEnvAssignments,
-} from '@/core/analyze/analyze-command';
-import { dangerousInText } from '@/core/analyze/dangerous-text';
-import { segmentChangesCwd } from '@/core/analyze/segment';
+} from '@/core/analyze/shell-git-env';
 import { loadRulesPolicy } from '@/core/rules/policy';
 import { splitShellCommands } from '@/core/shell';
 import type { ExplainOptions, ExplainResult, ExplainTrace, TraceStep } from '@/types';

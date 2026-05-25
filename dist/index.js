@@ -1486,18 +1486,31 @@ function stripCommand(tokens) {
 }
 // src/core/analyze/find.ts
 var REASON_FIND_DELETE = "find -delete permanently removes files. Use -print first to preview.";
-function analyzeFind(tokens) {
+function analyzeFind(tokens, context = {}) {
   if (findHasDelete(tokens.slice(1))) {
     return REASON_FIND_DELETE;
   }
   for (let i = 0;i < tokens.length; i++) {
     const token = tokens[i];
     if (token === "-exec" || token === "-execdir") {
-      const execTokens = tokens.slice(i + 1);
-      const semicolonIdx = execTokens.indexOf(";");
-      const plusIdx = execTokens.indexOf("+");
-      const endIdx = semicolonIdx !== -1 && plusIdx !== -1 ? Math.min(semicolonIdx, plusIdx) : semicolonIdx !== -1 ? semicolonIdx : plusIdx !== -1 ? plusIdx : execTokens.length;
-      let execCommand = execTokens.slice(0, endIdx);
+      let execCommand = getFindExecCommand(tokens, i);
+      if (context.analyzeTokens) {
+        const reason = context.analyzeTokens(execCommand, token === "-execdir" ? null : context.cwd);
+        if (reason) {
+          return reason;
+        }
+        continue;
+      }
+      if (context.analyzeNested) {
+        const reason = context.analyzeNested(execCommand.join(" "), {
+          effectiveCwd: token === "-execdir" ? undefined : context.cwd,
+          envAssignments: context.envAssignments
+        });
+        if (reason) {
+          return reason;
+        }
+        continue;
+      }
       execCommand = stripWrappers(execCommand);
       if (execCommand.length > 0) {
         let head = getBasename(execCommand[0] ?? "");
@@ -1512,6 +1525,13 @@ function analyzeFind(tokens) {
     }
   }
   return null;
+}
+function getFindExecCommand(tokens, execIndex) {
+  const execTokens = tokens.slice(execIndex + 1);
+  const semicolonIdx = execTokens.indexOf(";");
+  const plusIdx = execTokens.indexOf("+");
+  const endIdx = semicolonIdx !== -1 && plusIdx !== -1 ? Math.min(semicolonIdx, plusIdx) : semicolonIdx !== -1 ? semicolonIdx : plusIdx !== -1 ? plusIdx : execTokens.length;
+  return execTokens.slice(0, endIdx);
 }
 function findHasDelete(tokens) {
   let i = 0;
@@ -1572,38 +1592,6 @@ function containsDangerousCode(code) {
     }
   }
   return false;
-}
-
-// src/core/analyze/child-command.ts
-function normalizeChildCommand(tokens, context) {
-  const wrapperInfo = stripWrappersWithInfo([...tokens], context.cwd);
-  const envAssignments = new Map(context.envAssignments ?? []);
-  for (const [k, v] of wrapperInfo.envAssignments) {
-    envAssignments.set(k, v);
-  }
-  const childTokens = getBasename(wrapperInfo.tokens[0] ?? "").toLowerCase() === "busybox" && wrapperInfo.tokens.length > 1 ? wrapperInfo.tokens.slice(1) : wrapperInfo.tokens;
-  return {
-    tokens: childTokens,
-    cwd: wrapperInfo.cwd === null ? undefined : wrapperInfo.cwd ?? context.cwd,
-    wrapperCwd: wrapperInfo.cwd,
-    envAssignments,
-    head: getBasename(childTokens[0] ?? "").toLowerCase()
-  };
-}
-function collectCommandTemplate(tokens, start) {
-  const templateTokens = [];
-  let i = start;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (token === undefined || token === ":::")
-      break;
-    templateTokens.push(token);
-    i++;
-  }
-  return {
-    markerIndex: i < tokens.length && tokens[i] === ":::" ? i : -1,
-    templateTokens
-  };
 }
 
 // src/core/analyze/rm.ts
@@ -1671,21 +1659,14 @@ var REASON_RM_RF = "rm -rf outside cwd is blocked. Use explicit paths within the
 var REASON_RM_RF_ROOT_HOME = "rm -rf targeting root or home directory is extremely dangerous and always blocked.";
 var REASON_RM_HOME_CWD = "rm -rf in home directory is dangerous. Change to a project directory first.";
 function analyzeRm(tokens, options2 = {}) {
-  const {
-    cwd,
-    originalCwd,
-    paranoid = false,
-    allowTmpdirVar = true,
-    tmpdirOverridden = false
-  } = options2;
+  const { cwd, originalCwd, paranoid = false, allowTmpdirVar = true } = options2;
   const anchoredCwd = originalCwd ?? cwd ?? null;
   const resolvedCwd = cwd ?? null;
-  const trustTmpdirVar = allowTmpdirVar && !tmpdirOverridden;
   const ctx = {
     anchoredCwd,
     resolvedCwd,
     paranoid,
-    trustTmpdirVar,
+    trustTmpdirVar: allowTmpdirVar,
     homeDir: getHomeDirForRmPolicy()
   };
   if (!hasRecursiveForceFlags(tokens)) {
@@ -2875,6 +2856,85 @@ function getGitWorktreeRelaxation(tokens, options2 = {}) {
   return getGitWorktreeRelaxationForMatch(tokens, match, options2);
 }
 
+// src/core/analyze/child-analyzer.ts
+function analyzeChildCommand(tokens, context, options2 = {}) {
+  if (tokens.length === 0) {
+    return null;
+  }
+  const head = tokens[0];
+  if (!head) {
+    return null;
+  }
+  if (SHELL_WRAPPERS.has(head)) {
+    if (options2.dynamicInput && options2.shellDynamicReason) {
+      return options2.shellDynamicReason;
+    }
+    const dashCArg = extractDashCArg(tokens);
+    if (dashCArg && context.analyzeNested) {
+      return context.analyzeNested(dashCArg, {
+        effectiveCwd: context.cwd,
+        envAssignments: context.envAssignments
+      });
+    }
+    return null;
+  }
+  if (head === "rm" && hasRecursiveForceFlags(tokens)) {
+    const rmResult = analyzeRm([...tokens], {
+      cwd: context.cwd,
+      originalCwd: context.originalCwd,
+      paranoid: context.paranoidRm,
+      allowTmpdirVar: context.allowTmpdirVar
+    });
+    return rmResult ?? (options2.dynamicInput ? options2.rmDynamicReason ?? null : null);
+  }
+  if (head === "find") {
+    return analyzeFind(tokens, {
+      ...context,
+      analyzeTokens: (nestedTokens, cwd) => analyzeChildCommand(nestedTokens, { ...context, cwd: cwd ?? undefined }, options2)
+    });
+  }
+  if (head === "git") {
+    return analyzeGit(tokens, {
+      cwd: context.cwd,
+      envAssignments: context.envAssignments,
+      worktreeMode: options2.dynamicInput ? false : context.worktreeMode
+    });
+  }
+  return null;
+}
+
+// src/core/analyze/child-command.ts
+function normalizeChildCommand(tokens, context) {
+  const wrapperInfo = stripWrappersWithInfo([...tokens], context.cwd);
+  const envAssignments = new Map(context.envAssignments ?? []);
+  for (const [k, v] of wrapperInfo.envAssignments) {
+    envAssignments.set(k, v);
+  }
+  const childTokens = getBasename(wrapperInfo.tokens[0] ?? "").toLowerCase() === "busybox" && wrapperInfo.tokens.length > 1 ? wrapperInfo.tokens.slice(1) : wrapperInfo.tokens;
+  return {
+    tokens: childTokens,
+    cwd: wrapperInfo.cwd === null ? undefined : wrapperInfo.cwd ?? context.cwd,
+    wrapperCwd: wrapperInfo.cwd,
+    envAssignments,
+    head: getBasename(childTokens[0] ?? "").toLowerCase()
+  };
+}
+function collectCommandTemplate(tokens, start) {
+  const templateTokens = [];
+  let i = start;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (token === undefined || token === ":::")
+      break;
+    templateTokens.push(token);
+    i++;
+  }
+  return {
+    markerIndex: i < tokens.length && tokens[i] === ":::" ? i : -1,
+    templateTokens
+  };
+}
+
 // src/core/analyze/parallel.ts
 var REASON_PARALLEL_RM = "parallel rm -rf with dynamic input is dangerous. Use explicit file list instead.";
 var REASON_PARALLEL_SHELL = "parallel with shell -c can execute arbitrary commands from dynamic input.";
@@ -2948,24 +3008,23 @@ function analyzeParallel(tokens, context) {
     }
     return REASON_PARALLEL_RM;
   }
-  if (childCommand.head === "find") {
-    const findResult = analyzeFind(childTokens);
-    if (findResult) {
-      return findResult;
-    }
-  }
-  if (childCommand.head === "git") {
-    const gitTokenSets = hasPlaceholder && args.length > 0 ? args.map((arg) => childTokens.map((token) => replaceParallelPlaceholder(token, arg))) : !hasPlaceholder && args.length > 0 ? args.map((arg) => [...childTokens, arg]) : [childTokens];
-    const dynamicGitArgs = usesStdin || hasPlaceholder;
-    for (const gitTokens of gitTokenSets) {
-      const gitResult = analyzeGit(gitTokens, {
-        cwd: childCommand.cwd,
-        envAssignments: childCommand.envAssignments,
-        worktreeMode: runsRemotely || dynamicGitArgs ? false : context.worktreeMode
-      });
-      if (gitResult) {
-        return gitResult;
-      }
+  const tokenSets = getParallelChildTokenSets(childTokens, hasPlaceholder, args);
+  for (const tokens2 of tokenSets) {
+    const result = analyzeChildCommand(tokens2, {
+      cwd: childCommand.cwd,
+      originalCwd: context.originalCwd,
+      paranoidRm: context.paranoidRm,
+      allowTmpdirVar: context.allowTmpdirVar,
+      envAssignments: childCommand.envAssignments,
+      worktreeMode: runsRemotely || usesStdin || hasPlaceholder ? false : context.worktreeMode,
+      analyzeNested: context.analyzeNested
+    }, {
+      dynamicInput: usesStdin || hasPlaceholder,
+      shellDynamicReason: REASON_PARALLEL_SHELL,
+      rmDynamicReason: REASON_PARALLEL_RM
+    });
+    if (result) {
+      return result;
     }
   }
   return null;
@@ -2983,6 +3042,15 @@ function analyzeParallelRmExpansions(tokenSets, cwd, context) {
     }
   }
   return null;
+}
+function getParallelChildTokenSets(childTokens, hasPlaceholder, args) {
+  if (hasPlaceholder && args.length > 0) {
+    return args.map((arg) => childTokens.map((token) => replaceParallelPlaceholder(token, arg)));
+  }
+  if (!hasPlaceholder && args.length > 0) {
+    return args.map((arg) => [...childTokens, arg]);
+  }
+  return [[...childTokens]];
 }
 function buildNestedOverrides(envAssignments, cwd, runsRemotely) {
   const overrides = { envAssignments };
@@ -3033,6 +3101,7 @@ function parseParallelCommand(tokens) {
   ]);
   let i = 1;
   const templateTokens = [];
+  let childCommandTokens = [];
   let markerIndex = -1;
   let runsRemotely = false;
   while (i < tokens.length) {
@@ -3046,6 +3115,7 @@ function parseParallelCommand(tokens) {
     if (token === "--") {
       const template = collectCommandTemplate(tokens, i + 1);
       templateTokens.push(...template.templateTokens);
+      childCommandTokens = [...tokens.slice(i + 1)];
       markerIndex = template.markerIndex;
       break;
     }
@@ -3085,6 +3155,7 @@ function parseParallelCommand(tokens) {
     } else {
       const template = collectCommandTemplate(tokens, i);
       templateTokens.push(...template.templateTokens);
+      childCommandTokens = [...tokens.slice(i)];
       markerIndex = template.markerIndex;
       break;
     }
@@ -3105,6 +3176,7 @@ function parseParallelCommand(tokens) {
   return {
     template: templateTokens,
     args,
+    childCommandTokens,
     hasPlaceholder,
     runsRemotely,
     usesStdin: markerIndex === -1
@@ -3145,43 +3217,34 @@ function analyzeXargs(tokens, context) {
   const { childTokens: rawChildTokens, replacementToken } = extractXargsChildCommandWithInfo(tokens);
   const childCommand = normalizeChildCommand(rawChildTokens, context);
   const childTokens = childCommand.tokens;
-  if (childTokens.length === 0) {
+  const childResult = analyzeChildCommand(childTokens, {
+    cwd: childCommand.cwd,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: childCommand.envAssignments,
+    worktreeMode: context.worktreeMode
+  }, {
+    dynamicInput: childCommand.head !== "git",
+    shellDynamicReason: REASON_XARGS_SHELL,
+    rmDynamicReason: REASON_XARGS_RM
+  });
+  if (childResult) {
+    return childResult;
+  }
+  if (childCommand.head !== "git") {
     return null;
   }
-  if (SHELL_WRAPPERS.has(childCommand.head)) {
-    return REASON_XARGS_SHELL;
-  }
-  if (childCommand.head === "rm" && hasRecursiveForceFlags(childTokens)) {
-    const rmResult = analyzeRm(childTokens, {
-      cwd: childCommand.cwd,
-      originalCwd: context.originalCwd,
-      paranoid: context.paranoidRm,
-      allowTmpdirVar: context.allowTmpdirVar
-    });
-    if (rmResult) {
-      return rmResult;
-    }
-    return REASON_XARGS_RM;
-  }
-  if (childCommand.head === "find") {
-    const findResult = analyzeFind(childTokens);
-    if (findResult) {
-      return findResult;
-    }
-  }
-  if (childCommand.head === "git") {
-    const gitTokens = replacementToken === null ? [...childTokens, XARGS_APPENDED_INPUT] : childTokens;
-    const hasDynamicReplacement = replacementToken !== null && (childTokens.some((token) => token.includes(replacementToken)) || Array.from(childCommand.envAssignments.values()).some((value) => value.includes(replacementToken)));
-    const gitResult = analyzeGit(gitTokens, {
-      cwd: childCommand.cwd,
-      envAssignments: childCommand.envAssignments,
-      worktreeMode: replacementToken === null || hasDynamicReplacement ? false : context.worktreeMode
-    });
-    if (gitResult) {
-      return gitResult;
-    }
-  }
-  return null;
+  const gitTokens = replacementToken === null ? [...childTokens, XARGS_APPENDED_INPUT] : childTokens;
+  const hasDynamicReplacement = replacementToken !== null && (childTokens.some((token) => token.includes(replacementToken)) || Array.from(childCommand.envAssignments.values()).some((value) => value.includes(replacementToken)));
+  return analyzeChildCommand(gitTokens, {
+    cwd: childCommand.cwd,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: childCommand.envAssignments,
+    worktreeMode: replacementToken === null || hasDynamicReplacement ? false : context.worktreeMode
+  });
 }
 function extractXargsChildCommandWithInfo(tokens) {
   const xargsOptsWithValue = new Set([
@@ -3425,6 +3488,7 @@ function analyzeSegment(tokens, depth, options2) {
     originalCwd,
     envAssignments,
     allowTmpdirVar,
+    depth,
     options: options2
   };
   const commandAnalyzer = getCommandAnalyzer(commandContext);
@@ -3496,7 +3560,16 @@ function analyzeRmCommand(context) {
   });
 }
 function analyzeFindCommand(context) {
-  return analyzeFind(context.tokens);
+  return analyzeFind(context.tokens, {
+    cwd: context.cwdForRm,
+    envAssignments: context.envAssignments,
+    analyzeTokens: (tokens, cwd) => analyzeSegment([...tokens], context.depth + 1, {
+      ...context.options,
+      effectiveCwd: cwd,
+      envAssignments: context.envAssignments
+    }),
+    analyzeNested: context.options.analyzeNested
+  });
 }
 function analyzeXargsCommand(context) {
   return analyzeXargs(context.tokens, {
@@ -3549,66 +3622,7 @@ function stripLeadingGrouping(tokens) {
   return tokens.slice(i);
 }
 
-// src/core/analyze/analyze-command.ts
-var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Verify manually.";
-var DYNAMIC_SUBSTITUTION_TOKEN = "$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__";
-var REASON_RECURSION_LIMIT = "Command exceeds maximum recursion depth and cannot be safely analyzed.";
-function analyzeCommandInternal(command2, depth, options2) {
-  if (depth >= MAX_RECURSION_DEPTH) {
-    return { reason: REASON_RECURSION_LIMIT, segment: command2 };
-  }
-  const segments2 = splitShellCommandsWithInfo(command2);
-  if (options2.strict && segments2.length === 1 && segments2[0]?.tokens.length === 1 && segments2[0].tokens[0] === command2 && command2.includes(" ")) {
-    return { reason: REASON_STRICT_UNPARSEABLE, segment: command2 };
-  }
-  const originalCwd = options2.cwd;
-  let effectiveCwd = options2.effectiveCwd !== undefined ? options2.effectiveCwd : options2.cwd;
-  const shellGitContextState = createShellGitContextEnvState(options2.envAssignments);
-  for (const segmentInfo of segments2) {
-    const segment = segmentInfo.hasDynamicSubstitution ? appendDynamicSubstitutionSentinelForGit(segmentInfo.tokens) : segmentInfo.tokens;
-    const segmentStr = segment.join(" ");
-    const segmentEnvAssignments = getSegmentGitContextEnvAssignments(segment, shellGitContextState);
-    if (segment.length === 1 && segment[0]?.includes(" ")) {
-      const textReason = dangerousInText(segment[0]);
-      if (textReason) {
-        return { reason: textReason, segment: segmentStr };
-      }
-      if (segmentChangesCwd(segment)) {
-        effectiveCwd = null;
-      }
-      continue;
-    }
-    const reason = analyzeSegment(segment, depth, {
-      ...options2,
-      cwd: originalCwd,
-      effectiveCwd,
-      envAssignments: segmentEnvAssignments,
-      analyzeNested: (nestedCommand, overrides) => {
-        const nestedEffectiveCwd = overrides && Object.hasOwn(overrides, "effectiveCwd") ? overrides.effectiveCwd : effectiveCwd;
-        return analyzeCommandInternal(nestedCommand, depth + 1, {
-          ...options2,
-          effectiveCwd: nestedEffectiveCwd,
-          envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
-          worktreeMode: overrides?.worktreeMode ?? options2.worktreeMode
-        })?.reason ?? null;
-      }
-    });
-    if (reason) {
-      return { reason, segment: segmentStr };
-    }
-    if (segmentChangesCwd(segment)) {
-      effectiveCwd = null;
-    }
-    applyShellGitContextEnvSegment(segment, shellGitContextState);
-  }
-  return null;
-}
-function appendDynamicSubstitutionSentinelForGit(tokens) {
-  if (!tokens.some((token) => getBasename(token).toLowerCase() === "git")) {
-    return tokens;
-  }
-  return [...tokens, DYNAMIC_SUBSTITUTION_TOKEN];
-}
+// src/core/analyze/shell-git-env.ts
 function createShellGitContextEnvState(effectiveEnvAssignments) {
   return {
     effectiveEnvAssignments,
@@ -3916,6 +3930,67 @@ function getSetOptionChanges(tokens, commandIndex) {
     return changes;
   }
   return changes;
+}
+
+// src/core/analyze/analyze-command.ts
+var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Verify manually.";
+var DYNAMIC_SUBSTITUTION_TOKEN = "$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__";
+var REASON_RECURSION_LIMIT = "Command exceeds maximum recursion depth and cannot be safely analyzed.";
+function analyzeCommandInternal(command2, depth, options2) {
+  if (depth >= MAX_RECURSION_DEPTH) {
+    return { reason: REASON_RECURSION_LIMIT, segment: command2 };
+  }
+  const segments2 = splitShellCommandsWithInfo(command2);
+  if (options2.strict && segments2.length === 1 && segments2[0]?.tokens.length === 1 && segments2[0].tokens[0] === command2 && command2.includes(" ")) {
+    return { reason: REASON_STRICT_UNPARSEABLE, segment: command2 };
+  }
+  const originalCwd = options2.cwd;
+  let effectiveCwd = options2.effectiveCwd !== undefined ? options2.effectiveCwd : options2.cwd;
+  const shellGitContextState = createShellGitContextEnvState(options2.envAssignments);
+  for (const segmentInfo of segments2) {
+    const segment = segmentInfo.hasDynamicSubstitution ? appendDynamicSubstitutionSentinelForGit(segmentInfo.tokens) : segmentInfo.tokens;
+    const segmentStr = segment.join(" ");
+    const segmentEnvAssignments = getSegmentGitContextEnvAssignments(segment, shellGitContextState);
+    if (segment.length === 1 && segment[0]?.includes(" ")) {
+      const textReason = dangerousInText(segment[0]);
+      if (textReason) {
+        return { reason: textReason, segment: segmentStr };
+      }
+      if (segmentChangesCwd(segment)) {
+        effectiveCwd = null;
+      }
+      continue;
+    }
+    const reason = analyzeSegment(segment, depth, {
+      ...options2,
+      cwd: originalCwd,
+      effectiveCwd,
+      envAssignments: segmentEnvAssignments,
+      analyzeNested: (nestedCommand, overrides) => {
+        const nestedEffectiveCwd = overrides && Object.hasOwn(overrides, "effectiveCwd") ? overrides.effectiveCwd : effectiveCwd;
+        return analyzeCommandInternal(nestedCommand, depth + 1, {
+          ...options2,
+          effectiveCwd: nestedEffectiveCwd,
+          envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
+          worktreeMode: overrides?.worktreeMode ?? options2.worktreeMode
+        })?.reason ?? null;
+      }
+    });
+    if (reason) {
+      return { reason, segment: segmentStr };
+    }
+    if (segmentChangesCwd(segment)) {
+      effectiveCwd = null;
+    }
+    applyShellGitContextEnvSegment(segment, shellGitContextState);
+  }
+  return null;
+}
+function appendDynamicSubstitutionSentinelForGit(tokens) {
+  if (!tokens.some((token) => getBasename(token).toLowerCase() === "git")) {
+    return tokens;
+  }
+  return [...tokens, DYNAMIC_SUBSTITUTION_TOKEN];
 }
 
 // src/core/config.ts
