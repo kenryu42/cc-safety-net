@@ -75,24 +75,24 @@ export function getLegacyProjectRulesConfigPath(options: RulesPolicyOptions = {}
 }
 
 export function getPolicyPaths(options: RulesPolicyOptions): PolicyPaths {
+  const userConfigPath = options.userConfigPath ?? getUserRulesConfigPath(options);
+  const projectConfigPath = options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd);
   return {
-    userConfigPath: options.userConfigPath ?? getUserRulesConfigPath(options),
-    projectConfigPath: options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd),
-    userLockPath: getUserRulesLockPath(options),
-    projectLockPath: getRulesLockPathForConfigPath(
-      options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd),
-    ),
+    userConfigPath,
+    projectConfigPath,
+    userLockPath: getRulesLockPathForConfigPath(userConfigPath),
+    projectLockPath: getRulesLockPathForConfigPath(projectConfigPath),
   };
 }
 
 export function getScopePaths(options: SyncRulesConfigOptions): ScopePaths {
   const configPath = options.global
-    ? getUserRulesConfigPath(options)
-    : getProjectRulesConfigPath(options.cwd);
+    ? (options.userConfigPath ?? getUserRulesConfigPath(options))
+    : (options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd));
   return {
     configDir: dirname(configPath),
     configPath,
-    lockPath: options.global ? getUserRulesLockPath(options) : getProjectRulesLockPath(options.cwd),
+    lockPath: getRulesLockPathForConfigPath(configPath),
   };
 }
 
