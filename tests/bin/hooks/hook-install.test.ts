@@ -176,6 +176,36 @@ describe('hook install command', () => {
     }
   });
 
+  test('OpenCode: adds missing plugin property with standard JSON indentation', async () => {
+    const homeDir = makeTempHome('safety-net-opencode-install');
+    const configPath = writeOpenCodeConfig(
+      homeDir,
+      `{
+  "$schema": "https://opencode.ai/config.json"
+}
+`,
+    );
+
+    try {
+      const installed = await runOpenCodeInstall(homeDir, configPath);
+
+      expectOpenCodeInstalled(installed.result, configPath);
+      expect(installed.content).toBe(`{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "cc-safety-net@latest"
+  ]
+}
+`);
+      expect(JSON.parse(installed.content)).toEqual({
+        $schema: 'https://opencode.ai/config.json',
+        plugin: ['cc-safety-net@latest'],
+      });
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
   test('OpenCode: honors XDG_CONFIG_HOME and first existing candidate', async () => {
     const homeDir = makeTempHome('safety-net-opencode-install');
     const configDir = join(homeDir, 'xdg', 'opencode');

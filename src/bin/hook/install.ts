@@ -264,14 +264,16 @@ function findRootObjectClose(content: string) {
 function addOpenCodePluginProperty(content: string, propertyCount: number) {
   const rootClose = findRootObjectClose(content);
   const closingIndent = getLineIndent(content, rootClose);
-  const propertyText = `"plugin": [\n${closingIndent}  ${JSON.stringify(OPENCODE_PLUGIN)}\n${closingIndent}]`;
+  const propertyIndent = `${closingIndent}  `;
+  const itemIndent = `${propertyIndent}  `;
+  const propertyText = `${propertyIndent}"plugin": [\n${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}\n${propertyIndent}]`;
 
   if (propertyCount === 0) {
-    return `${content.slice(0, rootClose)}${propertyText}${content.slice(rootClose)}`;
+    return `${content.slice(0, rootClose)}${propertyText}\n${closingIndent}${content.slice(rootClose)}`;
   }
 
   const beforeClose = content.slice(0, rootClose).trimEnd();
-  return `${beforeClose},\n${closingIndent}${propertyText}${content.slice(rootClose)}`;
+  return `${beforeClose},\n${propertyText}\n${closingIndent}${content.slice(rootClose)}`;
 }
 
 function parseOpenCodeConfig(content: string, configPath: string) {
