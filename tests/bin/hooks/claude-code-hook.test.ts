@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeDefaultRulesConfig, writeStarterRulebook } from '@/core/rules/policy';
 import {
   claudeCodeBashInput,
   expectNoHookOutput,
@@ -25,13 +26,7 @@ describe('Claude Code hook', () => {
     });
 
     test('policy fail-closed denial shows repair command without manual permission footer', async () => {
-      rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
-      mkdirSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true });
-      writeFileSync(
-        join(TEST_HOOK_CWD, '.cc-safety-net/rules', 'rule.json'),
-        JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
-        'utf-8',
-      );
+      writeProjectRulesConfigWithoutLock();
 
       const result = await runClaudeCodeHook(claudeCodeBashInput('git status --short --branch'));
       rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
@@ -50,6 +45,23 @@ describe('Claude Code hook', () => {
         'Command: git status --short --branch',
       );
       expect(parsed.hookSpecificOutput.permissionDecisionReason).not.toContain('ask the user');
+    });
+
+    test('policy fail-closed allows exact rule sync repair command', async () => {
+      writeProjectRulesConfigWithoutLock();
+
+      await expectNoHookOutput(
+        runClaudeCodeHook,
+        claudeCodeBashInput('npx -y cc-safety-net rule sync'),
+      );
+      const result = await runClaudeCodeHook(
+        claudeCodeBashInput('npx -y cc-safety-net rule sync && rm -rf /'),
+      );
+      rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
+
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('missing lockfile');
     });
   });
 
@@ -76,6 +88,21 @@ describe('Claude Code hook', () => {
       expect(entry.reason).toBe('allowed');
       expect(entry.command).toContain('<redacted>');
       expect(entry.command).not.toContain('secret');
+    });
+
+    test('repairs missing local rule lock before analysis', async () => {
+      writeProjectRulesConfigWithoutLock();
+      writeStarterRulebook(join(TEST_HOOK_CWD, '.cc-safety-net/rules/project-rules/rulebook.json'));
+
+      const result = await runClaudeCodeHook(claudeCodeBashInput('docker system prune'));
+
+      const parsed = JSON.parse(result.stdout);
+      expect(existsSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules/rule.lock'))).toBe(true);
+      expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        '[project-rules/block-docker-system-prune] Use targeted cleanup instead.',
+      );
+      rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
     });
   });
 
@@ -153,3 +180,8 @@ describe('Claude Code hook', () => {
     });
   });
 });
+
+function writeProjectRulesConfigWithoutLock(): void {
+  rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
+  writeDefaultRulesConfig(join(TEST_HOOK_CWD, '.cc-safety-net/rules/rule.json'), ['project-rules']);
+}

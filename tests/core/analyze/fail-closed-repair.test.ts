@@ -1,0 +1,50 @@
+import { describe, expect, test } from 'bun:test';
+import { analyzeCommand } from '@/core/analyze';
+import type { Config } from '@/types';
+
+const failClosedConfig: Config = {
+  version: 1,
+  rules: [],
+  failClosedReason:
+    'missing lockfile /project/.cc-safety-net/rules/rule.lock; run `cc-safety-net rule sync`.',
+};
+
+function expectAllowed(command: string): void {
+  expect(analyzeCommand(command, { config: failClosedConfig })).toBeNull();
+}
+
+function expectBlocked(command: string): void {
+  expect(analyzeCommand(command, { config: failClosedConfig })?.reason).toContain(
+    'missing lockfile',
+  );
+}
+
+describe('fail-closed repair commands', () => {
+  test.each([
+    'cc-safety-net rule sync',
+    'cc-safety-net rule sync --global',
+    'cc-safety-net rule sync -g',
+    'cc-safety-net rule --global sync',
+    'cc-safety-net rule -g sync',
+    'npx -y cc-safety-net rule sync',
+    'npx --yes cc-safety-net rule sync',
+    'npx -y cc-safety-net@latest rule sync',
+    'npx --yes cc-safety-net@1.2.3 rule sync -g',
+  ])('allows exact rule sync repair command: %s', (command) => {
+    expectAllowed(command);
+  });
+
+  test.each([
+    'cc-safety-net rule sync && rm -rf /',
+    'cc-safety-net rule sync --check',
+    'cc-safety-net rule update',
+    'cc-safety-net rule migrate',
+    'sh -c "cc-safety-net rule sync"',
+    'sudo cc-safety-net rule sync',
+    'npx -y other-package rule sync',
+    'npx cc-safety-net rule sync',
+    'npx --yes --package cc-safety-net cc-safety-net rule sync',
+  ])('blocks repair command lookalike while fail-closed: %s', (command) => {
+    expectBlocked(command);
+  });
+});
