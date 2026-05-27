@@ -35,7 +35,7 @@ function analyzeHookCommand(command: string, cwd: string) {
   const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
   return analyzeCommand(command, {
     cwd,
-    config: loadConfig(cwd),
+    config: loadConfig(cwd, { repairLocalRulebooks: true }),
     strict: envTruthy(ENV_FLAGS.strict),
     paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
     paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
