@@ -385,6 +385,7 @@ var ruleCommand = {
     { flags: "-g, --global", description: "Use user-scope rule config" },
     { flags: "--check", description: "Check without changing lock/cache state" },
     { flags: "--cleanup", description: "Delete legacy files after rule migrate verifies them" },
+    { flags: "--delete-source", description: "Delete clean local source directory on remove" },
     { flags: "-h, --help", description: "Show this help" }
   ],
   examples: [
@@ -2806,12 +2807,12 @@ function withTerminalPeriod(message) {
 // src/core/rules/policy/sync.ts
 import {
   existsSync as existsSync6,
+  lstatSync as lstatSync2,
   mkdirSync as mkdirSync2,
   readdirSync as readdirSync2,
   readFileSync as readFileSync6,
   rmdirSync,
   rmSync,
-  statSync,
   unlinkSync,
   writeFileSync as writeFileSync2
 } from "node:fs";
@@ -3079,14 +3080,14 @@ function getLocalSourceDirDeleteError(configDir, dir) {
   }
   if (!existsSync6(resolvedDir))
     return [`Local rulebook source directory not found: ${dir}`];
-  if (!statSync(resolvedDir).isDirectory()) {
+  if (!lstatSync2(resolvedDir).isDirectory()) {
     return [`Local rulebook source is not a directory: ${dir}`];
   }
   const entries = readdirSync2(resolvedDir);
   if (!entries.includes("rulebook.json")) {
     return [`Local rulebook source directory is missing rulebook.json: ${dir}`];
   }
-  if (!statSync(join5(resolvedDir, "rulebook.json")).isFile()) {
+  if (!lstatSync2(join5(resolvedDir, "rulebook.json")).isFile()) {
     return [`Local rulebook source rulebook.json is not a file: ${dir}`];
   }
   if (entries.length > 1) {
@@ -4292,7 +4293,7 @@ import { existsSync as existsSync10, readFileSync as readFileSync9 } from "node:
 import { dirname as dirname8, isAbsolute as isAbsolute6, join as join7, resolve as resolve7 } from "node:path";
 
 // src/core/git/worktree.ts
-import { existsSync as existsSync9, lstatSync as lstatSync2, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync as statSync2 } from "node:fs";
+import { existsSync as existsSync9, lstatSync as lstatSync3, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync } from "node:fs";
 import { dirname as dirname7, isAbsolute as isAbsolute5, join as join6, resolve as resolve6 } from "node:path";
 var GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
   "-c",
@@ -4384,7 +4385,7 @@ function isLinkedWorktree(cwd) {
     return false;
   }
   try {
-    const stat = lstatSync2(dotGitPath);
+    const stat = lstatSync3(dotGitPath);
     if (stat.isSymbolicLink() || !stat.isFile()) {
       return false;
     }
@@ -4443,8 +4444,8 @@ function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
 }
 function sameFilesystemPath(left, right) {
   try {
-    const leftStat = statSync2(left);
-    const rightStat = statSync2(right);
+    const leftStat = statSync(left);
+    const rightStat = statSync(right);
     if (leftStat.ino !== 0 && rightStat.ino !== 0 && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino) {
       return true;
     }
@@ -4538,7 +4539,7 @@ function resolveGitCwd(baseCwd, target) {
 }
 function isDirectory(path) {
   try {
-    return statSync2(path).isDirectory();
+    return statSync(path).isDirectory();
   } catch {
     return false;
   }
@@ -8595,8 +8596,10 @@ ${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
 ${closingIndent}${content.slice(pluginRange.end)}`;
   }
   const beforeClose = content.slice(0, pluginRange.end).trimEnd();
-  return `${beforeClose},
-${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(pluginRange.end)}`;
+  const separator = beforeClose.endsWith(",") ? `
+` : `,
+`;
+  return `${beforeClose}${separator}${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(pluginRange.end)}`;
 }
 function parseOpenCodePluginItems(content, pluginRange) {
   const items = [];
@@ -9310,7 +9313,7 @@ function restoreFiles(snapshots) {
 }
 
 // src/bin/rule/verify.ts
-import { existsSync as existsSync16, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync3, writeFileSync as writeFileSync5 } from "node:fs";
+import { existsSync as existsSync16, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
 import { dirname as dirname11, join as join12, resolve as resolve9 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
@@ -9457,7 +9460,7 @@ function validateGitHubSourceRules(path) {
   const errors = [];
   const ruleNames = new Set;
   try {
-    if (!statSync3(path).isDirectory()) {
+    if (!statSync2(path).isDirectory()) {
       return { errors: [`${RULES_DIR} must be a directory`], ruleNames };
     }
   } catch (error) {
@@ -9607,8 +9610,13 @@ async function runRuleCommand(args) {
     return 1;
   }
   const subcommand = flags.positionals[0];
-  if (!subcommand || flags.help) {
+  if (flags.help) {
+    printCommandHelp(ruleCommand);
     return 0;
+  }
+  if (!subcommand) {
+    printCommandHelp(ruleCommand);
+    return 1;
   }
   const value = flags.positionals[1];
   const options2 = { global: flags.global, check: flags.check };

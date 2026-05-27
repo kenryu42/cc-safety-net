@@ -188,6 +188,7 @@ ENVIRONMENT VARIABLES:
       const { output } = captureOutput(() => printCommandHelp(cmd));
       expect(output).toContain('SUBCOMMANDS:');
       expect(output).toContain('verify');
+      expect(output).toContain('--delete-source');
       expect(output).not.toContain('explain -- <command>');
     });
 

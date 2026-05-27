@@ -20,6 +20,7 @@ export const ruleCommand: Command = {
     { flags: '-g, --global', description: 'Use user-scope rule config' },
     { flags: '--check', description: 'Check without changing lock/cache state' },
     { flags: '--cleanup', description: 'Delete legacy files after rule migrate verifies them' },
+    { flags: '--delete-source', description: 'Delete clean local source directory on remove' },
     { flags: '-h, --help', description: 'Show this help' },
   ],
   examples: [

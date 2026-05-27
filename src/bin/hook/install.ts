@@ -194,7 +194,8 @@ function insertOpenCodePlugin(content: string, pluginRange: JsonRange, plugins: 
   }
 
   const beforeClose = content.slice(0, pluginRange.end).trimEnd();
-  return `${beforeClose},\n${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(
+  const separator = beforeClose.endsWith(',') ? '\n' : ',\n';
+  return `${beforeClose}${separator}${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(
     pluginRange.end,
   )}`;
 }

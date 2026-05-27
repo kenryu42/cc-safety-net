@@ -152,6 +152,22 @@ describe('hook install command', () => {
     }
   });
 
+  test('OpenCode: installs into plugin array with trailing comma', async () => {
+    const homeDir = makeTempHome('safety-net-opencode-install');
+    const configPath = writeOpenCodeConfig(homeDir, '{ "plugin": ["other-plugin",] }');
+
+    try {
+      const installed = await runOpenCodeInstall(homeDir, configPath);
+
+      expectOpenCodeInstalled(installed.result, configPath);
+      expect(installed.content).toContain('"other-plugin"');
+      expect(installed.content).toContain('"cc-safety-net@latest"');
+      expect(installed.content).not.toContain(',,');
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
   test('OpenCode: adds plugin property after leading block comment', async () => {
     const homeDir = makeTempHome('safety-net-opencode-install');
     const configPath = writeOpenCodeConfig(

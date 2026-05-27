@@ -5126,12 +5126,12 @@ function withTerminalPeriod(message) {
 // src/core/rules/policy/sync.ts
 import {
   existsSync as existsSync7,
+  lstatSync as lstatSync3,
   mkdirSync as mkdirSync2,
   readdirSync,
   readFileSync as readFileSync7,
   rmdirSync,
   rmSync,
-  statSync as statSync2,
   unlinkSync,
   writeFileSync as writeFileSync2
 } from "node:fs";
@@ -5399,14 +5399,14 @@ function getLocalSourceDirDeleteError(configDir, dir) {
   }
   if (!existsSync7(resolvedDir))
     return [`Local rulebook source directory not found: ${dir}`];
-  if (!statSync2(resolvedDir).isDirectory()) {
+  if (!lstatSync3(resolvedDir).isDirectory()) {
     return [`Local rulebook source is not a directory: ${dir}`];
   }
   const entries = readdirSync(resolvedDir);
   if (!entries.includes("rulebook.json")) {
     return [`Local rulebook source directory is missing rulebook.json: ${dir}`];
   }
-  if (!statSync2(join6(resolvedDir, "rulebook.json")).isFile()) {
+  if (!lstatSync3(join6(resolvedDir, "rulebook.json")).isFile()) {
     return [`Local rulebook source rulebook.json is not a file: ${dir}`];
   }
   if (entries.length > 1) {
