@@ -12,6 +12,16 @@ describe('builtin OpenCode commands', () => {
     );
   });
 
+  test('keeps the cc-safety-net skill manual and doc-driven', () => {
+    const skill = readFileSync(join(process.cwd(), 'skills/cc-safety-net/SKILL.md'), 'utf-8');
+
+    expect(skill).toContain(
+      'description: Configure CC Safety Net rulebooks for user, project, or shareable GitHub scope.',
+    );
+    expect(skill).toContain('npx -y cc-safety-net rule doc');
+    expect(skill).not.toContain('**STRICT**');
+  });
+
   test('uses the current rulebook repository path', () => {
     const template = loadBuiltinCommands()['cc-safety-net']?.template;
 
