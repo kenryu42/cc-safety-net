@@ -27,6 +27,26 @@ describe('rule command docs', () => {
     expect(result.output).toBe(`${RULE_DOC}\n`);
   });
 
+  test('prints help error when rule subcommand is missing', async () => {
+    for (const args of [['rule'], ['rule', '--check']]) {
+      const result = await runSafetyNetCli(args);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      expect(result.output).toContain('cc-safety-net rule');
+      expect(result.output).toContain('SUBCOMMANDS:');
+    }
+  });
+
+  test('prints successful help for rule help flag', async () => {
+    const result = await runSafetyNetCli(['rule', '--help']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.output).toContain('cc-safety-net rule');
+    expect(result.output).toContain('--delete-source');
+  });
+
   test('initializes project rules and sibling cache in the canonical layout', async () => {
     await withTempDir('safety-net-rule-init-', async (tempDir) => {
       const result = await runSafetyNetCli(

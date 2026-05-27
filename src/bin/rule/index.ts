@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { ruleCommand } from '@/bin/commands/rule';
+import { printCommandHelp } from '@/bin/help';
 import { RULE_DOC } from '@/bin/rule/doc';
 import {
   printRuleChangeResult,
@@ -56,8 +58,13 @@ export async function runRuleCommand(args: readonly string[]): Promise<number> {
   }
 
   const subcommand = flags.positionals[0];
-  if (!subcommand || flags.help) {
+  if (flags.help) {
+    printCommandHelp(ruleCommand);
     return 0;
+  }
+  if (!subcommand) {
+    printCommandHelp(ruleCommand);
+    return 1;
   }
   const value = flags.positionals[1];
   const options = { global: flags.global, check: flags.check };
