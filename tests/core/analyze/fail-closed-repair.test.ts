@@ -9,6 +9,13 @@ const failClosedConfig: Config = {
     'missing lockfile /project/.cc-safety-net/rules/rule.lock; run `cc-safety-net rule sync`.',
 };
 
+const legacyFailClosedConfig: Config = {
+  version: 1,
+  rules: [],
+  failClosedReason:
+    'legacy rules config location is no longer used; ask the user to run `npx -y cc-safety-net rule migrate`.',
+};
+
 function expectAllowed(command: string): void {
   expect(analyzeCommand(command, { config: failClosedConfig })).toBeNull();
 }
@@ -16,6 +23,12 @@ function expectAllowed(command: string): void {
 function expectBlocked(command: string): void {
   expect(analyzeCommand(command, { config: failClosedConfig })?.reason).toContain(
     'missing lockfile',
+  );
+}
+
+function expectLegacyBlocked(command: string): void {
+  expect(analyzeCommand(command, { config: legacyFailClosedConfig })?.reason).toContain(
+    'ask the user to run `npx -y cc-safety-net rule migrate`',
   );
 }
 
@@ -46,5 +59,12 @@ describe('fail-closed repair commands', () => {
     'npx --yes --package cc-safety-net cc-safety-net rule sync',
   ])('blocks repair command lookalike while fail-closed: %s', (command) => {
     expectBlocked(command);
+  });
+
+  test.each([
+    'cc-safety-net rule migrate',
+    'npx -y cc-safety-net rule migrate',
+  ])('blocks migration command while legacy config is fail-closed: %s', (command) => {
+    expectLegacyBlocked(command);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeDefaultRulesConfig, writeStarterRulebook } from '@/core/rules/policy';
 import {
@@ -62,6 +62,27 @@ describe('Claude Code hook', () => {
       const parsed = JSON.parse(result.stdout);
       expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
       expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('missing lockfile');
+    });
+
+    test('legacy config fail-closed asks user to run migration manually', async () => {
+      rmSync(join(TEST_HOOK_CWD, '.cc-safety-net'), { recursive: true, force: true });
+      writeFileSync(
+        join(TEST_HOOK_CWD, '.safety-net.json'),
+        JSON.stringify({ version: 1, rules: [] }),
+        'utf-8',
+      );
+
+      const result = await runClaudeCodeHook(claudeCodeBashInput('echo hello'));
+      rmSync(join(TEST_HOOK_CWD, '.safety-net.json'), { force: true });
+
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        'ask the user to run `npx -y cc-safety-net rule migrate`',
+      );
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+        'have them run the command manually',
+      );
     });
   });
 
