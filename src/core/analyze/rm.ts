@@ -272,9 +272,7 @@ function isTargetWithinCwd(target: string, originalCwd: string, effectiveCwd?: s
 
   if (target.startsWith('/') || /^[A-Za-z]:[\\/]/.test(target)) {
     try {
-      const normalizedTarget = normalizePathForComparison(target);
-      const normalizedCwd = `${normalizePathForComparison(originalCwd)}${sep}`;
-      return normalizedTarget.startsWith(normalizedCwd);
+      return isResolvedPathWithinCwd(target, originalCwd);
     } catch {
       return false;
     }
@@ -287,12 +285,7 @@ function isTargetWithinCwd(target: string, originalCwd: string, effectiveCwd?: s
   ) {
     try {
       const resolved = resolve(resolveCwd, target);
-      const normalizedResolved = normalizePathForComparison(resolved);
-      const normalizedOriginalCwd = normalizePathForComparison(originalCwd);
-      return (
-        normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep}`) ||
-        normalizedResolved === normalizedOriginalCwd
-      );
+      return isResolvedPathWithinCwd(resolved, originalCwd);
     } catch {
       return false;
     }
@@ -304,15 +297,26 @@ function isTargetWithinCwd(target: string, originalCwd: string, effectiveCwd?: s
 
   try {
     const resolved = resolve(resolveCwd, target);
-    const normalizedResolved = normalizePathForComparison(resolved);
-    const normalizedCwd = normalizePathForComparison(originalCwd);
-    return (
-      normalizedResolved.startsWith(`${normalizedCwd}${sep}`) ||
-      normalizedResolved === normalizedCwd
-    );
+    return isResolvedPathWithinCwd(resolved, originalCwd);
   } catch {
     return false;
   }
+}
+
+function isResolvedPathWithinCwd(resolvedTarget: string, cwd: string): boolean {
+  try {
+    return isNormalizedPathWithin(realpathSync(resolvedTarget), realpathSync(cwd));
+  } catch {
+    return isNormalizedPathWithin(resolvedTarget, cwd);
+  }
+}
+
+function isNormalizedPathWithin(target: string, cwd: string): boolean {
+  const normalizedTarget = normalizePathForComparison(target);
+  const normalizedCwd = normalizePathForComparison(cwd);
+  return (
+    normalizedTarget.startsWith(`${normalizedCwd}${sep}`) || normalizedTarget === normalizedCwd
+  );
 }
 
 /** @internal Exported for testing */

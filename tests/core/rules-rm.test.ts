@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyzeRm, isHomeDirectory } from '@/core/analyze/rm';
@@ -241,6 +241,22 @@ describe('rm -rf cwd-aware', () => {
       assertAllowed('rm -rf ./dist', tmpDir);
     } finally {
       cleanup();
+    }
+  });
+
+  test('rm -rf symlinked directory outside cwd blocked', () => {
+    const root = mkdtempSync(join(tmpdir(), 'safety-net-rm-symlink-'));
+    try {
+      const cwd = join(root, 'cwd');
+      const outside = join(root, 'outside');
+      mkdirSync(cwd);
+      mkdirSync(outside);
+      writeFileSync(join(outside, 'kept'), 'outside');
+      symlinkSync(outside, join(cwd, 'escape'), 'dir');
+
+      assertBlocked('rm -rf ./escape/', 'rm -rf outside cwd', cwd);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
