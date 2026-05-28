@@ -70,6 +70,14 @@ describe('edge cases', () => {
       assertAllowed("bash -- -c 'echo ok'");
     });
 
+    test('$SHELL dash c is recursively analyzed', () => {
+      assertBlocked('$SHELL -c "rm -rf /"', 'rm -rf');
+    });
+
+    test('${SHELL} dash c is recursively analyzed', () => {
+      assertBlocked('${SHELL} -c "rm -rf /"', 'rm -rf');
+    });
+
     test('strict mode bash without dash c allowed', () => {
       withEnv({ SAFETY_NET_STRICT: '1' }, () => {
         assertAllowed('bash -l echo ok');
@@ -892,6 +900,30 @@ describe('edge cases', () => {
 
     test('awk with rm -rf allowed', () => {
       assertAllowed("awk '/rm -rf/ {print}' log.txt");
+    });
+
+    test('awk system rm -rf blocked', () => {
+      assertBlocked('awk \'BEGIN { system("rm -rf /") }\'', 'rm -rf');
+    });
+
+    test('awk system git reset blocked', () => {
+      assertBlocked('awk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('gawk system git reset blocked', () => {
+      assertBlocked('gawk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('nawk system git reset blocked', () => {
+      assertBlocked('nawk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('mawk system git reset blocked', () => {
+      assertBlocked('mawk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('awk dynamic system command blocked conservatively', () => {
+      assertBlocked("awk '{ system($0) }'", 'awk system');
     });
 
     test('head with git clean -f allowed', () => {

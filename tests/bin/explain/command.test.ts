@@ -185,6 +185,25 @@ describe('explainCommand edge cases', () => {
     expect(interpStep).toBeDefined();
   });
 
+  test('awk system command explains nested block', () => {
+    const result = explainCommand('awk \'BEGIN { system("git reset --hard") }\'');
+
+    expect(result.result).toBe('blocked');
+    expect(result.reason).toContain('git reset --hard');
+    expect(
+      getTraceSteps(result).some(
+        (s) => s.type === 'rule-check' && s.ruleModule === 'awk' && s.matched,
+      ),
+    ).toBe(true);
+  });
+
+  test('awk dynamic system command explains conservative block', () => {
+    const result = explainCommand("awk '{ system($0) }'");
+
+    expect(result.result).toBe('blocked');
+    expect(result.reason).toContain('awk system');
+  });
+
   test('busybox rm traces busybox step', () => {
     const result = explainCommand('busybox rm -rf /tmp/test');
     const allSteps = getTraceSteps(result);

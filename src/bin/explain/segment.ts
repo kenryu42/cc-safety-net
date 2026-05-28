@@ -9,6 +9,11 @@ import {
   redactEnvVars,
 } from '@/bin/explain/redact';
 import { REASON_RECURSION_LIMIT } from '@/core/analyze/analyze-command';
+import {
+  AWK_INTERPRETERS,
+  analyzeAwkSystemCalls,
+  REASON_AWK_SYSTEM_DYNAMIC,
+} from '@/core/analyze/awk';
 import { DISPLAY_COMMANDS } from '@/core/analyze/constants';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { analyzeFind } from '@/core/analyze/find';
@@ -219,7 +224,7 @@ export function explainSegment(
   const baseName = head.split('/').pop() ?? head;
   const baseNameLower = baseName.toLowerCase();
 
-  if (SHELL_WRAPPERS.has(baseNameLower)) {
+  if (isShellWrapperCommand(head, baseNameLower)) {
     const innerCmd = extractDashCArg(strippedTokens);
     if (innerCmd) {
       const redactedInnerCmd = redactEnvAssignmentsInString(innerCmd);
@@ -236,6 +241,25 @@ export function explainSegment(
       });
 
       return explainInnerSegments(innerCmd, depth, nestedOptions, steps);
+    }
+  }
+
+  if (AWK_INTERPRETERS.has(baseNameLower)) {
+    const awkReason = analyzeAwkSystemCalls(strippedTokens, (command) => {
+      const nestedResult = explainInnerSegments(command, depth, nestedOptions, steps);
+      return nestedResult?.reason ?? null;
+    });
+    if (awkReason) {
+      steps.push({
+        type: 'rule-check',
+        ruleModule: 'awk',
+        ruleFunction: 'analyzeAwkSystemCalls',
+        matched: true,
+        reason: awkReason,
+      });
+      return {
+        reason: awkReason === REASON_AWK_SYSTEM_DYNAMIC ? REASON_AWK_SYSTEM_DYNAMIC : awkReason,
+      };
     }
   }
 
@@ -496,4 +520,8 @@ export function explainSegment(
   }
 
   return null;
+}
+
+function isShellWrapperCommand(head: string, baseNameLower: string): boolean {
+  return SHELL_WRAPPERS.has(baseNameLower) || head === '$SHELL';
 }

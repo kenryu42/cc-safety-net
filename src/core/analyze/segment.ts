@@ -1,3 +1,4 @@
+import { AWK_INTERPRETERS, analyzeAwkSystemCalls } from '@/core/analyze/awk';
 import { DISPLAY_COMMANDS } from '@/core/analyze/constants';
 import { analyzeFind } from '@/core/analyze/find';
 import { containsDangerousCode, extractInterpreterCodeArg } from '@/core/analyze/interpreters';
@@ -113,13 +114,25 @@ export function analyzeSegment(
   const nestedEffectiveCwd = wrapperCwd === undefined ? options.effectiveCwd : wrapperCwd;
   const allowTmpdirVar = !isTmpdirOverriddenToNonTemp(envAssignments);
 
-  if (SHELL_WRAPPERS.has(normalizedHead)) {
+  if (isShellWrapperCommand(head, normalizedHead)) {
     const dashCArg = extractDashCArg(stripped);
     if (dashCArg) {
       return options.analyzeNested(dashCArg, {
         effectiveCwd: nestedEffectiveCwd,
         envAssignments,
       });
+    }
+  }
+
+  if (AWK_INTERPRETERS.has(normalizedHead)) {
+    const awkReason = analyzeAwkSystemCalls(stripped, (command) =>
+      options.analyzeNested(command, {
+        effectiveCwd: nestedEffectiveCwd,
+        envAssignments,
+      }),
+    );
+    if (awkReason) {
+      return awkReason;
     }
   }
 
@@ -197,6 +210,10 @@ export function analyzeSegment(
   }
 
   return null;
+}
+
+function isShellWrapperCommand(head: string, normalizedHead: string): boolean {
+  return SHELL_WRAPPERS.has(normalizedHead) || head === '$SHELL';
 }
 
 function getCommandAnalyzer(context: CommandAnalysisContext): CommandAnalyzer | undefined {

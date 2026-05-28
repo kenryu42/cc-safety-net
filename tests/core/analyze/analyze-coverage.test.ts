@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
 import { analyzeCommand } from '@/core/analyze';
+import { analyzeAwkSystemCalls, REASON_AWK_SYSTEM_DYNAMIC } from '@/core/analyze/awk';
 import { analyzeChildCommand } from '@/core/analyze/child-analyzer';
 import { analyzeFind } from '@/core/analyze/find';
 import type { Config } from '@/types';
@@ -120,6 +121,41 @@ describe('analyzeCommand (coverage)', () => {
       config: EMPTY_CONFIG,
     });
     expect(result?.reason).toContain('git reset --hard');
+  });
+
+  test('awk system parser allows safe static commands', () => {
+    expect(analyzeAwkSystemCalls(['awk', 'BEGIN { system("echo ok") }'], () => null)).toBeNull();
+  });
+
+  test('awk system parser handles escaped static strings', () => {
+    const commands: string[] = [];
+    const result = analyzeAwkSystemCalls(
+      ['awk', 'BEGIN { system("echo \\"ok\\"") }'],
+      (command) => {
+        commands.push(command);
+        return null;
+      },
+    );
+    expect(result).toBeNull();
+    expect(commands).toEqual(['echo "ok"']);
+  });
+
+  test('awk system parser blocks unclosed string commands', () => {
+    expect(analyzeAwkSystemCalls(['awk', 'BEGIN { system("rm -rf /) }'], () => null)).toBe(
+      REASON_AWK_SYSTEM_DYNAMIC,
+    );
+  });
+
+  test('awk system parser blocks concatenated string commands', () => {
+    expect(analyzeAwkSystemCalls(['awk', 'BEGIN { system("rm " $1) }'], () => null)).toBe(
+      REASON_AWK_SYSTEM_DYNAMIC,
+    );
+  });
+
+  test('awk system parser ignores identifiers containing system', () => {
+    expect(
+      analyzeAwkSystemCalls(['awk', 'BEGIN { subsystem("rm -rf /") }'], () => null),
+    ).toBeNull();
   });
 
   test('fallback scan ignores embedded git when safe', () => {
