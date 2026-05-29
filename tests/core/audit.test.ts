@@ -62,6 +62,22 @@ describe('redactSecrets', () => {
     expect(result).toBe('<redacted>');
   });
 
+  test('redacts raw provider token formats', () => {
+    const tokens = [
+      ['xoxb', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
+      ['npm', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['sk', 'live', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['sk', 'test', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['rk', 'live', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['pypi', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('-'),
+    ];
+    const result = redactSecrets(tokens.join(' '));
+    for (const token of tokens) {
+      expect(result).not.toContain(token);
+    }
+    expect(result.split(' ')).toEqual(tokens.map(() => '<redacted>'));
+  });
+
   test('redacts URL credentials', () => {
     const result = redactSecrets('https://user:password@example.com');
     expect(result).not.toContain('password');

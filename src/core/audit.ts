@@ -113,6 +113,12 @@ export function redactSecrets(text: string): string {
   // Common GitHub token prefixes
   result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '<redacted>');
 
+  // Common provider token prefixes
+  result = result.replace(/\bxoxb-[A-Za-z0-9-]{20,}\b/g, '<redacted>');
+  result = result.replace(/\bnpm_[A-Za-z0-9_]{20,}\b/g, '<redacted>');
+  result = result.replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9_]{20,}\b/g, '<redacted>');
+  result = result.replace(/\bpypi-[A-Za-z0-9_-]{20,}\b/g, '<redacted>');
+
   // JWTs and AWS access key IDs
   result = result.replace(
     /\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g,
