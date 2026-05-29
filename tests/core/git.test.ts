@@ -373,6 +373,18 @@ describe('git reset', () => {
     assertBlocked('git reset --hard', 'git reset --hard');
   });
 
+  test('git.exe reset --hard blocked', () => {
+    assertBlocked('git.exe reset --hard', 'git reset --hard');
+  });
+
+  test('Windows git.exe path reset --hard blocked', () => {
+    assertBlocked('"C:\\Program Files\\Git\\bin\\git.exe" reset --hard', 'git reset --hard');
+  });
+
+  test('uppercase GIT.EXE reset --hard blocked', () => {
+    assertBlocked('GIT.EXE reset --hard', 'git reset --hard');
+  });
+
   test('git reset --hard HEAD~1 blocked', () => {
     assertBlocked('git reset --hard HEAD~1', 'git reset --hard');
   });

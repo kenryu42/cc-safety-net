@@ -535,7 +535,7 @@ function normalizeCommandToken(token) {
   return getBasename(token).toLowerCase();
 }
 function getBasename(token) {
-  return token.includes("/") ? token.split("/").pop() ?? token : token;
+  return token.split(/[\\/]/).pop()?.replace(/\.exe$/i, "") ?? token;
 }
 // src/core/shell/options.ts
 function extractShortOpts(tokens, options) {

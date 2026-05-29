@@ -3,5 +3,10 @@ export function normalizeCommandToken(token: string): string {
 }
 
 export function getBasename(token: string): string {
-  return token.includes('/') ? (token.split('/').pop() ?? token) : token;
+  return (
+    token
+      .split(/[\\/]/)
+      .pop()
+      ?.replace(/\.exe$/i, '') ?? token
+  );
 }

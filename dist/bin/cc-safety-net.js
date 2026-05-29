@@ -1010,7 +1010,7 @@ function normalizeCommandToken(token) {
   return getBasename(token).toLowerCase();
 }
 function getBasename(token) {
-  return token.includes("/") ? token.split("/").pop() ?? token : token;
+  return token.split(/[\\/]/).pop()?.replace(/\.exe$/i, "") ?? token;
 }
 // src/core/shell/options.ts
 function extractShortOpts(tokens, options) {
@@ -8688,6 +8688,10 @@ function redactSecrets(text) {
   result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@/]+)@/gi, "$1<redacted>:<redacted>@");
   result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)@/gi, "$1<redacted>@");
   result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bxoxb-[A-Za-z0-9-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bnpm_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
+  result = result.replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bpypi-[A-Za-z0-9_-]{20,}\b/g, "<redacted>");
   result = result.replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g, "<redacted>");
   result = result.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "<redacted>");
   return result;
