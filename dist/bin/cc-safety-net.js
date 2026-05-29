@@ -3896,32 +3896,32 @@ function dangerousInText(text) {
       reason: "rm -rf"
     },
     {
-      regex: /\bgit\s+reset\s+--hard\b/,
+      regex: /\bgit\s+reset\s+--ha(?:r(?:d)?)?\b/,
       reason: "git reset --hard"
     },
     {
-      regex: /\bgit\s+reset\s+--merge\b/,
+      regex: /\bgit\s+reset\s+--me(?:r(?:g(?:e)?)?)?\b/,
       reason: "git reset --merge"
     },
     {
-      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--force)\b/,
+      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--fo(?:r(?:c(?:e)?)?)?)\b/,
       reason: "git clean -f"
     },
     {
-      regex: /\bgit\s+checkout\s+[^|;]*(--force\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
+      regex: /\bgit\s+checkout\s+[^|;]*(--fo(?:r(?:c(?:e)?)?)?\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
       reason: "git checkout --force"
     },
     {
-      regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
+      regex: /\bgit\s+push\s+[^|;]*(-f\b|--fo(?:r(?:c(?:e)?)?)?\b)(?!-with-lease)/,
       reason: "git push --force (use --force-with-lease instead)"
     },
     {
-      regex: /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--delete\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--force\b|-[A-Za-z]*f[A-Za-z]*\b))/,
+      regex: /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--de(?:l(?:e(?:t(?:e)?)?)?)?\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--fo(?:r(?:c(?:e)?)?)?\b|-[A-Za-z]*f[A-Za-z]*\b))/,
       reason: "git branch -D",
       caseSensitive: true
     },
     {
-      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--delete)\b/,
+      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--de(?:l(?:e(?:t(?:e)?)?)?)?)\b/,
       reason: "git tag -d"
     },
     {
@@ -4137,10 +4137,7 @@ var DISPLAY_COMMANDS = new Set([
   "shuf",
   "seq",
   "yes",
-  "timeout",
-  "time",
   "sleep",
-  "watch",
   "logger",
   "write",
   "wall",
@@ -5205,6 +5202,10 @@ var CHECKOUT_KNOWN_OPTS_NO_VALUE = new Set([
   "--no-pathspec-file-nul",
   "--no-recurse-submodules"
 ]);
+function matchesGitLongOption(token, option) {
+  const optionName = token.split("=", 1)[0] ?? token;
+  return optionName.length >= 4 && option.startsWith(optionName) && optionName.startsWith("--") && optionName.slice(2).length >= 2;
+}
 function analyzeGitRule(tokens) {
   const { subcommand, rest } = extractGitSubcommandAndRest(tokens);
   if (!subcommand) {
@@ -5252,17 +5253,14 @@ function analyzeGitCheckout(tokens) {
   const shortOpts = extractShortOpts(beforeDash, {
     shortOptsWithValue: CHECKOUT_SHORT_OPTS_WITH_VALUE
   });
-  if (beforeDash.includes("--force") || shortOpts.has("-f")) {
+  if (beforeDash.some((token) => matchesGitLongOption(token, "--force")) || shortOpts.has("-f")) {
     return REASON_CHECKOUT_FORCE;
   }
   for (const token of tokens) {
     if (token === "-b" || token === "-B" || token === "--orphan") {
       return null;
     }
-    if (token === "--pathspec-from-file") {
-      return REASON_CHECKOUT_PATHSPEC_FROM_FILE;
-    }
-    if (token.startsWith("--pathspec-from-file=")) {
+    if (matchesGitLongOption(token, "--pathspec-from-file")) {
       return REASON_CHECKOUT_PATHSPEC_FROM_FILE;
     }
   }
@@ -5281,13 +5279,13 @@ function analyzeGitCheckout(tokens) {
 }
 function analyzeGitSwitch(tokens) {
   const { before } = splitAtDoubleDash(tokens);
-  if (before.includes("--discard-changes")) {
+  if (before.some((token) => matchesGitLongOption(token, "--discard-changes"))) {
     return REASON_SWITCH_DISCARD_CHANGES;
   }
   const shortOpts = extractShortOpts(before, {
     shortOptsWithValue: SWITCH_SHORT_OPTS_WITH_VALUE
   });
-  if (before.includes("--force") || shortOpts.has("-f")) {
+  if (before.some((token) => matchesGitLongOption(token, "--force")) || shortOpts.has("-f")) {
     return REASON_SWITCH_FORCE;
   }
   return null;
@@ -5349,11 +5347,11 @@ function analyzeGitRestore(tokens) {
 function analyzeGitReset(tokens) {
   let reason = null;
   for (const token of tokens) {
-    if (token === "--hard") {
+    if (matchesGitLongOption(token, "--hard")) {
       reason = REASON_RESET_HARD;
       break;
     }
-    if (token === "--merge") {
+    if (matchesGitLongOption(token, "--merge")) {
       reason = REASON_RESET_MERGE;
       break;
     }
@@ -5376,12 +5374,12 @@ function resetHasRef(tokens) {
 }
 function analyzeGitClean(tokens) {
   for (const token of tokens) {
-    if (token === "-n" || token === "--dry-run") {
+    if (token === "-n" || matchesGitLongOption(token, "--dry-run")) {
       return null;
     }
   }
   const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
-  if (tokens.includes("--force") || shortOpts.has("-f")) {
+  if (tokens.some((token) => matchesGitLongOption(token, "--force")) || shortOpts.has("-f")) {
     return REASON_CLEAN;
   }
   return null;
@@ -5389,7 +5387,7 @@ function analyzeGitClean(tokens) {
 function analyzeGitPush(tokens) {
   let hasForceWithLease = false;
   const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
-  const hasForce = tokens.includes("--force") || shortOpts.has("-f");
+  const hasForce = tokens.some((token) => matchesGitLongOption(token, "--force")) || shortOpts.has("-f");
   for (const token of tokens) {
     if (token === "--force-with-lease" || token.startsWith("--force-with-lease=")) {
       hasForceWithLease = true;
@@ -5403,8 +5401,8 @@ function analyzeGitPush(tokens) {
 function analyzeGitBranch(tokens) {
   const { before } = splitAtDoubleDash(tokens);
   const shortOpts = extractShortOpts(before);
-  const hasDelete = shortOpts.has("-D") || shortOpts.has("-d") || before.includes("--delete");
-  const hasForce = shortOpts.has("-D") || shortOpts.has("-f") || before.includes("--force");
+  const hasDelete = shortOpts.has("-D") || shortOpts.has("-d") || before.some((token) => matchesGitLongOption(token, "--delete"));
+  const hasForce = shortOpts.has("-D") || shortOpts.has("-f") || before.some((token) => matchesGitLongOption(token, "--force"));
   if (hasDelete && hasForce) {
     return REASON_BRANCH_DELETE;
   }
@@ -5412,16 +5410,16 @@ function analyzeGitBranch(tokens) {
 }
 function analyzeGitRebase(tokens) {
   const { before } = splitAtDoubleDash(tokens);
-  return before.includes("--abort") ? REASON_REBASE_ABORT : null;
+  return before.some((token) => matchesGitLongOption(token, "--abort")) ? REASON_REBASE_ABORT : null;
 }
 function analyzeGitMerge(tokens) {
   const { before } = splitAtDoubleDash(tokens);
-  return before.includes("--abort") ? REASON_MERGE_ABORT : null;
+  return before.some((token) => matchesGitLongOption(token, "--abort")) ? REASON_MERGE_ABORT : null;
 }
 function analyzeGitTag(tokens) {
   const { before } = splitAtDoubleDash(tokens);
   const shortOpts = extractShortOpts(before);
-  return shortOpts.has("-d") || before.includes("--delete") ? REASON_TAG_DELETE : null;
+  return shortOpts.has("-d") || before.some((token) => matchesGitLongOption(token, "--delete")) ? REASON_TAG_DELETE : null;
 }
 function analyzeGitReflog(tokens) {
   return tokens[0] === "delete" ? REASON_REFLOG_DELETE : null;
@@ -5443,7 +5441,7 @@ function analyzeGitWorktree(tokens) {
   if (!hasRemove)
     return null;
   const shortOpts = extractShortOpts(before);
-  if (before.includes("--force") || shortOpts.has("-f")) {
+  if (before.some((token) => matchesGitLongOption(token, "--force")) || shortOpts.has("-f")) {
     return REASON_WORKTREE_REMOVE_FORCE;
   }
   return null;
@@ -5486,7 +5484,7 @@ function isForcedBranchReset(subcommand, rest) {
     const shortOpts = extractShortOpts(before, {
       shortOptsWithValue: CHECKOUT_SHORT_OPTS_WITH_VALUE
     });
-    const hasForce = before.includes("--force") || shortOpts.has("-f");
+    const hasForce = before.some((token) => matchesGitLongOption(token, "--force")) || shortOpts.has("-f");
     const hasBranchReset = shortOpts.has("-B") || before.some((token) => token === "-B" || token.startsWith("-B"));
     return hasForce && hasBranchReset;
   }
@@ -5495,7 +5493,7 @@ function isForcedBranchReset(subcommand, rest) {
     const shortOpts = extractShortOpts(before, {
       shortOptsWithValue: SWITCH_SHORT_OPTS_WITH_VALUE
     });
-    const hasForce = before.includes("--force") || before.includes("--discard-changes") || shortOpts.has("-f");
+    const hasForce = before.some((token) => matchesGitLongOption(token, "--force")) || before.some((token) => matchesGitLongOption(token, "--discard-changes")) || shortOpts.has("-f");
     const hasForceCreate = before.some((token) => token === "-C" || token.startsWith("-C") || isForceCreateOption(token)) || shortOpts.has("-C");
     return hasForce && hasForceCreate;
   }

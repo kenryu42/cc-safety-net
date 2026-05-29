@@ -172,6 +172,10 @@ describe('edge cases', () => {
       assertBlocked("git reset --hard 'unterminated", 'git reset --hard');
     });
 
+    test('non strict unparseable git reset abbreviated hard still blocked by heuristic', () => {
+      assertBlocked("git reset --har 'unterminated", 'git reset --hard');
+    });
+
     test('non strict unparseable git reset merge still blocked by heuristic', () => {
       assertBlocked("git reset --merge 'unterminated", 'git reset --merge');
     });
@@ -940,6 +944,22 @@ describe('edge cases', () => {
 
     test('less with git push --force allowed', () => {
       assertAllowed('less git push --force');
+    });
+
+    test('timeout executes embedded rm command', () => {
+      assertBlocked('timeout 10 rm -rf /', 'rm -rf');
+    });
+
+    test('time executes embedded git command', () => {
+      assertBlocked('time git reset --hard', 'git reset --hard');
+    });
+
+    test('watch executes embedded git command', () => {
+      assertBlocked('watch -n1 git reset --hard', 'git reset --hard');
+    });
+
+    test('watch with separate interval value executes embedded rm command', () => {
+      assertBlocked('watch -n 1 rm -rf /', 'rm -rf');
     });
   });
 

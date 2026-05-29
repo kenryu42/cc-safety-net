@@ -14,33 +14,33 @@ export function dangerousInText(text: string): string | null {
       reason: 'rm -rf',
     },
     {
-      regex: /\bgit\s+reset\s+--hard\b/,
+      regex: /\bgit\s+reset\s+--ha(?:r(?:d)?)?\b/,
       reason: 'git reset --hard',
     },
     {
-      regex: /\bgit\s+reset\s+--merge\b/,
+      regex: /\bgit\s+reset\s+--me(?:r(?:g(?:e)?)?)?\b/,
       reason: 'git reset --merge',
     },
     {
-      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--force)\b/,
+      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--fo(?:r(?:c(?:e)?)?)?)\b/,
       reason: 'git clean -f',
     },
     {
-      regex: /\bgit\s+checkout\s+[^|;]*(--force\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
+      regex: /\bgit\s+checkout\s+[^|;]*(--fo(?:r(?:c(?:e)?)?)?\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
       reason: 'git checkout --force',
     },
     {
-      regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
+      regex: /\bgit\s+push\s+[^|;]*(-f\b|--fo(?:r(?:c(?:e)?)?)?\b)(?!-with-lease)/,
       reason: 'git push --force (use --force-with-lease instead)',
     },
     {
       regex:
-        /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--delete\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--force\b|-[A-Za-z]*f[A-Za-z]*\b))/,
+        /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--de(?:l(?:e(?:t(?:e)?)?)?)?\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--fo(?:r(?:c(?:e)?)?)?\b|-[A-Za-z]*f[A-Za-z]*\b))/,
       reason: 'git branch -D',
       caseSensitive: true,
     },
     {
-      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--delete)\b/,
+      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--de(?:l(?:e(?:t(?:e)?)?)?)?)\b/,
       reason: 'git tag -d',
     },
     {

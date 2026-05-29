@@ -26,6 +26,12 @@ describe('Claude Code hook', () => {
       expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('git reset --hard');
     });
 
+    test('command-executing wrapper around destructive command is denied', async () => {
+      const result = await runClaudeCodeHook(claudeCodeBashInput('timeout 10 rm -rf /'));
+
+      expect(getHookDenyReason(result, 'claude-code')).toContain('rm -rf');
+    });
+
     test('policy fail-closed denial shows repair command without manual permission footer', async () => {
       writeProjectRulesConfigWithoutLock();
 
