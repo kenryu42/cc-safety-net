@@ -18,7 +18,9 @@ export function splitShellCommandsWithInfo(command: string): ShellCommandSegment
   if (hasUnclosedQuotes(command)) {
     return [{ tokens: [command], hasDynamicSubstitution: false }];
   }
-  const normalizedCommand = _stripAttachedIoNumbers(command.replace(/\n/g, ' ; '));
+  const normalizedCommand = _stripAttachedIoNumbers(
+    _normalizeAnsiCQuotes(command).replace(/\n/g, ' ; '),
+  );
   const tokens = parse(normalizedCommand, ENV_PROXY);
   const segments: ShellCommandSegmentInfo[] = [];
   let current: string[] = [];
@@ -415,6 +417,152 @@ function _pushInlineSubstitutionSegmentInfos(
   for (const seg of inlineSegments) {
     segments.push({ tokens: seg, hasDynamicSubstitution: false });
   }
+}
+
+function _normalizeAnsiCQuotes(command: string): string {
+  let result = '';
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+
+  for (let i = 0; i < command.length; ) {
+    const char = command[i];
+    if (!char) break;
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      i++;
+      continue;
+    }
+
+    if (!inSingle && char === '\\') {
+      result += char;
+      escaped = true;
+      i++;
+      continue;
+    }
+
+    if (!inSingle && !inDouble && command.startsWith("$'", i)) {
+      const parsed = _readAnsiCString(command, i + 2);
+      if (!parsed) {
+        result += char;
+        i++;
+        continue;
+      }
+      result += _singleQuoteShellToken(parsed.value);
+      i = parsed.endIndex + 1;
+      continue;
+    }
+
+    if (!inDouble && char === "'") {
+      inSingle = !inSingle;
+    } else if (!inSingle && char === '"') {
+      inDouble = !inDouble;
+    }
+
+    result += char;
+    i++;
+  }
+
+  return result;
+}
+
+function _readAnsiCString(
+  command: string,
+  startIndex: number,
+): { value: string; endIndex: number } | null {
+  let value = '';
+
+  for (let i = startIndex; i < command.length; i++) {
+    const char = command[i];
+    if (!char) break;
+
+    if (char === "'") {
+      return { value, endIndex: i };
+    }
+
+    if (char !== '\\') {
+      value += char;
+      continue;
+    }
+
+    const decoded = _readAnsiEscape(command, i + 1);
+    value += decoded.value;
+    i = decoded.endIndex;
+  }
+
+  return null;
+}
+
+function _readAnsiEscape(command: string, index: number): { value: string; endIndex: number } {
+  const char = command[index];
+  if (!char) return { value: '\\', endIndex: index };
+
+  const simpleEscapes: Record<string, string> = {
+    a: '\x07',
+    b: '\b',
+    e: '\x1b',
+    E: '\x1b',
+    f: '\f',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+    v: '\v',
+    '\\': '\\',
+    "'": "'",
+    '"': '"',
+  };
+  if (Object.hasOwn(simpleEscapes, char)) {
+    return { value: simpleEscapes[char] ?? char, endIndex: index };
+  }
+
+  if (char === 'x') {
+    return _readFixedBaseEscape(command, index + 1, 16, 2, index);
+  }
+
+  if (char === 'u') {
+    return _readFixedBaseEscape(command, index + 1, 16, 4, index);
+  }
+
+  if (char === 'U') {
+    return _readFixedBaseEscape(command, index + 1, 16, 8, index);
+  }
+
+  if (/[0-7]/.test(char)) {
+    return _readFixedBaseEscape(command, index, 8, 3, index - 1);
+  }
+
+  return { value: char, endIndex: index };
+}
+
+function _readFixedBaseEscape(
+  command: string,
+  startIndex: number,
+  base: 8 | 16,
+  maxLength: number,
+  fallbackEndIndex: number,
+): { value: string; endIndex: number } {
+  let digits = '';
+  let endIndex = startIndex - 1;
+  const digitRegex = base === 16 ? /[0-9a-fA-F]/ : /[0-7]/;
+
+  for (let i = startIndex; i < command.length && digits.length < maxLength; i++) {
+    const char = command[i];
+    if (!char || !digitRegex.test(char)) break;
+    digits += char;
+    endIndex = i;
+  }
+
+  if (!digits) {
+    return { value: command[fallbackEndIndex] ?? '', endIndex: fallbackEndIndex };
+  }
+
+  return { value: String.fromCodePoint(Number.parseInt(digits, base)), endIndex };
+}
+
+function _singleQuoteShellToken(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function _stripAttachedIoNumbers(command: string): string {

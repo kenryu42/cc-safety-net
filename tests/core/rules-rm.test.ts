@@ -404,6 +404,25 @@ describe('rm -rf cwd-aware', () => {
     }
   });
 
+  test('rm -rf after time cd bypasses cwd allowlist blocked', () => {
+    setup();
+    try {
+      assertBlocked('time cd .. && rm -rf build', 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('ANSI-C quoted rm command blocked', () => {
+    setup();
+    try {
+      assertBlocked("$'\\x72\\x6d' -rf /", 'rm -rf', tmpDir);
+      assertBlocked("bash -c $'rm -rf /'", 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('rm -rf strict mode allows within cwd', () => {
     setup();
     try {
