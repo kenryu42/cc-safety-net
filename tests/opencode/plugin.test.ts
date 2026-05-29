@@ -5,19 +5,19 @@ import { join } from 'node:path';
 import { syncRulesConfig } from '@/core/rules/policy';
 import { CCSafetyNetPlugin } from '@/index';
 
+type ToolPlugin = {
+  'tool.execute.before': (
+    input: { tool: string },
+    output: { args: { command?: string } },
+  ) => Promise<void>;
+};
+
 describe('OpenCode plugin', () => {
   test('reads current environment mode names', async () => {
     const original = process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS;
     process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS = '1';
     try {
-      const plugin = (await CCSafetyNetPlugin({
-        directory: process.cwd(),
-      } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as {
-        'tool.execute.before': (
-          input: { tool: string },
-          output: { args: { command: string } },
-        ) => Promise<void>;
-      };
+      const plugin = await loadToolPlugin(process.cwd());
 
       await expect(
         plugin['tool.execute.before'](
@@ -55,6 +55,14 @@ describe('OpenCode plugin', () => {
     });
   });
 
+  test('fails closed when OpenCode passes malformed bash output', async () => {
+    const plugin = await loadToolPlugin(process.cwd());
+
+    await expect(plugin['tool.execute.before']({ tool: 'bash' }, { args: {} })).rejects.toThrow(
+      'Safety Net failed closed',
+    );
+  });
+
   test('reloads and repairs local rules before each tool execution', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'safety-net-opencode-plugin-'));
     try {
@@ -70,14 +78,7 @@ describe('OpenCode plugin', () => {
         cwd: dir,
         userConfigDir: join(dir, 'home', '.cc-safety-net', 'rules'),
       });
-      const plugin = (await CCSafetyNetPlugin({
-        directory: dir,
-      } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as {
-        'tool.execute.before': (
-          input: { tool: string },
-          output: { args: { command: string } },
-        ) => Promise<void>;
-      };
+      const plugin = await loadToolPlugin(dir);
 
       writeRulebook(dir, [
         {
@@ -96,6 +97,12 @@ describe('OpenCode plugin', () => {
     }
   });
 });
+
+async function loadToolPlugin(directory: string): Promise<ToolPlugin> {
+  return (await CCSafetyNetPlugin({
+    directory,
+  } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as ToolPlugin;
+}
 
 function writeRulebook(
   dir: string,

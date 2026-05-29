@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { analyzeCommand } from '@/core/analyze';
 import {
   getLegacyProjectConfigPath,
   loadConfig,
@@ -10,6 +11,7 @@ import {
   validateRulesConfigFile,
 } from '@/core/config';
 import { syncRulesConfig } from '@/core/rules/policy';
+import { writeLockedGitHubRulebookPolicy } from '../helpers.ts';
 
 const legacyRule = {
   name: 'block-git-add-all',
@@ -125,6 +127,15 @@ describe('runtime config loading', () => {
     );
   }
 
+  function expectPolicyFailClosed(reason: string): void {
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+    const result = analyzeCommand('echo ok', { cwd: tempDir, config });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toContain(reason);
+    expect(result?.reason).toContain(reason);
+  }
+
   test('legacy project config fails closed when project rule config is missing', () => {
     writeLegacyProjectConfig();
 
@@ -178,6 +189,18 @@ describe('runtime config loading', () => {
 
     expect(config.rules).toEqual([]);
     expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('unreadable rulebook cache entries fail closed', () => {
+    writeLockedGitHubRulebookPolicy(tempDir, '{}', { cacheAsDirectory: true });
+
+    expectPolicyFailClosed('failed to read cached rulebook');
+  });
+
+  test('invalid rulebook cache JSON fails closed', () => {
+    writeLockedGitHubRulebookPolicy(tempDir, '{');
+
+    expectPolicyFailClosed('invalid cached rulebook');
   });
 });
 

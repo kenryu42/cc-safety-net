@@ -1,5 +1,6 @@
 import { expect } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,6 +45,54 @@ export function assertAllowed(command: string, cwd?: string): void {
 export function runGuard(command: string, cwd?: string, config?: Config): string | null {
   const options = getOptionsFromEnv(cwd, config);
   return analyzeCommand(command, options)?.reason ?? null;
+}
+
+export function writeLockedGitHubRulebookPolicy(
+  cwd: string,
+  content: string,
+  options: { cacheAsDirectory?: boolean } = {},
+): void {
+  const digest = `sha256:${createHash('sha256').update(content).digest('hex')}`;
+  const cachePath = join(
+    cwd,
+    '.cc-safety-net',
+    'cache',
+    'rulebooks',
+    `owner-repo-main-policy--${digest.slice(7, 19)}`,
+    'rulebook.json',
+  );
+
+  mkdirSync(join(cwd, '.cc-safety-net', 'rules'), { recursive: true });
+  writeFileSync(
+    join(cwd, '.cc-safety-net', 'rules', 'rule.json'),
+    JSON.stringify({ version: 1, rules: ['owner/repo#main/policy'], overrides: {} }),
+  );
+  writeFileSync(
+    join(cwd, '.cc-safety-net', 'rules', 'rule.lock'),
+    JSON.stringify({
+      version: 1,
+      rulebooks: [
+        {
+          spec: 'owner/repo#main/policy',
+          kind: 'github',
+          owner: 'owner',
+          repo: 'repo',
+          ref: 'main',
+          commit: 'abc123',
+          path: '.cc-safety-net/rules/policy/rulebook.json',
+          name: 'policy',
+          version: '1.0.0',
+          digest,
+        },
+      ],
+    }),
+  );
+  if (options.cacheAsDirectory) {
+    mkdirSync(cachePath, { recursive: true });
+    return;
+  }
+  mkdirSync(join(cachePath, '..'), { recursive: true });
+  writeFileSync(cachePath, content);
 }
 
 export function withEnv<T>(env: Record<string, string>, fn: () => T): T {

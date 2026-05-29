@@ -170,14 +170,12 @@ export function loadScopePolicy(
       errors.push(`missing lock entry for ${spec}; run ${RULE_SYNC_COMMAND}`);
       return [];
     }
-    const validationErrors = validateLockedRulebook(entry, configDir, options);
-    if (validationErrors.length > 0) {
-      errors.push(...validationErrors);
+    const loadedRulebook = loadLockedRulebook(entry, configDir, options);
+    if (loadedRulebook.errors.length > 0 || !loadedRulebook.rulebook) {
+      errors.push(...loadedRulebook.errors);
       return [];
     }
-    const rulebook = JSON.parse(
-      readFileSync(getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir }), 'utf-8'),
-    ) as Rulebook;
+    const rulebook = loadedRulebook.rulebook;
     return [
       {
         rules: rulebook.rules.map((rule) => ({ ...rule, name: `${rulebook.name}/${rule.name}` })),
@@ -203,22 +201,39 @@ export function loadScopePolicy(
   };
 }
 
-function validateLockedRulebook(
+function loadLockedRulebook(
   entry: RulebookLockEntry,
   configDir: string,
   options: RulesPolicyOptions,
-): string[] {
+): { rulebook: Rulebook | null; errors: string[] } {
   const errors: string[] = [];
   const cachePath = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
   if (!existsSync(cachePath)) {
-    return [`missing cache entry for ${entry.spec}; run ${RULE_SYNC_COMMAND}`];
+    return {
+      rulebook: null,
+      errors: [`missing cache entry for ${entry.spec}; run ${RULE_SYNC_COMMAND}`],
+    };
   }
-  const cacheContent = readFileSync(cachePath, 'utf-8');
+
+  let cacheContent: string;
+  try {
+    cacheContent = readFileSync(cachePath, 'utf-8');
+  } catch (error) {
+    return {
+      rulebook: null,
+      errors: [
+        `failed to read cached rulebook for ${entry.spec}: ${error instanceof Error ? error.message : String(error)}`,
+      ],
+    };
+  }
   if (sha256Digest(cacheContent) !== entry.digest) {
     errors.push(`cache digest mismatch for ${entry.spec}; run ${RULE_SYNC_COMMAND}`);
   }
+  let rulebook: Rulebook | null = null;
   try {
-    assertValidRulebook(JSON.parse(cacheContent));
+    const parsed = JSON.parse(cacheContent) as unknown;
+    assertValidRulebook(parsed);
+    rulebook = parsed as Rulebook;
   } catch (error) {
     errors.push(
       `invalid cached rulebook for ${entry.spec}: ${error instanceof Error ? error.message : String(error)}`,
@@ -235,19 +250,25 @@ function validateLockedRulebook(
       errors.push(
         `lockfile local source path for ${entry.spec} must stay within ${configDir}; run ${RULE_SYNC_COMMAND}`,
       );
-      return errors;
+      return { rulebook: null, errors };
     }
     const localPath = join(sourcePath, RULEBOOK_FILE);
     if (!existsSync(localPath)) {
       errors.push(`missing local source for ${entry.spec}; run ${RULE_SYNC_COMMAND}`);
     } else {
-      const localContent = readFileSync(localPath, 'utf-8');
-      if (sha256Digest(localContent) !== entry.digest) {
-        errors.push(getLocalSourceDriftError(entry.spec, localContent));
+      try {
+        const localContent = readFileSync(localPath, 'utf-8');
+        if (sha256Digest(localContent) !== entry.digest) {
+          errors.push(getLocalSourceDriftError(entry.spec, localContent));
+        }
+      } catch (error) {
+        errors.push(
+          `failed to read local source for ${entry.spec}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
   }
-  return errors;
+  return { rulebook: errors.length === 0 ? rulebook : null, errors };
 }
 
 export function rulesPolicyToConfig(policy: LoadedRulesPolicy): Config {

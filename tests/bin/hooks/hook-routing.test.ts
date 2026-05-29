@@ -1,4 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { writeLockedGitHubRulebookPolicy } from '../../helpers.ts';
 import { claudeCodeBashInput, geminiShellInput, kimiShellInput, runCli } from './hook-helpers';
 
 describe('hook command routing', () => {
@@ -25,6 +29,27 @@ describe('hook command routing', () => {
     expect(exitCode).toBe(0);
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain('git reset --hard');
+  });
+
+  test('Claude Code hook fails closed when config loading throws', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'safety-net-hook-bad-config-'));
+    try {
+      writeLockedGitHubRulebookPolicy(cwd, '{}', { cacheAsDirectory: true });
+
+      const { stdout, exitCode } = await runCli(
+        ['hook', '--claude-code'],
+        JSON.stringify({ ...claudeCodeBashInput('echo ok'), cwd }),
+      );
+      const output = JSON.parse(stdout);
+
+      expect(exitCode).toBe(0);
+      expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
+        'failed to read cached rulebook',
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   test('top-level non-Claude hook flags route to hook command for compatibility', async () => {

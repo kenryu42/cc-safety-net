@@ -4,6 +4,9 @@ import { getSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
 
+const REASON_SAFETY_NET_FAILED_CLOSED =
+  'Safety Net failed closed because command analysis failed unexpectedly.';
+
 export const CCSafetyNetPlugin: Plugin = async ({ directory }) => {
   const modes = getSafetyNetEnvModes();
 
@@ -21,14 +24,25 @@ export const CCSafetyNetPlugin: Plugin = async ({ directory }) => {
     'tool.execute.before': async (input, output) => {
       if (input.tool === 'bash') {
         const command = output.args.command;
-        const result = analyzeCommand(command, {
-          cwd: directory,
-          config: loadConfig(directory, { repairLocalRulebooks: true }),
-          strict: modes.strict,
-          paranoidRm: modes.paranoidRm,
-          paranoidInterpreters: modes.paranoidInterpreters,
-          worktreeMode: modes.worktreeMode,
-        });
+        let result: ReturnType<typeof analyzeCommand>;
+        try {
+          result = analyzeCommand(command, {
+            cwd: directory,
+            config: loadConfig(directory, { repairLocalRulebooks: true }),
+            strict: modes.strict,
+            paranoidRm: modes.paranoidRm,
+            paranoidInterpreters: modes.paranoidInterpreters,
+            worktreeMode: modes.worktreeMode,
+          });
+        } catch {
+          throw new Error(
+            formatBlockedMessage({
+              reason: REASON_SAFETY_NET_FAILED_CLOSED,
+              command,
+              segment: command,
+            }),
+          );
+        }
         if (result) {
           const message = formatBlockedMessage({
             reason: result.reason,

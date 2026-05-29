@@ -2,6 +2,9 @@ import { analyzeCommand, loadConfig } from '@/core/analyze';
 import { writeAuditLog } from '@/core/audit';
 import { ENV_FLAGS, envTruthy } from '@/core/env';
 
+export const REASON_SAFETY_NET_FAILED_CLOSED =
+  'Safety Net failed closed because command analysis failed unexpectedly.';
+
 export async function readHookInput<T>(outputDeny: (reason: string) => void): Promise<T | null> {
   const chunks: Buffer[] = [];
 
@@ -50,7 +53,13 @@ export function handleBlockedHookCommand(
   sessionId: string | undefined,
   outputDeny: (reason: string, command?: string, segment?: string) => void,
 ): void {
-  const result = analyzeHookCommand(command, cwd);
+  let result: ReturnType<typeof analyzeHookCommand>;
+  try {
+    result = analyzeHookCommand(command, cwd);
+  } catch {
+    outputDeny(REASON_SAFETY_NET_FAILED_CLOSED, command, command);
+    return;
+  }
   if (!result) {
     if (sessionId && envTruthy(ENV_FLAGS.debug)) {
       writeAuditLog(sessionId, command, command, 'allowed', cwd, { decision: 'allow' });
