@@ -10,7 +10,7 @@ docs
 .cc-safety-net
 coverage
 .codex
-report.md
+codex-security-scans
 
 # --- Node.js ---
 node_modules/
