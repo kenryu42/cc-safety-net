@@ -157,15 +157,7 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
   };
 
   for (const arg of args) {
-    if (flags.positionals[0] === 'migrate' && arg.startsWith('-')) {
-      if (arg === '--cleanup') {
-        flags.cleanup = true;
-      } else if (arg === '-h' || arg === '--help') {
-        flags.help = true;
-      } else {
-        flags.errors.push(`Unknown option for rule migrate: ${arg}`);
-      }
-    } else if (arg === '-g' || arg === '--global') {
+    if (arg === '-g' || arg === '--global') {
       flags.global = true;
     } else if (arg === '--check') {
       flags.check = true;
@@ -177,15 +169,26 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
       } else {
         flags.errors.push(`Unknown rule option: ${arg}`);
       }
+    } else if (arg === '--cleanup') {
+      if (flags.positionals[0] === 'migrate') {
+        flags.cleanup = true;
+      } else {
+        flags.errors.push(unknownRuleOption(flags.positionals[0], arg));
+      }
     } else if (arg === '-h' || arg === '--help') {
       flags.help = true;
     } else if (arg.startsWith('-')) {
-      flags.errors.push(`Unknown rule option: ${arg}`);
+      flags.errors.push(unknownRuleOption(flags.positionals[0], arg));
     } else {
       flags.positionals.push(arg);
     }
   }
 
+  validateRuleFlags(flags);
+  return flags;
+}
+
+function validateRuleFlags(flags: RuleFlags): void {
   const [subcommand] = flags.positionals;
   if (subcommand && !RULE_SUBCOMMANDS.has(subcommand)) {
     flags.errors.push(`Unknown rule subcommand: ${subcommand}`);
@@ -202,8 +205,11 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
   if (subcommand === 'list' && flags.global) {
     flags.errors.push('Unknown option for rule list: --global');
   }
+}
 
-  return flags;
+function unknownRuleOption(subcommand: string | undefined, option: string) {
+  if (subcommand === 'migrate') return `Unknown option for rule migrate: ${option}`;
+  return `Unknown rule option: ${option}`;
 }
 
 function ensureDefaultRulebookSource(configPath: string, rulebookName: string): void {
