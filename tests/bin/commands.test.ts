@@ -9,10 +9,13 @@ describe('command registry', () => {
       expect(cmd?.name).toBe('doctor');
     });
 
-    test('finds command by alias', () => {
-      const cmd = findCommand('-cc');
-      expect(cmd).toBeDefined();
-      expect(cmd?.name).toBe('claude-code');
+    test('does not register legacy top-level hook aliases as commands', () => {
+      expect(findCommand('-cc')).toBeUndefined();
+      expect(findCommand('--claude-code')).toBeUndefined();
+      expect(findCommand('-cp')).toBeUndefined();
+      expect(findCommand('--copilot-cli')).toBeUndefined();
+      expect(findCommand('-gc')).toBeUndefined();
+      expect(findCommand('--gemini-cli')).toBeUndefined();
     });
 
     test('finds command case-insensitively', () => {
@@ -35,12 +38,6 @@ describe('command registry', () => {
     test('finds rule command and does not alias old rules command', () => {
       expect(findCommand('rule')?.name).toBe('rule');
       expect(findCommand('rules')).toBeUndefined();
-    });
-
-    test('finds command by long alias', () => {
-      const cmd = findCommand('--claude-code');
-      expect(cmd).toBeDefined();
-      expect(cmd?.name).toBe('claude-code');
     });
   });
 

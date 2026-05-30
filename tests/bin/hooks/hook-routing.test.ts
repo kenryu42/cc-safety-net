@@ -74,6 +74,14 @@ describe('hook command routing', () => {
     expect(stdout).toBe('');
   });
 
+  test('hook kimi-cli is not a platform subcommand', async () => {
+    const { stdout, exitCode } = await runCli(['hook', 'kimi-cli']);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain('cc-safety-net hook');
+    expect(stdout).toContain('-kc, --kimi-cli');
+  });
+
   test('top-level Kimi CLI flags are not legacy compatibility aliases', async () => {
     const longFlag = await runCli(['--kimi-cli']);
     const shortFlag = await runCli(['-kc']);
