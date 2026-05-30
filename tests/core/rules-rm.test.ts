@@ -413,6 +413,16 @@ describe('rm -rf cwd-aware', () => {
     }
   });
 
+  test('rm -rf after builtin time cd bypasses cwd allowlist blocked', () => {
+    setup();
+    try {
+      assertBlocked('builtin time cd .. && rm -rf build', 'rm -rf', tmpDir);
+      assertBlocked('builtin time -p cd .. && rm -rf build', 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('ANSI-C quoted rm command blocked', () => {
     setup();
     try {

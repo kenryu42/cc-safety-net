@@ -312,11 +312,13 @@ export function segmentChangesCwd(segment: readonly string[]): boolean {
   }
 
   let head = unwrapped[0] ?? '';
+  let headIndex = 0;
   if (head === 'builtin' && unwrapped.length > 1) {
     head = unwrapped[1] ?? '';
+    headIndex = 1;
   }
   if (head === 'time') {
-    head = getHeadAfterTimePrefix(unwrapped);
+    head = getHeadAfterTimePrefix(unwrapped, headIndex + 1);
   }
 
   if (head === 'cd' || head === 'pushd' || head === 'popd') {
@@ -327,8 +329,8 @@ export function segmentChangesCwd(segment: readonly string[]): boolean {
   return CWD_CHANGE_REGEX.test(joined);
 }
 
-function getHeadAfterTimePrefix(tokens: readonly string[]): string {
-  let i = 1;
+function getHeadAfterTimePrefix(tokens: readonly string[], startIndex: number): string {
+  let i = startIndex;
   while (tokens[i]?.startsWith('-')) {
     i++;
   }

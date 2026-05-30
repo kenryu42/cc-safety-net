@@ -950,6 +950,11 @@ describe('cwd tracking helpers', () => {
     expect(_segmentChangesCwd(['time', '-p', 'cd', '/tmp'])).toBe(true);
   });
 
+  test('builtin time cd returns true', () => {
+    expect(_segmentChangesCwd(['builtin', 'time', 'cd', '/tmp'])).toBe(true);
+    expect(_segmentChangesCwd(['builtin', 'time', '-p', 'cd', '/tmp'])).toBe(true);
+  });
+
   test('regex fallback on unparseable', () => {
     expect(_segmentChangesCwd(['cd', "'unterminated"])).toBe(true);
   });

@@ -6322,11 +6322,13 @@ function segmentChangesCwd(segment) {
     return false;
   }
   let head = unwrapped[0] ?? "";
+  let headIndex = 0;
   if (head === "builtin" && unwrapped.length > 1) {
     head = unwrapped[1] ?? "";
+    headIndex = 1;
   }
   if (head === "time") {
-    head = getHeadAfterTimePrefix(unwrapped);
+    head = getHeadAfterTimePrefix(unwrapped, headIndex + 1);
   }
   if (head === "cd" || head === "pushd" || head === "popd") {
     return true;
@@ -6334,8 +6336,8 @@ function segmentChangesCwd(segment) {
   const joined = segment.join(" ");
   return CWD_CHANGE_REGEX.test(joined);
 }
-function getHeadAfterTimePrefix(tokens) {
-  let i = 1;
+function getHeadAfterTimePrefix(tokens, startIndex) {
+  let i = startIndex;
   while (tokens[i]?.startsWith("-")) {
     i++;
   }
@@ -6740,9 +6742,18 @@ function isFailClosedRepairCommand(segments2) {
     return tokens[1] === "rule" && isRuleSyncArgs(tokens.slice(2));
   }
   if (tokens[0] === "npx") {
-    return (tokens[1] === "-y" || tokens[1] === "--yes") && isCcSafetyNetPackage(tokens[2]) && tokens[3] === "rule" && isRuleSyncArgs(tokens.slice(4));
+    return (tokens[1] === "-y" || tokens[1] === "--yes") && isPackageRuleSyncRepair(tokens, 2);
+  }
+  if (tokens[0] === "bunx" || tokens[0] === "pnpx") {
+    return isPackageRuleSyncRepair(tokens, 1);
+  }
+  if ((tokens[0] === "pnpm" || tokens[0] === "yarn") && tokens[1] === "dlx") {
+    return isPackageRuleSyncRepair(tokens, 2);
   }
   return false;
+}
+function isPackageRuleSyncRepair(tokens, packageIndex) {
+  return isCcSafetyNetPackage(tokens[packageIndex]) && tokens[packageIndex + 1] === "rule" && isRuleSyncArgs(tokens.slice(packageIndex + 2));
 }
 function isRuleSyncArgs(args) {
   return args.length >= 1 && args.length <= 2 && args.filter((arg) => arg === "sync").length === 1 && args.every((arg) => arg === "sync" || arg === "--global" || arg === "-g");
