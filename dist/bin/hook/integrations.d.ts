@@ -1,5 +1,6 @@
+import { type RuntimeHookIntegrationId } from '@/bin/integration-metadata';
 export type HookIntegration = {
-    id: string;
+    id: RuntimeHookIntegrationId;
     displayName: string;
     flags: readonly [string, string];
     description: string;

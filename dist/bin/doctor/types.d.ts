@@ -1,8 +1,9 @@
 /**
  * Type definitions for the doctor command.
  */
+import type { IntegrationId } from '@/bin/integration-metadata';
 /** Hook platform identifiers */
-export type HookPlatform = 'claude-code' | 'opencode' | 'gemini-cli' | 'copilot-cli' | 'codex';
+export type HookPlatform = IntegrationId;
 /** Self-test case definition */
 export interface SelfTestCase {
     command: string;
@@ -106,6 +107,8 @@ export interface SystemInfo {
     geminiExtensionsListOutput: string | null;
     /** Copilot CLI version (from `copilot --binary-version`, falling back to `copilot --version`) */
     copilotCliVersion: string | null;
+    /** Kimi CLI version (from `kimi --version`) */
+    kimiCliVersion: string | null;
     /** Node.js version (from `node --version`) */
     nodeVersion: string | null;
     /** npm version (from `npm --version`) */

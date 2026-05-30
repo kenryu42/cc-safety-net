@@ -6251,41 +6251,86 @@ async function runKimiCliHook() {
   });
 }
 
-// src/bin/hook/integrations.ts
-var hookIntegrations = [
+// src/bin/integration-metadata.ts
+var integrationMetadata = [
   {
     id: "claude-code",
     displayName: "Claude Code",
-    flags: ["-cc", "--claude-code"],
-    description: "Run as Claude Code PreToolUse hook",
-    legacyTopLevel: true,
-    run: runClaudeCodeHook
+    doctorVisible: true,
+    runtimeHook: {
+      flags: ["-cc", "--claude-code"],
+      description: "Run as Claude Code PreToolUse hook",
+      legacyTopLevel: true,
+      order: 1
+    }
   },
   {
-    id: "copilot-cli",
-    displayName: "Copilot CLI",
-    flags: ["-cp", "--copilot-cli"],
-    description: "Run as Copilot CLI PreToolUse hook",
-    legacyTopLevel: true,
-    run: runCopilotCliHook
+    id: "opencode",
+    displayName: "OpenCode",
+    doctorVisible: true
   },
   {
     id: "gemini-cli",
     displayName: "Gemini CLI",
-    flags: ["-gc", "--gemini-cli"],
-    description: "Run as Gemini CLI BeforeTool hook",
-    legacyTopLevel: true,
-    run: runGeminiCLIHook
+    doctorVisible: true,
+    runtimeHook: {
+      flags: ["-gc", "--gemini-cli"],
+      description: "Run as Gemini CLI BeforeTool hook",
+      legacyTopLevel: true,
+      order: 3
+    }
+  },
+  {
+    id: "copilot-cli",
+    displayName: "Copilot CLI",
+    doctorVisible: true,
+    runtimeHook: {
+      flags: ["-cp", "--copilot-cli"],
+      description: "Run as Copilot CLI PreToolUse hook",
+      legacyTopLevel: true,
+      order: 2
+    }
   },
   {
     id: "kimi-cli",
     displayName: "Kimi CLI",
-    flags: ["-kc", "--kimi-cli"],
-    description: "Run as Kimi CLI PreToolUse hook",
-    legacyTopLevel: false,
-    run: runKimiCliHook
+    doctorVisible: true,
+    runtimeHook: {
+      flags: ["-kc", "--kimi-cli"],
+      description: "Run as Kimi CLI PreToolUse hook",
+      legacyTopLevel: false,
+      order: 4
+    }
+  },
+  {
+    id: "codex",
+    displayName: "Codex",
+    doctorVisible: true
   }
 ];
+var doctorIntegrationOrder = integrationMetadata.filter((integration) => integration.doctorVisible).map((integration) => integration.id);
+var runtimeHookIntegrationMetadata = integrationMetadata.filter((integration) => ("runtimeHook" in integration)).toSorted((a, b) => a.runtimeHook.order - b.runtimeHook.order).map((integration) => ({
+  id: integration.id,
+  displayName: integration.displayName,
+  flags: integration.runtimeHook.flags,
+  description: integration.runtimeHook.description,
+  legacyTopLevel: integration.runtimeHook.legacyTopLevel
+}));
+function getIntegrationDisplayName(id) {
+  return integrationMetadata.find((integration) => integration.id === id)?.displayName ?? id;
+}
+
+// src/bin/hook/integrations.ts
+var hookRunners = {
+  "claude-code": runClaudeCodeHook,
+  "copilot-cli": runCopilotCliHook,
+  "gemini-cli": runGeminiCLIHook,
+  "kimi-cli": runKimiCliHook
+};
+var hookIntegrations = runtimeHookIntegrationMetadata.map((integration) => ({
+  ...integration,
+  run: hookRunners[integration.id]
+}));
 function findHookIntegrationByFlag(args) {
   return hookIntegrations.find((integration) => integration.flags.some((flag) => args.includes(flag)));
 }
@@ -6667,13 +6712,6 @@ function colorizeToken(token, index, seed = 0) {
 }
 
 // src/bin/doctor/format.ts
-var PLATFORM_NAMES = {
-  "claude-code": "Claude Code",
-  opencode: "OpenCode",
-  "gemini-cli": "Gemini CLI",
-  "copilot-cli": "Copilot CLI",
-  codex: "Codex"
-};
 function formatAsciiTable(options2) {
   const rawRows = options2.rawRows ?? options2.rows;
   const colWidths = (options2.headers ?? rawRows[0] ?? []).map((h, i) => {
@@ -6700,7 +6738,7 @@ function formatHooksSection(hooks) {
   const warnings = [];
   const errors = [];
   for (const hook of hooks) {
-    const platformName = PLATFORM_NAMES[hook.platform] ?? hook.platform;
+    const platformName = getIntegrationDisplayName(hook.platform);
     if (hook.selfTest) {
       for (const result of hook.selfTest.results) {
         if (!result.passed) {
@@ -6748,7 +6786,7 @@ function formatHooksTable(hooks) {
     }
   };
   const rowData = hooks.map((h) => {
-    const platformName = PLATFORM_NAMES[h.platform] ?? h.platform;
+    const platformName = getIntegrationDisplayName(h.platform);
     const statusDisplay = getStatusDisplay(h);
     let testsText = "-";
     if (h.status === "configured" && h.selfTest) {
@@ -6966,6 +7004,7 @@ function formatSystemInfoTable(system) {
     { label: "OpenCode", value: system.openCodeVersion },
     { label: "Gemini CLI", value: system.geminiCliVersion },
     { label: "Copilot CLI", value: system.copilotCliVersion },
+    { label: "Kimi CLI", value: system.kimiCliVersion },
     { label: "Node.js", value: system.nodeVersion },
     { label: "npm", value: system.npmVersion },
     { label: "Bun", value: system.bunVersion },
@@ -7007,6 +7046,7 @@ var CLAUDE_PLUGIN_LIST_CONFIG_PATH = "claude plugin list";
 var CLAUDE_SAFETY_NET_PLUGIN_ID = "safety-net@cc-marketplace";
 var GEMINI_EXTENSIONS_LIST_CONFIG_PATH = "gemini extensions list";
 var GEMINI_SAFETY_NET_SOURCE = "https://github.com/kenryu42/gemini-safety-net";
+var KIMI_HOOK_COMMAND_PATTERN = /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*--kimi-cli(\s|["']|$)/;
 var CODEX_PLUGIN_HOOKS_WARNING = "Codex plugin hooks are behind a feature flag. Add `plugin_hooks = true` under [features] in $CODEX_HOME/config.toml.";
 var CODEX_SAFETY_NET_PLUGIN_ID = "safety-net@cc-marketplace";
 var SELF_TEST_CASES = [
@@ -7232,6 +7272,34 @@ function detectGeminiCLI(extensionsListOutput) {
     status: "configured",
     method: "extension list",
     configPath: GEMINI_EXTENSIONS_LIST_CONFIG_PATH,
+    selfTest: runSelfTest()
+  };
+}
+function _getKimiConfigPath(homeDir) {
+  return join10(process.env.KIMI_SHARE_DIR || join10(homeDir, ".kimi"), "config.toml");
+}
+function detectKimiCLI(homeDir) {
+  const configPath = _getKimiConfigPath(homeDir);
+  if (!existsSync13(configPath)) {
+    return { platform: "kimi-cli", status: "n/a", configPath };
+  }
+  try {
+    if (!KIMI_HOOK_COMMAND_PATTERN.test(readFileSync10(configPath, "utf-8"))) {
+      return { platform: "kimi-cli", status: "n/a", configPath };
+    }
+  } catch (e) {
+    return {
+      platform: "kimi-cli",
+      status: "n/a",
+      configPath,
+      errors: [`Failed to read ${configPath}: ${e instanceof Error ? e.message : String(e)}`]
+    };
+  }
+  return {
+    platform: "kimi-cli",
+    status: "configured",
+    method: "hook config",
+    configPath,
     selfTest: runSelfTest()
   };
 }
@@ -7552,13 +7620,23 @@ function detectAllHooks(cwd, options2) {
       errors: errors.length > 0 ? errors : undefined
     };
   };
-  return [
-    detectClaudeCode(options2?.claudePluginListOutput),
-    detectOpenCode(homeDir),
-    detectGeminiCLI(options2?.geminiExtensionsListOutput),
-    detectCopilotCLI(),
-    detectCodex(homeDir)
-  ];
+  return doctorIntegrationOrder.map((platform) => {
+    switch (platform) {
+      case "claude-code":
+        return detectClaudeCode(options2?.claudePluginListOutput);
+      case "opencode":
+        return detectOpenCode(homeDir);
+      case "gemini-cli":
+        return detectGeminiCLI(options2?.geminiExtensionsListOutput);
+      case "copilot-cli":
+        return detectCopilotCLI();
+      case "kimi-cli":
+        return detectKimiCLI(homeDir);
+      case "codex":
+        return detectCodex(homeDir);
+    }
+    return platform;
+  });
 }
 
 // src/bin/doctor/system-info.ts
@@ -7645,6 +7723,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher) {
     geminiRaw,
     geminiExtensionsListOutput,
     copilotRaw,
+    kimiRaw,
     nodeRaw,
     npmRaw,
     bunRaw,
@@ -7656,6 +7735,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher) {
     fetcher(["gemini", "--version"]),
     fetcher(["gemini", "extensions", "list"]),
     fetchCopilotVersion(),
+    fetcher(["kimi", "--version"]),
     fetcher(["node", "--version"]),
     fetcher(["npm", "--version"]),
     fetcher(["bun", "--version"]),
@@ -7669,6 +7749,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher) {
     geminiCliVersion: parseVersion(geminiRaw),
     geminiExtensionsListOutput,
     copilotCliVersion: parseVersion(copilotRaw),
+    kimiCliVersion: parseVersion(kimiRaw),
     nodeVersion: parseVersion(nodeRaw),
     npmVersion: parseVersion(npmRaw),
     bunVersion: parseVersion(bunRaw),
@@ -10280,35 +10361,34 @@ function handleCommandHelp(args) {
   }
   return false;
 }
+var commandParsers = {
+  explain: (args) => ({ mode: "explain", args }),
+  rule: (args) => ({ mode: "rule", args }),
+  statusline: (args) => {
+    if (args.includes("--claude-code") || args.includes("-cc"))
+      return { mode: "statusline" };
+    showCommandHelp("statusline");
+    process.exit(1);
+  },
+  hook: (args) => {
+    if (args[0] === "install")
+      return { mode: "hook-install", args: args.slice(1) };
+    if (args[0] === "uninstall")
+      return { mode: "hook-uninstall", args: args.slice(1) };
+    const integration = findHookIntegrationByFlag(args);
+    if (integration)
+      return { mode: "hook", integration };
+    showCommandHelp("hook");
+    process.exit(1);
+  },
+  doctor: (args) => ({ mode: "doctor", args })
+};
 function parseCliArgs(args) {
   if (handleHelpCommand(args)) {
     return null;
   }
   if (handleCommandHelp(args)) {
     return null;
-  }
-  if (args[0] === "explain") {
-    return { mode: "explain", args: args.slice(1) };
-  }
-  if (args[0] === "rule") {
-    return { mode: "rule", args: args.slice(1) };
-  }
-  if (args[0] === "statusline") {
-    if (args.includes("--claude-code") || args.includes("-cc"))
-      return { mode: "statusline" };
-    showCommandHelp("statusline");
-    process.exit(1);
-  }
-  if (args[0] === "hook") {
-    if (args[1] === "install")
-      return { mode: "hook-install", args: args.slice(2) };
-    if (args[1] === "uninstall")
-      return { mode: "hook-uninstall", args: args.slice(2) };
-    const integration = findHookIntegrationByFlag(args);
-    if (integration)
-      return { mode: "hook", integration };
-    showCommandHelp("hook");
-    process.exit(1);
   }
   if (args.length === 0 || hasHelpFlag(args)) {
     printHelp();
@@ -10318,36 +10398,47 @@ function parseCliArgs(args) {
     printVersion();
     process.exit(0);
   }
-  if (args.includes("doctor") || args.includes("--doctor")) {
-    return { mode: "doctor", args };
+  const commandName = args[0];
+  if (!commandName) {
+    printHelp();
+    process.exit(0);
   }
-  const legacyIntegration = findLegacyTopLevelHookIntegration(args[0]);
+  const command2 = findCommand(commandName);
+  if (command2) {
+    return commandParsers[command2.name](args.slice(1));
+  }
+  const legacyIntegration = findLegacyTopLevelHookIntegration(commandName);
   if (legacyIntegration)
     return { mode: "hook", integration: legacyIntegration };
-  console.error(`Unknown option: ${args[0]}`);
+  console.error(`Unknown option: ${commandName}`);
   console.error("Run 'cc-safety-net --help' for usage.");
   process.exit(1);
 }
-async function main() {
-  const command2 = parseCliArgs(process.argv.slice(2));
-  if (command2?.mode === "hook") {
+var commandHandlers = {
+  hook: async (command2) => {
     await command2.integration.run();
-  } else if (command2?.mode === "hook-install") {
+  },
+  "hook-install": async (command2) => {
     process.exit(runHookInstallCommand("install", command2.args));
-  } else if (command2?.mode === "hook-uninstall") {
+  },
+  "hook-uninstall": async (command2) => {
     process.exit(runHookInstallCommand("uninstall", command2.args));
-  } else if (command2?.mode === "rule") {
+  },
+  rule: async (command2) => {
     process.exit(await runRuleCommand(command2.args));
-  } else if (command2?.mode === "statusline") {
+  },
+  statusline: async () => {
     await printStatusline();
-  } else if (command2?.mode === "doctor") {
+  },
+  doctor: async (command2) => {
     const flags = parseDoctorFlags(command2.args);
     const exitCode = await runDoctor({
       json: flags.json,
       skipUpdateCheck: flags.skipUpdateCheck
     });
     process.exit(exitCode);
-  } else if (command2?.mode === "explain") {
+  },
+  explain: async (command2) => {
     if (hasHelpFlag(command2.args) || command2.args.length === 0) {
       showCommandHelp("explain");
       process.exit(0);
@@ -10365,6 +10456,11 @@ async function main() {
     }
     process.exit(0);
   }
+};
+async function main() {
+  const command2 = parseCliArgs(process.argv.slice(2));
+  if (command2)
+    await commandHandlers[command2.mode](command2);
 }
 main().catch((error) => {
   console.error("Safety Net error:", error);
