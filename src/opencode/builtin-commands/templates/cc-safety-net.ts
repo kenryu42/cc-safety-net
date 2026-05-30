@@ -1,3 +1,4 @@
+// Keep this in sync with skills/cc-safety-net/SKILL.md; tests enforce the template body.
 export const CC_SAFETY_NET_TEMPLATE = `
 ## Workflow
 

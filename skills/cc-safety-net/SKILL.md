@@ -3,6 +3,8 @@ name: cc-safety-net
 description: Configure CC Safety Net rulebooks for user, project, or shareable GitHub scope.
 ---
 
+<!-- Keep the workflow below in sync with src/opencode/builtin-commands/templates/cc-safety-net.ts. -->
+
 ## Workflow
 
 Help the user configure custom blocking rules for CC Safety Net.
