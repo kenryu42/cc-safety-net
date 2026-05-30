@@ -35,6 +35,22 @@ describe('help output', () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown option: -vc');
     });
+
+    test('does not route doctor when it is not the command name', async () => {
+      const nestedCommand = await runSafetyNetCli(['xxx', 'doctor']);
+      const nestedAlias = await runSafetyNetCli(['xxx', '--doctor']);
+
+      expect(nestedCommand.exitCode).toBe(1);
+      expect(nestedCommand.stderr).toContain('Unknown option: xxx');
+      expect(nestedAlias.exitCode).toBe(1);
+      expect(nestedAlias.stderr).toContain('Unknown option: xxx');
+    });
+
+    test('supports doctor command alias only as the first argument', async () => {
+      const result = await runSafetyNetCli(['--doctor', '--json', '--skip-update-check']);
+
+      expect(JSON.parse(result.output)).toHaveProperty('hooks');
+    });
   });
 
   describe('printHelp (main help)', () => {

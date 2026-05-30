@@ -26,6 +26,10 @@ type ParsedCommand =
   | { mode: 'doctor'; args: string[] }
   | { mode: 'explain'; args: string[] };
 
+type ParsedCommandHandler<T extends ParsedCommand['mode']> = (
+  command: Extract<ParsedCommand, { mode: T }>,
+) => Promise<void>;
+
 /**
  * Check if --help or -h is present in args (but not as a quoted command argument).
  */
@@ -83,6 +87,27 @@ function handleCommandHelp(args: readonly string[]): boolean {
   return false;
 }
 
+const commandParsers = {
+  explain: (args: string[]): ParsedCommand => ({ mode: 'explain', args }),
+  rule: (args: string[]): ParsedCommand => ({ mode: 'rule', args }),
+  statusline: (args: string[]): ParsedCommand => {
+    if (args.includes('--claude-code') || args.includes('-cc')) return { mode: 'statusline' };
+    showCommandHelp('statusline');
+    process.exit(1);
+  },
+  hook: (args: string[]): ParsedCommand => {
+    if (args[0] === 'install') return { mode: 'hook-install', args: args.slice(1) };
+    if (args[0] === 'uninstall') return { mode: 'hook-uninstall', args: args.slice(1) };
+
+    const integration = findHookIntegrationByFlag(args);
+    if (integration) return { mode: 'hook', integration };
+
+    showCommandHelp('hook');
+    process.exit(1);
+  },
+  doctor: (args: string[]): ParsedCommand => ({ mode: 'doctor', args }),
+} satisfies Record<string, (args: string[]) => ParsedCommand>;
+
 function parseCliArgs(args: string[]): ParsedCommand | null {
   // Handle "help <command>" pattern first
   if (handleHelpCommand(args)) {
@@ -92,31 +117,6 @@ function parseCliArgs(args: string[]): ParsedCommand | null {
   // Handle "<command> --help" pattern
   if (handleCommandHelp(args)) {
     return null;
-  }
-
-  if (args[0] === 'explain') {
-    return { mode: 'explain', args: args.slice(1) };
-  }
-
-  if (args[0] === 'rule') {
-    return { mode: 'rule', args: args.slice(1) };
-  }
-
-  if (args[0] === 'statusline') {
-    if (args.includes('--claude-code') || args.includes('-cc')) return { mode: 'statusline' };
-    showCommandHelp('statusline');
-    process.exit(1);
-  }
-
-  if (args[0] === 'hook') {
-    if (args[1] === 'install') return { mode: 'hook-install', args: args.slice(2) };
-    if (args[1] === 'uninstall') return { mode: 'hook-uninstall', args: args.slice(2) };
-
-    const integration = findHookIntegrationByFlag(args);
-    if (integration) return { mode: 'hook', integration };
-
-    showCommandHelp('hook');
-    process.exit(1);
   }
 
   if (args.length === 0 || hasHelpFlag(args)) {
@@ -129,38 +129,50 @@ function parseCliArgs(args: string[]): ParsedCommand | null {
     process.exit(0);
   }
 
-  if (args.includes('doctor') || args.includes('--doctor')) {
-    return { mode: 'doctor', args };
+  const commandName = args[0];
+  if (!commandName) {
+    printHelp();
+    process.exit(0);
   }
 
-  const legacyIntegration = findLegacyTopLevelHookIntegration(args[0]);
+  const command = findCommand(commandName);
+  if (command) {
+    return commandParsers[command.name as keyof typeof commandParsers](args.slice(1));
+  }
+
+  const legacyIntegration = findLegacyTopLevelHookIntegration(commandName);
   if (legacyIntegration) return { mode: 'hook', integration: legacyIntegration };
 
-  console.error(`Unknown option: ${args[0]}`);
+  console.error(`Unknown option: ${commandName}`);
   console.error("Run 'cc-safety-net --help' for usage.");
   process.exit(1);
 }
 
-async function main(): Promise<void> {
-  const command = parseCliArgs(process.argv.slice(2));
-  if (command?.mode === 'hook') {
+const commandHandlers = {
+  hook: async (command) => {
     await command.integration.run();
-  } else if (command?.mode === 'hook-install') {
+  },
+  'hook-install': async (command) => {
     process.exit(runHookInstallCommand('install', command.args));
-  } else if (command?.mode === 'hook-uninstall') {
+  },
+  'hook-uninstall': async (command) => {
     process.exit(runHookInstallCommand('uninstall', command.args));
-  } else if (command?.mode === 'rule') {
+  },
+  rule: async (command) => {
     process.exit(await runRuleCommand(command.args));
-  } else if (command?.mode === 'statusline') {
+  },
+  statusline: async () => {
     await printStatusline();
-  } else if (command?.mode === 'doctor') {
+  },
+  doctor: async (command) => {
     const flags = parseDoctorFlags(command.args);
     const exitCode = await runDoctor({
       json: flags.json,
       skipUpdateCheck: flags.skipUpdateCheck,
     });
     process.exit(exitCode);
-  } else if (command?.mode === 'explain') {
+  },
+  explain: async (command) => {
     // Check for --help in explain args
     if (hasHelpFlag(command.args) || command.args.length === 0) {
       showCommandHelp('explain');
@@ -181,7 +193,12 @@ async function main(): Promise<void> {
       console.log(formatTraceHuman(result, { asciiOnly }));
     }
     process.exit(0);
-  }
+  },
+} satisfies { [Mode in ParsedCommand['mode']]: ParsedCommandHandler<Mode> };
+
+async function main(): Promise<void> {
+  const command = parseCliArgs(process.argv.slice(2));
+  if (command) await commandHandlers[command.mode](command as never);
 }
 
 main().catch((error: unknown) => {
