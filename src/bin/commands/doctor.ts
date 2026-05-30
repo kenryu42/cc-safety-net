@@ -1,7 +1,7 @@
 import type { Command } from './types';
 
-export const doctorCommand: Command = {
-  name: 'doctor',
+export const doctorCommand = {
+  name: 'doctor' as const,
   aliases: ['--doctor'],
   description: 'Run diagnostic checks to verify installation and configuration',
   usage: 'doctor [options]',
@@ -24,4 +24,4 @@ export const doctorCommand: Command = {
     'cc-safety-net doctor --json',
     'cc-safety-net doctor --skip-update-check',
   ],
-};
+} satisfies Command;

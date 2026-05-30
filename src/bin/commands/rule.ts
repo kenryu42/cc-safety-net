@@ -1,7 +1,7 @@
 import type { Command } from './types';
 
-export const ruleCommand: Command = {
-  name: 'rule',
+export const ruleCommand = {
+  name: 'rule' as const,
   description: 'Manage Safety Net rulebook sources',
   usage: 'rule <subcommand>',
   subcommands: [
@@ -30,4 +30,4 @@ export const ruleCommand: Command = {
     'cc-safety-net rule migrate --cleanup',
     'cc-safety-net rule verify',
   ],
-};
+} satisfies Command;

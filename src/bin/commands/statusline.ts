@@ -1,7 +1,7 @@
 import type { Command } from './types';
 
-export const statuslineCommand: Command = {
-  name: 'statusline',
+export const statuslineCommand = {
+  name: 'statusline' as const,
   description: 'Print status line with mode indicators for shell integration',
   usage: 'statusline <coding cli>',
   options: [
@@ -15,4 +15,4 @@ export const statuslineCommand: Command = {
     },
   ],
   examples: ['cc-safety-net statusline -cc', 'cc-safety-net statusline --claude-code'],
-};
+} satisfies Command;

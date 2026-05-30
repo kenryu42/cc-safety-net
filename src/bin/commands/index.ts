@@ -13,24 +13,35 @@ export type { Command, CommandOption, CommandSubcommand } from './types';
  * Order determines display order in main help.
  * @internal Exported for testing
  */
-export const commands: readonly Command[] = [
+export const commands = [
   doctorCommand,
   explainCommand,
   ruleCommand,
   hookCommand,
   statuslineCommand,
-];
+] as const satisfies readonly Command[];
+
+export type CommandName = (typeof commands)[number]['name'];
+type RegisteredCommand = Command & { name: CommandName };
+
+function getCommandAliases(command: Command): readonly string[] {
+  return command.aliases ?? [];
+}
+
+function isVisibleCommand(command: Command): boolean {
+  return !command.hidden;
+}
 
 /**
  * Lookup a command by name or alias.
  * Returns undefined if not found.
  */
-export function findCommand(nameOrAlias: string): Command | undefined {
+export function findCommand(nameOrAlias: string): RegisteredCommand | undefined {
   const normalized = nameOrAlias.toLowerCase();
   return commands.find(
     (cmd) =>
       cmd.name.toLowerCase() === normalized ||
-      cmd.aliases?.some((alias) => alias.toLowerCase() === normalized),
+      getCommandAliases(cmd).some((alias) => alias.toLowerCase() === normalized),
   );
 }
 
@@ -38,5 +49,5 @@ export function findCommand(nameOrAlias: string): Command | undefined {
  * Get all visible commands (non-hidden) for main help display.
  */
 export function getVisibleCommands(): readonly Command[] {
-  return commands.filter((cmd) => !cmd.hidden);
+  return commands.filter(isVisibleCommand);
 }

@@ -10,8 +10,8 @@ const platformExamples = hookIntegrations.flatMap((integration) =>
   integration.flags.map((flag) => `cc-safety-net hook ${flag}`),
 );
 
-export const hookCommand: Command = {
-  name: 'hook',
+export const hookCommand = {
+  name: 'hook' as const,
   description: 'Run as an agent CLI hook (reads JSON from stdin)',
   usage: 'hook <coding cli>',
   subcommands: [
@@ -28,4 +28,4 @@ export const hookCommand: Command = {
     },
   ],
   examples: [...platformExamples, 'cc-safety-net hook uninstall --opencode'],
-};
+} satisfies Command;

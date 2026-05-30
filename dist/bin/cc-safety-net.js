@@ -6048,8 +6048,48 @@ function redactSecrets(text) {
   return result;
 }
 
+// src/core/format.ts
+function formatBlockedMessage(input) {
+  const { reason, command: command2, segment } = input;
+  const maxLen = input.maxLen ?? 200;
+  const redact = input.redact ?? ((t) => t);
+  let message = `BLOCKED by CC SafetyNet
+
+Reason: ${reason}`;
+  if (command2) {
+    const safeCommand = redact(command2);
+    message += `
+
+Command: ${excerpt(safeCommand, maxLen)}`;
+  }
+  if (segment && segment !== command2) {
+    const safeSegment = redact(segment);
+    message += `
+
+Segment: ${excerpt(safeSegment, maxLen)}`;
+  }
+  if (input.manualPermissionAdvice !== false) {
+    message += `
+
+If this operation is truly needed, ask the user for explicit permission and have them run the command manually.`;
+  }
+  return message;
+}
+function excerpt(text, maxLen) {
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+}
+
 // src/bin/hook/common.ts
 var REASON_SAFETY_NET_FAILED_CLOSED = "Safety Net failed closed because command analysis failed unexpectedly.";
+function outputHookDeny(createDenyOutput, reason, command2, segment, manualPermissionAdvice) {
+  console.log(JSON.stringify(createDenyOutput(formatBlockedMessage({
+    reason,
+    command: command2,
+    segment,
+    redact: redactSecrets,
+    manualPermissionAdvice
+  }))));
+}
 async function readHookInput(outputDeny) {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -6114,59 +6154,28 @@ async function runHookAdapter(adapter) {
   }
   handleBlockedHookCommand(command2, adapter.getCwd(input) ?? process.cwd(), adapter.getSessionId(input), adapter.outputDeny);
 }
-
-// src/core/format.ts
-function formatBlockedMessage(input) {
-  const { reason, command: command2, segment } = input;
-  const maxLen = input.maxLen ?? 200;
-  const redact = input.redact ?? ((t) => t);
-  let message = `BLOCKED by CC SafetyNet
-
-Reason: ${reason}`;
-  if (command2) {
-    const safeCommand = redact(command2);
-    message += `
-
-Command: ${excerpt(safeCommand, maxLen)}`;
-  }
-  if (segment && segment !== command2) {
-    const safeSegment = redact(segment);
-    message += `
-
-Segment: ${excerpt(safeSegment, maxLen)}`;
-  }
-  if (input.manualPermissionAdvice !== false) {
-    message += `
-
-If this operation is truly needed, ask the user for explicit permission and have them run the command manually.`;
-  }
-  return message;
-}
-function excerpt(text, maxLen) {
-  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+async function runConfiguredHookAdapter(adapter) {
+  const outputDeny = (reason, command2, segment, manualPermissionAdvice) => outputHookDeny(adapter.createDenyOutput, reason, command2, segment, manualPermissionAdvice ?? adapter.getManualPermissionAdvice?.(reason));
+  await runHookAdapter({
+    outputDeny,
+    isSupported: adapter.isSupported,
+    getCommand: adapter.getCommand,
+    getCwd: adapter.getCwd,
+    getSessionId: adapter.getSessionId
+  });
 }
 
 // src/bin/hook/claude-code.ts
-function outputDeny(reason, command2, segment) {
-  const message = formatBlockedMessage({
-    reason,
-    command: command2,
-    segment,
-    redact: redactSecrets,
-    manualPermissionAdvice: reason.includes("rule sync") ? false : undefined
-  });
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: message
-    }
-  };
-  console.log(JSON.stringify(output));
-}
 async function runClaudeCodeHook() {
-  await runHookAdapter({
-    outputDeny,
+  await runConfiguredHookAdapter({
+    createDenyOutput: (message) => ({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: message
+      }
+    }),
+    getManualPermissionAdvice: (reason) => reason.includes("rule sync") ? false : undefined,
     isSupported: (input) => input.tool_name === "Bash",
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
@@ -6175,47 +6184,27 @@ async function runClaudeCodeHook() {
 }
 
 // src/bin/hook/copilot-cli.ts
-function outputCopilotDeny(reason, command2, segment) {
-  const message = formatBlockedMessage({
-    reason,
-    command: command2,
-    segment,
-    redact: redactSecrets
-  });
-  const output = {
-    permissionDecision: "deny",
-    permissionDecisionReason: message
-  };
-  console.log(JSON.stringify(output));
-}
 async function runCopilotCliHook() {
-  await runHookAdapter({
-    outputDeny: outputCopilotDeny,
+  await runConfiguredHookAdapter({
+    createDenyOutput: (message) => ({
+      permissionDecision: "deny",
+      permissionDecisionReason: message
+    }),
     isSupported: (input) => input.toolName === "bash",
-    getCommand: (input, outputDeny2) => parseHookJson(input.toolArgs, outputDeny2, "Failed to parse toolArgs JSON.")?.command,
+    getCommand: (input, outputDeny) => parseHookJson(input.toolArgs, outputDeny, "Failed to parse toolArgs JSON.")?.command,
     getCwd: (input) => input.cwd,
     getSessionId: (input) => `copilot-${input.timestamp ?? Date.now()}`
   });
 }
 
 // src/bin/hook/gemini-cli.ts
-function outputGeminiDeny(reason, command2, segment) {
-  const message = formatBlockedMessage({
-    reason,
-    command: command2,
-    segment,
-    redact: redactSecrets
-  });
-  const output = {
-    decision: "deny",
-    reason: message,
-    systemMessage: message
-  };
-  console.log(JSON.stringify(output));
-}
 async function runGeminiCLIHook() {
-  await runHookAdapter({
-    outputDeny: outputGeminiDeny,
+  await runConfiguredHookAdapter({
+    createDenyOutput: (message) => ({
+      decision: "deny",
+      reason: message,
+      systemMessage: message
+    }),
     isSupported: (input) => input.hook_event_name === "BeforeTool" && input.tool_name === "run_shell_command",
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
@@ -6224,26 +6213,15 @@ async function runGeminiCLIHook() {
 }
 
 // src/bin/hook/kimi-cli.ts
-function outputKimiDeny(reason, command2, segment, manualPermissionAdvice) {
-  const message = formatBlockedMessage({
-    reason,
-    command: command2,
-    segment,
-    redact: redactSecrets,
-    manualPermissionAdvice
-  });
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: message
-    }
-  };
-  console.log(JSON.stringify(output));
-}
 async function runKimiCliHook() {
-  await runHookAdapter({
-    outputDeny: outputKimiDeny,
+  await runConfiguredHookAdapter({
+    createDenyOutput: (message) => ({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: message
+      }
+    }),
     isSupported: (input) => input.hook_event_name === "PreToolUse" && input.tool_name === "Shell",
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
@@ -6423,12 +6401,18 @@ var commands = [
   hookCommand,
   statuslineCommand
 ];
+function getCommandAliases(command2) {
+  return command2.aliases ?? [];
+}
+function isVisibleCommand(command2) {
+  return !command2.hidden;
+}
 function findCommand(nameOrAlias) {
   const normalized = nameOrAlias.toLowerCase();
-  return commands.find((cmd) => cmd.name.toLowerCase() === normalized || cmd.aliases?.some((alias) => alias.toLowerCase() === normalized));
+  return commands.find((cmd) => cmd.name.toLowerCase() === normalized || getCommandAliases(cmd).some((alias) => alias.toLowerCase() === normalized));
 }
 function getVisibleCommands() {
-  return commands.filter((cmd) => !cmd.hidden);
+  return commands.filter(isVisibleCommand);
 }
 
 // src/bin/doctor/activity.ts
@@ -10427,7 +10411,7 @@ var commandHandlers = {
   rule: async (command2) => {
     process.exit(await runRuleCommand(command2.args));
   },
-  statusline: async () => {
+  statusline: async (_command) => {
     await printStatusline();
   },
   doctor: async (command2) => {
@@ -10457,10 +10441,40 @@ var commandHandlers = {
     process.exit(0);
   }
 };
+function assertNever(command2) {
+  throw new Error(`Unhandled command mode: ${JSON.stringify(command2)}`);
+}
+async function runParsedCommand(command2) {
+  switch (command2.mode) {
+    case "hook":
+      await commandHandlers.hook(command2);
+      return;
+    case "hook-install":
+      await commandHandlers["hook-install"](command2);
+      return;
+    case "hook-uninstall":
+      await commandHandlers["hook-uninstall"](command2);
+      return;
+    case "rule":
+      await commandHandlers.rule(command2);
+      return;
+    case "statusline":
+      await commandHandlers.statusline(command2);
+      return;
+    case "doctor":
+      await commandHandlers.doctor(command2);
+      return;
+    case "explain":
+      await commandHandlers.explain(command2);
+      return;
+    default:
+      assertNever(command2);
+  }
+}
 async function main() {
   const command2 = parseCliArgs(process.argv.slice(2));
   if (command2)
-    await commandHandlers[command2.mode](command2);
+    await runParsedCommand(command2);
 }
 main().catch((error) => {
   console.error("Safety Net error:", error);
