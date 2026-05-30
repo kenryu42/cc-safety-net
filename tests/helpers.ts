@@ -204,6 +204,7 @@ export const mockVersionFetcher: VersionFetcher = async (args: string[]) => {
     claude: '1.0.0',
     opencode: '0.1.0',
     gemini: '0.20.0',
+    kimi: 'kimi 0.3.0',
     copilot: 'Copilot binary version: 1.0.9',
     node: 'v22.0.0',
     npm: '10.0.0',

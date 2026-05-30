@@ -60,6 +60,9 @@ describe('getSystemInfo', () => {
     expect(sysInfo.geminiCliVersion === null || typeof sysInfo.geminiCliVersion === 'string').toBe(
       true,
     );
+    expect(sysInfo.kimiCliVersion === null || typeof sysInfo.kimiCliVersion === 'string').toBe(
+      true,
+    );
     expect(
       sysInfo.geminiExtensionsListOutput === null ||
         typeof sysInfo.geminiExtensionsListOutput === 'string',
@@ -88,6 +91,20 @@ describe('getSystemInfo', () => {
     expect(sysInfo.geminiExtensionsListOutput).toContain(
       'https://github.com/kenryu42/gemini-safety-net',
     );
+  });
+
+  test('includes Kimi CLI version with mock fetcher', async () => {
+    const sysInfo = await getSystemInfo(mockVersionFetcher);
+    expect(sysInfo.kimiCliVersion).toBe('0.3.0');
+  });
+
+  test('parses Kimi CLI version output through existing parser', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'kimi') return 'Kimi CLI v1.2.3';
+      return null;
+    });
+
+    expect(sysInfo.kimiCliVersion).toBe('1.2.3');
   });
 
   test('includes Claude plugin list output with mock fetcher', async () => {
@@ -148,6 +165,7 @@ describe('getSystemInfo', () => {
     expect(result.claudeCodeVersion).toBeNull();
     expect(result.claudePluginListOutput).toBeNull();
     expect(result.copilotCliVersion).toBeNull();
+    expect(result.kimiCliVersion).toBeNull();
     expect(result.geminiExtensionsListOutput).toBeNull();
     expect(result.copilotPluginInstalled).toBe(false);
     expect(result.bunVersion).toBeNull();

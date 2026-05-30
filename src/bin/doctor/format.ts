@@ -12,15 +12,8 @@ import type {
   SystemInfo,
   UpdateInfo,
 } from '@/bin/doctor/types';
+import { getIntegrationDisplayName } from '@/bin/integration-metadata';
 import { colors } from '@/bin/utils/colors';
-
-const PLATFORM_NAMES: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  opencode: 'OpenCode',
-  'gemini-cli': 'Gemini CLI',
-  'copilot-cli': 'Copilot CLI',
-  codex: 'Codex',
-};
 
 interface TableOptions {
   headers?: string[];
@@ -70,7 +63,7 @@ export function formatHooksSection(hooks: HookStatus[]): string {
   const errors: Array<{ platform: string; message: string }> = [];
 
   for (const hook of hooks) {
-    const platformName = PLATFORM_NAMES[hook.platform] ?? hook.platform;
+    const platformName = getIntegrationDisplayName(hook.platform);
 
     if (hook.selfTest) {
       for (const result of hook.selfTest.results) {
@@ -134,7 +127,7 @@ function formatHooksTable(hooks: HookStatus[]): string {
 
   // Build rows with both colored and raw text
   const rowData = hooks.map((h) => {
-    const platformName = PLATFORM_NAMES[h.platform] ?? h.platform;
+    const platformName = getIntegrationDisplayName(h.platform);
     const statusDisplay = getStatusDisplay(h);
     let testsText = '-';
     if (h.status === 'configured' && h.selfTest) {
@@ -431,6 +424,7 @@ function formatSystemInfoTable(system: SystemInfo): string {
     { label: 'OpenCode', value: system.openCodeVersion },
     { label: 'Gemini CLI', value: system.geminiCliVersion },
     { label: 'Copilot CLI', value: system.copilotCliVersion },
+    { label: 'Kimi CLI', value: system.kimiCliVersion },
     { label: 'Node.js', value: system.nodeVersion },
     { label: 'npm', value: system.npmVersion },
     { label: 'Bun', value: system.bunVersion },

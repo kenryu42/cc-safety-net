@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { HookStatus, SelfTestCase, SelfTestResult, SelfTestSummary } from '@/bin/doctor/types';
+import { doctorIntegrationOrder } from '@/bin/integration-metadata';
 import { analyzeCommand } from '@/core/analyze';
 import type { LoadConfigOptions } from '@/core/config';
 import type { Config } from '@/types';
@@ -52,6 +53,7 @@ const CLAUDE_PLUGIN_LIST_CONFIG_PATH = 'claude plugin list';
 const CLAUDE_SAFETY_NET_PLUGIN_ID = 'safety-net@cc-marketplace';
 const GEMINI_EXTENSIONS_LIST_CONFIG_PATH = 'gemini extensions list';
 const GEMINI_SAFETY_NET_SOURCE = 'https://github.com/kenryu42/gemini-safety-net';
+const KIMI_HOOK_COMMAND_PATTERN = /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*--kimi-cli(\s|["']|$)/;
 const CODEX_PLUGIN_HOOKS_WARNING =
   'Codex plugin hooks are behind a feature flag. Add `plugin_hooks = true` under [features] in $CODEX_HOME/config.toml.';
 const CODEX_SAFETY_NET_PLUGIN_ID = 'safety-net@cc-marketplace';
@@ -375,6 +377,39 @@ function detectGeminiCLI(extensionsListOutput: string | null | undefined): HookS
     status: 'configured',
     method: 'extension list',
     configPath: GEMINI_EXTENSIONS_LIST_CONFIG_PATH,
+    selfTest: runSelfTest(),
+  };
+}
+
+function _getKimiConfigPath(homeDir: string): string {
+  return join(process.env.KIMI_SHARE_DIR || join(homeDir, '.kimi'), 'config.toml');
+}
+
+function detectKimiCLI(homeDir: string): HookStatus {
+  const configPath = _getKimiConfigPath(homeDir);
+
+  if (!existsSync(configPath)) {
+    return { platform: 'kimi-cli', status: 'n/a', configPath };
+  }
+
+  try {
+    if (!KIMI_HOOK_COMMAND_PATTERN.test(readFileSync(configPath, 'utf-8'))) {
+      return { platform: 'kimi-cli', status: 'n/a', configPath };
+    }
+  } catch (e) {
+    return {
+      platform: 'kimi-cli',
+      status: 'n/a',
+      configPath,
+      errors: [`Failed to read ${configPath}: ${e instanceof Error ? e.message : String(e)}`],
+    };
+  }
+
+  return {
+    platform: 'kimi-cli',
+    status: 'configured',
+    method: 'hook config',
+    configPath,
     selfTest: runSelfTest(),
   };
 }
@@ -788,11 +823,21 @@ export function detectAllHooks(cwd: string, options?: HookDetectOptions): HookSt
     };
   };
 
-  return [
-    detectClaudeCode(options?.claudePluginListOutput),
-    detectOpenCode(homeDir),
-    detectGeminiCLI(options?.geminiExtensionsListOutput),
-    detectCopilotCLI(),
-    detectCodex(homeDir),
-  ];
+  return doctorIntegrationOrder.map((platform) => {
+    switch (platform) {
+      case 'claude-code':
+        return detectClaudeCode(options?.claudePluginListOutput);
+      case 'opencode':
+        return detectOpenCode(homeDir);
+      case 'gemini-cli':
+        return detectGeminiCLI(options?.geminiExtensionsListOutput);
+      case 'copilot-cli':
+        return detectCopilotCLI();
+      case 'kimi-cli':
+        return detectKimiCLI(homeDir);
+      case 'codex':
+        return detectCodex(homeDir);
+    }
+    return platform satisfies never;
+  });
 }

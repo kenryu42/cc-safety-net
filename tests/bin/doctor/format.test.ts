@@ -36,6 +36,7 @@ function createDoctorReport(overrides: Partial<DoctorReport> = {}): DoctorReport
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
+      kimiCliVersion: null,
       nodeVersion: '22.0.0',
       npmVersion: '10.0.0',
       bunVersion: '1.0.0',
@@ -142,6 +143,14 @@ describe('formatHooksSection', () => {
 
     const output = formatHooksSection(hooks);
     expect(output).toContain('Copilot CLI');
+    expect(output).toContain('Configured');
+  });
+
+  test('formats Kimi CLI hooks', () => {
+    const hooks: HookStatus[] = [{ platform: 'kimi-cli', status: 'configured' }];
+
+    const output = formatHooksSection(hooks);
+    expect(output).toContain('Kimi CLI');
     expect(output).toContain('Configured');
   });
 
@@ -399,6 +408,7 @@ describe('formatSystemInfoSection', () => {
     expect(output).toContain('Platform');
     expect(output).toContain('Bun');
     expect(output).toContain('Copilot CLI');
+    expect(output).toContain('Kimi CLI');
     // Should have table borders
     expect(output).toContain('┌');
     expect(output).toContain('┘');
@@ -413,6 +423,7 @@ describe('formatSystemInfoSection', () => {
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
+      kimiCliVersion: null,
       nodeVersion: '22.0.0',
       npmVersion: null,
       bunVersion: '1.0.0',
