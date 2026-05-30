@@ -9044,30 +9044,13 @@ function showCommandHelp(commandName) {
 }
 
 // src/bin/hook/install.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync3 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
+
+// src/bin/hook/install/kimi-cli.ts
+import { existsSync as existsSync15, mkdirSync as mkdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync3 } from "node:fs";
 import { dirname as dirname9, join as join11 } from "node:path";
-var OPENCODE_PLUGIN = "cc-safety-net@latest";
-var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-cli";
-var KIMI_HOOK_BLOCK = `[[hooks]]
-event = "PreToolUse"
-matcher = "Shell"
-command = "${KIMI_HOOK_COMMAND}"`;
-var KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Shell", command = "${KIMI_HOOK_COMMAND}" }`;
-function getHomeDir() {
-  return process.env.HOME ?? homedir6();
-}
-function getOpenCodeConfigDir() {
-  return process.env.OPENCODE_CONFIG_DIR ?? join11(process.env.XDG_CONFIG_HOME ?? join11(getHomeDir(), ".config"), "opencode");
-}
-function getOpenCodeConfigPath() {
-  const configDir = getOpenCodeConfigDir();
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join11(configDir, file));
-  return candidates.find((path) => existsSync15(path)) ?? join11(configDir, "opencode.jsonc");
-}
-function getKimiConfigPath() {
-  return join11(process.env.KIMI_SHARE_DIR ?? join11(getHomeDir(), ".kimi"), "config.toml");
-}
+
+// src/bin/hook/config-edit.ts
 function isWhitespace(char) {
   return char !== undefined && /\s/.test(char);
 }
@@ -9079,12 +9062,12 @@ function skipWhitespace(content, index) {
 }
 function skipWhitespaceAndComments(content, index) {
   const whitespaceEnd = skipWhitespace(content, index);
-  const commentEnd = skipComment(content, whitespaceEnd);
+  const commentEnd = skipJsonComment(content, whitespaceEnd);
   if (commentEnd === whitespaceEnd)
     return whitespaceEnd;
   return skipWhitespaceAndComments(content, commentEnd);
 }
-function skipString(content, index) {
+function skipString(content, index, errorMessage) {
   let current = index + 1;
   let isEscaped = false;
   while (current < content.length) {
@@ -9103,9 +9086,9 @@ function skipString(content, index) {
       return current + 1;
     current++;
   }
-  throw new Error("Unterminated string in OpenCode config");
+  throw new Error(errorMessage);
 }
-function skipComment(content, index) {
+function skipJsonComment(content, index) {
   if (content[index] === "/" && content[index + 1] === "/") {
     const newlineIndex = content.indexOf(`
 `, index + 2);
@@ -9119,19 +9102,19 @@ function skipComment(content, index) {
   }
   return index;
 }
-function findMatchingBracket(content, openIndex) {
+function findMatchingBracket(content, openIndex, options2) {
   const open = content[openIndex];
   const close = open === "[" ? "]" : "}";
   let depth = 0;
   let index = openIndex;
   while (index < content.length) {
-    const nextIndex = skipComment(content, index);
+    const nextIndex = options2.skipComment?.(content, index) ?? index;
     if (nextIndex !== index) {
       index = nextIndex;
       continue;
     }
     if (content[index] === '"') {
-      index = skipString(content, index);
+      index = skipString(content, index, options2.stringError);
       continue;
     }
     if (content[index] === open)
@@ -9143,84 +9126,13 @@ function findMatchingBracket(content, openIndex) {
     }
     index++;
   }
-  throw new Error("Unmatched bracket in OpenCode config");
-}
-function findTopLevelPropertyValue(content, propertyName) {
-  const rootStart = skipWhitespaceAndComments(content, 0);
-  if (content[rootStart] !== "{")
-    throw new Error("OpenCode config must be a JSON object");
-  let depth = 0;
-  let index = rootStart;
-  while (index < content.length) {
-    const nextIndex = skipComment(content, index);
-    if (nextIndex !== index) {
-      index = nextIndex;
-      continue;
-    }
-    if (content[index] === '"') {
-      const endIndex = skipString(content, index);
-      const colonIndex = skipWhitespace(content, endIndex);
-      if (depth === 1 && content[colonIndex] === ":" && content.slice(index, endIndex) === JSON.stringify(propertyName)) {
-        return skipWhitespace(content, colonIndex + 1);
-      }
-      index = endIndex;
-      continue;
-    }
-    if (content[index] === "{" || content[index] === "[")
-      depth++;
-    if (content[index] === "}" || content[index] === "]")
-      depth--;
-    index++;
-  }
-  return;
-}
-function findOpenCodePluginArray(content) {
-  const arrayStart = findTopLevelPropertyValue(content, "plugin");
-  if (arrayStart === undefined)
-    return;
-  if (content[arrayStart] !== "[")
-    throw new Error("OpenCode plugin must be an array");
-  return { start: arrayStart, end: findMatchingBracket(content, arrayStart) };
+  throw new Error(options2.bracketError);
 }
 function getLineIndent(content, index) {
   const lineStart = content.lastIndexOf(`
 `, index) + 1;
   const match = /^[ \t]*/.exec(content.slice(lineStart));
   return match?.[0] ?? "";
-}
-function insertOpenCodePlugin(content, pluginRange, plugins) {
-  const closingIndent = getLineIndent(content, pluginRange.end);
-  const itemIndent = `${closingIndent}  `;
-  if (plugins.length === 0) {
-    return `${content.slice(0, pluginRange.start + 1)}
-${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
-${closingIndent}${content.slice(pluginRange.end)}`;
-  }
-  const beforeClose = content.slice(0, pluginRange.end).trimEnd();
-  const separator = beforeClose.endsWith(",") ? `
-` : `,
-`;
-  return `${beforeClose}${separator}${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(pluginRange.end)}`;
-}
-function parseOpenCodePluginItems(content, pluginRange) {
-  const items = [];
-  let index = pluginRange.start + 1;
-  while (index < pluginRange.end) {
-    const nextIndex = skipComment(content, index);
-    if (nextIndex !== index) {
-      index = nextIndex;
-      continue;
-    }
-    if (content[index] !== '"') {
-      index++;
-      continue;
-    }
-    const endIndex = skipString(content, index);
-    const value = JSON.parse(content.slice(index, endIndex));
-    items.push({ value, start: index, end: endIndex });
-    index = endIndex;
-  }
-  return items;
 }
 function removeArrayRangeItem(content, item) {
   let removeStart = item.start;
@@ -9248,83 +9160,16 @@ function removeArrayRangeItem(content, item) {
   }
   return `${content.slice(0, removeStart)}${content.slice(removeEnd)}`;
 }
-function removeOpenCodePlugin(content, pluginRange) {
-  return parseOpenCodePluginItems(content, pluginRange).filter((plugin) => isManagedOpenCodePlugin(plugin.value)).reverse().reduce((updated, plugin) => removeArrayRangeItem(updated, plugin), content);
-}
-function findRootObjectClose(content) {
-  return findMatchingBracket(content, skipWhitespaceAndComments(content, 0));
-}
-function addOpenCodePluginProperty(content, propertyCount) {
-  const rootClose = findRootObjectClose(content);
-  const closingIndent = getLineIndent(content, rootClose);
-  const propertyIndent = `${closingIndent}  `;
-  const itemIndent = `${propertyIndent}  `;
-  const propertyText = `${propertyIndent}"plugin": [
-${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
-${propertyIndent}]`;
-  if (propertyCount === 0) {
-    return `${content.slice(0, rootClose)}${propertyText}
-${closingIndent}${content.slice(rootClose)}`;
-  }
-  const beforeClose = content.slice(0, rootClose).trimEnd();
-  return `${beforeClose},
-${propertyText}
-${closingIndent}${content.slice(rootClose)}`;
-}
-function parseOpenCodeConfig(content, configPath) {
-  try {
-    return JSON.parse(stripJsonComments(content));
-  } catch (e) {
-    throw new Error(`Failed to parse ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
-  }
-}
-function isManagedOpenCodePlugin(plugin) {
-  return typeof plugin === "string" && (plugin === "cc-safety-net" || plugin.startsWith("cc-safety-net@"));
-}
-function readOpenCodeConfig(configPath) {
-  const content = readFileSync11(configPath, "utf-8");
-  const config = parseOpenCodeConfig(content, configPath);
-  const plugins = config.plugin;
-  if (plugins !== undefined && !Array.isArray(plugins)) {
-    throw new Error("OpenCode plugin must be an array");
-  }
-  return { content, config, plugins };
-}
-function installOpenCode() {
-  const configPath = getOpenCodeConfigPath();
-  mkdirSync4(dirname9(configPath), { recursive: true });
-  if (!existsSync15(configPath)) {
-    writeFileSync3(configPath, `${JSON.stringify({ plugin: [OPENCODE_PLUGIN] }, null, 2)}
-`);
-    return { path: configPath, alreadyInstalled: false };
-  }
-  const opencode = readOpenCodeConfig(configPath);
-  if (opencode.plugins?.some(isManagedOpenCodePlugin)) {
-    return { path: configPath, alreadyInstalled: true };
-  }
-  if (opencode.plugins === undefined) {
-    writeFileSync3(configPath, addOpenCodePluginProperty(opencode.content, Object.keys(opencode.config).length));
-    return { path: configPath, alreadyInstalled: false };
-  }
-  const pluginRange = findOpenCodePluginArray(opencode.content);
-  if (!pluginRange)
-    throw new Error("OpenCode plugin property was not found");
-  writeFileSync3(configPath, insertOpenCodePlugin(opencode.content, pluginRange, opencode.plugins));
-  return { path: configPath, alreadyInstalled: false };
-}
-function uninstallOpenCode() {
-  const configPath = getOpenCodeConfigPath();
-  if (!existsSync15(configPath))
-    return { path: configPath, alreadyInstalled: false };
-  const opencode = readOpenCodeConfig(configPath);
-  if (!opencode.plugins?.some(isManagedOpenCodePlugin)) {
-    return { path: configPath, alreadyInstalled: false };
-  }
-  const pluginRange = findOpenCodePluginArray(opencode.content);
-  if (!pluginRange)
-    throw new Error("OpenCode plugin property was not found");
-  writeFileSync3(configPath, removeOpenCodePlugin(opencode.content, pluginRange));
-  return { path: configPath, alreadyInstalled: true };
+
+// src/bin/hook/install/kimi-cli.ts
+var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-cli";
+var KIMI_HOOK_BLOCK = `[[hooks]]
+event = "PreToolUse"
+matcher = "Shell"
+command = "${KIMI_HOOK_COMMAND}"`;
+var KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Shell", command = "${KIMI_HOOK_COMMAND}" }`;
+function getKimiConfigPath(homeDir) {
+  return join11(process.env.KIMI_SHARE_DIR ?? join11(homeDir, ".kimi"), "config.toml");
 }
 function removeTopLevelEmptyHooksArray(content) {
   const result = content.split(`
@@ -9341,6 +9186,20 @@ function removeTopLevelEmptyHooksArray(content) {
   }, { activeTable: false, lines: [] });
   return result.lines.join(`
 `);
+}
+function skipTomlComment(content, index) {
+  if (content[index] !== "#")
+    return index;
+  const newlineIndex = content.indexOf(`
+`, index + 1);
+  return newlineIndex === -1 ? content.length : newlineIndex + 1;
+}
+function findTomlArrayClose(content, openIndex) {
+  return findMatchingBracket(content, openIndex, {
+    skipComment: skipTomlComment,
+    stringError: "Unterminated string in OpenCode config",
+    bracketError: "Unmatched hooks array in Kimi CLI config"
+  });
 }
 function findTopLevelInlineHooksArray(content) {
   let activeTable = false;
@@ -9362,31 +9221,6 @@ function findTopLevelInlineHooksArray(content) {
     index = lineEnd === -1 ? content.length : lineEnd + 1;
   }
   return;
-}
-function findTomlArrayClose(content, openIndex) {
-  let depth = 0;
-  let index = openIndex;
-  while (index < content.length) {
-    if (content[index] === "#") {
-      const newlineIndex = content.indexOf(`
-`, index + 1);
-      index = newlineIndex === -1 ? content.length : newlineIndex + 1;
-      continue;
-    }
-    if (content[index] === '"') {
-      index = skipString(content, index);
-      continue;
-    }
-    if (content[index] === "[")
-      depth++;
-    if (content[index] === "]") {
-      depth--;
-      if (depth === 0)
-        return index;
-    }
-    index++;
-  }
-  throw new Error("Unmatched hooks array in Kimi CLI config");
 }
 function appendKimiInlineHook(content, hooksRange) {
   const beforeClose = content.slice(0, hooksRange.end).trimEnd();
@@ -9423,8 +9257,8 @@ function removeKimiInlineHook(content, hooksRange) {
     end: itemStart + KIMI_INLINE_HOOK.length
   });
 }
-function installKimiCli() {
-  const configPath = getKimiConfigPath();
+function installKimiCli(homeDir) {
+  const configPath = getKimiConfigPath(homeDir);
   mkdirSync4(dirname9(configPath), { recursive: true });
   if (!existsSync15(configPath)) {
     writeFileSync3(configPath, `${KIMI_HOOK_BLOCK}
@@ -9437,8 +9271,8 @@ function installKimiCli() {
   writeFileSync3(configPath, appendKimiHook(content));
   return { path: configPath, alreadyInstalled: false };
 }
-function uninstallKimiCli() {
-  const configPath = getKimiConfigPath();
+function uninstallKimiCli(homeDir) {
+  const configPath = getKimiConfigPath(homeDir);
   if (!existsSync15(configPath))
     return { path: configPath, alreadyInstalled: false };
   const content = readFileSync11(configPath, "utf-8");
@@ -9449,6 +9283,180 @@ function uninstallKimiCli() {
 `;
   writeFileSync3(configPath, updated);
   return { path: configPath, alreadyInstalled: true };
+}
+
+// src/bin/hook/install/opencode.ts
+import { existsSync as existsSync16, mkdirSync as mkdirSync5, readFileSync as readFileSync12, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname10, join as join12 } from "node:path";
+var OPENCODE_PLUGIN = "cc-safety-net@latest";
+function getOpenCodeConfigDir(homeDir) {
+  return process.env.OPENCODE_CONFIG_DIR ?? join12(process.env.XDG_CONFIG_HOME ?? join12(homeDir, ".config"), "opencode");
+}
+function getOpenCodeConfigPath(homeDir) {
+  const configDir = getOpenCodeConfigDir(homeDir);
+  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join12(configDir, file));
+  return candidates.find((path) => existsSync16(path)) ?? join12(configDir, "opencode.jsonc");
+}
+function findOpenCodeBracket(content, openIndex) {
+  return findMatchingBracket(content, openIndex, {
+    skipComment: skipJsonComment,
+    stringError: "Unterminated string in OpenCode config",
+    bracketError: "Unmatched bracket in OpenCode config"
+  });
+}
+function findTopLevelPropertyValue(content, propertyName) {
+  const rootStart = skipWhitespaceAndComments(content, 0);
+  if (content[rootStart] !== "{")
+    throw new Error("OpenCode config must be a JSON object");
+  let depth = 0;
+  let index = rootStart;
+  while (index < content.length) {
+    const nextIndex = skipJsonComment(content, index);
+    if (nextIndex !== index) {
+      index = nextIndex;
+      continue;
+    }
+    if (content[index] === '"') {
+      const endIndex = skipString(content, index, "Unterminated string in OpenCode config");
+      const colonIndex = skipWhitespace(content, endIndex);
+      if (depth === 1 && content[colonIndex] === ":" && content.slice(index, endIndex) === JSON.stringify(propertyName)) {
+        return skipWhitespace(content, colonIndex + 1);
+      }
+      index = endIndex;
+      continue;
+    }
+    if (content[index] === "{" || content[index] === "[")
+      depth++;
+    if (content[index] === "}" || content[index] === "]")
+      depth--;
+    index++;
+  }
+  return;
+}
+function findOpenCodePluginArray(content) {
+  const arrayStart = findTopLevelPropertyValue(content, "plugin");
+  if (arrayStart === undefined)
+    return;
+  if (content[arrayStart] !== "[")
+    throw new Error("OpenCode plugin must be an array");
+  return { start: arrayStart, end: findOpenCodeBracket(content, arrayStart) };
+}
+function insertOpenCodePlugin(content, pluginRange, plugins) {
+  const closingIndent = getLineIndent(content, pluginRange.end);
+  const itemIndent = `${closingIndent}  `;
+  if (plugins.length === 0) {
+    return `${content.slice(0, pluginRange.start + 1)}
+${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
+${closingIndent}${content.slice(pluginRange.end)}`;
+  }
+  const beforeClose = content.slice(0, pluginRange.end).trimEnd();
+  const separator = beforeClose.endsWith(",") ? `
+` : `,
+`;
+  return `${beforeClose}${separator}${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(pluginRange.end)}`;
+}
+function parseOpenCodePluginItems(content, pluginRange) {
+  const items = [];
+  let index = pluginRange.start + 1;
+  while (index < pluginRange.end) {
+    const nextIndex = skipJsonComment(content, index);
+    if (nextIndex !== index) {
+      index = nextIndex;
+      continue;
+    }
+    if (content[index] !== '"') {
+      index++;
+      continue;
+    }
+    const endIndex = skipString(content, index, "Unterminated string in OpenCode config");
+    const value = JSON.parse(content.slice(index, endIndex));
+    items.push({ value, start: index, end: endIndex });
+    index = endIndex;
+  }
+  return items;
+}
+function removeOpenCodePlugin(content, pluginRange) {
+  return parseOpenCodePluginItems(content, pluginRange).filter((plugin) => isManagedOpenCodePlugin(plugin.value)).reverse().reduce((updated, plugin) => removeArrayRangeItem(updated, plugin), content);
+}
+function findRootObjectClose(content) {
+  return findOpenCodeBracket(content, skipWhitespaceAndComments(content, 0));
+}
+function addOpenCodePluginProperty(content, propertyCount) {
+  const rootClose = findRootObjectClose(content);
+  const closingIndent = getLineIndent(content, rootClose);
+  const propertyIndent = `${closingIndent}  `;
+  const itemIndent = `${propertyIndent}  `;
+  const propertyText = `${propertyIndent}"plugin": [
+${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
+${propertyIndent}]`;
+  if (propertyCount === 0) {
+    return `${content.slice(0, rootClose)}${propertyText}
+${closingIndent}${content.slice(rootClose)}`;
+  }
+  const beforeClose = content.slice(0, rootClose).trimEnd();
+  return `${beforeClose},
+${propertyText}
+${closingIndent}${content.slice(rootClose)}`;
+}
+function parseOpenCodeConfig(content, configPath) {
+  try {
+    return JSON.parse(stripJsonComments(content));
+  } catch (e) {
+    throw new Error(`Failed to parse ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+function isManagedOpenCodePlugin(plugin) {
+  return typeof plugin === "string" && (plugin === "cc-safety-net" || plugin.startsWith("cc-safety-net@"));
+}
+function readOpenCodeConfig(configPath) {
+  const content = readFileSync12(configPath, "utf-8");
+  const config = parseOpenCodeConfig(content, configPath);
+  const plugins = config.plugin;
+  if (plugins !== undefined && !Array.isArray(plugins)) {
+    throw new Error("OpenCode plugin must be an array");
+  }
+  return { content, config, plugins };
+}
+function installOpenCode(homeDir) {
+  const configPath = getOpenCodeConfigPath(homeDir);
+  mkdirSync5(dirname10(configPath), { recursive: true });
+  if (!existsSync16(configPath)) {
+    writeFileSync4(configPath, `${JSON.stringify({ plugin: [OPENCODE_PLUGIN] }, null, 2)}
+`);
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const opencode = readOpenCodeConfig(configPath);
+  if (opencode.plugins?.some(isManagedOpenCodePlugin)) {
+    return { path: configPath, alreadyInstalled: true };
+  }
+  if (opencode.plugins === undefined) {
+    writeFileSync4(configPath, addOpenCodePluginProperty(opencode.content, Object.keys(opencode.config).length));
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const pluginRange = findOpenCodePluginArray(opencode.content);
+  if (!pluginRange)
+    throw new Error("OpenCode plugin property was not found");
+  writeFileSync4(configPath, insertOpenCodePlugin(opencode.content, pluginRange, opencode.plugins));
+  return { path: configPath, alreadyInstalled: false };
+}
+function uninstallOpenCode(homeDir) {
+  const configPath = getOpenCodeConfigPath(homeDir);
+  if (!existsSync16(configPath))
+    return { path: configPath, alreadyInstalled: false };
+  const opencode = readOpenCodeConfig(configPath);
+  if (!opencode.plugins?.some(isManagedOpenCodePlugin)) {
+    return { path: configPath, alreadyInstalled: false };
+  }
+  const pluginRange = findOpenCodePluginArray(opencode.content);
+  if (!pluginRange)
+    throw new Error("OpenCode plugin property was not found");
+  writeFileSync4(configPath, removeOpenCodePlugin(opencode.content, pluginRange));
+  return { path: configPath, alreadyInstalled: true };
+}
+
+// src/bin/hook/install.ts
+function getHomeDir() {
+  return process.env.HOME ?? homedir6();
 }
 function parseInstallTarget(args, action) {
   const targets = [
@@ -9468,7 +9476,8 @@ function parseInstallTarget(args, action) {
 function runHookInstallCommand(action, args) {
   try {
     const target = parseInstallTarget(args, action);
-    const result = target === "opencode" ? action === "install" ? installOpenCode() : uninstallOpenCode() : action === "install" ? installKimiCli() : uninstallKimiCli();
+    const homeDir = getHomeDir();
+    const result = target === "opencode" ? action === "install" ? installOpenCode(homeDir) : uninstallOpenCode(homeDir) : action === "install" ? installKimiCli(homeDir) : uninstallKimiCli(homeDir);
     const name = target === "opencode" ? "OpenCode" : "Kimi CLI";
     const pastTense = action === "install" ? "Installed" : "Uninstalled";
     console.log(action === "install" && result.alreadyInstalled ? `${name} hook already installed in ${result.path}` : action === "uninstall" && !result.alreadyInstalled ? `${name} hook not installed in ${result.path}` : `${pastTense} ${name} hook ${action === "install" ? "in" : "from"} ${result.path}`);
@@ -9480,8 +9489,8 @@ function runHookInstallCommand(action, args) {
 }
 
 // src/bin/rule/index.ts
-import { existsSync as existsSync18 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync19 } from "node:fs";
+import { join as join15 } from "node:path";
 
 // src/bin/rule/doc.ts
 var RULE_DOC = `# Custom Rules Reference
@@ -9722,8 +9731,8 @@ function printResultWarnings(result) {
 }
 
 // src/bin/rule/migrate.ts
-import { existsSync as existsSync16, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname10, join as join12 } from "node:path";
+import { existsSync as existsSync17, readFileSync as readFileSync13, rmSync as rmSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname11, join as join13 } from "node:path";
 var PROJECT_MIGRATED_FROM = ".safety-net.json";
 var USER_MIGRATED_FROM = "~/.cc-safety-net/config.json";
 async function runRulesMigrate(options2) {
@@ -9748,7 +9757,7 @@ async function runRulesMigrate(options2) {
   return results.every((result) => result) ? 0 : 1;
 }
 async function migrateRulesScope(options2) {
-  if (!existsSync16(options2.legacyPath)) {
+  if (!existsSync17(options2.legacyPath)) {
     console.log(`No legacy config found at ${options2.legacyPath}`);
     return true;
   }
@@ -9765,8 +9774,8 @@ async function migrateRulesScope(options2) {
     return false;
   }
   const config = loaded.config ?? { version: 1, rules: [], overrides: {} };
-  const rulebookName = getMigratedRulebookName(dirname10(options2.configPath), config.rules, options2.defaultRulebookName, options2.migratedFrom);
-  const rulebookPath = join12(dirname10(options2.configPath), rulebookName, "rulebook.json");
+  const rulebookName = getMigratedRulebookName(dirname11(options2.configPath), config.rules, options2.defaultRulebookName, options2.migratedFrom);
+  const rulebookPath = join13(dirname11(options2.configPath), rulebookName, "rulebook.json");
   const snapshots = [
     snapshotFile(options2.configPath),
     snapshotFile(rulebookPath),
@@ -9806,7 +9815,7 @@ async function writeAndSyncMigratedRulebook(options2, rulebookPath, rulebookName
 }
 function readLegacyRulesConfig(path) {
   try {
-    const parsed = JSON.parse(readFileSync12(path, "utf-8"));
+    const parsed = JSON.parse(readFileSync13(path, "utf-8"));
     const validation = validateConfig(parsed);
     if (validation.errors.length > 0)
       return { ok: false, errors: validation.errors };
@@ -9828,11 +9837,11 @@ function getMigratedRulebookName(configDir, sources, defaultRulebookName, migrat
   const existing = sources.find((source) => getRulebookMigratedFrom(configDir, source) === migratedFrom);
   if (existing)
     return existing;
-  if (!existsSync16(join12(configDir, defaultRulebookName, "rulebook.json")))
+  if (!existsSync17(join13(configDir, defaultRulebookName, "rulebook.json")))
     return defaultRulebookName;
   for (let i = 2;; i++) {
     const name = `${defaultRulebookName}-${i}`;
-    if (!existsSync16(join12(configDir, name, "rulebook.json")))
+    if (!existsSync17(join13(configDir, name, "rulebook.json")))
       return name;
   }
 }
@@ -9855,17 +9864,17 @@ function getMigratedRulebook(name, migratedFrom, rules) {
 }
 function isCleanupVerified(configPath, rulebookPath, rulebookName, migratedFrom, legacyRules) {
   const config = readRulesConfig(configPath).config;
-  if (!config?.rules.includes(rulebookName) || !existsSync16(rulebookPath))
+  if (!config?.rules.includes(rulebookName) || !existsSync17(rulebookPath))
     return false;
   try {
-    const rulebook = JSON.parse(readFileSync12(rulebookPath, "utf-8"));
+    const rulebook = JSON.parse(readFileSync13(rulebookPath, "utf-8"));
     return rulebook.migrated_from === migratedFrom && JSON.stringify(rulebook.rules) === JSON.stringify(legacyRules);
   } catch {
     return false;
   }
 }
 function snapshotFile(path) {
-  return { path, content: existsSync16(path) ? readFileSync12(path, "utf-8") : null };
+  return { path, content: existsSync17(path) ? readFileSync13(path, "utf-8") : null };
 }
 function restoreFiles(snapshots) {
   for (const snapshot of snapshots) {
@@ -9873,13 +9882,13 @@ function restoreFiles(snapshots) {
       rmSync2(snapshot.path, { force: true });
       continue;
     }
-    writeFileSync4(snapshot.path, snapshot.content, "utf-8");
+    writeFileSync5(snapshot.path, snapshot.content, "utf-8");
   }
 }
 
 // src/bin/rule/verify.ts
-import { existsSync as existsSync17, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname11, join as join13, resolve as resolve9 } from "node:path";
+import { existsSync as existsSync18, readdirSync as readdirSync4, readFileSync as readFileSync14, statSync as statSync2, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname12, join as join14, resolve as resolve9 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -9891,14 +9900,14 @@ function runRulesVerify(options2 = {}) {
   const legacyUserConfig = options2.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
   const legacyProjectConfig = options2.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
   const githubSourceRulesDir = resolve9(cwd, RULES_DIR);
-  const userConfigDir = dirname11(userConfig);
+  const userConfigDir = dirname12(userConfig);
   let hasErrors = false;
   let hasWarnings = false;
   const configsChecked = [];
   const warnings = [];
   const githubSourceRules = getGitHubSourceRulesValidation(githubSourceRulesDir);
   printRulesVerifyHeader();
-  if (existsSync17(userConfig)) {
+  if (existsSync18(userConfig)) {
     const result = validateRulesConfigFile(userConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(userConfig, getUserRulesLockPath({ userConfigDir }), {
       userConfigDir
@@ -9913,9 +9922,9 @@ function runRulesVerify(options2 = {}) {
     if (result.errors.length > 0)
       hasErrors = true;
   }
-  if (existsSync17(legacyUserConfig)) {
+  if (existsSync18(legacyUserConfig)) {
     hasWarnings = true;
-    if (existsSync17(userConfig)) {
+    if (existsSync18(userConfig)) {
       warnings.push(getLegacyRulesConfigWarning("user", "cleanup"));
     } else {
       const result = validateConfigFile(legacyUserConfig);
@@ -9931,7 +9940,7 @@ function runRulesVerify(options2 = {}) {
       warnings.push(getLegacyRulesConfigWarning("user", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
     }
   }
-  if (existsSync17(projectConfig)) {
+  if (existsSync18(projectConfig)) {
     const result = validateRulesConfigFile(projectConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(projectConfig, getRulesLockPathForConfigPath(projectConfig), {
       userConfigDir
@@ -9945,11 +9954,11 @@ function runRulesVerify(options2 = {}) {
     });
     if (result.errors.length > 0)
       hasErrors = true;
-    if (existsSync17(legacyProjectConfig)) {
+    if (existsSync18(legacyProjectConfig)) {
       hasWarnings = true;
       warnings.push(getLegacyRulesConfigWarning("project", "cleanup"));
     }
-  } else if (existsSync17(legacyProjectConfig)) {
+  } else if (existsSync18(legacyProjectConfig)) {
     hasWarnings = true;
     hasErrors = true;
     const result = validateConfigFile(legacyProjectConfig);
@@ -10014,7 +10023,7 @@ function getLegacyRulesConfigWarning(scope, action) {
   return `Warning: Legacy ${scope} config is no longer supported. Fix or delete the ${label}, then run \`npx -y cc-safety-net rule migrate\`.`;
 }
 function getGitHubSourceRulesValidation(path) {
-  if (!existsSync17(path))
+  if (!existsSync18(path))
     return null;
   const result = validateGitHubSourceRules(path);
   if (result.ruleNames.size === 0 && result.errors.length === 0)
@@ -10049,13 +10058,13 @@ function validateGitHubSourceRules(path) {
       errors.push(`${entry.name} must be a rulebook directory`);
       continue;
     }
-    const rulebookPath = join13(path, entry.name, "rulebook.json");
-    if (!existsSync17(rulebookPath)) {
+    const rulebookPath = join14(path, entry.name, "rulebook.json");
+    if (!existsSync18(rulebookPath)) {
       errors.push(`${entry.name}/rulebook.json is required`);
       continue;
     }
     try {
-      const rulebook = assertValidRulebook(JSON.parse(readFileSync13(rulebookPath, "utf-8")));
+      const rulebook = assertValidRulebook(JSON.parse(readFileSync14(rulebookPath, "utf-8")));
       if (rulebook.name !== entry.name) {
         errors.push(`rulebook name "${rulebook.name}" must match folder "${entry.name}"`);
         continue;
@@ -10143,11 +10152,11 @@ function printInvalidVerifyTarget(label, path, errors) {
 }
 function addRulesSchemaIfMissing(path) {
   try {
-    const content = readFileSync13(path, "utf-8");
+    const content = readFileSync14(path, "utf-8");
     const parsed = JSON.parse(content);
     if (parsed.$schema)
       return false;
-    writeFileSync5(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
+    writeFileSync6(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
     return true;
   } catch {
     return false;
@@ -10190,8 +10199,8 @@ async function runRuleCommand(args) {
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
     const rulebookName = flags.global ? "user-rules" : "project-rules";
     ensureDefaultRulebookSource(configPath, rulebookName);
-    const rulebookPath = join14(dir, rulebookName, "rulebook.json");
-    if (!existsSync18(rulebookPath))
+    const rulebookPath = join15(dir, rulebookName, "rulebook.json");
+    if (!existsSync19(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
     const result = await syncRulesConfig(options2);
     printRuleChangeResult(result, "Rule config initialized.");
@@ -10263,15 +10272,7 @@ function parseRuleFlags(args) {
     errors: []
   };
   for (const arg of args) {
-    if (flags.positionals[0] === "migrate" && arg.startsWith("-")) {
-      if (arg === "--cleanup") {
-        flags.cleanup = true;
-      } else if (arg === "-h" || arg === "--help") {
-        flags.help = true;
-      } else {
-        flags.errors.push(`Unknown option for rule migrate: ${arg}`);
-      }
-    } else if (arg === "-g" || arg === "--global") {
+    if (arg === "-g" || arg === "--global") {
       flags.global = true;
     } else if (arg === "--check") {
       flags.check = true;
@@ -10283,14 +10284,24 @@ function parseRuleFlags(args) {
       } else {
         flags.errors.push(`Unknown rule option: ${arg}`);
       }
+    } else if (arg === "--cleanup") {
+      if (flags.positionals[0] === "migrate") {
+        flags.cleanup = true;
+      } else {
+        flags.errors.push(unknownRuleOption(flags.positionals[0], arg));
+      }
     } else if (arg === "-h" || arg === "--help") {
       flags.help = true;
     } else if (arg.startsWith("-")) {
-      flags.errors.push(`Unknown rule option: ${arg}`);
+      flags.errors.push(unknownRuleOption(flags.positionals[0], arg));
     } else {
       flags.positionals.push(arg);
     }
   }
+  validateRuleFlags(flags);
+  return flags;
+}
+function validateRuleFlags(flags) {
   const [subcommand] = flags.positionals;
   if (subcommand && !RULE_SUBCOMMANDS.has(subcommand)) {
     flags.errors.push(`Unknown rule subcommand: ${subcommand}`);
@@ -10309,10 +10320,14 @@ function parseRuleFlags(args) {
   if (subcommand === "list" && flags.global) {
     flags.errors.push("Unknown option for rule list: --global");
   }
-  return flags;
+}
+function unknownRuleOption(subcommand, option) {
+  if (subcommand === "migrate")
+    return `Unknown option for rule migrate: ${option}`;
+  return `Unknown rule option: ${option}`;
 }
 function ensureDefaultRulebookSource(configPath, rulebookName) {
-  if (!existsSync18(configPath)) {
+  if (!existsSync19(configPath)) {
     writeDefaultRulesConfig(configPath, [rulebookName]);
     return;
   }
@@ -10327,9 +10342,9 @@ function ensureDefaultRulebookSource(configPath, rulebookName) {
 }
 
 // src/bin/statusline.ts
-import { existsSync as existsSync19, readFileSync as readFileSync14 } from "node:fs";
+import { existsSync as existsSync20, readFileSync as readFileSync15 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { join as join15 } from "node:path";
+import { join as join16 } from "node:path";
 async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
@@ -10353,15 +10368,15 @@ function getSettingsPath() {
   if (process.env.CLAUDE_SETTINGS_PATH) {
     return process.env.CLAUDE_SETTINGS_PATH;
   }
-  return join15(homedir7(), ".claude", "settings.json");
+  return join16(homedir7(), ".claude", "settings.json");
 }
 function isPluginEnabled() {
   const settingsPath = getSettingsPath();
-  if (!existsSync19(settingsPath)) {
+  if (!existsSync20(settingsPath)) {
     return false;
   }
   try {
-    const content = readFileSync14(settingsPath, "utf-8");
+    const content = readFileSync15(settingsPath, "utf-8");
     const settings = JSON.parse(content);
     if (!settings.enabledPlugins) {
       return false;
