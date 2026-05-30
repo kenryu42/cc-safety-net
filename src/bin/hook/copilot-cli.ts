@@ -1,27 +1,12 @@
-import { parseHookJson, runHookAdapter } from '@/bin/hook/common';
-import { redactSecrets } from '@/core/audit';
-import { formatBlockedMessage } from '@/core/format';
+import { parseHookJson, runConfiguredHookAdapter } from '@/bin/hook/common';
 import type { CopilotCliHookInput, CopilotCliHookOutput } from '@/types';
 
-function outputCopilotDeny(reason: string, command?: string, segment?: string): void {
-  const message = formatBlockedMessage({
-    reason,
-    command,
-    segment,
-    redact: redactSecrets,
-  });
-
-  const output: CopilotCliHookOutput = {
-    permissionDecision: 'deny',
-    permissionDecisionReason: message,
-  };
-
-  console.log(JSON.stringify(output));
-}
-
 export async function runCopilotCliHook(): Promise<void> {
-  await runHookAdapter<CopilotCliHookInput>({
-    outputDeny: outputCopilotDeny,
+  await runConfiguredHookAdapter<CopilotCliHookInput>({
+    createDenyOutput: (message): CopilotCliHookOutput => ({
+      permissionDecision: 'deny',
+      permissionDecisionReason: message,
+    }),
     isSupported: (input) => input.toolName === 'bash',
     getCommand: (input, outputDeny) =>
       parseHookJson<{ command?: string }>(
