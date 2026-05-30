@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { findCommand } from '@/bin/commands';
+import { type CommandName, findCommand } from '@/bin/commands';
 import { parseDoctorFlags, runDoctor } from '@/bin/doctor/index';
 import {
   explainCommand,
@@ -106,7 +106,7 @@ const commandParsers = {
     process.exit(1);
   },
   doctor: (args: string[]): ParsedCommand => ({ mode: 'doctor', args }),
-} satisfies Record<string, (args: string[]) => ParsedCommand>;
+} satisfies Record<CommandName, (args: string[]) => ParsedCommand>;
 
 function parseCliArgs(args: string[]): ParsedCommand | null {
   // Handle "help <command>" pattern first
@@ -137,7 +137,7 @@ function parseCliArgs(args: string[]): ParsedCommand | null {
 
   const command = findCommand(commandName);
   if (command) {
-    return commandParsers[command.name as keyof typeof commandParsers](args.slice(1));
+    return commandParsers[command.name](args.slice(1));
   }
 
   const legacyIntegration = findLegacyTopLevelHookIntegration(commandName);
@@ -161,7 +161,7 @@ const commandHandlers = {
   rule: async (command) => {
     process.exit(await runRuleCommand(command.args));
   },
-  statusline: async () => {
+  statusline: async (_command) => {
     await printStatusline();
   },
   doctor: async (command) => {
@@ -196,9 +196,41 @@ const commandHandlers = {
   },
 } satisfies { [Mode in ParsedCommand['mode']]: ParsedCommandHandler<Mode> };
 
+function assertNever(command: never): never {
+  throw new Error(`Unhandled command mode: ${JSON.stringify(command)}`);
+}
+
+async function runParsedCommand(command: ParsedCommand): Promise<void> {
+  switch (command.mode) {
+    case 'hook':
+      await commandHandlers.hook(command);
+      return;
+    case 'hook-install':
+      await commandHandlers['hook-install'](command);
+      return;
+    case 'hook-uninstall':
+      await commandHandlers['hook-uninstall'](command);
+      return;
+    case 'rule':
+      await commandHandlers.rule(command);
+      return;
+    case 'statusline':
+      await commandHandlers.statusline(command);
+      return;
+    case 'doctor':
+      await commandHandlers.doctor(command);
+      return;
+    case 'explain':
+      await commandHandlers.explain(command);
+      return;
+    default:
+      assertNever(command);
+  }
+}
+
 async function main(): Promise<void> {
   const command = parseCliArgs(process.argv.slice(2));
-  if (command) await commandHandlers[command.mode](command as never);
+  if (command) await runParsedCommand(command);
 }
 
 main().catch((error: unknown) => {
