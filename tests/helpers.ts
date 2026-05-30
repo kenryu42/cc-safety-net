@@ -281,6 +281,19 @@ export async function withLinkedWorktreeFixture<T>(
   }
 }
 
+let readonlyLinkedWorktreeFixture: LinkedWorktreeFixture | undefined;
+
+process.on('exit', () => {
+  readonlyLinkedWorktreeFixture?.cleanup();
+});
+
+export async function withReadonlyLinkedWorktreeFixture<T>(
+  fn: (fixture: LinkedWorktreeFixture) => T | Promise<T>,
+) {
+  readonlyLinkedWorktreeFixture ??= createLinkedWorktreeFixture();
+  return await fn(readonlyLinkedWorktreeFixture);
+}
+
 export interface FakeGitFileFixture {
   rootDir: string;
   cwd: string;

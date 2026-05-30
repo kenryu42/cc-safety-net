@@ -11,6 +11,7 @@ import {
   runGuard,
   toShellPath,
   withEnv,
+  withReadonlyLinkedWorktreeFixture,
 } from '../helpers.ts';
 
 describe('analyzeGit direct', () => {
@@ -25,9 +26,8 @@ describe('analyzeGit direct', () => {
     );
   });
 
-  test('classifies reset --hard before -- as local discard', () => {
-    const fixture = createLinkedWorktreeFixture();
-    try {
+  test('classifies reset --hard before -- as local discard', async () => {
+    await withReadonlyLinkedWorktreeFixture((fixture) => {
       expect(
         getGitWorktreeRelaxation(['git', 'reset', '--hard', '--'], {
           cwd: fixture.linkedWorktree,
@@ -37,9 +37,7 @@ describe('analyzeGit direct', () => {
         originalReason: expect.stringContaining('git reset --hard'),
         gitCwd: expect.any(String),
       });
-    } finally {
-      fixture.cleanup();
-    }
+    });
   });
 });
 
@@ -487,18 +485,14 @@ describe('git clean', () => {
 });
 
 describe('git linked worktree mode', () => {
-  test('default mode still blocks local discard commands in linked worktrees', () => {
-    const fixture = createLinkedWorktreeFixture();
-    try {
+  test('default mode still blocks local discard commands in linked worktrees', async () => {
+    await withReadonlyLinkedWorktreeFixture((fixture) => {
       assertBlocked('git reset --hard', 'git reset --hard', fixture.linkedWorktree);
-    } finally {
-      fixture.cleanup();
-    }
+    });
   });
 
-  test('SAFETY_NET_WORKTREE allows local discard commands in linked worktrees', () => {
-    const fixture = createLinkedWorktreeFixture();
-    try {
+  test('SAFETY_NET_WORKTREE allows local discard commands in linked worktrees', async () => {
+    await withReadonlyLinkedWorktreeFixture((fixture) => {
       withEnv({ SAFETY_NET_WORKTREE: '1' }, () => {
         const commands = [
           'git restore file.txt',
@@ -520,20 +514,15 @@ describe('git linked worktree mode', () => {
           expect(runGuard(command, fixture.linkedWorktree)).toBeNull();
         }
       });
-    } finally {
-      fixture.cleanup();
-    }
+    });
   });
 
-  test('SAFETY_NET_WORKTREE does not relax main worktree commands', () => {
-    const fixture = createLinkedWorktreeFixture();
-    try {
+  test('SAFETY_NET_WORKTREE does not relax main worktree commands', async () => {
+    await withReadonlyLinkedWorktreeFixture((fixture) => {
       withEnv({ SAFETY_NET_WORKTREE: '1' }, () => {
         assertBlocked('git reset --hard', 'git reset --hard', fixture.mainWorktree);
       });
-    } finally {
-      fixture.cleanup();
-    }
+    });
   });
 
   test('SAFETY_NET_WORKTREE does not relax main worktree subdirectories', () => {
