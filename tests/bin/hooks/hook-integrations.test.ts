@@ -29,4 +29,10 @@ describe('hook integration registry', () => {
     expect(kimi?.flags).toEqual(['-kc', '--kimi-cli']);
     expect(kimi?.legacyTopLevel).toBe(false);
   });
+
+  test('has a runner for every hook integration', () => {
+    expect(hookIntegrations.every((integration) => typeof integration.run === 'function')).toBe(
+      true,
+    );
+  });
 });
