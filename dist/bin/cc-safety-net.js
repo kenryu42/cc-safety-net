@@ -1810,6 +1810,47 @@ function stripCommand(tokens) {
 }
 // src/core/analyze/find.ts
 var REASON_FIND_DELETE = "find -delete permanently removes files. Use -print first to preview.";
+var FIND_PRIMARIES_WITH_VALUE = new Set([
+  "-amin",
+  "-anewer",
+  "-atime",
+  "-cmin",
+  "-cnewer",
+  "-context",
+  "-ctime",
+  "-exec",
+  "-execdir",
+  "-fprint",
+  "-fprintf",
+  "-fstype",
+  "-gid",
+  "-group",
+  "-ilname",
+  "-iname",
+  "-inum",
+  "-ipath",
+  "-iwholename",
+  "-iregex",
+  "-links",
+  "-lname",
+  "-mmin",
+  "-mtime",
+  "-name",
+  "-newer",
+  "-newerXY",
+  "-path",
+  "-perm",
+  "-printf",
+  "-regex",
+  "-samefile",
+  "-size",
+  "-type",
+  "-uid",
+  "-used",
+  "-user",
+  "-wholename",
+  "-xtype"
+]);
 function analyzeFind(tokens, context = {}) {
   if (findHasDelete(tokens.slice(1))) {
     return REASON_FIND_DELETE;
@@ -1885,7 +1926,7 @@ function findHasDelete(tokens) {
       i++;
       continue;
     }
-    if (token === "-name" || token === "-iname" || token === "-path" || token === "-ipath" || token === "-regex" || token === "-iregex" || token === "-type" || token === "-user" || token === "-group" || token === "-perm" || token === "-size" || token === "-mtime" || token === "-ctime" || token === "-atime" || token === "-newer" || token === "-printf" || token === "-fprint" || token === "-fprintf") {
+    if (findPrimaryTakesValue(token)) {
       i += 2;
       continue;
     }
@@ -1895,6 +1936,9 @@ function findHasDelete(tokens) {
     i++;
   }
   return false;
+}
+function findPrimaryTakesValue(token) {
+  return FIND_PRIMARIES_WITH_VALUE.has(token) || /^-newer[A-Za-z]{2}$/.test(token);
 }
 
 // src/core/analyze/interpreters.ts
@@ -3328,8 +3372,7 @@ function analyzeParallel(tokens, context) {
   if (!parseResult) {
     return null;
   }
-  const { template, args, hasPlaceholder, runsRemotely, usesStdin } = parseResult;
-  const hasDynamicStdinPlaceholder = usesStdin && hasPlaceholder;
+  const { template, args, templateHasPlaceholder, runsRemotely, usesStdin, envNames } = parseResult;
   if (template.length === 0) {
     const nestedOverrides2 = buildCommandsModeOverrides(context, runsRemotely);
     for (const arg of args) {
@@ -3342,6 +3385,10 @@ function analyzeParallel(tokens, context) {
   }
   const childCommand = normalizeChildCommand(template, context);
   const childTokens = childCommand.tokens;
+  const dynamicEnvValues = getParallelDynamicEnvValues(envNames, context.envAssignments, childCommand.envAssignments);
+  const envHasPlaceholder = dynamicEnvValues.some(hasParallelPlaceholder);
+  const hasPlaceholder = templateHasPlaceholder || envHasPlaceholder;
+  const hasDynamicStdinPlaceholder = usesStdin && hasPlaceholder;
   const nestedOverrides = buildNestedOverrides(childCommand.envAssignments, childCommand.wrapperCwd, runsRemotely || hasDynamicStdinPlaceholder);
   if (SHELL_WRAPPERS.has(childCommand.head)) {
     const dashCArg = extractDashCArg(childTokens);
@@ -3370,6 +3417,10 @@ function analyzeParallel(tokens, context) {
       if (reason) {
         return reason;
       }
+      const envReason = analyzeParallelDynamicEnvValues(dynamicEnvValues, args, context);
+      if (envReason) {
+        return envReason;
+      }
       if (hasPlaceholder) {
         return REASON_PARALLEL_SHELL;
       }
@@ -3384,7 +3435,7 @@ function analyzeParallel(tokens, context) {
     return null;
   }
   if (childCommand.head === "rm" && hasRecursiveForceFlags(childTokens)) {
-    if (hasPlaceholder && args.length > 0) {
+    if (templateHasPlaceholder && args.length > 0) {
       return analyzeParallelRmExpansions(args.map((arg) => childTokens.map((t) => t.replace(/{}/g, arg))), childCommand.cwd, context);
     }
     if (args.length > 0) {
@@ -3392,7 +3443,7 @@ function analyzeParallel(tokens, context) {
     }
     return REASON_PARALLEL_RM;
   }
-  const tokenSets = getParallelChildTokenSets(childTokens, hasPlaceholder, args);
+  const tokenSets = getParallelChildTokenSets(childTokens, templateHasPlaceholder, args);
   for (const tokens2 of tokenSets) {
     const result = analyzeChildCommand(tokens2, {
       cwd: childCommand.cwd,
@@ -3435,6 +3486,33 @@ function getParallelChildTokenSets(childTokens, hasPlaceholder, args) {
     return args.map((arg) => [...childTokens, arg]);
   }
   return [[...childTokens]];
+}
+function getParallelDynamicEnvValues(envNames, contextEnvAssignments, childEnvAssignments) {
+  return [
+    ...envNames.flatMap((name) => {
+      const value = childEnvAssignments.get(name) ?? contextEnvAssignments?.get(name);
+      return value === undefined ? [] : [value];
+    }),
+    ...childEnvAssignments.values()
+  ];
+}
+function analyzeParallelDynamicEnvValues(values, args, context) {
+  for (const value of values) {
+    if (!hasParallelPlaceholder(value)) {
+      continue;
+    }
+    const commands = args.length > 0 ? args.map((arg) => replaceParallelPlaceholder(value, arg)) : [value];
+    for (const command2 of commands) {
+      const reason = context.analyzeNested(command2, {
+        envAssignments: context.envAssignments,
+        effectiveCwd: context.cwd
+      });
+      if (reason) {
+        return reason;
+      }
+    }
+  }
+  return null;
 }
 function buildNestedOverrides(envAssignments, cwd, runsRemotely) {
   const overrides = { envAssignments };
@@ -3488,6 +3566,8 @@ function parseParallelCommand(tokens) {
   let childCommandTokens = [];
   let markerIndex = -1;
   let runsRemotely = false;
+  let usesPipe = false;
+  const envNames = [];
   while (i < tokens.length) {
     const token = tokens[i];
     if (!token)
@@ -3504,6 +3584,21 @@ function parseParallelCommand(tokens) {
       break;
     }
     if (token.startsWith("-")) {
+      if (token === "--pipe" || token === "--pipepart") {
+        usesPipe = true;
+        i++;
+        continue;
+      }
+      if (token === "--env") {
+        envNames.push(...splitParallelEnvNames(tokens[i + 1]));
+        i += 2;
+        continue;
+      }
+      if (token.startsWith("--env=")) {
+        envNames.push(...splitParallelEnvNames(token.slice("--env=".length)));
+        i++;
+        continue;
+      }
       if (token === "-S" || token === "--sshlogin" || token === "--slf" || token === "--sshloginfile") {
         runsRemotely = true;
         i += 2;
@@ -3553,7 +3648,7 @@ function parseParallelCommand(tokens) {
       }
     }
   }
-  const hasPlaceholder = templateTokens.some(hasParallelPlaceholder);
+  const templateHasPlaceholder = templateTokens.some(hasParallelPlaceholder);
   if (templateTokens.length === 0 && markerIndex === -1) {
     return null;
   }
@@ -3561,10 +3656,14 @@ function parseParallelCommand(tokens) {
     template: templateTokens,
     args,
     childCommandTokens,
-    hasPlaceholder,
+    templateHasPlaceholder,
     runsRemotely,
-    usesStdin: markerIndex === -1
+    usesStdin: usesPipe || markerIndex === -1,
+    envNames
   };
+}
+function splitParallelEnvNames(value) {
+  return (value ?? "").split(",").map((name) => name.trim()).filter(Boolean);
 }
 
 // src/core/analyze/tmpdir.ts
