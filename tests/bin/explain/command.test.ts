@@ -445,26 +445,30 @@ describe('explainCommand shell wrapper edge cases', () => {
 
 describe('explainCommand max recursion depth', () => {
   test('deeply nested command hits max recursion', () => {
-    const deepNested = nestedBashCommand('echo deep', 10);
+    const deepNested = nestedBashCommand('echo deep', MAX_RECURSION_DEPTH);
     expect(recursionLimitErrorStep(deepNested)).toBeTruthy();
   });
 
-  test('hits exact max recursion depth of 5', () => {
-    const level5 =
-      'bash -c "bash -c \\"bash -c \\\\\\"bash -c \\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"echo hi\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\"\\\\\\"\\"" ';
-    expect(recursionLimitErrorStep(level5)).toBeFalsy();
+  test('one level before max recursion depth does not hit recursion limit', () => {
+    expect(
+      recursionLimitErrorStep(nestedBashCommand('echo hi', MAX_RECURSION_DEPTH - 1)),
+    ).toBeFalsy();
   });
 
-  test('hits max recursion depth with 10 nested bash -c calls', () => {
-    expect(recursionLimitErrorStep(nestedBashCommand('echo ok', 10))).toBeDefined();
+  test('hits max recursion depth with max nested bash -c calls', () => {
+    expect(
+      recursionLimitErrorStep(nestedBashCommand('echo ok', MAX_RECURSION_DEPTH)),
+    ).toBeDefined();
   });
 
-  test('9 nested levels does not hit max recursion depth', () => {
-    expect(recursionLimitErrorStep(nestedBashCommand('echo ok', 9))).toBeUndefined();
+  test('one nested level before max does not hit max recursion depth', () => {
+    expect(
+      recursionLimitErrorStep(nestedBashCommand('echo ok', MAX_RECURSION_DEPTH - 1)),
+    ).toBeUndefined();
   });
 
   test('unparseable inner command at depth limit is blocked by recursion limit', () => {
-    const result = explainCommand(nestedBashCommand("echo 'unclosed", 10));
+    const result = explainCommand(nestedBashCommand("echo 'unclosed", MAX_RECURSION_DEPTH));
     expect(result.result).toBe('blocked');
     expect(result.reason).toContain('exceeds maximum recursion depth');
   });

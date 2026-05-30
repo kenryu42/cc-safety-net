@@ -51,6 +51,22 @@ describe('help output', () => {
 
       expect(JSON.parse(result.output)).toHaveProperty('hooks');
     });
+
+    test('doctor json output contains the full top-level report shape', async () => {
+      const result = await runSafetyNetCli(['doctor', '--json', '--skip-update-check']);
+      const report = JSON.parse(result.output);
+
+      expect(result.exitCode).toBeGreaterThanOrEqual(0);
+      expect(report).toHaveProperty('hooks');
+      expect(report).toHaveProperty('userConfig');
+      expect(report).toHaveProperty('projectConfig');
+      expect(report).toHaveProperty('effectiveRules');
+      expect(report).toHaveProperty('shadowedRules');
+      expect(report).toHaveProperty('environment');
+      expect(report).toHaveProperty('activity');
+      expect(report).toHaveProperty('update');
+      expect(report).toHaveProperty('system');
+    });
   });
 
   describe('printHelp (main help)', () => {
