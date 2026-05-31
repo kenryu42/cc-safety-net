@@ -347,6 +347,14 @@ describe('rule remove', () => {
     expect(result.output).toBe('');
     expect(result.stderr).toContain('Unknown option for rule add: --delete-source');
   });
+
+  test('rejects delete-source without subcommand with remove-specific guidance', async () => {
+    const result = await runSafetyNetCli(['rule', '--delete-source']);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toBe('');
+    expect(result.stderr).toContain("--delete-source is only valid with 'rule remove'");
+  });
 });
 
 function ruleListEnv(tempDir: string): Record<string, string> {

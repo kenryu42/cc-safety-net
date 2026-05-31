@@ -96,12 +96,17 @@ describe('command definitions', () => {
 
 describe('command routing', () => {
   test('registered command names route through the CLI dispatcher', async () => {
-    const cases = [
+    const cases: Array<{ args: string[]; output: string; stderr?: string; exitCode?: number }> = [
       { args: ['doctor', '--json', '--skip-update-check'], output: '"hooks"' },
       { args: ['explain', '--help'], output: 'USAGE:\n  cc-safety-net explain' },
       { args: ['rule', '--help'], output: 'USAGE:\n  cc-safety-net rule' },
       { args: ['hook', '--help'], output: 'USAGE:\n  cc-safety-net hook' },
-      { args: ['statusline'], output: 'USAGE:\n  cc-safety-net statusline', exitCode: 1 },
+      {
+        args: ['statusline'],
+        output: 'USAGE:\n  cc-safety-net statusline',
+        stderr: 'statusline requires --claude-code (-cc)',
+        exitCode: 1,
+      },
     ];
 
     for (const command of cases) {
@@ -109,6 +114,17 @@ describe('command routing', () => {
 
       expect(result.exitCode).toBe(command.exitCode ?? 0);
       expect(result.output).toContain(command.output);
+      if (command.stderr !== undefined) expect(result.stderr).toContain(command.stderr);
     }
+  });
+
+  test('bare hook command explains the missing subcommand or integration flag', async () => {
+    const result = await runSafetyNetCli(['hook']);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --opencode',
+    );
+    expect(result.output).toContain('USAGE:\n  cc-safety-net hook');
   });
 });

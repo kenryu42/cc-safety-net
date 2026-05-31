@@ -92,6 +92,7 @@ const commandParsers = {
   rule: (args: string[]): ParsedCommand => ({ mode: 'rule', args }),
   statusline: (args: string[]): ParsedCommand => {
     if (args.includes('--claude-code') || args.includes('-cc')) return { mode: 'statusline' };
+    console.error('statusline requires --claude-code (-cc)');
     showCommandHelp('statusline');
     process.exit(1);
   },
@@ -102,6 +103,9 @@ const commandParsers = {
     const integration = findHookIntegrationByFlag(args);
     if (integration) return { mode: 'hook', integration };
 
+    console.error(
+      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --opencode',
+    );
     showCommandHelp('hook');
     process.exit(1);
   },

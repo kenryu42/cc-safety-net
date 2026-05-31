@@ -448,6 +448,20 @@ hooks = []
       rmSync(homeDir, { recursive: true, force: true });
     }
   });
+
+  test('adds filesystem guidance for install path errors', async () => {
+    const homePath = join(tmpdir(), `safety-net-install-file-${Date.now()}`);
+    writeFileSync(homePath, '');
+
+    try {
+      const result = await runCli(['hook', 'install', '--opencode'], '', { HOME: homePath });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Check that every parent path component is a directory.');
+    } finally {
+      rmSync(homePath, { force: true });
+    }
+  });
 });
 
 describe('hook uninstall command', () => {

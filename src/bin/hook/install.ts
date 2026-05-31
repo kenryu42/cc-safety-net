@@ -50,7 +50,23 @@ export function runHookInstallCommand(action: HookAction, args: readonly string[
     );
     return 0;
   } catch (e) {
-    console.error(e instanceof Error ? e.message : String(e));
+    console.error(formatInstallError(e));
     return 1;
   }
+}
+
+function formatInstallError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+
+  if (code === 'EACCES' || code === 'EPERM') {
+    return `${message}\nCheck file permissions for the target config file and parent directory.`;
+  }
+  if (code === 'ENOENT') {
+    return `${message}\nCheck that the target config path and parent directory exist.`;
+  }
+  if (code === 'ENOTDIR') {
+    return `${message}\nCheck that every parent path component is a directory.`;
+  }
+  return message;
 }

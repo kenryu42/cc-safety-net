@@ -167,7 +167,7 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
       } else if (flags.positionals[0] && RULE_SUBCOMMANDS.has(flags.positionals[0])) {
         flags.errors.push(`Unknown option for rule ${flags.positionals[0]}: ${arg}`);
       } else {
-        flags.errors.push(`Unknown rule option: ${arg}`);
+        flags.errors.push("--delete-source is only valid with 'rule remove'");
       }
     } else if (arg === '--cleanup') {
       if (flags.positionals[0] === 'migrate') {
