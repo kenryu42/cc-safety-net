@@ -311,7 +311,7 @@ function extractAwkSystemCommands(code) {
     if (systemIndex === -1)
       break;
     searchIndex = systemIndex + "system".length;
-    if (!isAwkIdentifierBoundary(code[systemIndex - 1]) || !isAwkIdentifierBoundary(code[searchIndex])) {
+    if (isAwkIdentifierChar(code[systemIndex - 1]) || isAwkIdentifierChar(code[searchIndex])) {
       continue;
     }
     let i = skipAwkWhitespace(code, searchIndex);
@@ -340,8 +340,8 @@ function extractAwkSystemCommands(code) {
     return null;
   return commands.length > 0 ? { dynamic: false, commands } : { dynamic: true, commands };
 }
-function isAwkIdentifierBoundary(char) {
-  return !char || !/[A-Za-z0-9_]/.test(char);
+function isAwkIdentifierChar(char) {
+  return !!char && /[A-Za-z0-9_]/.test(char);
 }
 function skipAwkWhitespace(code, index) {
   let i = index;
@@ -2081,7 +2081,7 @@ function isDangerousRootOrHomeTarget(path) {
 }
 function isTempTarget(path, allowTmpdirVar) {
   const normalized = path.trim();
-  if (normalized.includes("..")) {
+  if (hasParentDirectoryComponent(normalized)) {
     return false;
   }
   if (normalized === "/tmp" || normalized.startsWith("/tmp/")) {
@@ -2105,6 +2105,9 @@ function isTempTarget(path, allowTmpdirVar) {
     }
   }
   return false;
+}
+function hasParentDirectoryComponent(path) {
+  return path.split(/[\\/]+/).includes("..");
 }
 function getHomeDirForRmPolicy() {
   return process.env.HOME ?? homedir();
@@ -3492,10 +3495,6 @@ function isOnlyParallelPlaceholder(token) {
 }
 function parseParallelCommand(tokens) {
   const parallelOptsWithValue = new Set([
-    "-S",
-    "--sshlogin",
-    "--slf",
-    "--sshloginfile",
     "-a",
     "--arg-file",
     "--colsep",
@@ -3983,7 +3982,7 @@ function analyzeSegment(tokens, depth, options2) {
   return null;
 }
 function isShellWrapperCommand(head, normalizedHead) {
-  return SHELL_WRAPPERS.has(normalizedHead) || head === "$SHELL";
+  return SHELL_WRAPPERS.has(normalizedHead) || head === "$SHELL" || SHELL_WRAPPERS.has(getBasename(normalizedHead));
 }
 function getCommandAnalyzer(context) {
   if (context.basename.toLowerCase() === "git") {

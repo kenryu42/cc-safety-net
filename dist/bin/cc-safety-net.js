@@ -367,7 +367,7 @@ function extractAwkSystemCommands(code) {
     if (systemIndex === -1)
       break;
     searchIndex = systemIndex + "system".length;
-    if (!isAwkIdentifierBoundary(code[systemIndex - 1]) || !isAwkIdentifierBoundary(code[searchIndex])) {
+    if (isAwkIdentifierChar(code[systemIndex - 1]) || isAwkIdentifierChar(code[searchIndex])) {
       continue;
     }
     let i = skipAwkWhitespace(code, searchIndex);
@@ -396,8 +396,8 @@ function extractAwkSystemCommands(code) {
     return null;
   return commands.length > 0 ? { dynamic: false, commands } : { dynamic: true, commands };
 }
-function isAwkIdentifierBoundary(char) {
-  return !char || !/[A-Za-z0-9_]/.test(char);
+function isAwkIdentifierChar(char) {
+  return !!char && /[A-Za-z0-9_]/.test(char);
 }
 function skipAwkWhitespace(code, index) {
   let i = index;
@@ -2137,7 +2137,7 @@ function isDangerousRootOrHomeTarget(path) {
 }
 function isTempTarget(path, allowTmpdirVar) {
   const normalized = path.trim();
-  if (normalized.includes("..")) {
+  if (hasParentDirectoryComponent(normalized)) {
     return false;
   }
   if (normalized === "/tmp" || normalized.startsWith("/tmp/")) {
@@ -2161,6 +2161,9 @@ function isTempTarget(path, allowTmpdirVar) {
     }
   }
   return false;
+}
+function hasParentDirectoryComponent(path) {
+  return path.split(/[\\/]+/).includes("..");
 }
 function getHomeDirForRmPolicy() {
   return process.env.HOME ?? homedir();
@@ -3548,10 +3551,6 @@ function isOnlyParallelPlaceholder(token) {
 }
 function parseParallelCommand(tokens) {
   const parallelOptsWithValue = new Set([
-    "-S",
-    "--sshlogin",
-    "--slf",
-    "--sshloginfile",
     "-a",
     "--arg-file",
     "--colsep",
@@ -4039,7 +4038,7 @@ function analyzeSegment(tokens, depth, options2) {
   return null;
 }
 function isShellWrapperCommand(head, normalizedHead) {
-  return SHELL_WRAPPERS.has(normalizedHead) || head === "$SHELL";
+  return SHELL_WRAPPERS.has(normalizedHead) || head === "$SHELL" || SHELL_WRAPPERS.has(getBasename(normalizedHead));
 }
 function getCommandAnalyzer(context) {
   if (context.basename.toLowerCase() === "git") {
@@ -6222,7 +6221,10 @@ function handleBlockedHookCommand(command2, cwd, sessionId, outputDeny) {
   let result;
   try {
     result = analyzeHookCommand(command2, cwd);
-  } catch {
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(`Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
+    }
     outputDeny(REASON_SAFETY_NET_FAILED_CLOSED, command2, command2);
     return;
   }
@@ -6262,18 +6264,26 @@ async function runConfiguredHookAdapter(adapter) {
   });
 }
 
+// src/bin/hook/constants.ts
+var CLAUDE_CODE_HOOK_EVENT = "PreToolUse";
+var CLAUDE_CODE_TOOL_NAME = "Bash";
+var GEMINI_CLI_HOOK_EVENT = "BeforeTool";
+var GEMINI_CLI_TOOL_NAME = "run_shell_command";
+var KIMI_CLI_HOOK_EVENT = "PreToolUse";
+var KIMI_CLI_TOOL_NAME = "Shell";
+
 // src/bin/hook/claude-code.ts
 async function runClaudeCodeHook() {
   await runConfiguredHookAdapter({
     createDenyOutput: (message) => ({
       hookSpecificOutput: {
-        hookEventName: "PreToolUse",
+        hookEventName: CLAUDE_CODE_HOOK_EVENT,
         permissionDecision: "deny",
         permissionDecisionReason: message
       }
     }),
     getManualPermissionAdvice: (reason) => reason.includes("rule sync") ? false : undefined,
-    isSupported: (input) => input.tool_name === "Bash",
+    isSupported: (input) => input.tool_name === CLAUDE_CODE_TOOL_NAME,
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
     getSessionId: (input) => input.session_id
@@ -6302,7 +6312,7 @@ async function runGeminiCLIHook() {
       reason: message,
       systemMessage: message
     }),
-    isSupported: (input) => input.hook_event_name === "BeforeTool" && input.tool_name === "run_shell_command",
+    isSupported: (input) => input.hook_event_name === GEMINI_CLI_HOOK_EVENT && input.tool_name === GEMINI_CLI_TOOL_NAME,
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
     getSessionId: (input) => input.session_id
@@ -6319,7 +6329,7 @@ async function runKimiCliHook() {
         permissionDecisionReason: message
       }
     }),
-    isSupported: (input) => input.hook_event_name === "PreToolUse" && input.tool_name === "Shell",
+    isSupported: (input) => input.hook_event_name === KIMI_CLI_HOOK_EVENT && input.tool_name === KIMI_CLI_TOOL_NAME,
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
     getSessionId: (input) => input.session_id
@@ -7930,8 +7940,11 @@ async function runDoctor(options2 = {}) {
   } else {
     printReport(report);
   }
-  const hasFailure = hooks.every((h) => h.status !== "configured") || hooks.some((h) => h.selfTest && h.selfTest.failed > 0) || configInfo.userConfig.exists && !configInfo.userConfig.valid || configInfo.projectConfig.exists && !configInfo.projectConfig.valid;
+  const hasFailure = doctorHasFailure(hooks, configInfo);
   return hasFailure ? 1 : 0;
+}
+function doctorHasFailure(hooks, configInfo) {
+  return hooks.length > 0 && hooks.every((h) => h.status !== "configured") || hooks.some((h) => h.selfTest && h.selfTest.failed > 0) || configInfo.userConfig.exists && !configInfo.userConfig.valid || configInfo.projectConfig.exists && !configInfo.projectConfig.valid;
 }
 function printReport(report) {
   console.log();
@@ -8951,12 +8964,12 @@ function getOptionsColumnWidth(options2) {
 function getSubcommandsColumnWidth(subcommands) {
   return Math.max(...subcommands.map((subcommand) => subcommand.usage.length));
 }
+function getCommandSummaryWidth(commands2) {
+  return Math.max(...commands2.map((cmd) => `${PROGRAM_NAME} ${cmd.usage}`.length));
+}
 function formatCommandSummary(cmd, maxUsageWidth) {
   const usage = `${PROGRAM_NAME} ${cmd.usage}`;
-  if (cmd.name === "hook") {
-    return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 6)}${cmd.description}`;
-  }
-  return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 4)}${cmd.description}`;
+  return `${INDENT}${usage.padEnd(maxUsageWidth + 2)}${cmd.description}`;
 }
 function formatEnvironmentVariable(name, description) {
   return `${INDENT}${name.padEnd(40)}${description}`;
@@ -8998,7 +9011,7 @@ function printCommandHelp(command2) {
 }
 function printHelp() {
   const visibleCommands = getVisibleCommands();
-  const maxUsageWidth = Math.max(...visibleCommands.map((cmd) => cmd.usage.length));
+  const maxUsageWidth = getCommandSummaryWidth(visibleCommands);
   const lines = [];
   lines.push(`${PROGRAM_NAME} v${version}`);
   lines.push("");
@@ -9483,9 +9496,26 @@ function runHookInstallCommand(action, args) {
     console.log(action === "install" && result.alreadyInstalled ? `${name} hook already installed in ${result.path}` : action === "uninstall" && !result.alreadyInstalled ? `${name} hook not installed in ${result.path}` : `${pastTense} ${name} hook ${action === "install" ? "in" : "from"} ${result.path}`);
     return 0;
   } catch (e) {
-    console.error(e instanceof Error ? e.message : String(e));
+    console.error(formatInstallError(e));
     return 1;
   }
+}
+function formatInstallError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : null;
+  if (code === "EACCES" || code === "EPERM") {
+    return `${message}
+Check file permissions for the target config file and parent directory.`;
+  }
+  if (code === "ENOENT") {
+    return `${message}
+Check that the target config path and parent directory exist.`;
+  }
+  if (code === "ENOTDIR") {
+    return `${message}
+Check that every parent path component is a directory.`;
+  }
+  return message;
 }
 
 // src/bin/rule/index.ts
@@ -10282,7 +10312,7 @@ function parseRuleFlags(args) {
       } else if (flags.positionals[0] && RULE_SUBCOMMANDS.has(flags.positionals[0])) {
         flags.errors.push(`Unknown option for rule ${flags.positionals[0]}: ${arg}`);
       } else {
-        flags.errors.push(`Unknown rule option: ${arg}`);
+        flags.errors.push("--delete-source is only valid with 'rule remove'");
       }
     } else if (arg === "--cleanup") {
       if (flags.positionals[0] === "migrate") {
@@ -10386,7 +10416,10 @@ function isPluginEnabled() {
       return false;
     }
     return settings.enabledPlugins[pluginKey] === true;
-  } catch {
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(`Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return false;
   }
 }
@@ -10463,6 +10496,7 @@ var commandParsers = {
   statusline: (args) => {
     if (args.includes("--claude-code") || args.includes("-cc"))
       return { mode: "statusline" };
+    console.error("statusline requires --claude-code (-cc)");
     showCommandHelp("statusline");
     process.exit(1);
   },
@@ -10474,6 +10508,7 @@ var commandParsers = {
     const integration = findHookIntegrationByFlag(args);
     if (integration)
       return { mode: "hook", integration };
+    console.error("hook requires a subcommand or integration flag. Try: cc-safety-net hook install --opencode");
     showCommandHelp("hook");
     process.exit(1);
   },

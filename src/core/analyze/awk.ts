@@ -32,10 +32,7 @@ function extractAwkSystemCommands(code: string): { dynamic: boolean; commands: s
     if (systemIndex === -1) break;
     searchIndex = systemIndex + 'system'.length;
 
-    if (
-      !isAwkIdentifierBoundary(code[systemIndex - 1]) ||
-      !isAwkIdentifierBoundary(code[searchIndex])
-    ) {
+    if (isAwkIdentifierChar(code[systemIndex - 1]) || isAwkIdentifierChar(code[searchIndex])) {
       continue;
     }
 
@@ -68,8 +65,8 @@ function extractAwkSystemCommands(code: string): { dynamic: boolean; commands: s
   return commands.length > 0 ? { dynamic: false, commands } : { dynamic: true, commands };
 }
 
-function isAwkIdentifierBoundary(char: string | undefined): boolean {
-  return !char || !/[A-Za-z0-9_]/.test(char);
+function isAwkIdentifierChar(char: string | undefined): boolean {
+  return !!char && /[A-Za-z0-9_]/.test(char);
 }
 
 function skipAwkWhitespace(code: string, index: number): number {
