@@ -150,6 +150,7 @@ describe('statusline command routing', () => {
     const result = await runSafetyNetCli(['statusline']);
 
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('statusline requires --claude-code (-cc)');
     expect(result.output).toContain('cc-safety-net statusline');
     expect(result.output).toContain('-cc, --claude-code');
   });
@@ -191,6 +192,21 @@ describe('statusline enabled/disabled detection', () => {
     await writeFile(settingsPath, JSON.stringify({ model: 'opus' }));
 
     await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ Safety Net ❌');
+  });
+
+  test('logs invalid settings only in debug mode', async () => {
+    const settingsPath = join(tempDir, 'settings.json');
+    await writeFile(settingsPath, '{ invalid json }');
+
+    const result = await runSafetyNetCli(['statusline', '--claude-code'], {
+      CLAUDE_SETTINGS_PATH: settingsPath,
+      CC_SAFETY_NET_DEBUG: '1',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output.trim()).toBe('🛡️ Safety Net ❌');
+    expect(result.stderr).toContain('Safety Net debug: failed to read Claude settings:');
+    expect(result.stderr).toContain(settingsPath);
   });
 
   test('disabled plugin ignores mode flags (shows ❌ only)', async () => {

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { getSafetyNetEnvModes } from '@/core/env';
+import { ENV_FLAGS, envTruthy, getSafetyNetEnvModes } from '@/core/env';
 
 /**
  * Read piped stdin content asynchronously.
@@ -64,7 +64,12 @@ function isPluginEnabled(): boolean {
     }
 
     return settings.enabledPlugins[pluginKey] === true;
-  } catch {
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(
+        `Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     // On any error (invalid JSON, etc.), default to disabled
     return false;
   }

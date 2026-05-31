@@ -101,7 +101,12 @@ export function handleBlockedHookCommand(
   let result: ReturnType<typeof analyzeHookCommand>;
   try {
     result = analyzeHookCommand(command, cwd);
-  } catch {
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(
+        `Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`,
+      );
+    }
     outputDeny(REASON_SAFETY_NET_FAILED_CLOSED, command, command);
     return;
   }
