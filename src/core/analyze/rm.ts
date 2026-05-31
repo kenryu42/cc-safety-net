@@ -204,7 +204,7 @@ function isDangerousRootOrHomeTarget(path: string): boolean {
 function isTempTarget(path: string, allowTmpdirVar: boolean): boolean {
   const normalized = path.trim();
 
-  if (normalized.includes('..')) {
+  if (hasParentDirectoryComponent(normalized)) {
     return false;
   }
 
@@ -233,6 +233,10 @@ function isTempTarget(path: string, allowTmpdirVar: boolean): boolean {
   }
 
   return false;
+}
+
+function hasParentDirectoryComponent(path: string): boolean {
+  return path.split(/[\\/]+/).includes('..');
 }
 
 function getHomeDirForRmPolicy(): string {

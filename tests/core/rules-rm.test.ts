@@ -116,6 +116,10 @@ describe('rm -rf allowed', () => {
     assertAllowed('rm -rf /tmp');
   });
 
+  test('rm -rf temp path with dot-dot in filename allowed', () => {
+    assertAllowed('rm -rf /tmp/foo..bar/file');
+  });
+
   test('rm -r without force allowed', () => {
     assertAllowed('rm -r /some/path');
   });
