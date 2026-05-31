@@ -17,7 +17,7 @@ import {
 // These will be implemented in subsequent phases
 import { detectAllHooks } from '@/bin/doctor/hooks';
 import { getPackageVersion, getSystemInfo } from '@/bin/doctor/system-info';
-import type { DoctorOptions, DoctorReport } from '@/bin/doctor/types';
+import type { ConfigSourceInfo, DoctorOptions, DoctorReport, HookStatus } from '@/bin/doctor/types';
 import { checkForUpdates } from '@/bin/doctor/updates';
 
 export { parseDoctorFlags } from '@/bin/doctor/flags';
@@ -64,13 +64,21 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
   }
 
   // Exit code
-  const hasFailure =
-    hooks.every((h) => h.status !== 'configured') ||
-    hooks.some((h) => h.selfTest && h.selfTest.failed > 0) ||
-    (configInfo.userConfig.exists && !configInfo.userConfig.valid) ||
-    (configInfo.projectConfig.exists && !configInfo.projectConfig.valid);
+  const hasFailure = doctorHasFailure(hooks, configInfo);
 
   return hasFailure ? 1 : 0;
+}
+
+function doctorHasFailure(
+  hooks: readonly HookStatus[],
+  configInfo: { userConfig: ConfigSourceInfo; projectConfig: ConfigSourceInfo },
+): boolean {
+  return (
+    (hooks.length > 0 && hooks.every((h) => h.status !== 'configured')) ||
+    hooks.some((h) => h.selfTest && h.selfTest.failed > 0) ||
+    (configInfo.userConfig.exists && !configInfo.userConfig.valid) ||
+    (configInfo.projectConfig.exists && !configInfo.projectConfig.valid)
+  );
 }
 
 function printReport(report: DoctorReport): void {
