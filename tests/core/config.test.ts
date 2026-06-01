@@ -106,8 +106,8 @@ describe('runtime config loading', () => {
     expect(loadConfig(tempDir, { userConfigDir: userRulesDir }).rules).toEqual([]);
   });
 
-  function writeLegacyProjectConfig(): void {
-    writeFileSync(join(tempDir, '.safety-net.json'), JSON.stringify({ version: 1, rules: [] }));
+  function writeLegacyProjectConfig(rules: unknown[] = []): void {
+    writeFileSync(join(tempDir, '.safety-net.json'), JSON.stringify({ version: 1, rules }));
   }
 
   function writeEmptyProjectRulesConfig(): void {
@@ -136,13 +136,29 @@ describe('runtime config loading', () => {
     expect(result?.reason).toContain(reason);
   }
 
-  test('legacy project config fails closed when project rule config is missing', () => {
+  test('empty legacy project config is ignored when project rule config is missing', () => {
     writeLegacyProjectConfig();
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('legacy project config with rules fails closed when project rule config is missing', () => {
+    writeLegacyProjectConfig([
+      {
+        name: 'block-echo',
+        command: 'echo',
+        block_args: ['hello'],
+        reason: 'No hello.',
+      },
+    ]);
 
     expectLegacyFailClosed();
   });
 
-  test('legacy user config fails closed when user rule config is missing', () => {
+  test('empty legacy user config is ignored when user rule config is missing', () => {
     mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
     writeFileSync(
       join(tempDir, 'home', '.cc-safety-net', 'config.json'),
@@ -152,16 +168,77 @@ describe('runtime config loading', () => {
     const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
 
     expect(config.rules).toEqual([]);
-    expect(config.failClosedReason).toBe(
-      'legacy rules config location is no longer used; ask the user to run `npx -y cc-safety-net rule migrate`.',
-    );
+    expect(config.failClosedReason).toBeUndefined();
   });
 
-  test('legacy files fail closed when new rule config has no migration evidence', () => {
-    writeLegacyProjectConfig();
+  test('legacy user config with missing rules is ignored when user rule config is missing', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'home', '.cc-safety-net', 'config.json'),
+      JSON.stringify({ version: 1 }),
+    );
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('legacy user config with rules fails closed when user rule config is missing', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'home', '.cc-safety-net', 'config.json'),
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            name: 'block-echo',
+            command: 'echo',
+            block_args: ['hello'],
+            reason: 'No hello.',
+          },
+        ],
+      }),
+    );
+
+    expectLegacyFailClosed();
+  });
+
+  test('invalid legacy project config fails closed', () => {
+    writeFileSync(join(tempDir, '.safety-net.json'), '{bad json');
+
+    expectLegacyFailClosed();
+  });
+
+  test('invalid legacy user config fails closed', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(join(tempDir, 'home', '.cc-safety-net', 'config.json'), '{bad json');
+
+    expectLegacyFailClosed();
+  });
+
+  test('legacy files with rules fail closed when new rule config has no migration evidence', () => {
+    writeLegacyProjectConfig([
+      {
+        name: 'block-echo',
+        command: 'echo',
+        block_args: ['hello'],
+        reason: 'No hello.',
+      },
+    ]);
     writeEmptyProjectRulesConfig();
 
     expectLegacyFailClosed();
+  });
+
+  test('empty legacy files are ignored when new rule config has no migration evidence', () => {
+    writeLegacyProjectConfig();
+    writeEmptyProjectRulesConfig();
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
   });
 
   test('legacy files are ignored after migration evidence exists', async () => {

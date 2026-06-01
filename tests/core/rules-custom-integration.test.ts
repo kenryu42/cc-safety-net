@@ -185,7 +185,18 @@ describe('custom rules integration', () => {
     assertAllowed('git add -A', tempDir);
   });
 
-  test('legacy project config without new project config fails closed', () => {
+  test('empty legacy project config without new project config uses builtin only', () => {
+    writeFileSync(
+      join(tempDir, '.safety-net.json'),
+      JSON.stringify({ version: 1, rules: [] }),
+      'utf-8',
+    );
+
+    assertBlocked('git reset --hard', 'git reset --hard destroys', tempDir);
+    assertAllowed('echo hello', tempDir);
+  });
+
+  test('legacy project config with rules without new project config fails closed', () => {
     writeLegacyProjectConfig(tempDir);
 
     assertBlocked(
@@ -200,7 +211,7 @@ describe('custom rules integration', () => {
     );
   });
 
-  test('legacy project config fails closed when new project config has no migration evidence', () => {
+  test('legacy project config with rules fails closed when new project config has no migration evidence', () => {
     writeLegacyProjectConfig(tempDir);
     writeEmptyRulesConfig(tempDir);
 

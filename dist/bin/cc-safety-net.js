@@ -5627,9 +5627,28 @@ function getLegacyRulesConfigError(legacyPath, configPath, migratedFrom) {
     return [];
   if (hasMigrationEvidence(configPath, migratedFrom))
     return [];
+  if (!legacyRulesConfigNeedsMigration(legacyPath))
+    return [];
   return [
     `legacy rules config location is no longer used; ask the user to run ${RULE_MIGRATE_COMMAND}`
   ];
+}
+function legacyRulesConfigNeedsMigration(legacyPath) {
+  try {
+    const parsed = JSON.parse(readFileSync6(legacyPath, "utf-8"));
+    if (!parsed || typeof parsed !== "object")
+      return true;
+    const config = parsed;
+    if (config.version !== 1)
+      return true;
+    if (config.rules === undefined)
+      return false;
+    if (!Array.isArray(config.rules))
+      return true;
+    return config.rules.length > 0;
+  } catch {
+    return true;
+  }
 }
 function hasMigrationEvidence(configPath, migratedFrom) {
   const config = readRulesConfig(configPath).config;
@@ -10557,6 +10576,8 @@ function parseCliArgs(args) {
   const legacyIntegration = findLegacyTopLevelHookIntegration(commandName);
   if (legacyIntegration)
     return { mode: "hook", integration: legacyIntegration };
+  if (commandName === "--statusline")
+    return { mode: "statusline" };
   console.error(`Unknown option: ${commandName}`);
   console.error("Run 'cc-safety-net --help' for usage.");
   process.exit(1);

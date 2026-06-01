@@ -139,11 +139,23 @@ describe('statusline command routing', () => {
     }
   });
 
-  test('rejects legacy --statusline flag', async () => {
-    const result = await runSafetyNetCli(['--statusline']);
+  test('supports legacy --statusline flag', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'safety-net-statusline-'));
+    const settingsPath = join(tempDir, 'settings.json');
+    try {
+      await writePluginSettings(settingsPath, true);
+      const preferred = await runSafetyNetCli(['statusline', '--claude-code'], {
+        CLAUDE_SETTINGS_PATH: settingsPath,
+      });
+      const legacy = await runSafetyNetCli(['--statusline'], {
+        CLAUDE_SETTINGS_PATH: settingsPath,
+      });
 
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('Unknown option: --statusline');
+      expect(legacy.exitCode).toBe(0);
+      expect(legacy.output).toBe(preferred.output);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('statusline without platform flag prints help and exits nonzero', async () => {

@@ -416,13 +416,16 @@ npx cc-safety-net explain --cwd /tmp "git status"
 | git stash drop | Permanently deletes stashed changes |
 | git stash clear | Deletes ALL stashed changes |
 | git worktree remove --force | Force-deletes worktree without checking for changes |
-| rm -rf (paths outside cwd) | Recursive file deletion outside the current directory |
+| rm -rf (destructive targets) | Recursive file deletion of root, home, parent, absolute, or non-temp paths outside cwd |
 | rm -rf / or ~ or $HOME | Root/home deletion is extremely dangerous |
 | find ... -delete | Permanently removes files matching criteria |
 | xargs rm -rf | Dynamic input makes targets unpredictable |
 | xargs \<shell\> -c | Can execute arbitrary commands |
 | parallel rm -rf | Dynamic input makes targets unpredictable |
 | parallel \<shell\> -c | Can execute arbitrary commands |
+| dd writing to block devices | Can overwrite disks or partitions |
+| mkfs on block devices | Formats disks or partitions |
+| shred | Permanently destroys file contents |
 
 ## Commands Allowed
 
@@ -554,7 +557,7 @@ Config files are loaded from two scopes and merged:
 
 Local rulebook sources are bare names like `project-rules`. GitHub rulebook sources use `owner/repo#ref/<rulebook-name>` and point to `.cc-safety-net/rules/<rulebook-name>/rulebook.json` in that repository.
 
-Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are no longer loaded at runtime. Convert existing legacy rules with `npx -y cc-safety-net rule migrate`; use `npx -y cc-safety-net rule migrate --cleanup` if you also want to delete verified legacy files after migration.
+Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are no longer loaded at runtime. Empty legacy files are ignored, but legacy files with rules and invalid legacy files fail closed until migrated or fixed. Convert existing legacy rules with `npx -y cc-safety-net rule migrate`; use `npx -y cc-safety-net rule migrate --cleanup` if you also want to delete verified legacy files after migration.
 
 **Merging behavior**:
 - Rulebooks from both scopes are combined
@@ -745,7 +748,9 @@ Rulebook-backed custom rules fail closed when configured rulebooks cannot be loa
 |----------|----------|
 | Config file not found | Silent — use built-in rules only |
 | Invalid rule config | Fail closed until fixed |
-| Legacy config without migrated rule config | Fail closed until `rule migrate` creates the new rule config |
+| Empty legacy config | Silent — use built-in rules only |
+| Legacy config with rules and no migrated rule config | Fail closed until `rule migrate` creates the new rule config |
+| Invalid legacy config | Fail closed until fixed or removed |
 | Missing or stale lock/cache | Fail closed until `rule sync` repairs it |
 | Invalid local rulebook | Fail closed until the rulebook is fixed and synced |
 | Invalid GitHub rulebook | Fail closed until the source is fixed or removed |
@@ -770,9 +775,10 @@ Command: git add -A
 
 ### Strict Mode
 
-By default, unparseable commands are allowed through. Enable strict mode to fail-closed
-when the hook input or shell command cannot be safely analyzed (e.g., invalid JSON,
-unterminated quotes, malformed `bash -c` wrappers):
+Malformed or missing hook input JSON always fails closed. By default, ambiguous shell
+command parsing is allowed through. Enable strict mode to fail closed when a shell
+command cannot be safely analyzed (e.g., unterminated quotes or malformed `bash -c`
+wrappers):
 
 ```bash
 export SAFETY_NET_STRICT=1
@@ -847,6 +853,7 @@ The guard recursively analyzes commands wrapped in shells:
 ```bash
 bash -c 'git reset --hard'    # Blocked
 sh -lc 'rm -rf /'             # Blocked
+bash -c 'git stash drop'      # Blocked
 ```
 
 ### Interpreter One-Liner Detection
@@ -855,6 +862,10 @@ Detects destructive commands hidden in Python/Node/Ruby/Perl one-liners:
 
 ```bash
 python -c 'import os; os.system("rm -rf /")'  # Blocked
+python -c 'import os; os.system("git stash drop")'  # Blocked
+python -c 'import os; os.system("dd if=/dev/zero of=/dev/sda")'  # Blocked
+python -c 'import os; os.system("mkfs.ext4 /dev/sda1")'  # Blocked
+python -c 'import os; os.system("shred -u secret.txt")'  # Blocked
 ```
 
 ### Secret Redaction

@@ -75,11 +75,21 @@ describe('Claude Code hook', () => {
       });
     });
 
-    test('legacy config fail-closed asks user to run migration manually', async () => {
+    test('legacy config with rules fail-closed asks user to run migration manually', async () => {
       await withHookTestContext(async (context) => {
         writeFileSync(
           join(context.cwd, '.safety-net.json'),
-          JSON.stringify({ version: 1, rules: [] }),
+          JSON.stringify({
+            version: 1,
+            rules: [
+              {
+                name: 'block-echo',
+                command: 'echo',
+                block_args: ['hello'],
+                reason: 'No hello.',
+              },
+            ],
+          }),
           'utf-8',
         );
 

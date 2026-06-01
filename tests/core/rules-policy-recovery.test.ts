@@ -935,7 +935,7 @@ describe('rules policy recovery coverage', () => {
     };
 
     try {
-      writeFileSync(join(tempDir, '.safety-net.json'), JSON.stringify({ version: 2 }), 'utf-8');
+      writeFileSync(join(tempDir, '.safety-net.json'), '{not json', 'utf-8');
       expect(loadRulesPolicy({ cwd: tempDir, userConfigDir }).errors).toContain(
         'legacy rules config location is no longer used; ask the user to run `npx -y cc-safety-net rule migrate`',
       );

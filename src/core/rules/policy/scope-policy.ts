@@ -309,9 +309,24 @@ function getLegacyRulesConfigError(
 ): string[] {
   if (!existsSync(legacyPath)) return [];
   if (hasMigrationEvidence(configPath, migratedFrom)) return [];
+  if (!legacyRulesConfigNeedsMigration(legacyPath)) return [];
   return [
     `legacy rules config location is no longer used; ask the user to run ${RULE_MIGRATE_COMMAND}`,
   ];
+}
+
+function legacyRulesConfigNeedsMigration(legacyPath: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(legacyPath, 'utf-8')) as unknown;
+    if (!parsed || typeof parsed !== 'object') return true;
+    const config = parsed as Record<string, unknown>;
+    if (config.version !== 1) return true;
+    if (config.rules === undefined) return false;
+    if (!Array.isArray(config.rules)) return true;
+    return config.rules.length > 0;
+  } catch {
+    return true;
+  }
 }
 
 function hasMigrationEvidence(configPath: string, migratedFrom: string): boolean {

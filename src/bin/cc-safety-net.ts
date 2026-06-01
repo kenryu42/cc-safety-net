@@ -146,6 +146,7 @@ function parseCliArgs(args: string[]): ParsedCommand | null {
 
   const legacyIntegration = findLegacyTopLevelHookIntegration(commandName);
   if (legacyIntegration) return { mode: 'hook', integration: legacyIntegration };
+  if (commandName === '--statusline') return { mode: 'statusline' };
 
   console.error(`Unknown option: ${commandName}`);
   console.error("Run 'cc-safety-net --help' for usage.");
