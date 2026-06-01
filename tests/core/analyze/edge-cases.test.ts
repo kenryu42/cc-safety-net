@@ -862,6 +862,21 @@ describe('edge cases', () => {
     test('perl -e safe allowed', () => {
       assertAllowed('perl -e "print \'ok\'"');
     });
+
+    test('combined interpreter execution flags with dangerous code blocked', () => {
+      assertBlocked('perl -we \'system("rm -rf /")\'', 'dangerous');
+      assertBlocked('python -vc \'import os; os.system("rm -rf /")\'', 'dangerous');
+      assertBlocked('ruby -we \'system("rm -rf /")\'', 'dangerous');
+      assertBlocked('node -pe \'require("child_process").execSync("rm -rf /")\'', 'dangerous');
+    });
+
+    test('wrapped combined interpreter execution flags with dangerous code blocked', () => {
+      assertBlocked('env perl -we \'system("rm -rf /")\'', 'dangerous');
+    });
+
+    test('safe combined interpreter execution flags allowed', () => {
+      assertAllowed('node -pe "1 + 1"');
+    });
   });
 
   describe('paranoid mode', () => {
