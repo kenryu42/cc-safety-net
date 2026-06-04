@@ -68,7 +68,7 @@ function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv): string 
 
 function quoteWindowsCommandArg(value: string): string {
   if (!/[\s"&|<>^]/.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 function getSpawnCommand(args: string[], env: NodeJS.ProcessEnv): { cmd: string; args: string[] } {
@@ -81,7 +81,11 @@ function getSpawnCommand(args: string[], env: NodeJS.ProcessEnv): { cmd: string;
 
   return {
     cmd: env.ComSpec ?? env.COMSPEC ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', [resolved, ...rest].map(quoteWindowsCommandArg).join(' ')],
+    args: [
+      '/d',
+      '/c',
+      ['call', quoteWindowsCommandArg(resolved), ...rest.map(quoteWindowsCommandArg)].join(' '),
+    ],
   };
 }
 

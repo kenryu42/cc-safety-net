@@ -7861,7 +7861,7 @@ function resolveWindowsCommand(command2, env) {
 function quoteWindowsCommandArg(value) {
   if (!/[\s"&|<>^]/.test(value))
     return value;
-  return `"${value.replace(/"/g, "\\\"")}"`;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 function getSpawnCommand(args, env) {
   const [command2, ...rest] = args;
@@ -7873,7 +7873,11 @@ function getSpawnCommand(args, env) {
     return { cmd: resolved, args: rest };
   return {
     cmd: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-    args: ["/d", "/s", "/c", [resolved, ...rest].map(quoteWindowsCommandArg).join(" ")]
+    args: [
+      "/d",
+      "/c",
+      ["call", quoteWindowsCommandArg(resolved), ...rest.map(quoteWindowsCommandArg)].join(" ")
+    ]
   };
 }
 var defaultVersionFetcher = async (args) => {

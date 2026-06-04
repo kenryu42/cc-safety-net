@@ -109,8 +109,10 @@ writeFileSync(
     chmodSync(join(tmpDir, 'pi'), 0o755);
 
     const originalPath = process.env.PATH;
+    const originalPathAlt = process.env.Path;
     const originalMode = process.env.FAKE_PI_MODE;
-    process.env.PATH = `${tmpDir}${delimiter}${originalPath ?? ''}`;
+    process.env.PATH = `${tmpDir}${delimiter}${originalPath ?? originalPathAlt ?? ''}`;
+    if (process.platform === 'win32') process.env.Path = process.env.PATH;
     process.env.FAKE_PI_MODE = mode;
     try {
       return await fn(tmpDir);
@@ -119,6 +121,11 @@ writeFileSync(
         delete process.env.PATH;
       } else {
         process.env.PATH = originalPath;
+      }
+      if (originalPathAlt === undefined) {
+        delete process.env.Path;
+      } else {
+        process.env.Path = originalPathAlt;
       }
       if (originalMode === undefined) {
         delete process.env.FAKE_PI_MODE;
@@ -548,7 +555,7 @@ describe('defaultVersionFetcher', () => {
       const commandPath = join(tmpDir, 'fake.CMD');
       const comspecPath = join(tmpDir, 'cmd');
       writeFileSync(commandPath, '');
-      writeFileSync(comspecPath, '#!/bin/sh\nprintf "%s" "$4"\n');
+      writeFileSync(comspecPath, '#!/bin/sh\nprintf "%s" "$3"\n');
       chmodSync(comspecPath, 0o755);
 
       const result = await withEnv(
