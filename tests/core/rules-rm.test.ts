@@ -504,11 +504,11 @@ describe('rm -rf cwd-aware', () => {
     setup();
     const outsideTemp = mkdtempSync(join(process.cwd(), 'outside-temp-'));
     const tempLink = join(tmpdir(), `safety-net-tmpdir-link-${Date.now()}`);
-    symlinkSync(outsideTemp, tempLink);
+    symlinkSync(outsideTemp, tempLink, process.platform === 'win32' ? 'junction' : 'dir');
     try {
       assertBlocked(`TMPDIR=${toShellPath(tempLink)} rm -rf $TMPDIR/test-dir`, 'rm -rf', tmpDir);
     } finally {
-      rmSync(tempLink, { force: true });
+      rmSync(tempLink, { recursive: true, force: true });
       rmSync(outsideTemp, { recursive: true, force: true });
       cleanup();
     }

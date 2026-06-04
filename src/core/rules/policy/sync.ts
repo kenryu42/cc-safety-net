@@ -37,6 +37,8 @@ import type {
 
 interface InternalSyncRulesConfigOptions extends SyncRulesConfigOptions {
   discoveredDisplayRefs?: Map<string, string>;
+  _testDeleteLocalSourceDir?: (dir: string) => void;
+  _testPruneRulebookCacheDir?: (dir: string) => void;
 }
 
 interface RemoveRulebookSourceOptions extends SyncRulesConfigOptions {
@@ -192,6 +194,7 @@ export async function removeRulebookSource(
   match: string,
   options: RemoveRulebookSourceOptions = {},
 ): Promise<SyncRulesConfigResult> {
+  const internalOptions = options as InternalSyncRulesConfigOptions;
   const scope = getScopePaths(options);
   const loaded = readRulesConfig(scope.configPath);
   if (loaded.errors.length > 0) {
@@ -226,7 +229,7 @@ export async function removeRulebookSource(
     restoreConfig(scope.configPath, before);
     return result;
   }
-  const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
+  const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs, internalOptions);
   if (!deleteResult.ok) {
     restoreConfig(scope.configPath, before);
     const rollback = await syncRulesConfig(options);
@@ -345,6 +348,7 @@ function pruneUnreferencedRulebookCaches(
   configDir: string,
   options: RulesPolicyOptions,
 ): string[] {
+  const internalOptions = options as InternalSyncRulesConfigOptions;
   const cacheRoot = join(dirname(configDir), 'cache', 'rulebooks');
   if (!existsSync(cacheRoot)) return [];
 
@@ -360,7 +364,7 @@ function pruneUnreferencedRulebookCaches(
       const path = join(cacheRoot, entry.name);
       if (keep.has(path)) return [];
       try {
-        rmSync(path, { recursive: true, force: true });
+        pruneRulebookCacheDir(path, internalOptions);
         return [];
       } catch (error) {
         return [
@@ -432,11 +436,11 @@ function getLocalSourceDirDeleteError(configDir: string, dir: string): string[] 
 
 function deleteLocalSourceDirs(
   dirs: string[],
+  options: InternalSyncRulesConfigOptions,
 ): { ok: true } | { ok: false; result: SyncRulesConfigResult } {
   const errors = dirs.flatMap((dir) => {
     try {
-      unlinkSync(join(dir, 'rulebook.json'));
-      rmdirSync(dir);
+      deleteLocalSourceDir(dir, options);
       return [];
     } catch (error) {
       return [
@@ -447,6 +451,23 @@ function deleteLocalSourceDirs(
   return errors.length > 0
     ? { ok: false, result: { ok: false, errors, warnings: [], entries: [] } }
     : { ok: true };
+}
+
+function pruneRulebookCacheDir(path: string, options: InternalSyncRulesConfigOptions): void {
+  if (options._testPruneRulebookCacheDir) {
+    options._testPruneRulebookCacheDir(path);
+    return;
+  }
+  rmSync(path, { recursive: true, force: true });
+}
+
+function deleteLocalSourceDir(dir: string, options: InternalSyncRulesConfigOptions): void {
+  if (options._testDeleteLocalSourceDir) {
+    options._testDeleteLocalSourceDir(dir);
+    return;
+  }
+  unlinkSync(join(dir, 'rulebook.json'));
+  rmdirSync(dir);
 }
 
 function restoreConfig(path: string, content: string | null): void {

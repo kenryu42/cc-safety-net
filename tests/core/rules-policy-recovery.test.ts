@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -55,6 +54,13 @@ import {
   isGitHubRepositorySource,
   isGitHubRulebookSource,
 } from '@/core/rules/policy/sources';
+
+type RemoveRulebookSourceTestOptions = NonNullable<Parameters<typeof removeRulebookSource>[1]> & {
+  _testDeleteLocalSourceDir: (dir: string) => void;
+};
+type SyncRulesConfigTestOptions = NonNullable<Parameters<typeof syncRulesConfig>[0]> & {
+  _testPruneRulebookCacheDir: (dir: string) => void;
+};
 
 function makeTempDir(name: string) {
   return mkdtempSync(join(tmpdir(), `${name}-`));
@@ -521,17 +527,19 @@ describe('rules policy recovery coverage', () => {
 
   test('restores config and lock when delete-source fails after preflight', async () => {
     const tempDir = makeTempDir('rules-policy-remove-delete-source-failure');
-    const sourceDir = join(getProjectRulesDir(tempDir), 'project-rules');
 
     try {
       writeProjectRulebookConfig(tempDir);
       expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
-      chmodSync(sourceDir, 0o555);
-
-      const result = await removeRulebookSource('project-rules', {
+      const options = {
         cwd: tempDir,
         deleteSource: true,
-      });
+        _testDeleteLocalSourceDir: () => {
+          throw new Error('delete failed');
+        },
+      } satisfies RemoveRulebookSourceTestOptions;
+
+      const result = await removeRulebookSource('project-rules', options);
 
       expect(result.ok).toBe(false);
       expect(result.errors[0]).toContain('Failed to delete local rulebook source');
@@ -540,7 +548,6 @@ describe('rules policy recovery coverage', () => {
       ]);
       expect(readLockfile(getProjectRulesLockPath(tempDir)).lock?.rulebooks).toHaveLength(1);
     } finally {
-      if (existsSync(sourceDir)) chmodSync(sourceDir, 0o755);
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
@@ -912,12 +919,16 @@ describe('rules policy recovery coverage', () => {
 
       mkdirSync(cacheDir, { recursive: true });
       writeFileSync(join(cacheDir, 'rulebook.json'), '{}', 'utf-8');
-      chmodSync(cacheDir, 0o555);
-      const synced = await syncRulesConfig({ cwd: tempDir });
+      const options = {
+        cwd: tempDir,
+        _testPruneRulebookCacheDir: () => {
+          throw new Error('prune failed');
+        },
+      } satisfies SyncRulesConfigTestOptions;
+      const synced = await syncRulesConfig(options);
       expect(synced.ok).toBe(true);
       expect(synced.warnings.length).toBeGreaterThan(0);
     } finally {
-      chmodSync(cacheDir, 0o755);
       rmSync(tempDir, { recursive: true, force: true });
     }
   });

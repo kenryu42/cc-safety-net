@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import { CC_SAFETY_NET_TEMPLATE } from '@/builtin-commands/templates/cc-safety-net';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/commands';
 
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, '\n');
+}
+
 describe('builtin OpenCode commands', () => {
   test('uses the shared cc-safety-net workflow as the command template', () => {
     expect(loadBuiltinCommands()['cc-safety-net']?.template).toBe(
@@ -14,7 +18,9 @@ describe('builtin OpenCode commands', () => {
   test('keeps the shared cc-safety-net workflow in sync with the skill', () => {
     const skill = readFileSync(join(process.cwd(), 'skills/cc-safety-net/SKILL.md'), 'utf-8');
 
-    expect(CC_SAFETY_NET_TEMPLATE.trimStart()).toBe(skill.slice(skill.indexOf('## Workflow')));
+    expect(CC_SAFETY_NET_TEMPLATE.trimStart()).toBe(
+      normalizeNewlines(skill.slice(skill.indexOf('## Workflow'))),
+    );
   });
 
   test('keeps the cc-safety-net skill manual and doc-driven', () => {

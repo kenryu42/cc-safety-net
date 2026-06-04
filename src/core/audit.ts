@@ -47,7 +47,7 @@ export function writeAuditLog(
     return;
   }
 
-  const home = options.homeDir ?? homedir();
+  const home = options.homeDir ?? process.env.HOME ?? homedir();
   const logsDir = join(home, '.cc-safety-net', 'logs');
 
   try {

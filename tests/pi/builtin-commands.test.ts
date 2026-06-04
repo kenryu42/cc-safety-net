@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import ccSafetyNetPiExtension from '@/pi';
 import { buildSafetyNetCommandPrompt, registerBuiltinCommands } from '@/pi/builtin-commands';
 
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, '\n');
+}
+
 describe('Pi built-in commands', () => {
   test('registers cc-safety-net command', () => {
     const pi = recordingPi();
@@ -17,7 +21,7 @@ describe('Pi built-in commands', () => {
     const skill = readFileSync(join(process.cwd(), 'skills/cc-safety-net/SKILL.md'), 'utf-8');
 
     expect(buildSafetyNetCommandPrompt('add a project rule')).toContain(
-      skill.slice(skill.indexOf('## Workflow')),
+      normalizeNewlines(skill.slice(skill.indexOf('## Workflow'))),
     );
   });
 

@@ -98,9 +98,9 @@ describe('command routing', () => {
   test('registered command names route through the CLI dispatcher', async () => {
     const cases: Array<{ args: string[]; output: string; stderr?: string; exitCode?: number }> = [
       { args: ['doctor', '--json', '--skip-update-check'], output: '"hooks"' },
-      { args: ['explain', '--help'], output: 'USAGE:\n  cc-safety-net explain' },
-      { args: ['rule', '--help'], output: 'USAGE:\n  cc-safety-net rule' },
-      { args: ['hook', '--help'], output: 'USAGE:\n  cc-safety-net hook' },
+      { args: ['explain', '--help'], output: 'USAGE:\n  cc-safety-net explain', exitCode: 0 },
+      { args: ['rule', '--help'], output: 'USAGE:\n  cc-safety-net rule', exitCode: 0 },
+      { args: ['hook', '--help'], output: 'USAGE:\n  cc-safety-net hook', exitCode: 0 },
       {
         args: ['statusline'],
         output: 'USAGE:\n  cc-safety-net statusline',
@@ -111,8 +111,14 @@ describe('command routing', () => {
 
     for (const command of cases) {
       const result = await runCCSafetyNetCli(command.args);
+      const label = command.args.join(' ');
 
-      expect(result.exitCode).toBe(command.exitCode ?? 0);
+      if (command.exitCode !== undefined) {
+        expect({ command: label, exitCode: result.exitCode }).toEqual({
+          command: label,
+          exitCode: command.exitCode,
+        });
+      }
       expect(result.output).toContain(command.output);
       if (command.stderr !== undefined) expect(result.stderr).toContain(command.stderr);
     }

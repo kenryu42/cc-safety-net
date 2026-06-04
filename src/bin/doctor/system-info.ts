@@ -52,6 +52,7 @@ export const defaultVersionFetcher: VersionFetcher = async (args: string[]) => {
   return new Promise((resolve) => {
     try {
       const proc = spawn(cmd, rest, {
+        shell: process.platform === 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let isSettled = false;
@@ -155,6 +156,7 @@ function runCommand(
       const proc = spawn(cmd, rest, {
         cwd: options.cwd,
         env: { ...process.env, ...(options.env ?? {}) },
+        shell: process.platform === 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let isSettled = false;

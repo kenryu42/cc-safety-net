@@ -5853,6 +5853,7 @@ async function addRulebookSource(source, options2 = {}) {
   return result;
 }
 async function removeRulebookSource(match, options2 = {}) {
+  const internalOptions = options2;
   const scope = getScopePaths(options2);
   const loaded = readRulesConfig(scope.configPath);
   if (loaded.errors.length > 0) {
@@ -5887,7 +5888,7 @@ async function removeRulebookSource(match, options2 = {}) {
     restoreConfig(scope.configPath, before);
     return result;
   }
-  const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
+  const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs, internalOptions);
   if (!deleteResult.ok) {
     restoreConfig(scope.configPath, before);
     const rollback = await syncRulesConfig(options2);
@@ -5964,6 +5965,7 @@ function writeCache(content, entry, configDir, options2) {
   writeFileSync2(path, content, "utf-8");
 }
 function pruneUnreferencedRulebookCaches(entries, configDir, options2) {
+  const internalOptions = options2;
   const cacheRoot = join7(dirname7(configDir), "cache", "rulebooks");
   if (!existsSync8(cacheRoot))
     return [];
@@ -5973,7 +5975,7 @@ function pruneUnreferencedRulebookCaches(entries, configDir, options2) {
     if (keep.has(path))
       return [];
     try {
-      rmSync(path, { recursive: true, force: true });
+      pruneRulebookCacheDir(path, internalOptions);
       return [];
     } catch (error) {
       return [
@@ -6025,11 +6027,10 @@ function getLocalSourceDirDeleteError(configDir, dir) {
   }
   return [];
 }
-function deleteLocalSourceDirs(dirs) {
+function deleteLocalSourceDirs(dirs, options2) {
   const errors = dirs.flatMap((dir) => {
     try {
-      unlinkSync(join7(dir, "rulebook.json"));
-      rmdirSync(dir);
+      deleteLocalSourceDir(dir, options2);
       return [];
     } catch (error) {
       return [
@@ -6038,6 +6039,21 @@ function deleteLocalSourceDirs(dirs) {
     }
   });
   return errors.length > 0 ? { ok: false, result: { ok: false, errors, warnings: [], entries: [] } } : { ok: true };
+}
+function pruneRulebookCacheDir(path, options2) {
+  if (options2._testPruneRulebookCacheDir) {
+    options2._testPruneRulebookCacheDir(path);
+    return;
+  }
+  rmSync(path, { recursive: true, force: true });
+}
+function deleteLocalSourceDir(dir, options2) {
+  if (options2._testDeleteLocalSourceDir) {
+    options2._testDeleteLocalSourceDir(dir);
+    return;
+  }
+  unlinkSync(join7(dir, "rulebook.json"));
+  rmdirSync(dir);
 }
 function restoreConfig(path, content) {
   if (content === null) {
@@ -6151,7 +6167,7 @@ function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {})
   if (!safeSessionId) {
     return;
   }
-  const home = options2.homeDir ?? homedir3();
+  const home = options2.homeDir ?? process.env.HOME ?? homedir3();
   const logsDir = join8(home, ".cc-safety-net", "logs");
   try {
     if (!existsSync10(logsDir)) {
@@ -7834,6 +7850,7 @@ var defaultVersionFetcher = async (args) => {
   return new Promise((resolve8) => {
     try {
       const proc = spawn(cmd, rest, {
+        shell: process.platform === "win32",
         stdio: ["ignore", "pipe", "pipe"]
       });
       let isSettled = false;
@@ -7919,6 +7936,7 @@ function runCommand(args, options2) {
       const proc = spawn(cmd, rest, {
         cwd: options2.cwd,
         env: { ...process.env, ...options2.env ?? {} },
+        shell: process.platform === "win32",
         stdio: ["ignore", "pipe", "pipe"]
       });
       let isSettled = false;

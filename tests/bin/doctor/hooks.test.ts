@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectAllHooks, stripJsonComments } from '@/bin/doctor/hooks';
@@ -787,8 +787,7 @@ describe('detectAllHooks', () => {
     const projectDir = join(tmpBase, 'project');
     const configPath = join(homeDir, '.kimi', 'config.toml');
     mkdirSync(projectDir, { recursive: true });
-    _writeKimiConfig(configPath);
-    chmodSync(configPath, 0o000);
+    mkdirSync(configPath, { recursive: true });
 
     try {
       const kimi = detectAllHooks(projectDir, { homeDir }).find(
@@ -799,7 +798,6 @@ describe('detectAllHooks', () => {
       expect(kimi?.configPath).toBe(configPath);
       expect(kimi?.errors?.some((error) => error.includes('Failed to read'))).toBe(true);
     } finally {
-      chmodSync(configPath, 0o600);
       rmSync(tmpBase, { recursive: true, force: true });
     }
   });
