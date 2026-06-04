@@ -564,7 +564,8 @@ describe('defaultVersionFetcher', () => {
       const result = await withEnv(
         {
           COMSPEC: comspecPath,
-          PATH: tmpDir,
+          PATH: '',
+          Path: tmpDir,
           PATHEXT: '.CMD',
           _CC_SAFETY_NET_TEST_SPAWN_PLATFORM: 'win32',
         },

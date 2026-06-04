@@ -42,8 +42,17 @@ export type PiProbeRunner = (cwd: string) => Promise<PiProbeInfo>;
 
 const COPILOT_PLUGIN_ID = 'copilot-safety-net';
 
+function getEnvValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const direct = env[name];
+  if (direct) return direct;
+  const matchingName = Object.keys(env).find(
+    (key) => key.toLowerCase() === name.toLowerCase() && !!env[key],
+  );
+  return matchingName ? env[matchingName] : direct;
+}
+
 function getWindowsExecutableExtensions(env: NodeJS.ProcessEnv): string[] {
-  return (env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+  return (getEnvValue(env, 'PATHEXT') || '.COM;.EXE;.BAT;.CMD')
     .split(';')
     .filter((extension) => extension.length > 0);
 }
@@ -59,7 +68,7 @@ function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv): string 
     return candidates.find((candidate) => existsSync(candidate)) ?? command;
   }
   return (
-    (env.PATH ?? '')
+    (getEnvValue(env, 'PATH') ?? '')
       .split(delimiter)
       .flatMap((dir) => candidates.map((candidate) => join(dir, candidate)))
       .find((candidate) => existsSync(candidate)) ?? command
@@ -80,7 +89,7 @@ function getSpawnCommand(args: string[], env: NodeJS.ProcessEnv): { cmd: string;
   if (!/\.(?:bat|cmd)$/i.test(resolved)) return { cmd: resolved, args: rest };
 
   return {
-    cmd: env.ComSpec ?? env.COMSPEC ?? 'cmd.exe',
+    cmd: getEnvValue(env, 'COMSPEC') ?? 'cmd.exe',
     args: [
       '/d',
       '/c',

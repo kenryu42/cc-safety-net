@@ -7845,8 +7845,15 @@ function getPackageVersion() {
   return CURRENT_VERSION;
 }
 var COPILOT_PLUGIN_ID = "copilot-safety-net";
+function getEnvValue(env, name) {
+  const direct = env[name];
+  if (direct)
+    return direct;
+  const matchingName = Object.keys(env).find((key) => key.toLowerCase() === name.toLowerCase() && !!env[key]);
+  return matchingName ? env[matchingName] : direct;
+}
 function getWindowsExecutableExtensions(env) {
-  return (env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter((extension) => extension.length > 0);
+  return (getEnvValue(env, "PATHEXT") || ".COM;.EXE;.BAT;.CMD").split(";").filter((extension) => extension.length > 0);
 }
 function resolveWindowsCommand(command2, env) {
   const candidates = extname(command2) ? [command2] : [
@@ -7856,7 +7863,7 @@ function resolveWindowsCommand(command2, env) {
   if (command2.includes("/") || command2.includes("\\")) {
     return candidates.find((candidate) => existsSync14(candidate)) ?? command2;
   }
-  return (env.PATH ?? "").split(delimiter).flatMap((dir) => candidates.map((candidate) => join11(dir, candidate))).find((candidate) => existsSync14(candidate)) ?? command2;
+  return (getEnvValue(env, "PATH") ?? "").split(delimiter).flatMap((dir) => candidates.map((candidate) => join11(dir, candidate))).find((candidate) => existsSync14(candidate)) ?? command2;
 }
 function quoteWindowsCommandArg(value) {
   if (!/[\s"&|<>^]/.test(value))
@@ -7872,7 +7879,7 @@ function getSpawnCommand(args, env) {
   if (!/\.(?:bat|cmd)$/i.test(resolved))
     return { cmd: resolved, args: rest };
   return {
-    cmd: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
+    cmd: getEnvValue(env, "COMSPEC") ?? "cmd.exe",
     args: [
       "/d",
       "/c",
