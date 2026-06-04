@@ -1,14 +1,15 @@
-# Claude Code Safety Net
+# CC Safety Net
 
 [![CI](https://github.com/kenryu42/claude-code-safety-net/actions/workflows/ci.yml/badge.svg)](https://github.com/kenryu42/claude-code-safety-net/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/github/kenryu42/claude-code-safety-net/branch/main/graph/badge.svg?token=C9QTION6ZF)](https://codecov.io/github/kenryu42/claude-code-safety-net)
 [![Version](https://img.shields.io/github/v/tag/kenryu42/claude-code-safety-net?label=version&color=blue)](https://github.com/kenryu42/claude-code-safety-net)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-D27656)](#claude-code-installation)
-[![OpenCode](https://img.shields.io/badge/OpenCode-black)](#opencode-installation)
-[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-111111)](#kimi-cli-installation)
-[![Gemini CLI](https://img.shields.io/badge/Gemini%20CLI-678AE3)](#gemini-cli-installation)
-[![Copilot CLI](https://img.shields.io/badge/Copilot%20CLI-4EA5C9)](#github-copilot-cli-installation)
 [![Codex](https://img.shields.io/badge/Codex-white)](#codex-installation)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-D27656)](#claude-code-installation)
+[![Copilot CLI](https://img.shields.io/badge/Copilot%20CLI-4EA5C9)](#github-copilot-cli-installation)
+[![Gemini CLI](https://img.shields.io/badge/Gemini%20CLI-678AE3)](#gemini-cli-installation)
+[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-5587FF)](#kimi-cli-installation)
+[![OpenCode](https://img.shields.io/badge/OpenCode-black)](#opencode-installation)
+[![Pi](https://img.shields.io/badge/Pi%20Coding-22262E)](#pi-installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 
 <div align="center">
@@ -17,7 +18,7 @@
 
 </div>
 
-A Claude Code plugin that acts as a safety net, catching destructive git and filesystem commands before they execute.
+A Coding Agent CLI plugin that acts as a safety net, catching destructive git and filesystem commands before they execute.
 
 ## Contents
 
@@ -26,12 +27,13 @@ A Claude Code plugin that acts as a safety net, catching destructive git and fil
 - [What About Sandboxing?](#what-about-sandboxing)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+  - [Codex Installation](#codex-installation)
   - [Claude Code Installation](#claude-code-installation)
-  - [OpenCode Installation](#opencode-installation)
-  - [Kimi CLI Installation](#kimi-cli-installation)
   - [Gemini CLI Installation](#gemini-cli-installation)
   - [GitHub Copilot CLI Installation](#github-copilot-cli-installation)
-  - [Codex Installation](#codex-installation)
+  - [Kimi CLI Installation](#kimi-cli-installation)
+  - [OpenCode Installation](#opencode-installation)
+  - [Pi Installation](#pi-installation)
 - [Status Line Integration](#status-line-integration)
   - [Setup via Slash Command](#setup-via-slash-command)
   - [Manual Setup](#manual-setup)
@@ -164,73 +166,6 @@ Running both together provides defense-in-depth. Sandboxing handles unknown thre
 
 ## Quick Start
 
-### Claude Code Installation
-
-```bash
-/plugin marketplace add kenryu42/cc-marketplace
-/plugin install safety-net@cc-marketplace
-/reload-plugins
-```
-
-### Claude Code Auto-Update
-
-1. Run `/plugin` → Select `Marketplaces` → Choose `cc-marketplace` → Enable auto-update
-
----
-
-### OpenCode Installation
-
-Install Safety Net with OpenCode's native plugin command:
-
-```bash
-opencode plugin -g cc-safety-net
-```
-
----
-
-### Kimi CLI Installation
-
-Install Safety Net into your Kimi CLI config:
-
-```bash
-npx -y cc-safety-net hook install --kimi-cli
-```
-
-This updates `$KIMI_SHARE_DIR/config.toml` when `KIMI_SHARE_DIR` is set, otherwise `~/.kimi/config.toml`.
-
-Safety Net preserves the existing Kimi hook syntax:
-
-- If your config already uses `hooks = [...]`, it adds a matching inline hook entry.
-- If your config has `hooks = []`, it removes that empty array and writes `[[hooks]]`.
-- Otherwise, it appends a `[[hooks]]` block.
-
-To uninstall:
-
-```bash
-npx -y cc-safety-net hook uninstall --kimi-cli
-```
-
----
-
-### Gemini CLI Installation
-
-```bash
-gemini extensions install https://github.com/kenryu42/gemini-safety-net
-```
-
----
-
-### GitHub Copilot CLI Installation
-
-```bash
-/plugin install kenryu42/copilot-safety-net
-```
-
-> [!NOTE]
-> After installing the plugin, you need to restart your Copilot CLI for it to take effect.
-
----
-
 ### Codex Installation
 
 1. Enable Codex plugin hooks in `~/.codex/config.toml`:
@@ -251,6 +186,67 @@ gemini extensions install https://github.com/kenryu42/gemini-safety-net
 5. Use arrow keys to select `[cc-marketplace]`.
 6. Press Enter to install the plugin.
 7. run `/hooks` and select the safety-net PreToolUse hook and press `t` to trust it.
+
+---
+
+### Claude Code Installation
+
+```bash
+/plugin marketplace add kenryu42/cc-marketplace
+/plugin install safety-net@cc-marketplace
+/reload-plugins
+```
+
+### Claude Code Auto-Update
+
+1. Run `/plugin` → Select `Marketplaces` → Choose `cc-marketplace` → Enable auto-update
+
+---
+
+### Gemini CLI Installation
+
+```bash
+gemini extensions install https://github.com/kenryu42/gemini-safety-net
+```
+
+---
+
+### GitHub Copilot CLI Installation
+
+```bash
+/plugin install kenryu42/copilot-safety-net
+```
+
+---
+
+### Kimi CLI Installation
+
+Install Safety Net into your Kimi CLI config:
+
+```bash
+npx -y cc-safety-net hook install --kimi-cli
+```
+
+---
+
+
+### OpenCode Installation
+
+Install Safety Net with OpenCode's native plugin command:
+
+```bash
+opencode plugin -g cc-safety-net
+```
+
+---
+
+### Pi Installation
+
+Install Safety Net with Pi's package installer:
+
+```bash
+pi install npm:cc-safety-net
+```
 
 ---
 
