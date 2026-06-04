@@ -42,6 +42,7 @@ A Coding Agent CLI plugin that acts as a safety net, catching destructive git an
 - [Commands Allowed](#commands-allowed)
 - [What Happens When Blocked](#what-happens-when-blocked)
 - [Testing the Hook](#testing-the-hook)
+- [Breaking Change: Custom Rules Migration](#breaking-change-custom-rules-migration)
 - [Custom Rules](#custom-rules)
   - [Config File Location](#config-file-location)
   - [Rule Schema](#rule-schema)
@@ -451,6 +452,60 @@ git checkout -- README.md
 git checkout -b test-branch
 ```
 
+## Breaking Change: Custom Rules Migration
+
+> [!WARNING]
+> The custom rules system has moved from legacy inline config files to a rulebook-based layout. Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are **no longer loaded at runtime**. If they contain rules, commands now **fail closed** (stay blocked) until you migrate.
+
+### Who Is Affected
+
+- **Affected**: users who previously defined custom rules in `.safety-net.json` (project scope) or `~/.cc-safety-net/config.json` (user scope).
+- **Not affected**: users with no custom rules. All built-in destructive-command protections are unchanged and continue to work out of the box.
+
+### What Breaks
+
+| Legacy file state | New behavior |
+|-------------------|--------------|
+| Empty legacy file | Silently ignored — built-in rules only |
+| Legacy file with rules | Fail closed until migrated with `rule migrate` |
+| Invalid legacy file | Fail closed until fixed and migrated, or removed |
+
+"Fail closed" means commands stay blocked until the legacy rules are migrated to the new layout.
+
+### How to Migrate
+
+```bash
+# Convert legacy inline rules into the new rulebook layout
+npx -y cc-safety-net rule migrate
+
+# Optionally delete verified legacy files after migration
+npx -y cc-safety-net rule migrate --cleanup
+
+# Validate the migrated rules
+npx -y cc-safety-net rule verify
+npx -y cc-safety-net rule test
+```
+
+### Before / After
+
+**Before** — a single inline config with rules embedded:
+
+```text
+.safety-net.json          # project rules (inline)
+~/.cc-safety-net/config.json   # user rules (inline)
+```
+
+**After** — `rule migrate` creates a rulebook-based layout automatically:
+
+```text
+.cc-safety-net/rules/rule.json                    # project rulebook sources + overrides
+.cc-safety-net/rules/project-rules/rulebook.json  # migrated project rules
+~/.cc-safety-net/rules/rule.json                  # user rulebook sources + overrides
+~/.cc-safety-net/rules/user-rules/rulebook.json   # migrated user rules
+```
+
+See [Custom Rules](#custom-rules) for the full authoring guide and [Error Handling](#error-handling) for fail-closed details.
+
 ## Custom Rules
 
 Beyond the built-in protections, you can define your own blocking rules to enforce team conventions or project-specific safety policies.
@@ -542,7 +597,7 @@ Config files are loaded from two scopes and merged:
 
 Local rulebook sources are bare names like `project-rules`. GitHub rulebook sources use `owner/repo#ref/<rulebook-name>` and point to `.cc-safety-net/rules/<rulebook-name>/rulebook.json` in that repository.
 
-Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are no longer loaded at runtime. Empty legacy files are ignored, but legacy files with rules and invalid legacy files fail closed until migrated or fixed. Convert existing legacy rules with `npx -y cc-safety-net rule migrate`; use `npx -y cc-safety-net rule migrate --cleanup` if you also want to delete verified legacy files after migration.
+Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are no longer loaded at runtime. Empty legacy files are ignored, but legacy files with rules and invalid legacy files fail closed until migrated or fixed. Convert existing legacy rules with `npx -y cc-safety-net rule migrate`; use `npx -y cc-safety-net rule migrate --cleanup` if you also want to delete verified legacy files after migration. See [Breaking Change: Custom Rules Migration](#breaking-change-custom-rules-migration) for the full upgrade guide.
 
 **Merging behavior**:
 - Rulebooks from both scopes are combined
