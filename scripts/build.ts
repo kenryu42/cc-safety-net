@@ -8,7 +8,7 @@ import pkg from '../package.json';
 import { formatSubprocessFailure } from './subprocess-output';
 
 const result = await Bun.build({
-  entrypoints: ['src/index.ts', 'src/bin/cc-safety-net.ts'],
+  entrypoints: ['src/index.ts', 'src/bin/cc-safety-net.ts', 'src/pi/index.ts'],
   outdir: 'dist',
   target: 'node',
   define: {
@@ -38,7 +38,13 @@ if (schemaResult.exitCode !== 0) {
 }
 
 // Verify expected output files exist
-const expectedFiles = ['dist/index.js', 'dist/index.d.ts', 'dist/bin/cc-safety-net.js'];
+const expectedFiles = [
+  'dist/index.js',
+  'dist/index.d.ts',
+  'dist/bin/cc-safety-net.js',
+  'dist/pi/index.js',
+  'dist/pi/index.d.ts',
+];
 for (const file of expectedFiles) {
   if (!(await Bun.file(file).exists())) {
     console.error(`Build verification failed: ${file} not found`);
@@ -47,10 +53,12 @@ for (const file of expectedFiles) {
 }
 const indexOutput = result.outputs.find((o) => o.path.endsWith('index.js'));
 const binOutput = result.outputs.find((o) => o.path.endsWith('cc-safety-net.js'));
-if (!indexOutput || !binOutput) {
+const piOutput = result.outputs.find((o) => o.path.endsWith('pi/index.js'));
+if (!indexOutput || !binOutput || !piOutput) {
   console.error('Build verification failed: expected bundled outputs not found');
   process.exit(1);
 }
 console.log(`  dist/index.js              ${(indexOutput.size / 1024).toFixed(2)} KB`);
 console.log(`  dist/bin/cc-safety-net.js  ${(binOutput.size / 1024).toFixed(2)} KB`);
+console.log(`  dist/pi/index.js           ${(piOutput.size / 1024).toFixed(2)} KB`);
 console.log('  ✓ Build verification passed');
