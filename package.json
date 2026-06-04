@@ -37,12 +37,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kenryu42/claude-code-safety-net.git"
+    "url": "git+https://github.com/kenryu42/cc-safety-net.git"
   },
   "bugs": {
-    "url": "https://github.com/kenryu42/claude-code-safety-net/issues"
+    "url": "https://github.com/kenryu42/cc-safety-net/issues"
   },
-  "homepage": "https://github.com/kenryu42/claude-code-safety-net#readme",
+  "homepage": "https://github.com/kenryu42/cc-safety-net#readme",
   "devDependencies": {
     "@ast-grep/cli": "^0.40.4",
     "@biomejs/biome": "2.3.10",

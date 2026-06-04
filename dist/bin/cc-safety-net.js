@@ -10032,7 +10032,7 @@ import { existsSync as existsSync17, readdirSync as readdirSync4, readFileSync a
 import { dirname as dirname11, join as join14, resolve as resolve9 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
-var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
+var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/cc-safety-net/main/assets/cc-safety-net.schema.json";
 var RULES_DIR_RESERVED_ENTRIES = new Set(["rule.json", "rule.lock", "cache"]);
 function runRulesVerify(options2 = {}) {
   const cwd = options2.cwd ?? process.cwd();

@@ -14,7 +14,7 @@ export const EXCLUDED_AUTHORS = ['actions-user', 'github-actions[bot]', 'kenryu4
 /** Regex to match included commit types (with optional scope) */
 export const INCLUDED_COMMIT_PATTERN = /^(feat|fix)(\([^)]+\))?:/i;
 
-export const REPO = process.env.GITHUB_REPOSITORY ?? 'kenryu42/claude-code-safety-net';
+export const REPO = process.env.GITHUB_REPOSITORY ?? 'kenryu42/cc-safety-net';
 
 /** Paths that indicate Claude Code plugin changes */
 const CLAUDE_CODE_PATHS = ['skills/', 'hooks/', '.claude-plugin/'];

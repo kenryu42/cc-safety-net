@@ -64,8 +64,8 @@ A quick 5-minute issue can save hours of implementation time on both sides.
 
 ```bash
 # Clone the repository
-git clone https://github.com/kenryu42/claude-code-safety-net.git
-cd claude-code-safety-net
+git clone https://github.com/kenryu42/cc-safety-net.git
+cd cc-safety-net
 
 # Install dependencies
 bun install
