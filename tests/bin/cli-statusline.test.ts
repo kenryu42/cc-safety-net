@@ -54,52 +54,52 @@ describe('statusline command', () => {
   });
 
   const modes: Array<{ name: string; env: Record<string, string>; output: string }> = [
-    { name: 'no env flags', env: {}, output: '🛡️ Safety Net ✅' },
-    { name: 'SAFETY_NET_STRICT=1', env: { SAFETY_NET_STRICT: '1' }, output: '🛡️ Safety Net 🔒' },
+    { name: 'no env flags', env: {}, output: '🛡️ CC Safety Net ✅' },
+    { name: 'SAFETY_NET_STRICT=1', env: { SAFETY_NET_STRICT: '1' }, output: '🛡️ CC Safety Net 🔒' },
     {
       name: 'SAFETY_NET_PARANOID=1',
       env: { SAFETY_NET_PARANOID: '1' },
-      output: '🛡️ Safety Net 👁️',
+      output: '🛡️ CC Safety Net 👁️',
     },
     {
       name: 'CC_SAFETY_NET_PARANOID=1',
       env: { CC_SAFETY_NET_PARANOID: '1' },
-      output: '🛡️ Safety Net 👁️',
+      output: '🛡️ CC Safety Net 👁️',
     },
     {
       name: 'SAFETY_NET_WORKTREE=1',
       env: { SAFETY_NET_WORKTREE: '1' },
-      output: '🛡️ Safety Net 🌳',
+      output: '🛡️ CC Safety Net 🌳',
     },
     {
       name: 'strict and paranoid',
       env: { SAFETY_NET_STRICT: '1', SAFETY_NET_PARANOID: '1' },
-      output: '🛡️ Safety Net 🔒👁️',
+      output: '🛡️ CC Safety Net 🔒👁️',
     },
     {
       name: 'SAFETY_NET_PARANOID_RM=1 only',
       env: { SAFETY_NET_PARANOID_RM: '1' },
-      output: '🛡️ Safety Net 🗑️',
+      output: '🛡️ CC Safety Net 🗑️',
     },
     {
       name: 'strict and paranoid rm',
       env: { SAFETY_NET_STRICT: '1', SAFETY_NET_PARANOID_RM: '1' },
-      output: '🛡️ Safety Net 🔒🗑️',
+      output: '🛡️ CC Safety Net 🔒🗑️',
     },
     {
       name: 'SAFETY_NET_PARANOID_INTERPRETERS=1',
       env: { SAFETY_NET_PARANOID_INTERPRETERS: '1' },
-      output: '🛡️ Safety Net 🐚',
+      output: '🛡️ CC Safety Net 🐚',
     },
     {
       name: 'strict and paranoid interpreters',
       env: { SAFETY_NET_STRICT: '1', SAFETY_NET_PARANOID_INTERPRETERS: '1' },
-      output: '🛡️ Safety Net 🔒🐚',
+      output: '🛡️ CC Safety Net 🔒🐚',
     },
     {
       name: 'both granular paranoid flags',
       env: { SAFETY_NET_PARANOID_RM: '1', SAFETY_NET_PARANOID_INTERPRETERS: '1' },
-      output: '🛡️ Safety Net 👁️',
+      output: '🛡️ CC Safety Net 👁️',
     },
     {
       name: 'strict and both granular paranoid flags',
@@ -108,7 +108,7 @@ describe('statusline command', () => {
         SAFETY_NET_PARANOID_RM: '1',
         SAFETY_NET_PARANOID_INTERPRETERS: '1',
       },
-      output: '🛡️ Safety Net 🔒👁️',
+      output: '🛡️ CC Safety Net 🔒👁️',
     },
   ];
 
@@ -132,7 +132,7 @@ describe('statusline command routing', () => {
         CLAUDE_SETTINGS_PATH: settingsPath,
       });
 
-      expect(result.output.trim()).toBe('🛡️ Safety Net ✅');
+      expect(result.output.trim()).toBe('🛡️ CC Safety Net ✅');
       expect(result.exitCode).toBe(0);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -184,26 +184,26 @@ describe('statusline enabled/disabled detection', () => {
   test('shows ❌ when plugin is disabled in settings', async () => {
     const settingsPath = join(tempDir, 'settings.json');
     await writePluginSettings(settingsPath, false);
-    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ Safety Net ❌');
+    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ CC Safety Net ❌');
   });
 
   test('shows ✅ when plugin is enabled in settings', async () => {
     const settingsPath = join(tempDir, 'settings.json');
     await writePluginSettings(settingsPath, true);
-    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ Safety Net ✅');
+    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ CC Safety Net ✅');
   });
 
   test('shows ❌ when settings file does not exist (default disabled)', async () => {
     const settingsPath = join(tempDir, 'nonexistent.json');
 
-    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ Safety Net ❌');
+    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ CC Safety Net ❌');
   });
 
   test('shows ❌ when enabledPlugins key is missing (default disabled)', async () => {
     const settingsPath = join(tempDir, 'settings.json');
     await writeFile(settingsPath, JSON.stringify({ model: 'opus' }));
 
-    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ Safety Net ❌');
+    await expectStatusline({ CLAUDE_SETTINGS_PATH: settingsPath }, '🛡️ CC Safety Net ❌');
   });
 
   test('logs invalid settings only in debug mode', async () => {
@@ -216,7 +216,7 @@ describe('statusline enabled/disabled detection', () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.output.trim()).toBe('🛡️ Safety Net ❌');
+    expect(result.output.trim()).toBe('🛡️ CC Safety Net ❌');
     expect(result.stderr).toContain('Safety Net debug: failed to read Claude settings:');
     expect(result.stderr).toContain(settingsPath);
   });
@@ -226,7 +226,7 @@ describe('statusline enabled/disabled detection', () => {
     await writePluginSettings(settingsPath, false);
     await expectStatusline(
       { CLAUDE_SETTINGS_PATH: settingsPath, SAFETY_NET_STRICT: '1', SAFETY_NET_PARANOID: '1' },
-      '🛡️ Safety Net ❌',
+      '🛡️ CC Safety Net ❌',
     );
   });
 
@@ -235,7 +235,7 @@ describe('statusline enabled/disabled detection', () => {
     await writePluginSettings(settingsPath, true);
     await expectStatusline(
       { CLAUDE_SETTINGS_PATH: settingsPath, SAFETY_NET_STRICT: '1' },
-      '🛡️ Safety Net 🔒',
+      '🛡️ CC Safety Net 🔒',
     );
   });
 });

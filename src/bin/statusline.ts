@@ -82,7 +82,7 @@ export async function printStatusline(): Promise<void> {
   let status: string;
 
   if (!enabled) {
-    status = '🛡️ Safety Net ❌';
+    status = '🛡️ CC Safety Net ❌';
   } else {
     const modes = getSafetyNetEnvModes();
 
@@ -109,7 +109,7 @@ export async function printStatusline(): Promise<void> {
 
     // If no mode flags, show ✅
     const statusEmoji = modeEmojis || '✅';
-    status = `🛡️ Safety Net ${statusEmoji}`;
+    status = `🛡️ CC Safety Net ${statusEmoji}`;
   }
 
   // Check for piped stdin input and prepend with separator

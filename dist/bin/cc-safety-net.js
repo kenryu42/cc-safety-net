@@ -10289,7 +10289,7 @@ async function printStatusline() {
   const enabled = isPluginEnabled();
   let status;
   if (!enabled) {
-    status = "\uD83D\uDEE1️ Safety Net ❌";
+    status = "\uD83D\uDEE1️ CC Safety Net ❌";
   } else {
     const modes = getSafetyNetEnvModes();
     let modeEmojis = "";
@@ -10307,7 +10307,7 @@ async function printStatusline() {
       modeEmojis += "\uD83C\uDF33";
     }
     const statusEmoji = modeEmojis || "✅";
-    status = `\uD83D\uDEE1️ Safety Net ${statusEmoji}`;
+    status = `\uD83D\uDEE1️ CC Safety Net ${statusEmoji}`;
   }
   const stdinInput = await readStdinAsync();
   if (stdinInput && !stdinInput.startsWith("{")) {

@@ -93,9 +93,9 @@ Even with wildcard matching, Bash permission patterns are intentionally limited 
 | Extra whitespace | `rm  -rf /` (double space) bypasses pattern |
 | Shell wrappers | `sh -c "rm -rf /"` bypasses `Bash(rm:*)` entirely |
 
-### Safety Net Handles What Patterns Can't
+### CC Safety Net Handles What Patterns Can't
 
-| Scenario | Permission Rules | Safety Net |
+| Scenario | Permission Rules | CC Safety Net |
 |----------|------------------|------------|
 | `git checkout -b feature` (safe) | Blocked by `Bash(git checkout:*)` | Allowed |
 | `git checkout -- file` (dangerous) | Blocked by `Bash(git checkout:*)` | Blocked |
@@ -106,17 +106,17 @@ Even with wildcard matching, Bash permission patterns are intentionally limited 
 
 ### Defense in Depth
 
-PreToolUse hooks run [**before**](https://code.claude.com/docs/en/iam#additional-permission-control-with-hooks) the permission system. This means Safety Net inspects every command first, regardless of your permission configuration. Even if you misconfigure deny rules, Safety Net provides a fallback layer of protection.
+PreToolUse hooks run [**before**](https://code.claude.com/docs/en/iam#additional-permission-control-with-hooks) the permission system. This means CC Safety Net inspects every command first, regardless of your permission configuration. Even if you misconfigure deny rules, CC Safety Net provides a fallback layer of protection.
 
-**Use both together**: Permission deny rules for quick, user-configurable blocks; Safety Net for robust, bypass-resistant protection that works out of the box.
+**Use both together**: Permission deny rules for quick, user-configurable blocks; CC Safety Net for robust, bypass-resistant protection that works out of the box.
 
 ## What About Sandboxing?
 
-Claude Code offers [native sandboxing](https://code.claude.com/docs/en/sandboxing) that provides OS-level filesystem and network isolation. Here's how it compares to Safety Net:
+Claude Code offers [native sandboxing](https://code.claude.com/docs/en/sandboxing) that provides OS-level filesystem and network isolation. Here's how it compares to CC Safety Net:
 
 ### Different Layers of Protection
 
-| | Sandboxing | Safety Net |
+| | Sandboxing | CC Safety Net |
 |---|---|---|
 | **Enforcement** | OS-level (Seatbelt/bubblewrap) | Application-level (PreToolUse hook) |
 | **Approach** | Containment — restricts filesystem + network access | Command analysis — blocks destructive operations |
@@ -132,7 +132,7 @@ Sandboxing restricts filesystem + network access, but it doesn't understand whet
 > [!NOTE]
 > Whether they're auto-run or require confirmation depends on your sandbox mode (auto-allow vs regular permissions), and network access still depends on your allowed-domain policy. Claude Code can also retry a command outside the sandbox via `dangerouslyDisableSandbox` (with user permission); this can be disabled with `allowUnsandboxedCommands: false`.
 
-| Command | Sandboxing | Safety Net |
+| Command | Sandboxing | CC Safety Net |
 |---------|------------|------------|
 | `git reset --hard` | Allowed (within cwd) | **Blocked** |
 | `git checkout -- .` | Allowed (within cwd) | **Blocked** |
@@ -149,16 +149,16 @@ Sandboxing is the better choice when your primary concern is:
 - **Prompt injection attacks** — Reduces exfiltration risk by restricting outbound domains (depends on your allowed-domain policy)
 - **Malicious dependencies** — Limits filesystem writes and network access by default (subject to your sandbox configuration)
 - **Untrusted code execution** — OS-level containment is stronger than pattern matching
-- **Network control** — Safety Net has no network protection
+- **Network control** — CC Safety Net has no network protection
 
 ### Recommended: Use Both
 
 They protect against different threats:
 
 - **Sandboxing** contains blast radius — even if something goes wrong, damage is limited to cwd and approved network domains
-- **Safety Net** prevents footguns — catches git-specific mistakes that are technically "safe" from the sandbox's perspective
+- **CC Safety Net** prevents footguns — catches git-specific mistakes that are technically "safe" from the sandbox's perspective
 
-Running both together provides defense-in-depth. Sandboxing handles unknown threats; Safety Net handles known destructive patterns that sandboxing permits.
+Running both together provides defense-in-depth. Sandboxing handles unknown threats; CC Safety Net handles known destructive patterns that sandboxing permits.
 
 ## Prerequisites
 
@@ -252,7 +252,7 @@ pi install npm:cc-safety-net
 
 ## Status Line Integration
 
-Safety Net can display its status in Claude Code's status line, showing whether protection is active and which modes are enabled.
+CC Safety Net can display its status in Claude Code's status line, showing whether protection is active and which modes are enabled.
 
 Add the following to your `~/.claude/settings.json`:
 
@@ -295,7 +295,7 @@ Add the following to your `~/.claude/settings.json`:
 
 **Piping with existing status line:**
 
-If you already have a status line command, you can pipe Safety Net at the end:
+If you already have a status line command, you can pipe CC Safety Net at the end:
 
 ```json
 {
