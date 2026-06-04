@@ -44,12 +44,11 @@ A Coding Agent CLI plugin that acts as a safety net, catching destructive git an
 - [Commands Allowed](#commands-allowed)
 - [What Happens When Blocked](#what-happens-when-blocked)
 - [Testing the Hook](#testing-the-hook)
-- [Development](#development)
-- [Custom Rules (Experimental)](#custom-rules-experimental)
+- [Custom Rules](#custom-rules)
   - [Config File Location](#config-file-location)
   - [Rule Schema](#rule-schema)
   - [Matching Behavior](#matching-behavior)
-  - [Examples](#examples)
+  - [Rule Examples](#rule-examples)
   - [Error Handling](#error-handling)
 - [Advanced Features](#advanced-features)
   - [Strict Mode](#strict-mode)
@@ -59,6 +58,7 @@ A Coding Agent CLI plugin that acts as a safety net, catching destructive git an
   - [Interpreter One-Liner Detection](#interpreter-one-liner-detection)
   - [Secret Redaction](#secret-redaction)
   - [Audit Logging](#audit-logging)
+- [Development](#development)
 - [License](#license)
 
 ## Why This Exists
@@ -451,23 +451,28 @@ git checkout -- README.md
 git checkout -b test-branch
 ```
 
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
-
-## Custom Rules (Experimental)
+## Custom Rules
 
 Beyond the built-in protections, you can define your own blocking rules to enforce team conventions or project-specific safety policies.
 
 > [!TIP]
-> Use the `cc-safety-net` skill to create custom rules interactively with natural language.
->
+> The best way to create custom rules is to use the `/cc-safety-net` skill to create custom rules interactively with natural language.
+
+### Examples
+
+```
+/cc-safety-net read my package.json and suggest blocking rules
+/cc-safety-net set up rules to block all terraform destroy commands
+/cc-safety-net verify my rules and fix any errors
+```
+
+> [!NOTE]
 > If your agent does not support skills, prompt it with:
-> ```text
+> ```
 > run npx -y cc-safety-net rule doc and help me set up custom rules
 > ```
 
-### Quick Example
+### Create Rules Manually
 
 Create a starter project rule config and rulebook:
 
@@ -605,7 +610,7 @@ Every rule must have at least one blocked fixture. Add allowed fixtures for clos
 
 - **Short option expansion**: `-Cfoo` is treated as `-C -f -o -o`, not `-C foo`. Blocking `-f` may false-positive on attached option values.
 
-### Examples
+### Rule Examples
 
 #### Block global npm installs
 
@@ -861,6 +866,10 @@ All blocked commands are logged to `~/.cc-safety-net/logs/<session_id>.jsonl` fo
 ```
 
 Sensitive data in log entries is automatically redacted.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
 
 ## License
 
