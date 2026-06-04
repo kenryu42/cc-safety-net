@@ -8,6 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { realpathSync } from 'node:fs';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
+import { containsDangerousCode } from '@/core/analyze/interpreters';
 import { extractParallelChildCommand } from '@/core/analyze/parallel';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { extractXargsChildCommandWithInfo } from '@/core/analyze/xargs';
@@ -608,6 +609,23 @@ describe('dangerousInText', () => {
   test('skips find -delete when text starts with echo/rg', () => {
     expect(dangerousInText('echo "find . -delete')).toBeNull();
     expect(dangerousInText('rg "find . -delete')).toBeNull();
+  });
+});
+
+describe('containsDangerousCode', () => {
+  test('allows rm -r paths with hyphenated segments ending in f', () => {
+    expect(containsDangerousCode('import os; os.system("rm -r /builds/project-stuff")')).toBe(
+      false,
+    );
+    expect(containsDangerousCode('import os; os.system("rm -r path/to/proof")')).toBe(false);
+  });
+
+  test('detects rm recursive force option tokens', () => {
+    expect(containsDangerousCode('import os; os.system("rm -rf /some/path")')).toBe(true);
+    expect(containsDangerousCode('import os; os.system("rm -R -f /some/path")')).toBe(true);
+    expect(containsDangerousCode('import os; os.system("rm --force --recursive /some/path")')).toBe(
+      true,
+    );
   });
 });
 

@@ -634,9 +634,11 @@ var SHELL_OPERATORS = new Set(["&&", "||", "|&", "|", "&", ";", `
 `]);
 var SHELL_WRAPPERS = new Set(["bash", "sh", "zsh", "ksh", "dash", "fish", "csh", "tcsh"]);
 var INTERPRETERS = new Set(["python", "python3", "python2", "node", "ruby", "perl"]);
+var RM_SHORT_RECURSIVE_FORCE_PATTERN = /\brm[^\S\n]+(?=(?:[^\s;&|]+[^\S\n]+)*-[^\s;&|]*[rR][^\s;&|]*(?=[^\S\n]|[;&|]|$))(?=(?:[^\s;&|]+[^\S\n]+)*-[^\s;&|]*[fF][^\s;&|]*(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
+var RM_LONG_RECURSIVE_FORCE_PATTERN = /\brm[^\S\n]+(?=(?:[^\s;&|]+[^\S\n]+)*--recursive(?=[^\S\n]|[;&|]|$))(?=(?:[^\s;&|]+[^\S\n]+)*--force(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
 var DANGEROUS_PATTERNS = [
-  /\brm\s+(?=[^\n;&|]*-[^\s]*[rR])(?=[^\n;&|]*-[^\s]*[fF])[^\n;&|]*/,
-  /\brm\s+(?=[^\n;&|]*--recursive\b)(?=[^\n;&|]*--force\b)[^\n;&|]*/,
+  RM_SHORT_RECURSIVE_FORCE_PATTERN,
+  RM_LONG_RECURSIVE_FORCE_PATTERN,
   /\bgit\s+reset\s+--hard\b/,
   /\bgit\s+checkout\s+--\b/,
   /\bgit\s+clean\s+-f\b/,
@@ -10132,7 +10134,6 @@ function runRulesVerify(options2 = {}) {
       warnings.push(getLegacyRulesConfigWarning("user", "cleanup"));
     } else {
       const result = validateConfigFile(legacyUserConfig);
-      hasErrors = true;
       configsChecked.push({
         scope: "User",
         path: legacyUserConfig,
@@ -10142,6 +10143,8 @@ function runRulesVerify(options2 = {}) {
         inactive: true
       });
       warnings.push(getLegacyRulesConfigWarning("user", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
+      if (result.errors.length > 0)
+        hasErrors = true;
     }
   }
   if (existsSync18(projectConfig)) {
@@ -10481,19 +10484,9 @@ function parseRuleFlags(args) {
     } else if (arg === "--check") {
       flags.check = true;
     } else if (arg === "--delete-source") {
-      if (flags.positionals[0] === "remove") {
-        flags.deleteSource = true;
-      } else if (flags.positionals[0] && RULE_SUBCOMMANDS.has(flags.positionals[0])) {
-        flags.errors.push(`Unknown option for rule ${flags.positionals[0]}: ${arg}`);
-      } else {
-        flags.errors.push("--delete-source is only valid with 'rule remove'");
-      }
+      flags.deleteSource = true;
     } else if (arg === "--cleanup") {
-      if (flags.positionals[0] === "migrate") {
-        flags.cleanup = true;
-      } else {
-        flags.errors.push(unknownRuleOption(flags.positionals[0], arg));
-      }
+      flags.cleanup = true;
     } else if (arg === "-h" || arg === "--help") {
       flags.help = true;
     } else if (arg.startsWith("-")) {
@@ -10509,6 +10502,16 @@ function validateRuleFlags(flags) {
   const [subcommand] = flags.positionals;
   if (subcommand && !RULE_SUBCOMMANDS.has(subcommand)) {
     flags.errors.push(`Unknown rule subcommand: ${subcommand}`);
+  }
+  if (flags.deleteSource && subcommand !== "remove") {
+    if (subcommand && RULE_SUBCOMMANDS.has(subcommand)) {
+      flags.errors.push(`Unknown option for rule ${subcommand}: --delete-source`);
+    } else {
+      flags.errors.push("--delete-source is only valid with 'rule remove'");
+    }
+  }
+  if (flags.cleanup && subcommand !== "migrate") {
+    flags.errors.push(unknownRuleOption(subcommand, "--cleanup"));
   }
   if (subcommand === "migrate") {
     if (flags.global)

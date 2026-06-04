@@ -83,7 +83,6 @@ export function runRulesVerify(options: RulesVerifyOptions = {}): number {
       warnings.push(getLegacyRulesConfigWarning('user', 'cleanup'));
     } else {
       const result = validateConfigFile(legacyUserConfig);
-      hasErrors = true;
       configsChecked.push({
         scope: 'User',
         path: legacyUserConfig,
@@ -95,6 +94,7 @@ export function runRulesVerify(options: RulesVerifyOptions = {}): number {
       warnings.push(
         getLegacyRulesConfigWarning('user', result.errors.length > 0 ? 'fix-or-delete' : 'migrate'),
       );
+      if (result.errors.length > 0) hasErrors = true;
     }
   }
 

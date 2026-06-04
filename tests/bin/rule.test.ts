@@ -285,6 +285,23 @@ describe('rule remove', () => {
     );
   });
 
+  test('accepts delete-source before remove subcommand', async () => {
+    await withInitializedProjectRules(
+      'safety-net-rule-remove-delete-source-first-',
+      async (tempDir, env) => {
+        const result = await runCCSafetyNetCli(
+          ['rule', '--delete-source', 'remove', 'project-rules'],
+          env,
+          tempDir,
+        );
+
+        expectSuccessfulCli(result);
+        expectProjectRulesConfigRules(tempDir, []);
+        expect(existsSync(join(tempDir, '.cc-safety-net', 'rules', 'project-rules'))).toBe(false);
+      },
+    );
+  });
+
   test('fails before changing config when delete-source local directory has extra files', async () => {
     await withInitializedProjectRules(
       'safety-net-rule-remove-dirty-source-',
@@ -417,6 +434,22 @@ describe('rule migrate', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('Unknown option for rule migrate: --write');
+  });
+
+  test('accepts cleanup before migrate subcommand', async () => {
+    await withTempDir('safety-net-rule-migrate-cleanup-first-', async (tempDir) => {
+      writeLegacyConfig(join(tempDir, '.safety-net.json'), 'block-project-rm', 'rm');
+
+      const result = await runCCSafetyNetCli(
+        ['rule', '--cleanup', 'migrate'],
+        { HOME: join(tempDir, 'home') },
+        tempDir,
+      );
+
+      expectSuccessfulCli(result);
+      expect(existsSync(join(tempDir, '.safety-net.json'))).toBe(false);
+      expectProjectRulesConfigRules(tempDir, ['project-rules']);
+    });
   });
 
   test('migrates project and user legacy rules', async () => {
@@ -562,6 +595,28 @@ describe('rule migrate', () => {
         readRulebook(join(tempDir, '.cc-safety-net', 'rules', 'user-rules-2', 'rulebook.json'))
           .name,
       ).toBe('user-rules-2');
+    });
+  });
+});
+
+describe('rule verify', () => {
+  test('returns success with warnings for valid legacy-only user config', async () => {
+    await withTempDir('safety-net-rule-verify-legacy-user-', async (tempDir) => {
+      writeLegacyConfig(join(tempDir, '.cc-safety-net', 'config.json'), 'block-user-git', 'git');
+
+      const result = await runCCSafetyNetCli(
+        ['rule', 'verify'],
+        {
+          CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
+          HOME: join(tempDir, 'home'),
+        },
+        tempDir,
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain('Configs valid with warnings.');
+      expect(result.stderr).toContain('Warning: Legacy user config is ignored by CC Safety Net.');
+      expect(result.stderr).not.toContain('Config validation failed.');
     });
   });
 });
