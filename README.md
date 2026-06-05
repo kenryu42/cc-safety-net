@@ -237,6 +237,25 @@ Install CC Safety Net with OpenCode's native plugin command:
 opencode plugin -g cc-safety-net
 ```
 
+> [!NOTE]
+> OpenCode can sometimes keep using a stale cached plugin version. See
+> anomalyco/opencode#25293 for the current tracking issue.
+>
+> To force OpenCode to reinstall `cc-safety-net`, remove its cached package and
+> install the version you want:
+>
+> ```sh
+> rm -rf ~/.cache/opencode/packages/cc-safety-net@latest
+> opencode plugin -g -f cc-safety-net@latest
+>
+> If you prefer pinning a specific version:
+>
+> rm -rf ~/.cache/opencode/packages/cc-safety-net@latest
+> opencode plugin -g -f cc-safety-net@<version>
+>
+> Restart OpenCode after updating so the plugin is loaded from the refreshed
+> cache.
+
 ---
 
 ### Pi Installation
