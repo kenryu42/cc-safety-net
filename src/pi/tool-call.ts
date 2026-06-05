@@ -58,6 +58,7 @@ export function registerToolCallEvent(pi: PiApi): void {
   pi.on('tool_call', handlePiToolCall);
 }
 
+/** @internal - exported for test coverage */
 export function handlePiToolCall(event: unknown, ctx: PiToolCallContext): PiToolCallResult {
   const shellToolCall = getPiShellToolCall(event, ctx);
   if (!shellToolCall) return undefined;

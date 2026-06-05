@@ -14,6 +14,7 @@ export interface Rulebook {
     rules: CustomRule[];
     tests: RulebookFixture[];
 }
+/** @internal - exported for test coverage */
 export interface RulebookFixtureFailure {
     command: string;
     message: string;
@@ -23,6 +24,7 @@ export interface RulebookFixtureResult {
     ok: boolean;
     failures: RulebookFixtureFailure[];
 }
+/** @internal - exported for test coverage */
 export declare function validateRulebook(rulebook: unknown): ValidationResult;
 export declare function runRulebookFixtures(rulebook: Rulebook): RulebookFixtureResult;
 export declare function assertValidRulebook(rulebook: unknown): Rulebook;

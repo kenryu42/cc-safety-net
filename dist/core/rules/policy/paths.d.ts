@@ -17,6 +17,7 @@ export interface ScopePaths {
 }
 export declare function getProjectRulesDir(cwd?: string): string;
 export declare function getProjectRulesConfigPath(cwd?: string): string;
+/** @internal - exported for test coverage */
 export declare function getProjectRulesLockPath(cwd?: string): string;
 export declare function getUserRulesDir(options?: RulesPolicyOptions): string;
 export declare function getUserRulesConfigPath(options?: RulesPolicyOptions): string;

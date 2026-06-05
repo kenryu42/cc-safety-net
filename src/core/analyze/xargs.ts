@@ -72,6 +72,7 @@ interface XargsParseResult {
   replacementToken: string | null;
 }
 
+/** @internal - exported for test coverage */
 export function extractXargsChildCommandWithInfo(tokens: readonly string[]): XargsParseResult {
   // Options that take a value as the next token
   const xargsOptsWithValue = new Set([

@@ -93,3 +93,12 @@ const table = sqliteTable("session", {
 
 - Avoid mocks as much as possible
 - Test actual implementation, do not duplicate logic into tests
+
+## Knip
+
+- NEVER add entries to `ignoreIssues` in `knip.ts`. It suppresses real problems instead of fixing them. The only valid use case is for generated files that aren't under source control.
+- When knip flags unused exports, fix the root cause:
+  1. **Dead exports** (no consumers anywhere) — unexport or delete the code entirely.
+  2. **Test-only exports** — add `/** @internal */` JSDoc above the export. Knip's built-in `@internal` tag suppresses the warning in production mode while documenting that the export exists for tests.
+  3. **Barrel file re-exports** — if nothing imports a name via the barrel, remove it from the barrel. Consumers that need it should import directly from the submodule.
+- Knip runs in `--production` mode (see `package.json`). Test files are excluded from analysis, so test-only exports must be tagged `@internal`.

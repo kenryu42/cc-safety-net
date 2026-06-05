@@ -36,6 +36,7 @@ export function getProjectRulesConfigPath(cwd?: string): string {
   return join(getProjectRulesDir(cwd), RULES_CONFIG_FILE);
 }
 
+/** @internal - exported for test coverage */
 export function getProjectRulesLockPath(cwd?: string): string {
   return join(getProjectRulesDir(cwd), RULES_LOCK_FILE);
 }

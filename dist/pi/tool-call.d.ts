@@ -16,5 +16,6 @@ type PiToolCallResult = {
     reason: string;
 } | undefined;
 export declare function registerToolCallEvent(pi: PiApi): void;
+/** @internal - exported for test coverage */
 export declare function handlePiToolCall(event: unknown, ctx: PiToolCallContext): PiToolCallResult;
 export {};

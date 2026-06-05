@@ -11,5 +11,6 @@ type PiCommandContext = {
     isIdle: () => boolean;
 };
 export declare function registerBuiltinCommands(pi: PiCommandApi): void;
+/** @internal - exported for test coverage */
 export declare function buildSafetyNetCommandPrompt(args: string): string;
 export {};

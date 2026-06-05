@@ -11,6 +11,7 @@ interface ScopePolicy {
 export declare function loadRulesPolicy(options?: RulesPolicyOptions): LoadedRulesPolicy;
 export declare function getRulesConfigSourceDisplayMap(configPath: string): Map<string, string>;
 export declare function getRulesConfigRuntimeErrorsForConfig(configPath: string, lockPath: string, options: RulesPolicyOptions): string[];
+/** @internal - exported for test coverage */
 export declare function getUnknownOverrideErrorsForConfig(configPath: string, lockPath: string, options: RulesPolicyOptions): string[];
 export declare function loadScopePolicy(config: RulesConfig, lockPath: string, configDir: string, options: RulesPolicyOptions, source: 'user' | 'project'): ScopePolicy;
 export declare function rulesPolicyToConfig(policy: LoadedRulesPolicy): Config;

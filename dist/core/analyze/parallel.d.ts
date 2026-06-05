@@ -9,4 +9,5 @@ export interface ParallelAnalyzeContext {
     analyzeNested: (command: string, overrides?: AnalyzeNestedOverrides) => string | null;
 }
 export declare function analyzeParallel(tokens: readonly string[], context: ParallelAnalyzeContext): string | null;
+/** @internal - exported for test coverage */
 export declare function extractParallelChildCommand(tokens: readonly string[]): string[];

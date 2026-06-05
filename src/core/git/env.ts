@@ -7,6 +7,7 @@ export const GIT_CONTEXT_ENV_OVERRIDES = [
 
 const GIT_CONTEXT_ENV_OVERRIDE_NAMES: ReadonlySet<string> = new Set(GIT_CONTEXT_ENV_OVERRIDES);
 
+/** @internal - exported for test coverage */
 export const GIT_CONFIG_AFFECTING_ENV_NAMES: ReadonlySet<string> = new Set([
   'GIT_CONFIG_GLOBAL',
   'GIT_CONFIG_NOSYSTEM',
@@ -15,6 +16,7 @@ export const GIT_CONFIG_AFFECTING_ENV_NAMES: ReadonlySet<string> = new Set([
   'XDG_CONFIG_HOME',
 ]);
 
+/** @internal - exported for test coverage */
 export const GIT_SSH_ENV_NAMES: ReadonlySet<string> = new Set([
   'GIT_SSH_COMMAND',
   'GIT_SSH',
@@ -23,6 +25,7 @@ export const GIT_SSH_ENV_NAMES: ReadonlySet<string> = new Set([
 
 const GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
 
+/** @internal - exported for test coverage */
 export function isGitContextEnvOverrideName(name: string): boolean {
   return GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name);
 }

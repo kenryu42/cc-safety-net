@@ -5,23 +5,6 @@ import {
   type RuleOverride,
 } from '@/core/rules/policy';
 
-export function printSyncResult(result: {
-  ok: boolean;
-  errors: string[];
-  warnings?: string[];
-  entries: RulebookLockEntryWithStats[];
-}): void {
-  if (!result.ok) {
-    printResultErrors(result);
-    return;
-  }
-  printResultWarnings(result);
-  for (const entry of result.entries) {
-    const ruleCount = entry.ruleCount === undefined ? '' : ` (${entry.ruleCount} rules)`;
-    console.log(`${entry.name} ${entry.version} ${entry.digest} ${entry.spec}${ruleCount}`);
-  }
-}
-
 export function printRuleChangeResult(
   result: {
     ok: boolean;
@@ -164,8 +147,4 @@ function printResultErrors(result: { errors: string[] }): void {
 function printResultWarnings(result: { warnings?: string[] }): void {
   if (!result.warnings || result.warnings.length === 0) return;
   for (const warning of result.warnings) console.warn(warning);
-}
-
-export function relativeDisplay(cwd: string, path: string): string {
-  return path.startsWith(cwd) ? path.slice(cwd.length + 1) : path;
 }

@@ -20,6 +20,7 @@ export interface Rulebook {
   tests: RulebookFixture[];
 }
 
+/** @internal - exported for test coverage */
 export interface RulebookFixtureFailure {
   command: string;
   message: string;
@@ -31,6 +32,7 @@ export interface RulebookFixtureResult {
   failures: RulebookFixtureFailure[];
 }
 
+/** @internal - exported for test coverage */
 export function validateRulebook(rulebook: unknown): ValidationResult {
   const errors: string[] = [];
   const ruleNames = new Set<string>();

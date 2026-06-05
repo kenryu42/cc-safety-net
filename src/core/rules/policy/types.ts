@@ -1,8 +1,6 @@
 import type { CustomRule } from '@/types';
 
 export type RuleOverride = 'off' | { reason: string };
-export type RulebookSourceKind = RulebookLockEntry['kind'];
-
 export interface RulesConfig {
   version: 1;
   rules: string[];

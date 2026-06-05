@@ -28,7 +28,7 @@ type ConfiguredHookAdapter<T> = Omit<HookAdapter<T>, 'outputDeny'> & {
   getManualPermissionAdvice?: (reason: string) => boolean | undefined;
 };
 
-export function outputHookDeny(
+function outputHookDeny(
   createDenyOutput: (message: string) => object,
   reason: string,
   command?: string,
@@ -50,7 +50,7 @@ export function outputHookDeny(
   );
 }
 
-export async function readHookInput<T>(outputDeny: (reason: string) => void): Promise<T | null> {
+async function readHookInput<T>(outputDeny: (reason: string) => void): Promise<T | null> {
   const chunks: Buffer[] = [];
 
   for await (const chunk of process.stdin) {
@@ -92,6 +92,7 @@ function analyzeHookCommand(command: string, cwd: string) {
   });
 }
 
+/** @internal - exported for direct test coverage */
 export function handleBlockedHookCommand(
   command: string,
   cwd: string,
@@ -123,7 +124,7 @@ export function handleBlockedHookCommand(
   outputDeny(result.reason, command, result.segment);
 }
 
-export async function runHookAdapter<T>(adapter: HookAdapter<T>): Promise<void> {
+async function runHookAdapter<T>(adapter: HookAdapter<T>): Promise<void> {
   const input = await readHookInput<T>(adapter.outputDeny);
   if (!input) {
     return;

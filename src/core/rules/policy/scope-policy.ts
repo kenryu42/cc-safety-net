@@ -111,6 +111,7 @@ export function getRulesConfigRuntimeErrorsForConfig(
   return [...loaded.scope.errors, ...getUnknownOverrideErrorsForScope(loaded.config, loaded.scope)];
 }
 
+/** @internal - exported for test coverage */
 export function getUnknownOverrideErrorsForConfig(
   configPath: string,
   lockPath: string,

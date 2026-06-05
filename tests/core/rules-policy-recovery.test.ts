@@ -15,31 +15,24 @@ import {
   addRulebookSource,
   getProjectRulesConfigPath,
   getProjectRulesDir,
-  getProjectRulesLockPath,
-  getRulebookCachePath,
   getRulebookDisplaySource,
   getRulesConfigRuntimeErrorsForConfig,
   getRulesConfigSourceDisplayMap,
   getRulesLockPathForConfigPath,
-  getUnknownOverrideErrorsForConfig,
   getUserRulesConfigPath,
   getUserRulesDir,
   getUserRulesLockPath,
   loadRulesPolicy,
-  parseGitHubSource,
-  type RulebookLockEntry,
-  type RulesLockfile,
   readRulesConfig,
   removeRulebookSource,
-  repairLocalRulesPolicy,
-  rulesPolicyToConfig,
   syncRulesConfig,
   testRulebookSources,
-  validateRulesConfig,
   writeDefaultRulesConfig,
   writeStarterRulebook,
 } from '@/core/rules/policy';
+import { validateRulesConfig } from '@/core/rules/policy/config-file';
 import { readLockfile } from '@/core/rules/policy/lockfile';
+import { getProjectRulesLockPath, getRulebookCachePath } from '@/core/rules/policy/paths';
 import {
   discoverGitHubRepositoryRulebooks,
   resolveRulebookSource,
@@ -47,13 +40,20 @@ import {
   sha256Digest,
 } from '@/core/rules/policy/resolver';
 import {
+  getUnknownOverrideErrorsForConfig,
+  rulesPolicyToConfig,
+} from '@/core/rules/policy/scope-policy';
+import {
   assertBareRulebookName,
   getRemoveMatches,
   getRulebookSourceSyntaxError,
   getSelectedUpdateSpecs,
   isGitHubRepositorySource,
   isGitHubRulebookSource,
+  parseGitHubSource,
 } from '@/core/rules/policy/sources';
+import { repairLocalRulesPolicy } from '@/core/rules/policy/sync';
+import type { RulebookLockEntry, RulesLockfile } from '@/core/rules/policy/types';
 
 type RemoveRulebookSourceTestOptions = NonNullable<Parameters<typeof removeRulebookSource>[1]> & {
   _testDeleteLocalSourceDir: (dir: string) => void;

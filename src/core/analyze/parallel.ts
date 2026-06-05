@@ -457,6 +457,7 @@ function splitParallelEnvNames(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** @internal - exported for test coverage */
 export function extractParallelChildCommand(tokens: readonly string[]): string[] {
   return parseParallelCommand(tokens)?.childCommandTokens ?? [];
 }
