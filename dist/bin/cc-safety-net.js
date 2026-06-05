@@ -634,11 +634,9 @@ var SHELL_OPERATORS = new Set(["&&", "||", "|&", "|", "&", ";", `
 `]);
 var SHELL_WRAPPERS = new Set(["bash", "sh", "zsh", "ksh", "dash", "fish", "csh", "tcsh"]);
 var INTERPRETERS = new Set(["python", "python3", "python2", "node", "ruby", "perl"]);
-var RM_SHORT_RECURSIVE_FORCE_PATTERN = /\brm[^\S\n]+(?=(?:[^\s;&|]+[^\S\n]+)*-[^\s;&|]*[rR][^\s;&|]*(?=[^\S\n]|[;&|]|$))(?=(?:[^\s;&|]+[^\S\n]+)*-[^\s;&|]*[fF][^\s;&|]*(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
-var RM_LONG_RECURSIVE_FORCE_PATTERN = /\brm[^\S\n]+(?=(?:[^\s;&|]+[^\S\n]+)*--recursive(?=[^\S\n]|[;&|]|$))(?=(?:[^\s;&|]+[^\S\n]+)*--force(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
+var RM_RECURSIVE_FORCE_PATTERN = /\brm[^\S\n]+(?=(?:(?!--(?=[^\S\n]|[;&|]|$))[^\s;&|]+[^\S\n]+)*(?:-(?!-)[^\s;&|]*[rR][^\s;&|]*|--recursive)(?=[^\S\n]|[;&|]|$))(?=(?:(?!--(?=[^\S\n]|[;&|]|$))[^\s;&|]+[^\S\n]+)*(?:-(?!-)[^\s;&|]*[fF][^\s;&|]*|--force)(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
 var DANGEROUS_PATTERNS = [
-  RM_SHORT_RECURSIVE_FORCE_PATTERN,
-  RM_LONG_RECURSIVE_FORCE_PATTERN,
+  RM_RECURSIVE_FORCE_PATTERN,
   /\bgit\s+reset\s+--hard\b/,
   /\bgit\s+checkout\s+--\b/,
   /\bgit\s+clean\s+-f\b/,

@@ -174,15 +174,12 @@ export const SHELL_WRAPPERS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'fish
 /** Interpreters that can execute code */
 export const INTERPRETERS = new Set(['python', 'python3', 'python2', 'node', 'ruby', 'perl']);
 
-const RM_SHORT_RECURSIVE_FORCE_PATTERN =
-  /\brm[^\S\n]+(?=(?:[^\s;&|]+[^\S\n]+)*-[^\s;&|]*[rR][^\s;&|]*(?=[^\S\n]|[;&|]|$))(?=(?:[^\s;&|]+[^\S\n]+)*-[^\s;&|]*[fF][^\s;&|]*(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
-const RM_LONG_RECURSIVE_FORCE_PATTERN =
-  /\brm[^\S\n]+(?=(?:[^\s;&|]+[^\S\n]+)*--recursive(?=[^\S\n]|[;&|]|$))(?=(?:[^\s;&|]+[^\S\n]+)*--force(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
+const RM_RECURSIVE_FORCE_PATTERN =
+  /\brm[^\S\n]+(?=(?:(?!--(?=[^\S\n]|[;&|]|$))[^\s;&|]+[^\S\n]+)*(?:-(?!-)[^\s;&|]*[rR][^\s;&|]*|--recursive)(?=[^\S\n]|[;&|]|$))(?=(?:(?!--(?=[^\S\n]|[;&|]|$))[^\s;&|]+[^\S\n]+)*(?:-(?!-)[^\s;&|]*[fF][^\s;&|]*|--force)(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
 
 /** Dangerous commands to detect in interpreter code */
 export const DANGEROUS_PATTERNS = [
-  RM_SHORT_RECURSIVE_FORCE_PATTERN,
-  RM_LONG_RECURSIVE_FORCE_PATTERN,
+  RM_RECURSIVE_FORCE_PATTERN,
   /\bgit\s+reset\s+--hard\b/,
   /\bgit\s+checkout\s+--\b/,
   /\bgit\s+clean\s+-f\b/,

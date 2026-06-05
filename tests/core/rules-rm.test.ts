@@ -54,6 +54,14 @@ describe('rm -rf blocked', () => {
     assertBlocked('python -c \'import os; os.system("rm -rf /some/path")\'', 'dangerous');
   });
 
+  test('python -c rm with mixed recursive and force options blocked', () => {
+    assertBlocked('python -c \'import os; os.system("rm -r --force /some/path")\'', 'dangerous');
+    assertBlocked(
+      'python -c \'import os; os.system("rm --recursive -f /some/path")\'',
+      'dangerous',
+    );
+  });
+
   test('echo $(rm -rf /some/path) blocked', () => {
     assertBlocked('echo $(rm -rf /some/path)', 'rm -rf');
   });
@@ -122,6 +130,12 @@ describe('rm -rf allowed', () => {
 
   test('rm -r without force allowed', () => {
     assertAllowed('rm -r /some/path');
+  });
+
+  test('python -c rm -r path with hyphenated f suffix allowed', () => {
+    assertAllowed('python -c \'import os; os.system("rm -r /builds/project-stuff")\'');
+    assertAllowed('python -c \'import os; os.system("rm -r path/to/proof")\'');
+    assertAllowed('python -c \'import os; os.system("rm -r -- -proof")\'');
   });
 
   test('rm -R without force allowed', () => {
