@@ -1,6 +1,6 @@
 {
   "name": "cc-safety-net",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "A coding agent CLI hook - block destructive git and filesystem commands before execution",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
