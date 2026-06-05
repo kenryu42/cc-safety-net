@@ -9,7 +9,7 @@ const config: KnipConfig = {
     'src/bin/hook/common.ts': ['exports'],
     'src/bin/rule/format.ts': ['exports'],
     'src/pi/builtin-commands/commands.ts': ['exports'],
-    'src/pi/tool-use.ts': ['exports'],
+    'src/pi/tool-call.ts': ['exports'],
     'src/core/analyze/parallel.ts': ['exports'],
     'src/core/analyze/xargs.ts': ['exports'],
     'src/core/env.ts': ['exports'],

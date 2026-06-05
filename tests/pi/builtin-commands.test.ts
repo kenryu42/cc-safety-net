@@ -65,7 +65,7 @@ describe('Pi built-in commands', () => {
     ]);
   });
 
-  test('extension registers both tool_use event and command', () => {
+  test('extension registers both tool_call event and command', () => {
     const pi = recordingPi();
 
     ccSafetyNetPiExtension(pi);

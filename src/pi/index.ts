@@ -1,10 +1,10 @@
 import { registerBuiltinCommands } from '@/pi/builtin-commands';
-import { registerToolUseEvent } from '@/pi/tool-use';
+import { registerToolCallEvent } from '@/pi/tool-call';
 
 type PiExtensionApi = Parameters<typeof registerBuiltinCommands>[0] &
-  Parameters<typeof registerToolUseEvent>[0];
+  Parameters<typeof registerToolCallEvent>[0];
 
 export default function ccSafetyNetPiExtension(pi: PiExtensionApi): void {
-  registerToolUseEvent(pi);
+  registerToolCallEvent(pi);
   registerBuiltinCommands(pi);
 }

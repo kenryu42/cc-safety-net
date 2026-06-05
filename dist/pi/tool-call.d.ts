@@ -1,9 +1,9 @@
 import { analyzeCommand } from '@/core/analyze';
 import type { LoadConfigOptions } from '@/core/config';
 type PiApi = {
-    on: (event: 'tool_call', handler: (event: unknown, ctx: PiToolUseContext) => PiToolUseResult) => void;
+    on: (event: 'tool_call', handler: (event: unknown, ctx: PiToolCallContext) => PiToolCallResult) => void;
 };
-type PiToolUseContext = {
+type PiToolCallContext = {
     cwd: string;
     sessionManager: {
         getSessionFile: () => string | undefined;
@@ -11,10 +11,10 @@ type PiToolUseContext = {
     safetyNetAnalyzeCommand?: typeof analyzeCommand;
     safetyNetConfigOptions?: LoadConfigOptions;
 };
-type PiToolUseResult = {
+type PiToolCallResult = {
     block: true;
     reason: string;
 } | undefined;
-export declare function registerToolUseEvent(pi: PiApi): void;
-export declare function handlePiToolUse(event: unknown, ctx: PiToolUseContext): PiToolUseResult;
+export declare function registerToolCallEvent(pi: PiApi): void;
+export declare function handlePiToolCall(event: unknown, ctx: PiToolCallContext): PiToolCallResult;
 export {};

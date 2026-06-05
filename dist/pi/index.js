@@ -275,7 +275,7 @@ function buildSafetyNetCommandPrompt(args) {
 
 ${args.trim() || DEFAULT_USER_REQUEST}`;
 }
-// src/pi/tool-use.ts
+// src/pi/tool-call.ts
 import { resolve as resolve8 } from "node:path";
 
 // src/core/analyze/dangerous-text.ts
@@ -6334,7 +6334,7 @@ async function runConfiguredHookAdapter(adapter) {
   });
 }
 
-// src/pi/tool-use.ts
+// src/pi/tool-call.ts
 var PI_SHELL_TOOL_ADAPTERS = {
   bash: {
     commandField: "command"
@@ -6344,18 +6344,18 @@ var PI_SHELL_TOOL_ADAPTERS = {
     cwdField: "working_directory"
   }
 };
-function registerToolUseEvent(pi) {
-  pi.on("tool_call", handlePiToolUse);
+function registerToolCallEvent(pi) {
+  pi.on("tool_call", handlePiToolCall);
 }
-function handlePiToolUse(event, ctx) {
-  const shellToolUse = getPiShellToolUse(event, ctx);
-  if (!shellToolUse)
+function handlePiToolCall(event, ctx) {
+  const shellToolCall = getPiShellToolCall(event, ctx);
+  if (!shellToolCall)
     return;
-  if ("malformed" in shellToolUse) {
-    return blockPiToolUse(REASON_SAFETY_NET_FAILED_CLOSED);
+  if ("malformed" in shellToolCall) {
+    return blockPiToolCall(REASON_SAFETY_NET_FAILED_CLOSED);
   }
-  const command2 = shellToolUse.command;
-  const cwd = shellToolUse.cwd;
+  const command2 = shellToolCall.command;
+  const cwd = shellToolCall.cwd;
   const modes = getCCSafetyNetEnvModes();
   let result;
   try {
@@ -6372,9 +6372,9 @@ function handlePiToolUse(event, ctx) {
     });
   } catch (error) {
     if (envTruthy(ENV_FLAGS.debug)) {
-      console.error(`CC Safety Net debug: pi tool_use analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
+      console.error(`CC Safety Net debug: pi tool_call analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
     }
-    return blockPiToolUse(REASON_SAFETY_NET_FAILED_CLOSED, command2, command2);
+    return blockPiToolCall(REASON_SAFETY_NET_FAILED_CLOSED, command2, command2);
   }
   if (!result) {
     const sessionId2 = ctx.sessionManager.getSessionFile();
@@ -6389,27 +6389,27 @@ function handlePiToolUse(event, ctx) {
   if (sessionId) {
     writeAuditLog(sessionId, command2, result.segment, result.reason, cwd);
   }
-  return blockPiToolUse(result.reason, command2, result.segment, result.manualPermissionAdvice);
+  return blockPiToolCall(result.reason, command2, result.segment, result.manualPermissionAdvice);
 }
-function getPiShellToolUse(event, ctx) {
+function getPiShellToolCall(event, ctx) {
   if (!event || typeof event !== "object")
     return;
-  const toolUse = event;
-  if (typeof toolUse.toolName !== "string")
+  const toolCall = event;
+  if (typeof toolCall.toolName !== "string")
     return;
-  const adapter = PI_SHELL_TOOL_ADAPTERS[toolUse.toolName];
+  const adapter = PI_SHELL_TOOL_ADAPTERS[toolCall.toolName];
   if (!adapter)
     return;
-  if (!toolUse.input || typeof toolUse.input !== "object")
+  if (!toolCall.input || typeof toolCall.input !== "object")
     return { malformed: true };
-  const command2 = toolUse.input[adapter.commandField];
+  const command2 = toolCall.input[adapter.commandField];
   if (typeof command2 !== "string")
     return { malformed: true };
-  const cwdInput = adapter.cwdField ? toolUse.input[adapter.cwdField] : undefined;
+  const cwdInput = adapter.cwdField ? toolCall.input[adapter.cwdField] : undefined;
   const cwd = typeof cwdInput === "string" ? resolve8(ctx.cwd, cwdInput) : ctx.cwd;
   return { command: command2, cwd };
 }
-function blockPiToolUse(reason, command2, segment, manualPermissionAdvice) {
+function blockPiToolCall(reason, command2, segment, manualPermissionAdvice) {
   return {
     block: true,
     reason: formatBlockedMessage({
@@ -6424,7 +6424,7 @@ function blockPiToolUse(reason, command2, segment, manualPermissionAdvice) {
 
 // src/pi/index.ts
 function ccSafetyNetPiExtension(pi) {
-  registerToolUseEvent(pi);
+  registerToolCallEvent(pi);
   registerBuiltinCommands(pi);
 }
 export {

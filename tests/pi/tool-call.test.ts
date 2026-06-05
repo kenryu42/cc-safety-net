@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handlePiToolUse } from '@/pi/tool-use';
+import { handlePiToolCall } from '@/pi/tool-call';
 import { withEnv, withLinkedWorktreeFixture } from '../helpers';
 import {
   syncInitialGitRulebook,
@@ -10,13 +10,13 @@ import {
   writeUpdatedGitRulebook,
 } from '../helpers/rulebook';
 
-describe('Pi tool_use event', () => {
+describe('Pi tool_call event', () => {
   test('allows safe bash commands', () => {
-    expect(handlePiToolUse(bashToolCall('git status'), piContext(process.cwd()))).toBeUndefined();
+    expect(handlePiToolCall(bashToolCall('git status'), piContext(process.cwd()))).toBeUndefined();
   });
 
   test('blocks dangerous bash commands', () => {
-    const result = handlePiToolUse(bashToolCall('rm -rf .'), piContext(process.cwd()));
+    const result = handlePiToolCall(bashToolCall('rm -rf .'), piContext(process.cwd()));
 
     expect(result).toEqual({
       block: true,
@@ -26,7 +26,7 @@ describe('Pi tool_use event', () => {
   });
 
   test('blocks dangerous Grok Shell commands', () => {
-    const result = handlePiToolUse(
+    const result = handlePiToolCall(
       shellToolCall({ command: 'git checkout -- README.md' }),
       piContext(process.cwd()),
     );
@@ -36,12 +36,12 @@ describe('Pi tool_use event', () => {
 
   test('allows safe Grok Shell commands', () => {
     expect(
-      handlePiToolUse(shellToolCall({ command: 'git status' }), piContext(process.cwd())),
+      handlePiToolCall(shellToolCall({ command: 'git status' }), piContext(process.cwd())),
     ).toBeUndefined();
   });
 
   test('fails closed when Grok Shell command is malformed', () => {
-    const result = handlePiToolUse(shellToolCall({}), piContext(process.cwd()));
+    const result = handlePiToolCall(shellToolCall({}), piContext(process.cwd()));
 
     expect(result).toEqual({
       block: true,
@@ -53,13 +53,13 @@ describe('Pi tool_use event', () => {
     await withLinkedWorktreeFixture((fixture) => {
       withEnv({ CC_SAFETY_NET_WORKTREE: '1' }, () => {
         expect(
-          handlePiToolUse(
+          handlePiToolCall(
             shellToolCall({ command: 'git reset --hard' }),
             piContext(fixture.mainWorktree),
           )?.reason,
         ).toContain('git reset --hard');
         expect(
-          handlePiToolUse(
+          handlePiToolCall(
             shellToolCall({
               command: 'git reset --hard',
               working_directory: fixture.linkedWorktree,
@@ -73,7 +73,7 @@ describe('Pi tool_use event', () => {
 
   test('ignores unknown custom tools', () => {
     expect(
-      handlePiToolUse(
+      handlePiToolCall(
         {
           type: 'tool_call',
           toolCallId: 'pi-tool-call',
@@ -86,7 +86,7 @@ describe('Pi tool_use event', () => {
   });
 
   test('blocks Pi tool call payloads without a type field', () => {
-    const result = handlePiToolUse(
+    const result = handlePiToolCall(
       {
         toolCallId: 'pi-tool-call',
         toolName: 'bash',
@@ -99,7 +99,7 @@ describe('Pi tool_use event', () => {
   });
 
   test('fails closed when Pi passes malformed bash input', () => {
-    const result = handlePiToolUse(
+    const result = handlePiToolCall(
       { type: 'tool_call', toolCallId: 'pi-tool-call', toolName: 'bash', input: {} },
       piContext(process.cwd()),
     );
@@ -111,12 +111,12 @@ describe('Pi tool_use event', () => {
   });
 
   test('reloads and repairs local rules before each tool execution', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'safety-net-pi-tool-use-'));
+    const dir = mkdtempSync(join(tmpdir(), 'safety-net-pi-tool-call-'));
     try {
       await syncInitialGitRulebook(dir);
       writeUpdatedGitRulebook(dir);
 
-      expect(handlePiToolUse(bashToolCall('git status'), piContext(dir))?.reason).toContain(
+      expect(handlePiToolCall(bashToolCall('git status'), piContext(dir))?.reason).toContain(
         updatedGitRule.reason,
       );
     } finally {
@@ -125,9 +125,9 @@ describe('Pi tool_use event', () => {
   });
 
   test('fails closed when command analysis throws unexpectedly', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'safety-net-pi-tool-use-fail-'));
+    const dir = mkdtempSync(join(tmpdir(), 'safety-net-pi-tool-call-fail-'));
     try {
-      const result = handlePiToolUse(bashToolCall('git status'), {
+      const result = handlePiToolCall(bashToolCall('git status'), {
         ...piContext(dir),
         safetyNetAnalyzeCommand: () => {
           throw new Error('unexpected analysis failure');
@@ -148,7 +148,9 @@ describe('Pi tool_use event', () => {
     const originalDebug = process.env.CC_SAFETY_NET_DEBUG;
     process.env.CC_SAFETY_NET_DEBUG = '1';
     try {
-      expect(handlePiToolUse(bashToolCall('git status'), piContext(process.cwd()))).toBeUndefined();
+      expect(
+        handlePiToolCall(bashToolCall('git status'), piContext(process.cwd())),
+      ).toBeUndefined();
     } finally {
       if (originalDebug === undefined) {
         delete process.env.CC_SAFETY_NET_DEBUG;
@@ -160,7 +162,7 @@ describe('Pi tool_use event', () => {
 
   test('ignores user bash commands because CC Safety Net only blocks agent tool execution', () => {
     expect(
-      handlePiToolUse(
+      handlePiToolCall(
         { type: 'user_bash', command: 'rm -rf .', cwd: process.cwd() },
         piContext(process.cwd()),
       ),
