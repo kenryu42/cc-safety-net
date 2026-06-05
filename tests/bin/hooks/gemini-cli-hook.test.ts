@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { expectNoHookOutput, geminiShellInput, runGeminiHook } from './hook-helpers';
+import {
+  expectNoHookOutput,
+  geminiShellInput,
+  getHookDenyReason,
+  runGeminiHook,
+} from './hook-helpers';
 
 describe('Gemini CLI hook', () => {
   describe('blocked commands', () => {
@@ -54,12 +59,16 @@ describe('Gemini CLI hook', () => {
   });
 
   describe('empty stdin', () => {
-    test('empty input produces no output', async () => {
-      await expectNoHookOutput(runGeminiHook, '');
+    test('empty input produces deny output', async () => {
+      const result = await runGeminiHook('');
+
+      expect(getHookDenyReason(result, 'gemini-cli')).toContain('Missing hook input JSON.');
     });
 
-    test('whitespace-only input produces no output', async () => {
-      await expectNoHookOutput(runGeminiHook, '   \n\t  ');
+    test('whitespace-only input produces deny output', async () => {
+      const result = await runGeminiHook('   \n\t  ');
+
+      expect(getHookDenyReason(result, 'gemini-cli')).toContain('Missing hook input JSON.');
     });
   });
 
@@ -69,14 +78,15 @@ describe('Gemini CLI hook', () => {
         SAFETY_NET_STRICT: '1',
       });
 
-      expect(exitCode).toBe(0);
-      const parsed = JSON.parse(stdout);
-      expect(parsed.decision).toBe('deny');
-      expect(parsed.reason).toContain('Failed to parse hook input JSON (strict mode)');
+      expect(getHookDenyReason({ stdout, stderr: '', exitCode }, 'gemini-cli')).toContain(
+        'Failed to parse hook input JSON.',
+      );
     });
 
-    test('non-strict mode silently ignores invalid JSON', async () => {
-      await expectNoHookOutput(runGeminiHook, '{invalid json');
+    test('non-strict mode blocks invalid JSON', async () => {
+      const result = await runGeminiHook('{invalid json');
+
+      expect(getHookDenyReason(result, 'gemini-cli')).toContain('Failed to parse hook input JSON.');
     });
   });
 

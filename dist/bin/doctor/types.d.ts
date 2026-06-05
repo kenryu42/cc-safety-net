@@ -1,8 +1,9 @@
 /**
  * Type definitions for the doctor command.
  */
+import type { IntegrationId } from '@/bin/integration-metadata';
 /** Hook platform identifiers */
-export type HookPlatform = 'claude-code' | 'opencode' | 'gemini-cli' | 'copilot-cli' | 'codex';
+export type HookPlatform = IntegrationId;
 /** Self-test case definition */
 export interface SelfTestCase {
     command: string;
@@ -64,6 +65,9 @@ export interface EnvVarInfo {
     name: string;
     value: string | undefined;
     isSet: boolean;
+    legacyName?: string;
+    legacyValue?: string;
+    legacyIsSet?: boolean;
     description: string;
     defaultBehavior: string;
 }
@@ -87,6 +91,19 @@ export interface UpdateInfo {
     updateAvailable: boolean;
     error?: string;
 }
+export type PiProbeStatus = 'configured' | 'not-found' | 'unavailable' | 'error';
+export interface PiProbeResource {
+    kind: 'command' | 'tool';
+    name: string;
+    path?: string;
+    source?: string;
+}
+export interface PiProbeInfo {
+    status: PiProbeStatus;
+    installedAndEnabled: boolean;
+    matched: PiProbeResource[];
+    error?: string;
+}
 /** System information */
 export interface SystemInfo {
     /** cc-safety-net version */
@@ -97,12 +114,18 @@ export interface SystemInfo {
     claudePluginListOutput: string | null;
     /** OpenCode version (from `opencode --version`) */
     openCodeVersion: string | null;
+    /** Codex CLI version (from `codex --version`) */
+    codexCliVersion: string | null;
     /** Gemini CLI version (from `gemini --version`) */
     geminiCliVersion: string | null;
     /** Gemini CLI extension list output (from `gemini extensions list`) */
     geminiExtensionsListOutput: string | null;
     /** Copilot CLI version (from `copilot --binary-version`, falling back to `copilot --version`) */
     copilotCliVersion: string | null;
+    /** Kimi CLI version (from `kimi --version`) */
+    kimiCliVersion: string | null;
+    /** Pi CLI version (from `pi --version`) */
+    piCliVersion: string | null;
     /** Node.js version (from `node --version`) */
     nodeVersion: string | null;
     /** npm version (from `npm --version`) */
@@ -111,6 +134,8 @@ export interface SystemInfo {
     bunVersion: string | null;
     /** Whether the copilot-safety-net plugin is installed (from `copilot plugin list`) */
     copilotPluginInstalled: boolean;
+    /** Whether the Pi extension sentinel is runtime-visible */
+    piSafetyNetProbe: PiProbeInfo;
     /** Platform (e.g., "darwin arm64") */
     platform: string;
 }

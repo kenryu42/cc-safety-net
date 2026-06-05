@@ -7,16 +7,17 @@
 
 import { describe, expect, test } from 'bun:test';
 import { realpathSync } from 'node:fs';
-import {
-  _extractParallelChildCommand,
-  _extractXargsChildCommand,
-  _findHasDelete,
-  _hasRecursiveForceFlags,
-} from '@/core/analyze';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
+import { containsDangerousCode } from '@/core/analyze/interpreters';
+import { extractParallelChildCommand } from '@/core/analyze/parallel';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
-import { _extractGitSubcommandAndRest, _getCheckoutPositionalArgs } from '@/core/rules-git';
-import { extractShortOpts, splitShellCommands, stripWrappersWithInfo } from '@/core/shell';
+import { extractXargsChildCommandWithInfo } from '@/core/analyze/xargs';
+import {
+  extractShortOpts,
+  splitShellCommands,
+  splitShellCommandsWithInfo,
+  stripWrappersWithInfo,
+} from '@/core/shell';
 import { MAX_STRIP_ITERATIONS } from '@/types';
 import { createLinkedWorktreeFixture } from '../../helpers.ts';
 
@@ -212,10 +213,18 @@ describe('shell parsing helpers', () => {
       ]);
     });
 
-    test('marks attached command substitution after git as dynamic', () => {
+    test('reports attached command substitution metadata generically', () => {
       expect(splitShellCommands('git reset --hard$(printf HEAD~1)')).toEqual([
         ['printf', 'HEAD~1'],
-        ['git', 'reset', '--hard', '$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__'],
+        ['git', 'reset', '--hard'],
+      ]);
+      expect(splitShellCommandsWithInfo('git reset --hard$(printf HEAD~1)')).toEqual([
+        { tokens: ['printf', 'HEAD~1'], hasDynamicSubstitution: false },
+        { tokens: ['git', 'reset', '--hard'], hasDynamicSubstitution: true },
+      ]);
+      expect(splitShellCommandsWithInfo('rm -rf /tmp/$(printf x)')).toEqual([
+        { tokens: ['printf', 'x'], hasDynamicSubstitution: false },
+        { tokens: ['rm', '-rf', '/tmp/'], hasDynamicSubstitution: true },
       ]);
     });
 
@@ -371,6 +380,11 @@ describe('shell parsing helpers', () => {
         'reset',
         '--hard',
       ]);
+    });
+
+    test('keeps quote boundary command substitutions analyzable', () => {
+      expect(splitShellCommands("echo 'b\\'$(rm -rf /)'c'")).toContainEqual(['rm', '-rf', '/']);
+      expect(splitShellCommands("echo 'b\\'$(printf ok)'c'")).toContainEqual(['printf', 'ok']);
     });
 
     test('does not treat escaped or quoted inline substitutions as executable commands', () => {
@@ -562,87 +576,14 @@ describe('shell parsing helpers', () => {
   });
 });
 
-describe('rm parsing helpers', () => {
-  describe('hasRecursiveForceFlags', () => {
-    test('empty tokens returns false', () => {
-      expect(_hasRecursiveForceFlags([])).toBe(false);
-    });
-
-    test('stops at double dash', () => {
-      // -f after `--` is a positional arg, not an option.
-      expect(_hasRecursiveForceFlags(['rm', '-r', '--', '-f'])).toBe(false);
-    });
-
-    test('detects -rf combined', () => {
-      expect(_hasRecursiveForceFlags(['rm', '-rf', 'foo'])).toBe(true);
-    });
-
-    test('detects -r -f separate', () => {
-      expect(_hasRecursiveForceFlags(['rm', '-r', '-f', 'foo'])).toBe(true);
-    });
-
-    test('detects --recursive --force', () => {
-      expect(_hasRecursiveForceFlags(['rm', '--recursive', '--force', 'foo'])).toBe(true);
-    });
-  });
-});
-
-describe('find parsing helpers', () => {
-  describe('findHasDelete', () => {
-    test('exec without terminator ignored', () => {
-      // Un-terminated -exec should not cause a false positive on -delete.
-      expect(_findHasDelete(['-exec', 'echo', '-delete'])).toBe(false);
-    });
-
-    test('skips undefined tokens', () => {
-      // biome-ignore lint/suspicious/noExplicitAny: intentionally testing malformed input
-      expect(_findHasDelete([undefined as any, '-delete'] as any)).toBe(true);
-    });
-
-    test('delete outside exec detected', () => {
-      expect(_findHasDelete(['-name', '*.txt', '-delete'])).toBe(true);
-    });
-
-    test('delete inside exec not detected', () => {
-      expect(_findHasDelete(['-exec', 'rm', '-delete', ';', '-print'])).toBe(false);
-    });
-
-    test('options that consume a value treat -delete as an argument', () => {
-      const consumingValue = [
-        '-name',
-        '-iname',
-        '-path',
-        '-ipath',
-        '-regex',
-        '-iregex',
-        '-type',
-        '-user',
-        '-group',
-        '-perm',
-        '-size',
-        '-mtime',
-        '-ctime',
-        '-atime',
-        '-newer',
-        '-printf',
-        '-fprint',
-        '-fprintf',
-      ] as const;
-
-      for (const opt of consumingValue) {
-        expect(_findHasDelete([opt, '-delete'])).toBe(false);
-        expect(_findHasDelete([opt, '-delete', '-delete'])).toBe(true);
-      }
-    });
-  });
-});
-
 describe('dangerousInText', () => {
   test('detects rm -rf variants', () => {
     expect(dangerousInText('rm -rf /tmp/x')).toBe('rm -rf');
     expect(dangerousInText('rm -R -f /tmp/x')).toBe('rm -rf');
     expect(dangerousInText('rm -fr /tmp/x')).toBe('rm -rf');
     expect(dangerousInText('rm -f -r /tmp/x')).toBe('rm -rf');
+    expect(dangerousInText('rm --recursive --force /tmp/x')).toBe('rm -rf');
+    expect(dangerousInText('rm --force --recursive /tmp/x')).toBe('rm -rf');
   });
 
   test('detects with leading whitespace (trimStart)', () => {
@@ -652,6 +593,17 @@ describe('dangerousInText', () => {
   test('detects key git patterns', () => {
     expect(dangerousInText('git reset --hard')).toBe('git reset --hard');
     expect(dangerousInText('git clean -f')).toBe('git clean -f');
+    expect(dangerousInText('git clean -fd')).toBe('git clean -f');
+    expect(dangerousInText('git checkout -f')).toBe('git checkout --force');
+    expect(dangerousInText('git checkout --force')).toBe('git checkout --force');
+    expect(dangerousInText('git tag -d v1')).toBe('git tag -d');
+    expect(dangerousInText('git branch --delete --force feature')).toBe('git branch -D');
+    expect(dangerousInText('git branch --force --delete feature')).toBe('git branch -D');
+  });
+
+  test('allows checkout branch creation patterns with f in branch name', () => {
+    expect(dangerousInText('git checkout -bfeature')).toBeNull();
+    expect(dangerousInText('git checkout -Bfixup')).toBeNull();
   });
 
   test('skips find -delete when text starts with echo/rg', () => {
@@ -660,45 +612,20 @@ describe('dangerousInText', () => {
   });
 });
 
-describe('xargs parsing helpers', () => {
-  describe('extractXargsChildCommand', () => {
-    test('none when child unspecified', () => {
-      expect(_extractXargsChildCommand(['xargs'])).toEqual([]);
-    });
+describe('containsDangerousCode', () => {
+  test('allows rm -r paths with hyphenated segments ending in f', () => {
+    expect(containsDangerousCode('import os; os.system("rm -r /builds/project-stuff")')).toBe(
+      false,
+    );
+    expect(containsDangerousCode('import os; os.system("rm -r path/to/proof")')).toBe(false);
+  });
 
-    test('double dash starts child', () => {
-      expect(_extractXargsChildCommand(['xargs', '--', 'rm', '-rf'])).toEqual(['rm', '-rf']);
-    });
-
-    test('long option consumes value', () => {
-      expect(_extractXargsChildCommand(['xargs', '--max-args', '5', 'rm', '-rf'])).toEqual([
-        'rm',
-        '-rf',
-      ]);
-    });
-
-    test('long option equals form', () => {
-      expect(_extractXargsChildCommand(['xargs', '--max-args=5', 'rm'])).toEqual(['rm']);
-    });
-
-    test('short option attached form', () => {
-      expect(_extractXargsChildCommand(['xargs', '-n1', 'rm'])).toEqual(['rm']);
-    });
-
-    test('dash i does not consume child', () => {
-      expect(_extractXargsChildCommand(['xargs', '-i', 'rm', '-rf'])).toEqual(['rm', '-rf']);
-    });
-
-    test('more attached forms', () => {
-      const cases: Array<[string[], string[]]> = [
-        [['xargs', '-P4', 'rm'], ['rm']],
-        [['xargs', '-L2', 'rm'], ['rm']],
-        [['xargs', '-n1', 'rm'], ['rm']],
-      ];
-      for (const [tokens, expected] of cases) {
-        expect(_extractXargsChildCommand(tokens)).toEqual(expected);
-      }
-    });
+  test('detects rm recursive force option tokens', () => {
+    expect(containsDangerousCode('import os; os.system("rm -rf /some/path")')).toBe(true);
+    expect(containsDangerousCode('import os; os.system("rm -R -f /some/path")')).toBe(true);
+    expect(containsDangerousCode('import os; os.system("rm --force --recursive /some/path")')).toBe(
+      true,
+    );
   });
 });
 
@@ -707,21 +634,21 @@ describe('parallel parsing helpers', () => {
     test('returns empty when ::: is first token after parallel', () => {
       // When ::: is the first token after parallel (and options),
       // it returns empty because args follow :::
-      expect(_extractParallelChildCommand(['parallel', ':::'])).toEqual([]);
+      expect(extractParallelChildCommand(['parallel', ':::'])).toEqual([]);
     });
 
     test('extracts command with -- separator', () => {
-      expect(_extractParallelChildCommand(['parallel', '--', 'rm', '-rf'])).toEqual(['rm', '-rf']);
+      expect(extractParallelChildCommand(['parallel', '--', 'rm', '-rf'])).toEqual(['rm', '-rf']);
     });
 
     test('returns command and all following tokens', () => {
       // The function returns all tokens starting from the first non-option
-      expect(_extractParallelChildCommand(['parallel', 'rm', '-rf'])).toEqual(['rm', '-rf']);
+      expect(extractParallelChildCommand(['parallel', 'rm', '-rf'])).toEqual(['rm', '-rf']);
     });
 
     test('returns command including ::: marker when command comes first', () => {
       // If command tokens appear before :::, all of them are returned
-      expect(_extractParallelChildCommand(['parallel', 'rm', '-rf', ':::', '/'])).toEqual([
+      expect(extractParallelChildCommand(['parallel', 'rm', '-rf', ':::', '/'])).toEqual([
         'rm',
         '-rf',
         ':::',
@@ -730,242 +657,71 @@ describe('parallel parsing helpers', () => {
     });
 
     test('consumes options', () => {
-      expect(_extractParallelChildCommand(['parallel', '-j4', '--', 'rm', '-rf'])).toEqual([
+      expect(extractParallelChildCommand(['parallel', '-j4', '--', 'rm', '-rf'])).toEqual([
         'rm',
         '-rf',
       ]);
     });
 
     test('consumes --option=value', () => {
-      expect(_extractParallelChildCommand(['parallel', '--foo=bar', 'rm', '-rf'])).toEqual([
+      expect(extractParallelChildCommand(['parallel', '--foo=bar', 'rm', '-rf'])).toEqual([
         'rm',
         '-rf',
       ]);
     });
 
     test('consumes options that take a value', () => {
-      expect(_extractParallelChildCommand(['parallel', '-S', 'sshlogin', 'rm', '-rf'])).toEqual([
+      expect(extractParallelChildCommand(['parallel', '-S', 'sshlogin', 'rm', '-rf'])).toEqual([
         'rm',
         '-rf',
       ]);
     });
 
     test('consumes -j value form', () => {
-      expect(_extractParallelChildCommand(['parallel', '-j', '4', 'rm', '-rf'])).toEqual([
+      expect(extractParallelChildCommand(['parallel', '-j', '4', 'rm', '-rf'])).toEqual([
         'rm',
         '-rf',
       ]);
     });
 
     test('skips unknown short option', () => {
-      expect(_extractParallelChildCommand(['parallel', '-X', 'rm', '-rf'])).toEqual(['rm', '-rf']);
+      expect(extractParallelChildCommand(['parallel', '-X', 'rm', '-rf'])).toEqual(['rm', '-rf']);
     });
 
     test('empty for just parallel', () => {
-      expect(_extractParallelChildCommand(['parallel'])).toEqual([]);
+      expect(extractParallelChildCommand(['parallel'])).toEqual([]);
     });
-  });
-});
-
-describe('git rules helpers', () => {
-  describe('extractGitSubcommandAndRest', () => {
-    test('git only returns null subcommand', () => {
-      const result = _extractGitSubcommandAndRest(['git']);
-      expect(result.subcommand).toBeNull();
-      expect(result.rest).toEqual([]);
-    });
-
-    test('non git returns null subcommand', () => {
-      const result = _extractGitSubcommandAndRest(['echo', 'ok']);
-      expect(result.subcommand).toBeNull();
-      expect(result.rest).toEqual([]);
-    });
-
-    test('unknown short option skipped', () => {
-      const result = _extractGitSubcommandAndRest(['git', '-x', 'reset', '--hard']);
-      expect(result.subcommand).toBe('reset');
-      expect(result.rest).toEqual(['--hard']);
-    });
-
-    test('unknown long option equals skipped', () => {
-      const result = _extractGitSubcommandAndRest(['git', '--unknown=1', 'reset', '--hard']);
-      expect(result.subcommand).toBe('reset');
-      expect(result.rest).toEqual(['--hard']);
-    });
-
-    test('opts with value separate consumed', () => {
-      const result = _extractGitSubcommandAndRest(['git', '-c', 'foo=bar', 'reset']);
-      expect(result.subcommand).toBe('reset');
-      expect(result.rest).toEqual([]);
-    });
-
-    test('double dash can introduce subcommand', () => {
-      const result = _extractGitSubcommandAndRest(['git', '--', 'reset', '--hard']);
-      expect(result.subcommand).toBe('reset');
-      expect(result.rest).toEqual(['--hard']);
-    });
-
-    test('double dash without a subcommand yields null', () => {
-      const result = _extractGitSubcommandAndRest(['git', '--', '--help']);
-      expect(result.subcommand).toBeNull();
-      expect(result.rest).toEqual(['--help']);
-    });
-
-    test('attached -C consumes itself', () => {
-      const result = _extractGitSubcommandAndRest(['git', '-C/tmp', 'reset', '--hard']);
-      expect(result.subcommand).toBe('reset');
-      expect(result.rest).toEqual(['--hard']);
-    });
-  });
-
-  describe('getCheckoutPositionalArgs', () => {
-    test('attached short opts ignored', () => {
-      expect(_getCheckoutPositionalArgs(['-bnew', 'main', 'file.txt'])).toEqual([
-        'main',
-        'file.txt',
-      ]);
-      expect(_getCheckoutPositionalArgs(['-U3', 'main'])).toEqual(['main']);
-    });
-
-    test('long equals ignored', () => {
-      expect(_getCheckoutPositionalArgs(['--pathspec-from-file=paths.txt', 'main'])).toEqual([
-        'main',
-      ]);
-    });
-
-    test('double dash breaks', () => {
-      expect(_getCheckoutPositionalArgs(['--', 'file.txt'])).toEqual([]);
-    });
-
-    test('options with value consumed', () => {
-      expect(_getCheckoutPositionalArgs(['-b', 'new', 'main'])).toEqual(['main']);
-    });
-
-    test('unknown long option does not consume value', () => {
-      expect(_getCheckoutPositionalArgs(['--unknown', 'main', 'file.txt'])).toEqual([
-        'main',
-        'file.txt',
-      ]);
-    });
-
-    test('unknown short option skipped', () => {
-      expect(_getCheckoutPositionalArgs(['-x', 'main'])).toEqual(['main']);
-    });
-
-    test('documented no-value long options ignored', () => {
-      expect(_getCheckoutPositionalArgs(['--no-quiet', 'main', 'file.txt'])).toEqual([
-        'main',
-        'file.txt',
-      ]);
-      expect(_getCheckoutPositionalArgs(['--guess', 'main', 'file.txt'])).toEqual([
-        'main',
-        'file.txt',
-      ]);
-      expect(_getCheckoutPositionalArgs(['--no-recurse-submodules', 'main', 'file.txt'])).toEqual([
-        'main',
-        'file.txt',
-      ]);
-    });
-
-    test('optional value options recurse-submodules', () => {
-      expect(_getCheckoutPositionalArgs(['--recurse-submodules', 'main'])).toEqual(['main']);
-      expect(_getCheckoutPositionalArgs(['--recurse-submodules=on-demand', 'main'])).toEqual([
-        'main',
-      ]);
-    });
-
-    test('optional value options track', () => {
-      expect(_getCheckoutPositionalArgs(['--track', 'main'])).toEqual(['main']);
-      expect(_getCheckoutPositionalArgs(['--track=direct', 'main'])).toEqual(['main']);
-    });
-
-    test('documented options with required values are consumed', () => {
-      expect(_getCheckoutPositionalArgs(['--inter-hunk-context', '3', 'main'])).toEqual(['main']);
-      expect(_getCheckoutPositionalArgs(['--conflict', 'merge', 'main'])).toEqual(['main']);
-    });
-  });
-});
-
-describe('cwd tracking helpers', () => {
-  const { _segmentChangesCwd } = require('../../../src/core/analyze.ts');
-
-  test('cd returns true', () => {
-    expect(_segmentChangesCwd(['cd', '..'])).toBe(true);
-  });
-
-  test('pushd returns true', () => {
-    expect(_segmentChangesCwd(['pushd', '/tmp'])).toBe(true);
-  });
-
-  test('popd returns true', () => {
-    expect(_segmentChangesCwd(['popd'])).toBe(true);
-  });
-
-  test('builtin cd returns true', () => {
-    expect(_segmentChangesCwd(['builtin', 'cd', '..'])).toBe(true);
-  });
-
-  test('builtin only returns false', () => {
-    expect(_segmentChangesCwd(['builtin'])).toBe(false);
-  });
-
-  test('grouped cd returns true', () => {
-    expect(_segmentChangesCwd(['{', 'cd', '..', ';', '}'])).toBe(true);
-  });
-
-  test('subshell cd returns true', () => {
-    expect(_segmentChangesCwd(['(', 'cd', '..', ')'])).toBe(true);
-  });
-
-  test('command substitution cd returns true', () => {
-    expect(_segmentChangesCwd(['$(', 'cd', '..', ')'])).toBe(true);
-  });
-
-  test('regex fallback on unparseable', () => {
-    expect(_segmentChangesCwd(['cd', "'unterminated"])).toBe(true);
-  });
-
-  test('non-cd command returns false', () => {
-    expect(_segmentChangesCwd(['ls', '-la'])).toBe(false);
   });
 });
 
 describe('xargs parsing helpers', () => {
-  const { _extractXargsChildCommandWithInfo } = require('../../../src/core/analyze.ts');
-
   test('replacement token from -I option', () => {
-    const result = _extractXargsChildCommandWithInfo(['xargs', '-I', '{}', 'rm', '-rf', '{}']);
+    const result = extractXargsChildCommandWithInfo(['xargs', '-I', '{}', 'rm', '-rf', '{}']);
     expect(result.replacementToken).toBe('{}');
   });
 
   test('replacement token from -I attached', () => {
-    const result = _extractXargsChildCommandWithInfo(['xargs', '-I%', 'rm', '-rf', '%']);
+    const result = extractXargsChildCommandWithInfo(['xargs', '-I%', 'rm', '-rf', '%']);
     expect(result.replacementToken).toBe('%');
   });
 
   test('replacement token from --replace defaults to braces', () => {
-    const result = _extractXargsChildCommandWithInfo(['xargs', '--replace', 'rm', '-rf', '{}']);
+    const result = extractXargsChildCommandWithInfo(['xargs', '--replace', 'rm', '-rf', '{}']);
     expect(result.replacementToken).toBe('{}');
   });
 
   test('replacement token from --replace= empty defaults to braces', () => {
-    const result = _extractXargsChildCommandWithInfo(['xargs', '--replace=', 'rm', '-rf', '{}']);
+    const result = extractXargsChildCommandWithInfo(['xargs', '--replace=', 'rm', '-rf', '{}']);
     expect(result.replacementToken).toBe('{}');
   });
 
   test('replacement token from --replace=CUSTOM', () => {
-    const result = _extractXargsChildCommandWithInfo([
-      'xargs',
-      '--replace=FOO',
-      'rm',
-      '-rf',
-      'FOO',
-    ]);
+    const result = extractXargsChildCommandWithInfo(['xargs', '--replace=FOO', 'rm', '-rf', 'FOO']);
     expect(result.replacementToken).toBe('FOO');
   });
 
   test('no replacement token when not specified', () => {
-    const result = _extractXargsChildCommandWithInfo(['xargs', 'rm', '-rf']);
+    const result = extractXargsChildCommandWithInfo(['xargs', 'rm', '-rf']);
     expect(result.replacementToken).toBeNull();
   });
 });

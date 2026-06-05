@@ -5,18 +5,16 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  getProjectConfigPath,
-  getUserConfigPath,
-  loadConfig,
-  validateConfigFile,
-} from '@/core/config';
-import { envTruthy } from '@/core/env';
+import { loadConfig, validateRulesConfigFile } from '@/core/config';
+import { getCCSafetyNetEnvModes } from '@/core/env';
+import { getProjectRulesConfigPath, getUserRulesConfigPath } from '@/core/rules/policy';
 import type { AnalyzeOptions, ExplainOptions } from '@/types';
 
 export interface GetConfigSourceOptions {
   cwd?: string;
-  /** Override user config path for testing */
+  /** Override user rules config directory for testing */
+  userConfigDir?: string;
+  /** Override user rules config path for testing */
   userConfigPath?: string;
 }
 
@@ -28,20 +26,20 @@ export function getConfigSource(options?: GetConfigSourceOptions): {
   configSource: string | null;
   configValid: boolean;
 } {
-  const projectPath = getProjectConfigPath(options?.cwd);
+  const projectPath = getProjectRulesConfigPath(options?.cwd);
   let invalidProjectPath: string | null = null;
 
   if (existsSync(projectPath)) {
-    const validation = validateConfigFile(projectPath);
+    const validation = validateRulesConfigFile(projectPath);
     if (validation.errors.length === 0) {
       return { configSource: projectPath, configValid: true };
     }
     invalidProjectPath = projectPath;
   }
 
-  const userPath = options?.userConfigPath ?? getUserConfigPath();
+  const userPath = options?.userConfigPath ?? getUserRulesConfigPath(options);
   if (existsSync(userPath)) {
-    const validation = validateConfigFile(userPath);
+    const validation = validateRulesConfigFile(userPath);
     return { configSource: userPath, configValid: validation.errors.length === 0 };
   }
 
@@ -59,14 +57,15 @@ export function getConfigSource(options?: GetConfigSourceOptions): {
 export function buildAnalyzeOptions(explainOptions?: ExplainOptions): AnalyzeOptions {
   // Resolve to absolute path - relative paths break cwd comparison logic
   const cwd = resolve(explainOptions?.cwd ?? process.cwd());
-  const paranoidAll = envTruthy('SAFETY_NET_PARANOID');
+  const modes = getCCSafetyNetEnvModes();
   return {
     cwd,
     effectiveCwd: cwd,
-    config: explainOptions?.config ?? loadConfig(cwd),
-    strict: explainOptions?.strict ?? envTruthy('SAFETY_NET_STRICT'),
-    paranoidRm: paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM'),
-    paranoidInterpreters: paranoidAll || envTruthy('SAFETY_NET_PARANOID_INTERPRETERS'),
-    worktreeMode: envTruthy('SAFETY_NET_WORKTREE'),
+    config:
+      explainOptions?.config ?? loadConfig(cwd, { userConfigDir: explainOptions?.userConfigDir }),
+    strict: explainOptions?.strict ?? modes.strict,
+    paranoidRm: modes.paranoidRm,
+    paranoidInterpreters: modes.paranoidInterpreters,
+    worktreeMode: modes.worktreeMode,
   };
 }

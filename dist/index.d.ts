@@ -1,2 +1,2 @@
 import type { Plugin } from '@opencode-ai/plugin';
-export declare const SafetyNetPlugin: Plugin;
+export declare const CCSafetyNetPlugin: Plugin;

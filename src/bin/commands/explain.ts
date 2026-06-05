@@ -1,7 +1,7 @@
 import type { Command } from './types';
 
-export const explainCommand: Command = {
-  name: 'explain',
+export const explainCommand = {
+  name: 'explain' as const,
   description: 'Show step-by-step analysis trace of how a command would be analyzed',
   usage: 'explain [options] <command>',
   argument: '<command>',
@@ -25,4 +25,4 @@ export const explainCommand: Command = {
     'cc-safety-net explain --json "rm -rf /"',
     'cc-safety-net explain --cwd /tmp "git status"',
   ],
-};
+} satisfies Command;

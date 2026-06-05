@@ -44,7 +44,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     needs: [full-check]
-    if: github.repository == 'kenryu42/claude-code-safety-net'
+    if: github.repository == 'kenryu42/cc-safety-net'
     steps:
       - uses: actions/checkout@v4
         with:

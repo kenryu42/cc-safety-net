@@ -12,15 +12,8 @@ import type {
   SystemInfo,
   UpdateInfo,
 } from '@/bin/doctor/types';
+import { getIntegrationDisplayName } from '@/bin/integration-metadata';
 import { colors } from '@/bin/utils/colors';
-
-const PLATFORM_NAMES: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  opencode: 'OpenCode',
-  'gemini-cli': 'Gemini CLI',
-  'copilot-cli': 'Copilot CLI',
-  codex: 'Codex',
-};
 
 interface TableOptions {
   headers?: string[];
@@ -70,7 +63,7 @@ export function formatHooksSection(hooks: HookStatus[]): string {
   const errors: Array<{ platform: string; message: string }> = [];
 
   for (const hook of hooks) {
-    const platformName = PLATFORM_NAMES[hook.platform] ?? hook.platform;
+    const platformName = getIntegrationDisplayName(hook.platform);
 
     if (hook.selfTest) {
       for (const result of hook.selfTest.results) {
@@ -134,7 +127,7 @@ function formatHooksTable(hooks: HookStatus[]): string {
 
   // Build rows with both colored and raw text
   const rowData = hooks.map((h) => {
-    const platformName = PLATFORM_NAMES[h.platform] ?? h.platform;
+    const platformName = getIntegrationDisplayName(h.platform);
     const statusDisplay = getStatusDisplay(h);
     let testsText = '-';
     if (h.status === 'configured' && h.selfTest) {
@@ -249,13 +242,19 @@ export function formatEnvironmentSection(envVars: EnvVarInfo[]): string {
  * Format environment variables as an ASCII table with ✓/✗ icons.
  */
 function formatEnvironmentTable(envVars: EnvVarInfo[]): string {
-  const headers = ['Variable', 'Status'];
+  const headers = ['Variable', 'Status', 'Legacy'];
   const rows = envVars.map((v) => {
     const statusIcon = v.isSet ? colors.green('✓') : colors.dim('✗');
-    return [v.name, statusIcon];
+    const legacyStatus =
+      v.legacyName && v.legacyIsSet ? `${v.legacyName} ${colors.green('✓')}` : (v.legacyName ?? '');
+    return [v.name, statusIcon, legacyStatus];
   });
 
-  const rawRows = envVars.map((v) => [v.name, v.isSet ? '✓' : '✗']);
+  const rawRows = envVars.map((v) => [
+    v.name,
+    v.isSet ? '✓' : '✗',
+    v.legacyName && v.legacyIsSet ? `${v.legacyName} ✓` : (v.legacyName ?? ''),
+  ]);
   return formatAsciiTable({ headers, rows, rawRows });
 }
 
@@ -422,9 +421,12 @@ function formatSystemInfoTable(system: SystemInfo): string {
   const rowData = [
     { label: 'cc-safety-net', value: system.version },
     { label: 'Claude Code', value: system.claudeCodeVersion },
-    { label: 'OpenCode', value: system.openCodeVersion },
-    { label: 'Gemini CLI', value: system.geminiCliVersion },
+    { label: 'Codex', value: system.codexCliVersion },
     { label: 'Copilot CLI', value: system.copilotCliVersion },
+    { label: 'Gemini CLI', value: system.geminiCliVersion },
+    { label: 'Kimi CLI', value: system.kimiCliVersion },
+    { label: 'OpenCode', value: system.openCodeVersion },
+    { label: 'Pi', value: system.piCliVersion },
     { label: 'Node.js', value: system.nodeVersion },
     { label: 'npm', value: system.npmVersion },
     { label: 'Bun', value: system.bunVersion },

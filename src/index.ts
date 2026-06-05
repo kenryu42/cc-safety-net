@@ -1,16 +1,14 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { analyzeCommand, loadConfig } from '@/core/analyze';
-import { envTruthy } from '@/core/env';
+import { getCCSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
-import { loadBuiltinCommands } from '@/features/builtin-commands/index';
+import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
 
-export const SafetyNetPlugin: Plugin = async ({ directory }) => {
-  const safetyNetConfig = loadConfig(directory);
-  const strict = envTruthy('SAFETY_NET_STRICT');
-  const paranoidAll = envTruthy('SAFETY_NET_PARANOID');
-  const paranoidRm = paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM');
-  const paranoidInterpreters = paranoidAll || envTruthy('SAFETY_NET_PARANOID_INTERPRETERS');
-  const worktreeMode = envTruthy('SAFETY_NET_WORKTREE');
+const REASON_SAFETY_NET_FAILED_CLOSED =
+  'CC Safety Net failed closed because command analysis failed unexpectedly.';
+
+export const CCSafetyNetPlugin: Plugin = async ({ directory }) => {
+  const modes = getCCSafetyNetEnvModes();
 
   return {
     config: async (opencodeConfig: Record<string, unknown>) => {
@@ -26,19 +24,31 @@ export const SafetyNetPlugin: Plugin = async ({ directory }) => {
     'tool.execute.before': async (input, output) => {
       if (input.tool === 'bash') {
         const command = output.args.command;
-        const result = analyzeCommand(command, {
-          cwd: directory,
-          config: safetyNetConfig,
-          strict,
-          paranoidRm,
-          paranoidInterpreters,
-          worktreeMode,
-        });
+        let result: ReturnType<typeof analyzeCommand>;
+        try {
+          result = analyzeCommand(command, {
+            cwd: directory,
+            config: loadConfig(directory, { repairLocalRulebooks: true }),
+            strict: modes.strict,
+            paranoidRm: modes.paranoidRm,
+            paranoidInterpreters: modes.paranoidInterpreters,
+            worktreeMode: modes.worktreeMode,
+          });
+        } catch {
+          throw new Error(
+            formatBlockedMessage({
+              reason: REASON_SAFETY_NET_FAILED_CLOSED,
+              command,
+              segment: command,
+            }),
+          );
+        }
         if (result) {
           const message = formatBlockedMessage({
             reason: result.reason,
             command,
             segment: result.segment,
+            manualPermissionAdvice: result.manualPermissionAdvice,
           });
 
           throw new Error(message);

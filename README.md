@@ -1,13 +1,15 @@
-# Claude Code Safety Net
+# CC Safety Net
 
-[![CI](https://github.com/kenryu42/claude-code-safety-net/actions/workflows/ci.yml/badge.svg)](https://github.com/kenryu42/claude-code-safety-net/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/github/kenryu42/claude-code-safety-net/branch/main/graph/badge.svg?token=C9QTION6ZF)](https://codecov.io/github/kenryu42/claude-code-safety-net)
-[![Version](https://img.shields.io/github/v/tag/kenryu42/claude-code-safety-net?label=version&color=blue)](https://github.com/kenryu42/claude-code-safety-net)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-D27656)](#claude-code-installation)
-[![OpenCode](https://img.shields.io/badge/OpenCode-black)](#opencode-installation)
-[![Gemini CLI](https://img.shields.io/badge/Gemini%20CLI-678AE3)](#gemini-cli-installation)
-[![Copilot CLI](https://img.shields.io/badge/Copilot%20CLI-4EA5C9)](#github-copilot-cli-installation)
+[![CI](https://github.com/kenryu42/cc-safety-net/actions/workflows/ci.yml/badge.svg)](https://github.com/kenryu42/cc-safety-net/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/github/kenryu42/cc-safety-net/branch/main/graph/badge.svg?token=C9QTION6ZF)](https://codecov.io/github/kenryu42/cc-safety-net)
+[![Version](https://img.shields.io/github/v/tag/kenryu42/cc-safety-net?label=version&color=blue)](https://github.com/kenryu42/cc-safety-net)
 [![Codex](https://img.shields.io/badge/Codex-white)](#codex-installation)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-D27656)](#claude-code-installation)
+[![Copilot CLI](https://img.shields.io/badge/Copilot%20CLI-4EA5C9)](#github-copilot-cli-installation)
+[![Gemini CLI](https://img.shields.io/badge/Gemini%20CLI-678AE3)](#gemini-cli-installation)
+[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-5587FF)](#kimi-cli-installation)
+[![OpenCode](https://img.shields.io/badge/OpenCode-black)](#opencode-installation)
+[![Pi](https://img.shields.io/badge/Pi%20Coding-22262E)](#pi-installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 
 <div align="center">
@@ -16,7 +18,7 @@
 
 </div>
 
-A Claude Code plugin that acts as a safety net, catching destructive git and filesystem commands before they execute.
+A Coding Agent CLI plugin that acts as a safety net, catching destructive git and filesystem commands before they execute.
 
 ## Contents
 
@@ -25,14 +27,14 @@ A Claude Code plugin that acts as a safety net, catching destructive git and fil
 - [What About Sandboxing?](#what-about-sandboxing)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+  - [Codex Installation](#codex-installation)
   - [Claude Code Installation](#claude-code-installation)
-  - [OpenCode Installation](#opencode-installation)
   - [Gemini CLI Installation](#gemini-cli-installation)
   - [GitHub Copilot CLI Installation](#github-copilot-cli-installation)
-  - [Codex Installation](#codex-installation)
+  - [Kimi CLI Installation](#kimi-cli-installation)
+  - [OpenCode Installation](#opencode-installation)
+  - [Pi Installation](#pi-installation)
 - [Status Line Integration](#status-line-integration)
-  - [Setup via Slash Command](#setup-via-slash-command)
-  - [Manual Setup](#manual-setup)
   - [Emoji Mode Indicators](#emoji-mode-indicators)
 - [Diagnostics](#diagnostics)
 - [Explain (Debug Analysis)](#explain-debug-analysis)
@@ -40,12 +42,12 @@ A Claude Code plugin that acts as a safety net, catching destructive git and fil
 - [Commands Allowed](#commands-allowed)
 - [What Happens When Blocked](#what-happens-when-blocked)
 - [Testing the Hook](#testing-the-hook)
-- [Development](#development)
-- [Custom Rules (Experimental)](#custom-rules-experimental)
+- [Breaking Change: Custom Rules Migration](#breaking-change-custom-rules-migration)
+- [Custom Rules](#custom-rules)
   - [Config File Location](#config-file-location)
   - [Rule Schema](#rule-schema)
   - [Matching Behavior](#matching-behavior)
-  - [Examples](#examples)
+  - [Rule Examples](#rule-examples)
   - [Error Handling](#error-handling)
 - [Advanced Features](#advanced-features)
   - [Strict Mode](#strict-mode)
@@ -55,6 +57,7 @@ A Claude Code plugin that acts as a safety net, catching destructive git and fil
   - [Interpreter One-Liner Detection](#interpreter-one-liner-detection)
   - [Secret Redaction](#secret-redaction)
   - [Audit Logging](#audit-logging)
+- [Development](#development)
 - [License](#license)
 
 ## Why This Exists
@@ -69,12 +72,12 @@ Claude Code's `.claude/settings.json` supports [deny rules](https://code.claude.
 
 ### At a Glance
 
-| | Permission Deny Rules | Safety Net |
+| | Permission Deny Rules | CC Safety Net |
 |---|---|---|
 | **Setup** | Manual configuration required | Works out of the box |
 | **Parsing** | Wildcard pattern matching | Semantic command analysis |
 | **Execution order** | Runs second | Runs first (PreToolUse hook) |
-| **Shell wrappers** | Not handled automatically (must match wrapper forms) | Recursively analyzed (5 levels) |
+| **Shell wrappers** | Not handled automatically (must match wrapper forms) | Recursively analyzed (up to 10 levels) |
 | **Interpreter one-liners** | Not handled automatically (must match interpreter forms) | Detected and blocked |
 
 ### Permission Rules Have Known Bypass Vectors
@@ -89,9 +92,9 @@ Even with wildcard matching, Bash permission patterns are intentionally limited 
 | Extra whitespace | `rm  -rf /` (double space) bypasses pattern |
 | Shell wrappers | `sh -c "rm -rf /"` bypasses `Bash(rm:*)` entirely |
 
-### Safety Net Handles What Patterns Can't
+### CC Safety Net Handles What Patterns Can't
 
-| Scenario | Permission Rules | Safety Net |
+| Scenario | Permission Rules | CC Safety Net |
 |----------|------------------|------------|
 | `git checkout -b feature` (safe) | Blocked by `Bash(git checkout:*)` | Allowed |
 | `git checkout -- file` (dangerous) | Blocked by `Bash(git checkout:*)` | Blocked |
@@ -102,17 +105,17 @@ Even with wildcard matching, Bash permission patterns are intentionally limited 
 
 ### Defense in Depth
 
-PreToolUse hooks run [**before**](https://code.claude.com/docs/en/iam#additional-permission-control-with-hooks) the permission system. This means Safety Net inspects every command first, regardless of your permission configuration. Even if you misconfigure deny rules, Safety Net provides a fallback layer of protection.
+PreToolUse hooks run [**before**](https://code.claude.com/docs/en/iam#additional-permission-control-with-hooks) the permission system. This means CC Safety Net inspects every command first, regardless of your permission configuration. Even if you misconfigure deny rules, CC Safety Net provides a fallback layer of protection.
 
-**Use both together**: Permission deny rules for quick, user-configurable blocks; Safety Net for robust, bypass-resistant protection that works out of the box.
+**Use both together**: Permission deny rules for quick, user-configurable blocks; CC Safety Net for robust, bypass-resistant protection that works out of the box.
 
 ## What About Sandboxing?
 
-Claude Code offers [native sandboxing](https://code.claude.com/docs/en/sandboxing) that provides OS-level filesystem and network isolation. Here's how it compares to Safety Net:
+Claude Code offers [native sandboxing](https://code.claude.com/docs/en/sandboxing) that provides OS-level filesystem and network isolation. Here's how it compares to CC Safety Net:
 
 ### Different Layers of Protection
 
-| | Sandboxing | Safety Net |
+| | Sandboxing | CC Safety Net |
 |---|---|---|
 | **Enforcement** | OS-level (Seatbelt/bubblewrap) | Application-level (PreToolUse hook) |
 | **Approach** | Containment — restricts filesystem + network access | Command analysis — blocks destructive operations |
@@ -128,7 +131,7 @@ Sandboxing restricts filesystem + network access, but it doesn't understand whet
 > [!NOTE]
 > Whether they're auto-run or require confirmation depends on your sandbox mode (auto-allow vs regular permissions), and network access still depends on your allowed-domain policy. Claude Code can also retry a command outside the sandbox via `dangerouslyDisableSandbox` (with user permission); this can be disabled with `allowUnsandboxedCommands: false`.
 
-| Command | Sandboxing | Safety Net |
+| Command | Sandboxing | CC Safety Net |
 |---------|------------|------------|
 | `git reset --hard` | Allowed (within cwd) | **Blocked** |
 | `git checkout -- .` | Allowed (within cwd) | **Blocked** |
@@ -145,77 +148,22 @@ Sandboxing is the better choice when your primary concern is:
 - **Prompt injection attacks** — Reduces exfiltration risk by restricting outbound domains (depends on your allowed-domain policy)
 - **Malicious dependencies** — Limits filesystem writes and network access by default (subject to your sandbox configuration)
 - **Untrusted code execution** — OS-level containment is stronger than pattern matching
-- **Network control** — Safety Net has no network protection
+- **Network control** — CC Safety Net has no network protection
 
 ### Recommended: Use Both
 
 They protect against different threats:
 
 - **Sandboxing** contains blast radius — even if something goes wrong, damage is limited to cwd and approved network domains
-- **Safety Net** prevents footguns — catches git-specific mistakes that are technically "safe" from the sandbox's perspective
+- **CC Safety Net** prevents footguns — catches git-specific mistakes that are technically "safe" from the sandbox's perspective
 
-Running both together provides defense-in-depth. Sandboxing handles unknown threats; Safety Net handles known destructive patterns that sandboxing permits.
+Running both together provides defense-in-depth. Sandboxing handles unknown threats; CC Safety Net handles known destructive patterns that sandboxing permits.
 
 ## Prerequisites
 
 - **Node.js**: Version 18 or higher is required to run this plugin
 
 ## Quick Start
-
-### Claude Code Installation
-
-```bash
-/plugin marketplace add kenryu42/cc-marketplace
-/plugin install safety-net@cc-marketplace
-/reload-plugins
-```
-
-### Claude Code Auto-Update
-
-1. Run `/plugin` → Select `Marketplaces` → Choose `cc-marketplace` → Enable auto-update
-
----
-
-### OpenCode Installation
-
-**Option A: Let an LLM do it**
-
-Paste this into any LLM agent (Claude Code, OpenCode, Cursor, etc.):
-
-```
-Install the cc-safety-net plugin in `~/.config/opencode/opencode.json` (or `.jsonc`) according to the schema at: https://opencode.ai/config.json
-```
-
-**Option B: Manual setup**
-
-1. **Add the plugin to your config** `~/.config/opencode/opencode.json` (or `.jsonc`):
-
-  ```json
-  {
-    "plugin": ["cc-safety-net"]
-  }
-  ```
-
----
-
-### Gemini CLI Installation
-
-```bash
-gemini extensions install https://github.com/kenryu42/gemini-safety-net
-```
-
----
-
-### GitHub Copilot CLI Installation
-
-```bash
-/plugin install kenryu42/copilot-safety-net
-```
-
-> [!NOTE]
-> After installing the plugin, you need to restart your Copilot CLI for it to take effect.
-
----
 
 ### Codex Installation
 
@@ -240,9 +188,70 @@ gemini extensions install https://github.com/kenryu42/gemini-safety-net
 
 ---
 
+### Claude Code Installation
+
+```bash
+/plugin marketplace add kenryu42/cc-marketplace
+/plugin install safety-net@cc-marketplace
+/reload-plugins
+```
+
+### Claude Code Auto-Update
+
+1. Run `/plugin` → Select `Marketplaces` → Choose `cc-marketplace` → Enable auto-update
+
+---
+
+### Gemini CLI Installation
+
+```bash
+gemini extensions install https://github.com/kenryu42/gemini-safety-net
+```
+
+---
+
+### GitHub Copilot CLI Installation
+
+```bash
+/plugin install kenryu42/copilot-safety-net
+```
+
+---
+
+### Kimi CLI Installation
+
+Install CC Safety Net into your Kimi CLI config:
+
+```bash
+npx -y cc-safety-net hook install --kimi-cli
+```
+
+---
+
+
+### OpenCode Installation
+
+Install CC Safety Net with OpenCode's native plugin command:
+
+```bash
+opencode plugin -g cc-safety-net
+```
+
+---
+
+### Pi Installation
+
+Install CC Safety Net with Pi's package installer:
+
+```bash
+pi install npm:cc-safety-net
+```
+
+---
+
 ## Status Line Integration
 
-Safety Net can display its status in Claude Code's status line, showing whether protection is active and which modes are enabled.
+CC Safety Net can display its status in Claude Code's status line, showing whether protection is active and which modes are enabled.
 
 Add the following to your `~/.claude/settings.json`:
 
@@ -252,7 +261,7 @@ Add the following to your `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "bunx cc-safety-net --statusline"
+    "command": "bunx cc-safety-net statusline --claude-code"
   }
 }
 ```
@@ -263,7 +272,7 @@ Add the following to your `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "BUN_BE_BUN=1 claude x cc-safety-net --statusline"
+    "command": "BUN_BE_BUN=1 claude x cc-safety-net statusline --claude-code"
   }
 }
 ```
@@ -278,20 +287,20 @@ Add the following to your `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "npx -y cc-safety-net --statusline"
+    "command": "npx -y cc-safety-net statusline --claude-code"
   }
 }
 ```
 
 **Piping with existing status line:**
 
-If you already have a status line command, you can pipe Safety Net at the end:
+If you already have a status line command, you can pipe CC Safety Net at the end:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "your-existing-command | bunx cc-safety-net --statusline"
+    "command": "your-existing-command | bunx cc-safety-net statusline --claude-code"
   }
 }
 ```
@@ -304,16 +313,16 @@ The status line displays different emojis based on the current configuration:
 
 | Status | Display | Meaning |
 |--------|---------|---------|
-| Plugin disabled | `🛡️ Safety Net ❌` | Safety Net plugin is not enabled |
-| Default mode | `🛡️ Safety Net ✅` | Protection active with default settings |
-| Strict mode | `🛡️ Safety Net 🔒` | `SAFETY_NET_STRICT=1` — fail-closed on unparseable commands |
-| Paranoid mode | `🛡️ Safety Net 👁️` | `SAFETY_NET_PARANOID=1` — all paranoid checks enabled |
-| Paranoid RM only | `🛡️ Safety Net 🗑️` | `SAFETY_NET_PARANOID_RM=1` — blocks `rm -rf` even within cwd |
-| Paranoid interpreters only | `🛡️ Safety Net 🐚` | `SAFETY_NET_PARANOID_INTERPRETERS=1` — blocks interpreter one-liners |
-| Worktree mode | `🛡️ Safety Net 🌳` | `SAFETY_NET_WORKTREE=1` — relax local git discards inside linked worktrees |
-| Strict + Paranoid | `🛡️ Safety Net 🔒👁️` | Both strict and paranoid modes enabled |
+| Plugin disabled | `🛡️ CC Safety Net ❌` | CC Safety Net plugin is not enabled |
+| Default mode | `🛡️ CC Safety Net ✅` | Protection active with default settings |
+| Strict mode | `🛡️ CC Safety Net 🔒` | `CC_SAFETY_NET_STRICT=1` — fail-closed on unparseable commands |
+| Paranoid mode | `🛡️ CC Safety Net 👁️` | `CC_SAFETY_NET_PARANOID=1` — all paranoid checks enabled |
+| Paranoid RM only | `🛡️ CC Safety Net 🗑️` | `CC_SAFETY_NET_PARANOID_RM=1` — blocks `rm -rf` even within cwd |
+| Paranoid interpreters only | `🛡️ CC Safety Net 🐚` | `CC_SAFETY_NET_PARANOID_INTERPRETERS=1` — blocks interpreter one-liners |
+| Worktree mode | `🛡️ CC Safety Net 🌳` | `CC_SAFETY_NET_WORKTREE=1` — relax local git discards inside linked worktrees |
+| Strict + Paranoid | `🛡️ CC Safety Net 🔒👁️` | Both strict and paranoid modes enabled |
 
-Multiple mode emojis are combined when multiple environment variables are set.
+Multiple mode emojis are combined when multiple environment variables are set. Mode flags use `CC_SAFETY_NET_*` names; legacy `SAFETY_NET_*` names are still accepted.
 
 ## Diagnostics
 
@@ -332,7 +341,7 @@ The doctor command checks:
 | Hook Integration | Verifies the plugin is properly configured for each supported platform |
 | Self-Test | Runs sample commands to confirm blocking works correctly |
 | Configuration | Validates custom rules in user and project configs |
-| Environment | Shows status of mode flags (SAFETY_NET_STRICT, SAFETY_NET_PARANOID, etc.) |
+| Environment | Shows status of mode flags (`CC_SAFETY_NET_STRICT`, `CC_SAFETY_NET_PARANOID`, etc.; legacy `SAFETY_NET_*` also listed when set) |
 | Recent Activity | Summarizes blocked commands from the last 7 days |
 | System Info | Displays versions of all relevant tools |
 | Update Check | Checks if a newer version is available |
@@ -346,7 +355,7 @@ The doctor command checks:
 
 ## Explain (Debug Analysis)
 
-Trace how Safety Net analyzes a command step-by-step. Useful for debugging why a command is blocked or allowed, or when developing custom rules.
+Trace how CC Safety Net analyzes a command step-by-step. Useful for debugging why a command is blocked or allowed, or when developing custom rules.
 
 ```bash
 npx cc-safety-net explain "git reset --hard"
@@ -378,6 +387,8 @@ npx cc-safety-net explain --cwd /tmp "git status"
 | git checkout \<ref\> \<path\> | May overwrite working tree when Git disambiguates ref vs pathspec |
 | git restore files | Discards uncommitted changes |
 | git restore --worktree | Explicitly discards working tree changes |
+| git switch --discard-changes | Discards uncommitted changes when switching branches |
+| git switch --force / -f | Discards uncommitted changes (force switch) |
 | git reset --hard | Destroys all uncommitted changes |
 | git reset --merge | Can lose uncommitted changes |
 | git clean -f | Removes untracked files permanently |
@@ -386,13 +397,16 @@ npx cc-safety-net explain --cwd /tmp "git status"
 | git stash drop | Permanently deletes stashed changes |
 | git stash clear | Deletes ALL stashed changes |
 | git worktree remove --force | Force-deletes worktree without checking for changes |
-| rm -rf (paths outside cwd) | Recursive file deletion outside the current directory |
+| rm -rf (destructive targets) | Recursive file deletion of root, home, parent, absolute, or non-temp paths outside cwd |
 | rm -rf / or ~ or $HOME | Root/home deletion is extremely dangerous |
 | find ... -delete | Permanently removes files matching criteria |
 | xargs rm -rf | Dynamic input makes targets unpredictable |
 | xargs \<shell\> -c | Can execute arbitrary commands |
 | parallel rm -rf | Dynamic input makes targets unpredictable |
 | parallel \<shell\> -c | Can execute arbitrary commands |
+| dd writing to block devices | Can overwrite disks or partitions |
+| mkfs on block devices | Formats disks or partitions |
+| shred | Permanently destroys file contents |
 
 ## Commands Allowed
 
@@ -409,7 +423,7 @@ npx cc-safety-net explain --cwd /tmp "git status"
 | rm -rf /var/tmp/... | System temp directory |
 | rm -rf $TMPDIR/... | User's temp directory |
 | rm -rf ./... (within cwd) | Limited to current working directory |
-| git restore / checkout -- / reset --hard / clean -f (in linked worktree) | Relaxed only when `SAFETY_NET_WORKTREE=1` and cwd is a linked worktree |
+| git restore / checkout -- / reset --hard / clean -f (in linked worktree) | Relaxed only when `CC_SAFETY_NET_WORKTREE=1` and cwd is a linked worktree |
 
 ## What Happens When Blocked
 
@@ -417,7 +431,7 @@ When a destructive command is detected, the plugin blocks the tool execution and
 
 Example output:
 ```text
-BLOCKED by Safety Net
+BLOCKED by CC Safety Net
 
 Reason: git checkout -- discards uncommitted changes permanently. Use 'git stash' first.
 
@@ -438,29 +452,109 @@ git checkout -- README.md
 git checkout -b test-branch
 ```
 
-## Development
+## Breaking Change: Custom Rules Migration
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
+> [!WARNING]
+> The custom rules system has moved from legacy inline config files to a rulebook-based layout. Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are **no longer loaded at runtime**. If they contain rules, commands now **fail closed** (stay blocked) until you migrate.
 
-## Custom Rules (Experimental)
+### Who Is Affected
+
+- **Affected**: users who previously defined custom rules in `.safety-net.json` (project scope) or `~/.cc-safety-net/config.json` (user scope).
+- **Not affected**: users with no custom rules. All built-in destructive-command protections are unchanged and continue to work out of the box.
+
+### What Breaks
+
+| Legacy file state | New behavior |
+|-------------------|--------------|
+| Empty legacy file | Silently ignored — built-in rules only |
+| Legacy file with rules | Fail closed until migrated with `rule migrate` |
+| Invalid legacy file | Fail closed until fixed and migrated, or removed |
+
+"Fail closed" means commands stay blocked until the legacy rules are migrated to the new layout.
+
+### How to Migrate
+
+```bash
+# Convert legacy inline rules into the new rulebook layout
+npx -y cc-safety-net rule migrate
+
+# Optionally delete verified legacy files after migration
+npx -y cc-safety-net rule migrate --cleanup
+
+# Validate the migrated rules
+npx -y cc-safety-net rule verify
+npx -y cc-safety-net rule test
+```
+
+### Before / After
+
+**Before** — a single inline config with rules embedded:
+
+```text
+.safety-net.json          # project rules (inline)
+~/.cc-safety-net/config.json   # user rules (inline)
+```
+
+**After** — `rule migrate` creates a rulebook-based layout automatically:
+
+```text
+.cc-safety-net/rules/rule.json                    # project rulebook sources + overrides
+.cc-safety-net/rules/project-rules/rulebook.json  # migrated project rules
+~/.cc-safety-net/rules/rule.json                  # user rulebook sources + overrides
+~/.cc-safety-net/rules/user-rules/rulebook.json   # migrated user rules
+```
+
+See [Custom Rules](#custom-rules) for the full authoring guide and [Error Handling](#error-handling) for fail-closed details.
+
+## Custom Rules
 
 Beyond the built-in protections, you can define your own blocking rules to enforce team conventions or project-specific safety policies.
 
 > [!TIP]
-> Use the `set-custom-rules` skill to create custom rules interactively with natural language.
->
+> The best way to create custom rules is to use the `/cc-safety-net` skill to create custom rules interactively with natural language.
+
+### Examples
+
+```
+/cc-safety-net read my package.json and suggest blocking rules
+/cc-safety-net set up rules to block all terraform destroy commands
+/cc-safety-net verify my rules and fix any errors
+```
+
+> [!NOTE]
 > If your agent does not support skills, prompt it with:
-> ```text
-> run npx cc-safety-net --custom-rules-doc and help me set up custom rules
+> ```
+> run npx -y cc-safety-net rule doc and help me set up custom rules
 > ```
 
-### Quick Example
+### Create Rules Manually
 
-Create `.safety-net.json` in your project root:
+Create a starter project rule config and rulebook:
+
+```bash
+npx -y cc-safety-net rule init
+```
+
+This creates `.cc-safety-net/rules/rule.json`:
 
 ```json
 {
   "version": 1,
+  "rules": ["project-rules"],
+  "overrides": {}
+}
+```
+
+Rule definitions live in `.cc-safety-net/rules/project-rules/rulebook.json`:
+
+```json
+{
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "description": "Project-specific CC Safety Net rules.",
+  "author": "project",
+  "allowed_commands": ["git"],
   "rules": [
     {
       "name": "block-git-add-all",
@@ -469,8 +563,27 @@ Create `.safety-net.json` in your project root:
       "block_args": ["-A", "--all", "."],
       "reason": "Use 'git add <specific-files>' instead of blanket add."
     }
+  ],
+  "tests": [
+    {
+      "command": "git add -A",
+      "expect": "blocked",
+      "rule": "block-git-add-all"
+    },
+    {
+      "command": "git add README.md",
+      "expect": "allowed"
+    }
   ]
 }
+```
+
+After editing rulebooks, run:
+
+```bash
+npx -y cc-safety-net rule sync
+npx -y cc-safety-net rule verify
+npx -y cc-safety-net rule test
 ```
 
 Now `git add -A`, `git add --all`, and `git add .` will be blocked with your custom message.
@@ -479,15 +592,19 @@ Now `git add -A`, `git add --all`, and `git add .` will be blocked with your cus
 
 Config files are loaded from two scopes and merged:
 
-1. **User scope**: `~/.cc-safety-net/config.json` (always loaded if exists)
-2. **Project scope**: `.safety-net.json` in the current working directory (loaded if exists)
+1. **User scope**: `~/.cc-safety-net/rules/rule.json` (use `rule init --global`)
+2. **Project scope**: `.cc-safety-net/rules/rule.json` in the current working directory
+
+Local rulebook sources are bare names like `project-rules`. GitHub rulebook sources use `owner/repo#ref/<rulebook-name>` and point to `.cc-safety-net/rules/<rulebook-name>/rulebook.json` in that repository.
+
+Legacy inline config files (`.safety-net.json` and `~/.cc-safety-net/config.json`) are no longer loaded at runtime. Empty legacy files are ignored, but legacy files with rules and invalid legacy files fail closed until migrated or fixed. Convert existing legacy rules with `npx -y cc-safety-net rule migrate`; use `npx -y cc-safety-net rule migrate --cleanup` if you also want to delete verified legacy files after migration. See [Breaking Change: Custom Rules Migration](#breaking-change-custom-rules-migration) for the full upgrade guide.
 
 **Merging behavior**:
-- Rules from both scopes are combined
-- If the same rule name exists in both scopes, **project scope wins**
-- Rule name comparison is case-insensitive (`MyRule` and `myrule` are considered duplicates)
+- Rulebooks from both scopes are combined
+- Duplicate active rulebook names are invalid
+- Project overrides win over user overrides for the same `<rulebook-name>/<rule-name>` key
 
-This allows you to define personal defaults in user scope while letting projects override specific rules.
+This allows you to define personal defaults in user scope while letting projects disable or replace reasons for specific rules.
 
 If no config file is found in either location, only built-in rules apply.
 
@@ -496,17 +613,43 @@ If no config file is found in either location, only built-in rules apply.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `version` | integer | Yes | Schema version (must be `1`) |
-| `rules` | array | No | List of custom blocking rules (defaults to empty) |
+| `rules` | array | No | List of rulebook source strings (defaults to empty) |
+| `overrides` | object | No | Rule overrides keyed by `<rulebook-name>/<rule-name>` |
+
+Override values are either `"off"` to disable a rule or `{ "reason": "..." }` to replace the rule reason.
+
+### Rulebook Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rulebook_version` | integer | Yes | Rulebook schema version (must be `1`) |
+| `name` | string | Yes | Rulebook name; must match the local directory name or GitHub source name |
+| `version` | string | Yes | Rulebook version |
+| `description` | string | No | Human-readable description |
+| `author` | string | No | Rulebook author |
+| `allowed_commands` | array | Yes | Commands this rulebook is allowed to define rules for |
+| `rules` | array | Yes | Custom blocking rules |
+| `tests` | array | Yes | Rulebook fixtures |
 
 ### Rule Schema
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | Yes | Unique identifier (letters, numbers, hyphens, underscores; max 64 chars) |
-| `command` | string | Yes | Base command to match (e.g., `git`, `npm`, `docker`) |
+| `name` | string | Yes | Unique within the rulebook (letters, numbers, hyphens, underscores; max 64 chars) |
+| `command` | string | Yes | Base command to match; must be listed in `allowed_commands` |
 | `subcommand` | string | No | Subcommand to match (e.g., `add`, `install`). If omitted, matches any. |
 | `block_args` | array | Yes | Arguments that trigger the block (at least one required) |
 | `reason` | string | Yes | Message shown when blocked (max 256 chars) |
+
+### Fixture Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `command` | string | Yes | Shell command fixture |
+| `expect` | string | Yes | Either `blocked` or `allowed` |
+| `rule` | string | For blocked fixtures | Rule expected to block the command |
+
+Every rule must have at least one blocked fixture. Add allowed fixtures for close-but-safe commands.
 
 ### Matching Behavior
 
@@ -522,13 +665,28 @@ If no config file is found in either location, only built-in rules apply.
 
 - **Short option expansion**: `-Cfoo` is treated as `-C -f -o -o`, not `-C foo`. Blocking `-f` may false-positive on attached option values.
 
-### Examples
+### Rule Examples
 
 #### Block global npm installs
+
+`.cc-safety-net/rules/rule.json`:
 
 ```json
 {
   "version": 1,
+  "rules": ["project-rules"],
+  "overrides": {}
+}
+```
+
+`.cc-safety-net/rules/project-rules/rulebook.json`:
+
+```json
+{
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "allowed_commands": ["npm"],
   "rules": [
     {
       "name": "block-npm-global",
@@ -536,6 +694,17 @@ If no config file is found in either location, only built-in rules apply.
       "subcommand": "install",
       "block_args": ["-g", "--global"],
       "reason": "Global npm installs can cause version conflicts. Use npx or local install."
+    }
+  ],
+  "tests": [
+    {
+      "command": "npm install -g typescript",
+      "expect": "blocked",
+      "rule": "block-npm-global"
+    },
+    {
+      "command": "npm install typescript",
+      "expect": "allowed"
     }
   ]
 }
@@ -545,7 +714,10 @@ If no config file is found in either location, only built-in rules apply.
 
 ```json
 {
-  "version": 1,
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "allowed_commands": ["docker"],
   "rules": [
     {
       "name": "block-docker-system-prune",
@@ -553,6 +725,17 @@ If no config file is found in either location, only built-in rules apply.
       "subcommand": "system",
       "block_args": ["prune"],
       "reason": "docker system prune removes all unused data. Use targeted cleanup instead."
+    }
+  ],
+  "tests": [
+    {
+      "command": "docker system prune",
+      "expect": "blocked",
+      "rule": "block-docker-system-prune"
+    },
+    {
+      "command": "docker ps",
+      "expect": "allowed"
     }
   ]
 }
@@ -562,7 +745,10 @@ If no config file is found in either location, only built-in rules apply.
 
 ```json
 {
-  "version": 1,
+  "rulebook_version": 1,
+  "name": "project-rules",
+  "version": "1.0.0",
+  "allowed_commands": ["git", "npm"],
   "rules": [
     {
       "name": "block-git-add-all",
@@ -578,33 +764,47 @@ If no config file is found in either location, only built-in rules apply.
       "block_args": ["-g", "--global"],
       "reason": "Use npx or local install instead of global."
     }
+  ],
+  "tests": [
+    {
+      "command": "git add -A",
+      "expect": "blocked",
+      "rule": "block-git-add-all"
+    },
+    {
+      "command": "npm install -g typescript",
+      "expect": "blocked",
+      "rule": "block-npm-global"
+    }
   ]
 }
 ```
 
 ### Error Handling
 
-Custom rules use **silent fallback** error handling. If your config file is invalid, the safety net silently falls back to built-in rules only:
+Rulebook-backed custom rules fail closed when configured rulebooks cannot be loaded safely:
 
 | Scenario | Behavior |
 |----------|----------|
 | Config file not found | Silent — use built-in rules only |
-| Empty config file | Silent — use built-in rules only |
-| Invalid JSON syntax | Silent — use built-in rules only |
-| Missing required field | Silent — use built-in rules only |
-| Invalid field format | Silent — use built-in rules only |
-| Duplicate rule name | Silent — use built-in rules only |
+| Invalid rule config | Fail closed until fixed |
+| Empty legacy config | Silent — use built-in rules only |
+| Legacy config with rules and no migrated rule config | Fail closed until `rule migrate` creates the new rule config |
+| Invalid legacy config | Fail closed until fixed or removed |
+| Missing or stale lock/cache | Fail closed until `rule sync` repairs it |
+| Invalid local rulebook | Fail closed until the rulebook is fixed and synced |
+| Invalid GitHub rulebook | Fail closed until the source is fixed or removed |
 
 
 > [!IMPORTANT]  
-> If you add or modify custom rules manually, always validate them with `npx -y cc-safety-net --verify-config` or the `verify-custom-rules` skill in your coding agent.
+> If you add or modify custom rules manually, always validate them with `npx -y cc-safety-net rule verify` and `npx -y cc-safety-net rule test`.
 
 ### Block Output Format
 
 When a custom rule blocks a command, the output includes the rule name:
 
 ```text
-BLOCKED by Safety Net
+BLOCKED by CC Safety Net
 
 Reason: [block-git-add-all] Use 'git add <specific-files>' instead of blanket add.
 
@@ -613,14 +813,17 @@ Command: git add -A
 
 ## Advanced Features
 
+Mode and debug flags use **`CC_SAFETY_NET_*`** environment variables. Older **`SAFETY_NET_*`** names (without the `CC_` prefix) still work for strict, paranoid, and worktree toggles.
+
 ### Strict Mode
 
-By default, unparseable commands are allowed through. Enable strict mode to fail-closed
-when the hook input or shell command cannot be safely analyzed (e.g., invalid JSON,
-unterminated quotes, malformed `bash -c` wrappers):
+Malformed or missing hook input JSON always fails closed. By default, ambiguous shell
+command parsing is allowed through. Enable strict mode to fail closed when a shell
+command cannot be safely analyzed (e.g., unterminated quotes or malformed `bash -c`
+wrappers):
 
 ```bash
-export SAFETY_NET_STRICT=1
+export CC_SAFETY_NET_STRICT=1
 ```
 
 ### Paranoid Mode
@@ -630,11 +833,11 @@ You can enable it globally or via focused toggles:
 
 ```bash
 # Enable all paranoid checks
-export SAFETY_NET_PARANOID=1
+export CC_SAFETY_NET_PARANOID=1
 
 # Or enable specific paranoid checks
-export SAFETY_NET_PARANOID_RM=1
-export SAFETY_NET_PARANOID_INTERPRETERS=1
+export CC_SAFETY_NET_PARANOID_RM=1
+export CC_SAFETY_NET_PARANOID_INTERPRETERS=1
 ```
 
 Paranoid behavior:
@@ -651,7 +854,7 @@ local-discard rules when (and only when) the command is proven to run inside a
 linked worktree:
 
 ```bash
-export SAFETY_NET_WORKTREE=1
+export CC_SAFETY_NET_WORKTREE=1
 ```
 
 When enabled, these commands are allowed inside a linked worktree:
@@ -692,6 +895,7 @@ The guard recursively analyzes commands wrapped in shells:
 ```bash
 bash -c 'git reset --hard'    # Blocked
 sh -lc 'rm -rf /'             # Blocked
+bash -c 'git stash drop'      # Blocked
 ```
 
 ### Interpreter One-Liner Detection
@@ -700,6 +904,10 @@ Detects destructive commands hidden in Python/Node/Ruby/Perl one-liners:
 
 ```bash
 python -c 'import os; os.system("rm -rf /")'  # Blocked
+python -c 'import os; os.system("git stash drop")'  # Blocked
+python -c 'import os; os.system("dd if=/dev/zero of=/dev/sda")'  # Blocked
+python -c 'import os; os.system("mkfs.ext4 /dev/sda1")'  # Blocked
+python -c 'import os; os.system("shred -u secret.txt")'  # Blocked
 ```
 
 ### Secret Redaction
@@ -715,6 +923,10 @@ All blocked commands are logged to `~/.cc-safety-net/logs/<session_id>.jsonl` fo
 ```
 
 Sensitive data in log entries is automatically redacted.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
 
 ## License
 

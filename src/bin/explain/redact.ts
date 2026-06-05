@@ -24,7 +24,9 @@ export function redactEnvVars(envMap: Map<string, string>): Record<string, '<red
  * Prevents leaking secrets in shell wrapper and interpreter trace output.
  */
 export function redactEnvAssignmentsInString(str: string): string {
-  return str.replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, '$1=<redacted>');
+  return str
+    .replace(/\b([A-Za-z_][A-Za-z0-9_]*)=\$\([^)]*\)/g, '$1=<redacted>')
+    .replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, '$1=<redacted>');
 }
 
 /**

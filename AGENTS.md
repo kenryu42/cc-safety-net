@@ -1,6 +1,7 @@
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 - ALWAYS use `bun run check` to verify changes. This runs typecheck, knip, biome lint, and tests together. Do not run these separately.
+- Ignore the dist folder, it will get auto rebuilt by husky's precommit hook.
 
 ## Style Guide
 
@@ -11,7 +12,6 @@
 - Avoid using the `any` type
 - Rely on type inference when possible; avoid explicit type annotations or interfaces unless necessary for exports or clarity
 - Prefer functional array methods (flatMap, filter, map) over for loops; use type guards on filter to maintain type inference downstream
-- In `src/config`, follow the existing self-export pattern at the top of the file (for example `export * as ConfigAgent from "./agent"`) when adding a new config module.
 
 Reduce total variable count by inlining when a value is only used once.
 

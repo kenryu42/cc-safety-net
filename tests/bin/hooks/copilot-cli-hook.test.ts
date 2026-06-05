@@ -3,15 +3,18 @@ import {
   copilotBashInput,
   copilotRawToolArgsInput,
   expectNoHookOutput,
+  getHookDenyReason,
   runCopilotHook,
 } from './hook-helpers';
 
 async function expectStrictDeny(input: object | string, reason: string) {
-  const { stdout, exitCode } = await runCopilotHook(input, { SAFETY_NET_STRICT: '1' });
-  expect(exitCode).toBe(0);
-  const output = JSON.parse(stdout);
-  expect(output.permissionDecision).toBe('deny');
-  expect(output.permissionDecisionReason).toContain(reason);
+  const result = await runCopilotHook(input, { SAFETY_NET_STRICT: '1' });
+  expect(getHookDenyReason(result, 'copilot-cli')).toContain(reason);
+}
+
+async function expectDeny(input: object | string, reason: string) {
+  const result = await runCopilotHook(input);
+  expect(getHookDenyReason(result, 'copilot-cli')).toContain(reason);
 }
 
 describe('Copilot CLI hook', () => {
@@ -46,35 +49,32 @@ describe('Copilot CLI hook', () => {
   });
 
   describe('empty stdin', () => {
-    test('empty input produces no output', async () => {
-      await expectNoHookOutput(runCopilotHook, '');
+    test('empty input produces deny output', async () => {
+      await expectDeny('', 'Missing hook input JSON.');
     });
 
-    test('whitespace-only input produces no output', async () => {
-      await expectNoHookOutput(runCopilotHook, '   \n\t  ');
+    test('whitespace-only input produces deny output', async () => {
+      await expectDeny('   \n\t  ', 'Missing hook input JSON.');
     });
   });
 
   describe('invalid outer JSON', () => {
     test('strict mode blocks invalid outer JSON', async () => {
-      await expectStrictDeny('{invalid json', 'Failed to parse hook input JSON (strict mode)');
+      await expectStrictDeny('{invalid json', 'Failed to parse hook input JSON.');
     });
 
-    test('non-strict mode silently ignores invalid outer JSON', async () => {
-      await expectNoHookOutput(runCopilotHook, '{invalid json');
+    test('non-strict mode blocks invalid outer JSON', async () => {
+      await expectDeny('{invalid json', 'Failed to parse hook input JSON.');
     });
   });
 
   describe('invalid toolArgs', () => {
     test('strict mode blocks invalid toolArgs JSON', async () => {
-      await expectStrictDeny(
-        copilotRawToolArgsInput('{invalid'),
-        'Failed to parse toolArgs JSON (strict mode)',
-      );
+      await expectStrictDeny(copilotRawToolArgsInput('{invalid'), 'Failed to parse toolArgs JSON.');
     });
 
-    test('non-strict mode silently ignores invalid toolArgs JSON', async () => {
-      await expectNoHookOutput(runCopilotHook, copilotRawToolArgsInput('{invalid'));
+    test('non-strict mode blocks invalid toolArgs JSON', async () => {
+      await expectDeny(copilotRawToolArgsInput('{invalid'), 'Failed to parse toolArgs JSON.');
     });
   });
 

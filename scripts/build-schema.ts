@@ -48,8 +48,8 @@ async function main(): Promise<void> {
 
   const finalSchema = {
     $schema: 'http://json-schema.org/draft-07/schema#',
-    $id: 'https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json',
-    title: 'Safety Net Configuration',
+    $id: 'https://raw.githubusercontent.com/kenryu42/cc-safety-net/main/assets/cc-safety-net.schema.json',
+    title: 'CC Safety Net Configuration',
     description: 'Configuration file for cc-safety-net plugin custom rules',
     ...jsonSchema,
   };

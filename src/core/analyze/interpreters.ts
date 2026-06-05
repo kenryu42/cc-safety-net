@@ -8,6 +8,14 @@ export function extractInterpreterCodeArg(tokens: readonly string[]): string | n
     if ((token === '-c' || token === '-e') && tokens[i + 1]) {
       return tokens[i + 1] ?? null;
     }
+    if (
+      token.startsWith('-') &&
+      !token.startsWith('--') &&
+      (token.includes('c') || token.includes('e')) &&
+      tokens[i + 1]
+    ) {
+      return tokens[i + 1] ?? null;
+    }
   }
   return null;
 }

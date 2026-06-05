@@ -181,6 +181,20 @@ export function formatTraceHuman(result: ExplainResult, options?: { asciiOnly?: 
   lines.push('RESULT');
   if (result.result === 'blocked') {
     lines.push(`  Status: ${colors.red('BLOCKED')}`);
+    if (result.customRule) {
+      lines.push(`  Rule: ${result.customRule.id}`);
+      if (result.customRule.rulebook) {
+        lines.push(
+          `  Rulebook: ${result.customRule.rulebook.name} ${result.customRule.rulebook.version}`,
+        );
+      }
+      if (result.customRule.source) {
+        lines.push(`  Source: ${result.customRule.source}`);
+      }
+      if (result.customRule.override) {
+        lines.push(`  Override: reason ${result.customRule.override.reason}`);
+      }
+    }
     if (result.reason) {
       const reasonLines = wrapReason(result.reason, '          ');
       lines.push(`  Reason: ${reasonLines[0]}`);

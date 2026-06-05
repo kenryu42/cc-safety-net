@@ -12,5 +12,4 @@ interface XargsParseResult {
     replacementToken: string | null;
 }
 export declare function extractXargsChildCommandWithInfo(tokens: readonly string[]): XargsParseResult;
-export declare function extractXargsChildCommand(tokens: readonly string[]): string[];
 export {};

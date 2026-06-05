@@ -18,7 +18,7 @@ Include as much detail as you can safely share:
 - Your operating system and runtime version
 - The affected integration, such as Claude Code, OpenCode, Gemini CLI, GitHub Copilot CLI, or Codex
 - Steps to reproduce the issue
-- The command or input that bypasses, weakens, or abuses Safety Net
+- The command or input that bypasses, weakens, or abuses CC Safety Net
 - Any relevant output from `cc-safety-net explain` or `cc-safety-net doctor`
 - Whether the issue can cause data loss, command execution, secret exposure, or another concrete security impact
 
@@ -28,7 +28,7 @@ Please redact tokens, credentials, private repository names, and sensitive file 
 
 Examples of security issues include:
 
-- A bypass that allows a clearly destructive command to execute when Safety Net should block it
+- A bypass that allows a clearly destructive command to execute when CC Safety Net should block it
 - A parsing or wrapper-analysis flaw that makes documented protections ineffective
 - Leakage of secrets through block messages, audit logs, diagnostics, or debug output
 - A path traversal or filesystem issue in audit logging or configuration handling

@@ -2,7 +2,7 @@
  * Shared types for the safety-net plugin.
  */
 
-/** Custom rule definition from .safety-net.json */
+/** Custom blocking rule definition. */
 export interface CustomRule {
   /** Unique identifier for the rule */
   name: string;
@@ -16,12 +16,14 @@ export interface CustomRule {
   reason: string;
 }
 
-/** Configuration loaded from .safety-net.json */
+/** Runtime configuration used by command analysis. */
 export interface Config {
   /** Schema version (must be 1) */
   version: number;
   /** Custom blocking rules */
   rules: CustomRule[];
+  /** Fail-closed reason when rule-backed config cannot be loaded safely. */
+  failClosedReason?: string;
 }
 
 /** Result of config validation */
@@ -38,6 +40,8 @@ export interface AnalyzeResult {
   reason: string;
   /** The specific segment that triggered the block */
   segment: string;
+  /** Whether the caller should ask for manual permission instead of auto-denying. */
+  manualPermissionAdvice?: boolean;
 }
 
 /** Claude Code hook input format */
@@ -88,6 +92,19 @@ export interface GeminiHookOutput {
   suppressOutput?: boolean;
 }
 
+/** Kimi CLI hook input format */
+export interface KimiCliHookInput {
+  session_id?: string;
+  cwd?: string;
+  hook_event_name: string;
+  tool_name?: string;
+  tool_input?: {
+    command?: string;
+    [key: string]: unknown;
+  };
+  tool_call_id?: string;
+}
+
 /** GitHub Copilot CLI preToolUse hook input format */
 export interface CopilotCliHookInput {
   timestamp: number;
@@ -133,6 +150,7 @@ export interface AnalyzeNestedOverrides {
 /** Audit log entry */
 export interface AuditLogEntry {
   ts: string;
+  decision?: 'allow' | 'deny';
   command: string;
   segment: string;
   reason: string;
@@ -156,15 +174,19 @@ export const SHELL_WRAPPERS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'fish
 /** Interpreters that can execute code */
 export const INTERPRETERS = new Set(['python', 'python3', 'python2', 'node', 'ruby', 'perl']);
 
+const RM_RECURSIVE_FORCE_PATTERN =
+  /\brm[^\S\n]+(?=(?:(?!--(?=[^\S\n]|[;&|]|$))[^\s;&|]+[^\S\n]+)*(?:-(?!-)[^\s;&|]*[rR][^\s;&|]*|--recursive)(?=[^\S\n]|[;&|]|$))(?=(?:(?!--(?=[^\S\n]|[;&|]|$))[^\s;&|]+[^\S\n]+)*(?:-(?!-)[^\s;&|]*[fF][^\s;&|]*|--force)(?=[^\S\n]|[;&|]|$))[^\n;&|]*/;
+
 /** Dangerous commands to detect in interpreter code */
 export const DANGEROUS_PATTERNS = [
-  /\brm\s+.*-[rR].*-f\b/,
-  /\brm\s+.*-f.*-[rR]\b/,
-  /\brm\s+-rf\b/,
-  /\brm\s+-fr\b/,
+  RM_RECURSIVE_FORCE_PATTERN,
   /\bgit\s+reset\s+--hard\b/,
   /\bgit\s+checkout\s+--\b/,
   /\bgit\s+clean\s+-f\b/,
+  /\bgit\s+stash\s+(drop|clear)\b/,
+  /\bdd\b[^\n;&|]*\bof=\/dev\/[^\s'"]+/,
+  /\bmkfs(?:\.[A-Za-z0-9_-]+)?\s+\/dev\/[^\s'"]+/,
+  /\bshred\b\s+/,
   /\bfind\b.*\s-delete\b/,
 ];
 
@@ -217,6 +239,7 @@ export interface ExplainTrace {
 export interface ExplainOptions {
   json?: boolean;
   cwd?: string;
+  userConfigDir?: string;
   asciiOnly?: boolean;
   strict?: boolean;
   config?: Config;
@@ -228,6 +251,18 @@ export interface ExplainResult {
   result: 'blocked' | 'allowed';
   reason?: string;
   segment?: string;
+  customRule?: {
+    id: string;
+    rulebook?: {
+      name: string;
+      version: string;
+    };
+    source?: string;
+    override?: {
+      type: 'reason';
+      reason: string;
+    };
+  };
   configSource: string | null;
   configValid: boolean;
 }

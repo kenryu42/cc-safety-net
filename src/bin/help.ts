@@ -1,3 +1,4 @@
+import { ENV_FLAGS } from '@/core/env';
 import type { Command } from './commands';
 import { findCommand, getVisibleCommands } from './commands';
 
@@ -24,11 +25,26 @@ function getOptionsColumnWidth(options: readonly { flags: string; argument?: str
 }
 
 /**
+ * Calculate the maximum width of subcommand usage for alignment.
+ */
+function getSubcommandsColumnWidth(subcommands: readonly { usage: string }[]): number {
+  return Math.max(...subcommands.map((subcommand) => subcommand.usage.length));
+}
+
+function getCommandSummaryWidth(commands: readonly Command[]): number {
+  return Math.max(...commands.map((cmd) => `${PROGRAM_NAME} ${cmd.usage}`.length));
+}
+
+/**
  * Format a single command for the main help listing.
  */
 function formatCommandSummary(cmd: Command, maxUsageWidth: number): string {
   const usage = `${PROGRAM_NAME} ${cmd.usage}`;
-  return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 3)}${cmd.description}`;
+  return `${INDENT}${usage.padEnd(maxUsageWidth + 2)}${cmd.description}`;
+}
+
+function formatEnvironmentVariable(name: string, description: string): string {
+  return `${INDENT}${name.padEnd(40)}${description}`;
 }
 
 /**
@@ -48,6 +64,18 @@ export function printCommandHelp(command: Command): void {
   lines.push('USAGE:');
   lines.push(`${INDENT}${PROGRAM_NAME} ${command.usage}`);
   lines.push('');
+
+  // Subcommands
+  if (command.subcommands && command.subcommands.length > 0) {
+    lines.push('SUBCOMMANDS:');
+    const subcommandWidth = getSubcommandsColumnWidth(command.subcommands);
+    for (const subcommand of command.subcommands) {
+      lines.push(
+        `${INDENT}${subcommand.usage.padEnd(subcommandWidth + 2)}${subcommand.description}`,
+      );
+    }
+    lines.push('');
+  }
 
   // Options
   if (command.options.length > 0) {
@@ -78,7 +106,7 @@ export function printHelp(): void {
   const visibleCommands = getVisibleCommands();
 
   // Calculate max usage width for alignment
-  const maxUsageWidth = Math.max(...visibleCommands.map((cmd) => cmd.usage.length));
+  const maxUsageWidth = getCommandSummaryWidth(visibleCommands);
 
   const lines: string[] = [];
 
@@ -109,19 +137,36 @@ export function printHelp(): void {
 
   // Environment variables
   lines.push('ENVIRONMENT VARIABLES:');
-  lines.push(`${INDENT}SAFETY_NET_STRICT=1               Fail-closed on unparseable commands`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID=1             Enable all paranoid checks`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID_RM=1          Block non-temp rm -rf within cwd`);
-  lines.push(`${INDENT}SAFETY_NET_PARANOID_INTERPRETERS=1  Block interpreter one-liners`);
   lines.push(
-    `${INDENT}SAFETY_NET_WORKTREE=1             Allow local git discards in linked worktrees`,
+    formatEnvironmentVariable(`${ENV_FLAGS.strict.name}=1`, 'Fail-closed on unparseable commands'),
   );
-  lines.push('');
-
-  // Config files
-  lines.push('CONFIG FILES:');
-  lines.push(`${INDENT}~/.cc-safety-net/config.json      User-scope config`);
-  lines.push(`${INDENT}.safety-net.json                  Project-scope config`);
+  lines.push(
+    formatEnvironmentVariable(`${ENV_FLAGS.paranoid.name}=1`, 'Enable all paranoid checks'),
+  );
+  lines.push(
+    formatEnvironmentVariable(`${ENV_FLAGS.paranoidRm.name}=1`, 'Block non-temp rm -rf within cwd'),
+  );
+  lines.push(
+    formatEnvironmentVariable(
+      `${ENV_FLAGS.paranoidInterpreters.name}=1`,
+      'Block interpreter one-liners',
+    ),
+  );
+  lines.push(
+    formatEnvironmentVariable(
+      `${ENV_FLAGS.worktree.name}=1`,
+      'Allow local git discards in linked worktrees',
+    ),
+  );
+  lines.push(
+    formatEnvironmentVariable(
+      `${ENV_FLAGS.debug.name}=1`,
+      'Log allowed hook commands for debugging',
+    ),
+  );
+  lines.push(
+    formatEnvironmentVariable('CC_SAFETY_NET_HOME', 'Override rule config home directory'),
+  );
 
   console.log(lines.join('\n'));
 }
@@ -140,6 +185,9 @@ export function printVersion(): void {
 export function showCommandHelp(commandName: string): boolean {
   const command = findCommand(commandName);
   if (!command) {
+    return false;
+  }
+  if (command.hidden || command.name.toLowerCase() !== commandName.toLowerCase()) {
     return false;
   }
   printCommandHelp(command);

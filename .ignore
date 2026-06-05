@@ -1,4 +1,3 @@
-!plan-*.md
-!*-plan-*.md
 !coverage.json
 !.safety-net.json
+!codex-security-scans

@@ -29,8 +29,13 @@ export function getActivitySummary(
   }
 
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const entries: AuditLogEntry[] = [];
+  const recentEntries: AuditLogEntry[] = [];
+  let totalBlocked = 0;
   let sessionCount = 0;
+  let oldestEntry: string | undefined;
+  let oldestEntryTs: number | undefined;
+  let newestEntry: string | undefined;
+  let newestEntryTs: number | undefined;
 
   let files: string[];
   try {
@@ -48,10 +53,22 @@ export function getActivitySummary(
       for (const line of lines) {
         try {
           const entry = JSON.parse(line) as AuditLogEntry;
+          if (entry.decision === 'allow') {
+            continue;
+          }
           const ts = new Date(entry.ts).getTime();
           if (ts >= cutoff) {
-            entries.push(entry);
+            totalBlocked++;
             hasRecentEntry = true;
+            if (oldestEntryTs === undefined || ts <= oldestEntryTs) {
+              oldestEntry = entry.ts;
+              oldestEntryTs = ts;
+            }
+            if (newestEntryTs === undefined || ts > newestEntryTs) {
+              newestEntry = entry.ts;
+              newestEntryTs = ts;
+            }
+            insertRecentEntry(recentEntries, entry, ts);
           }
         } catch {
           // Skip malformed lines
@@ -66,11 +83,7 @@ export function getActivitySummary(
     }
   }
 
-  // Sort by timestamp descending
-  entries.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-
-  // Take latest 3 for display
-  const recentEntries = entries.slice(0, 3).map((e) => ({
+  const displayEntries = recentEntries.map((e) => ({
     timestamp: e.ts,
     command: e.command,
     reason: e.reason,
@@ -78,10 +91,25 @@ export function getActivitySummary(
   }));
 
   return {
-    totalBlocked: entries.length,
+    totalBlocked,
     sessionCount,
-    recentEntries,
-    oldestEntry: entries.at(-1)?.ts,
-    newestEntry: entries.at(0)?.ts,
+    recentEntries: displayEntries,
+    oldestEntry,
+    newestEntry,
   };
+}
+
+function insertRecentEntry(entries: AuditLogEntry[], entry: AuditLogEntry, ts: number): void {
+  const index = entries.findIndex((existing) => ts > new Date(existing.ts).getTime());
+  if (index === -1) {
+    if (entries.length < 3) {
+      entries.push(entry);
+    }
+    return;
+  }
+
+  entries.splice(index, 0, entry);
+  if (entries.length > 3) {
+    entries.pop();
+  }
 }

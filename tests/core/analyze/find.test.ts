@@ -6,8 +6,18 @@ describe('find -delete tests', () => {
     assertBlocked('find . -name "*.pyc" -delete', 'find -delete');
   });
 
+  test('find empty delete blocked', () => {
+    assertBlocked('find . -empty -delete', 'find -delete');
+  });
+
   test('find name argument delete allowed', () => {
     assertAllowed('find . -name -delete -print');
+  });
+
+  test('find numeric and file reference predicate arguments named delete allowed', () => {
+    assertAllowed('find . -gid -delete -print');
+    assertAllowed('find . -inum -delete -print');
+    assertAllowed('find . -samefile -delete -print');
   });
 
   test('find exec echo delete allowed', () => {
@@ -45,6 +55,10 @@ describe('find -delete tests', () => {
 describe('find -exec rm tests', () => {
   test('find exec rm rf blocked', () => {
     assertBlocked('find . -exec rm -rf {} \\;', 'rm -rf');
+  });
+
+  test('find root exec rm rf placeholder blocked with cwd', () => {
+    assertBlocked('find / -exec rm -rf {} +', 'rm -rf', '/tmp');
   });
 
   test('find execdir rm rf blocked', () => {
@@ -87,6 +101,10 @@ describe('find -exec rm tests', () => {
     assertBlocked('find . -exec env rm -rf {} ;', 'rm -rf');
   });
 
+  test('find exec env rm rf plus terminator blocked', () => {
+    assertBlocked('find / -exec env rm -rf {} +', 'rm -rf', '/tmp');
+  });
+
   test('find exec sudo rm rf blocked', () => {
     assertBlocked('find . -exec sudo rm -rf {} ;', 'rm -rf');
   });
@@ -99,7 +117,19 @@ describe('find -exec rm tests', () => {
     assertBlocked('find . -exec busybox rm -rf {} ;', 'rm -rf');
   });
 
+  test('find exec git reset hard blocked', () => {
+    assertBlocked('find . -exec git reset --hard ;', 'git reset --hard');
+  });
+
+  test('find exec shell git reset hard blocked', () => {
+    assertBlocked("find . -exec sh -c 'git reset --hard' ;", 'git reset --hard');
+  });
+
   test('find execdir env rm rf blocked', () => {
     assertBlocked('find /tmp -execdir env rm -rf {} +', 'rm -rf');
+  });
+
+  test('find execdir rm rf relative target blocked even when parent cwd is known', () => {
+    assertBlocked('find . -execdir rm -rf build +', 'rm -rf', '/tmp');
   });
 });

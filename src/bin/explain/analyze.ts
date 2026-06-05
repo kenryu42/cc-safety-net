@@ -9,20 +9,24 @@ import {
   isUnparseableCommand,
   REASON_STRICT_UNPARSEABLE,
 } from '@/bin/explain/segment';
+import { dangerousInText } from '@/core/analyze/dangerous-text';
+import { segmentChangesCwd } from '@/core/analyze/segment';
 import {
   applyShellGitContextEnvSegment,
   createShellGitContextEnvState,
   getSegmentGitContextEnvAssignments,
-} from '@/core/analyze/analyze-command';
-import { dangerousInText } from '@/core/analyze/dangerous-text';
-import { segmentChangesCwd } from '@/core/analyze/segment';
+} from '@/core/analyze/shell-git-env';
+import { loadRulesPolicy } from '@/core/rules/policy';
 import { splitShellCommands } from '@/core/shell';
 import type { ExplainOptions, ExplainResult, ExplainTrace, TraceStep } from '@/types';
 
 export function explainCommand(command: string, options?: ExplainOptions): ExplainResult {
   const trace: ExplainTrace = { steps: [], segments: [] };
   const analyzeOpts = buildAnalyzeOptions(options);
-  const { configSource, configValid } = getConfigSource({ cwd: options?.cwd });
+  const { configSource, configValid } = getConfigSource({
+    cwd: options?.cwd,
+    userConfigDir: options?.userConfigDir,
+  });
 
   if (!command || !command.trim()) {
     trace.steps.push({ type: 'error', message: 'No command provided' });
@@ -35,13 +39,10 @@ export function explainCommand(command: string, options?: ExplainOptions): Expla
   }
 
   const segments = splitShellCommands(command);
-  // Redact env assignments in parse trace to prevent leaking secrets in JSON output
-  // Handle both quoted values (single/double) and unquoted values
-  const redactedInput = command.replace(
-    /\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g,
-    '$1=<redacted>',
+  const redactedInput = redactEnvAssignmentsInString(command);
+  const redactedSegments = splitShellCommands(redactedInput).map((seg) =>
+    redactEnvAssignmentTokens(seg),
   );
-  const redactedSegments = segments.map((seg) => redactEnvAssignmentTokens(seg));
   trace.steps.push({
     type: 'parse',
     input: redactedInput,
@@ -155,7 +156,43 @@ export function explainCommand(command: string, options?: ExplainOptions): Expla
     result: blocked ? 'blocked' : 'allowed',
     reason: blockReason,
     segment: blockSegment,
+    customRule: getCustomRuleMetadata(blockReason, options, analyzeOpts.cwd ?? process.cwd()),
     configSource,
     configValid,
+  };
+}
+
+function getCustomRuleMetadata(
+  reason: string | undefined,
+  options: ExplainOptions | undefined,
+  cwd: string,
+): ExplainResult['customRule'] {
+  const id = reason?.match(/^\[([^\]]+)]/)?.[1];
+  if (!id) return undefined;
+
+  if (options?.config) {
+    return options.config.rules.some((rule) => rule.name === id) ? { id } : undefined;
+  }
+
+  const policy = loadRulesPolicy({ cwd, userConfigDir: options?.userConfigDir });
+  if (!policy.rules.some((rule) => rule.name === id)) return undefined;
+
+  const rulebook = policy.rulebooks.find((item) => item.rules.includes(id));
+  const override = {
+    ...(policy.userConfig?.overrides ?? {}),
+    ...(policy.projectConfig?.overrides ?? {}),
+  }[id];
+
+  return {
+    id,
+    ...(rulebook
+      ? {
+          rulebook: { name: rulebook.name, version: rulebook.version },
+          source: rulebook.spec,
+        }
+      : {}),
+    ...(override && typeof override === 'object'
+      ? { override: { type: 'reason' as const, reason: override.reason } }
+      : {}),
   };
 }

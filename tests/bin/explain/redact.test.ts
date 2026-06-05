@@ -2,8 +2,17 @@
  * Tests for the explain command secret redaction.
  */
 import { describe, expect, test } from 'bun:test';
-import { explainCommand, formatTraceHuman, formatTraceJson } from '@/bin/explain/index';
+import {
+  explainCommand as explainCommandBase,
+  formatTraceHuman,
+  formatTraceJson,
+} from '@/bin/explain/index';
+import type { ExplainOptions } from '@/types';
 import { getTraceSteps } from '../../helpers.ts';
+
+function explainCommand(command: string, options?: ExplainOptions) {
+  return explainCommandBase(command, { config: { version: 1, rules: [] }, ...options });
+}
 
 function expectLeadingTokenRedacted(command: string, secret: string, redacted: string): void {
   const result = explainCommand(command);
@@ -135,5 +144,24 @@ describe('secret redaction in shell wrappers and interpreters', () => {
     expect(
       wrapperStep?.type === 'shell-wrapper' && wrapperStep.innerCommand.includes('secret value'),
     ).toBe(false);
+  });
+
+  test('shell-wrapper step redacts command substitution env assignment contents', () => {
+    const result = explainCommand('bash -c "TOKEN=$(cat /etc/passwd) git status"');
+    const allSteps = getTraceSteps(result);
+    const wrapperStep = allSteps.find((s) => s.type === 'shell-wrapper');
+    expect(wrapperStep?.type === 'shell-wrapper' && wrapperStep.innerCommand).toBe(
+      'TOKEN=<redacted> git status',
+    );
+    expect(
+      wrapperStep?.type === 'shell-wrapper' && wrapperStep.innerCommand.includes('/etc/passwd'),
+    ).toBe(false);
+  });
+
+  test('human output does not leak command substitution env assignment contents', () => {
+    const result = explainCommand('bash -c "TOKEN=$(printf secret value) git status"');
+    const output = formatTraceHuman(result);
+    expect(output).not.toContain('secret value');
+    expect(output).toContain('TOKEN=<redacted>');
   });
 });

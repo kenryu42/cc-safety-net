@@ -65,6 +65,59 @@ describe('getActivitySummary', () => {
     }
   });
 
+  test('ignores allowed debug entries', () => {
+    const logsDir = createLogsDir();
+    const deniedEntry = {
+      ts: new Date().toISOString(),
+      decision: 'deny',
+      command: 'rm -rf /',
+      segment: 'rm -rf /',
+      reason: 'blocked',
+      cwd: '/tmp',
+    };
+    const allowedEntry = {
+      ts: new Date().toISOString(),
+      decision: 'allow',
+      command: 'git status',
+      segment: 'git status',
+      reason: 'allowed',
+      cwd: '/tmp',
+    };
+
+    try {
+      writeFileSync(
+        join(logsDir, 'session.jsonl'),
+        `${JSON.stringify(deniedEntry)}\n${JSON.stringify(allowedEntry)}\n`,
+      );
+
+      const activity = getActivitySummary(7, logsDir);
+      expect(activity.totalBlocked).toBe(1);
+      expect(activity.recentEntries.map((entry) => entry.command)).toEqual(['rm -rf /']);
+    } finally {
+      rmSync(logsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('treats legacy entries without decision as blocked', () => {
+    const logsDir = createLogsDir();
+    const entry = {
+      ts: new Date().toISOString(),
+      command: 'git reset --hard',
+      segment: 'git reset --hard',
+      reason: 'blocked',
+      cwd: '/tmp',
+    };
+
+    try {
+      writeFileSync(join(logsDir, 'session.jsonl'), JSON.stringify(entry));
+
+      const activity = getActivitySummary(7, logsDir);
+      expect(activity.totalBlocked).toBe(1);
+    } finally {
+      rmSync(logsDir, { recursive: true, force: true });
+    }
+  });
+
   test('filters entries older than specified days', () => {
     const logsDir = createLogsDir();
 
@@ -121,6 +174,36 @@ describe('getActivitySummary', () => {
       expect(activity.recentEntries[0]?.command).toBe('command 0');
       expect(activity.recentEntries[1]?.command).toBe('command 1');
       expect(activity.recentEntries[2]?.command).toBe('command 2');
+      expect(activity.newestEntry).toBe(entries[0]?.ts);
+      expect(activity.oldestEntry).toBe(entries[4]?.ts);
+    } finally {
+      rmSync(logsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps encounter order for entries with equal timestamps', () => {
+    const logsDir = join(tmpdir(), `doctor-logs-${Date.now()}`);
+    mkdirSync(logsDir, { recursive: true });
+
+    const ts = new Date().toISOString();
+    const entries = ['first', 'second', 'third', 'fourth'].map((command) => ({
+      ts,
+      command,
+      reason: 'Blocked',
+    }));
+
+    writeFileSync(join(logsDir, 'session.jsonl'), entries.map((e) => JSON.stringify(e)).join('\n'));
+
+    try {
+      const activity = getActivitySummary(7, logsDir);
+
+      expect(activity.recentEntries.map((entry) => entry.command)).toEqual([
+        'first',
+        'second',
+        'third',
+      ]);
+      expect(activity.oldestEntry).toBe(ts);
+      expect(activity.newestEntry).toBe(ts);
     } finally {
       rmSync(logsDir, { recursive: true, force: true });
     }

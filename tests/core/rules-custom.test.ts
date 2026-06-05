@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { checkCustomRules } from '@/core/rules-custom';
+import { checkCustomRules } from '@/core/rules/custom';
 import type { CustomRule } from '@/types';
 
 const blockGitAddAllRule: CustomRule = {

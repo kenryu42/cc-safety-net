@@ -6,6 +6,7 @@ export interface FormatBlockedMessageInput {
   segment?: string;
   maxLen?: number;
   redact?: RedactFn;
+  manualPermissionAdvice?: boolean;
 }
 
 export function formatBlockedMessage(input: FormatBlockedMessageInput): string {
@@ -13,7 +14,7 @@ export function formatBlockedMessage(input: FormatBlockedMessageInput): string {
   const maxLen = input.maxLen ?? 200;
   const redact = input.redact ?? ((t: string) => t);
 
-  let message = `BLOCKED by Safety Net\n\nReason: ${reason}`;
+  let message = `BLOCKED by CC Safety Net\n\nReason: ${reason}`;
 
   if (command) {
     const safeCommand = redact(command);
@@ -25,8 +26,10 @@ export function formatBlockedMessage(input: FormatBlockedMessageInput): string {
     message += `\n\nSegment: ${excerpt(safeSegment, maxLen)}`;
   }
 
-  message +=
-    '\n\nIf this operation is truly needed, ask the user for explicit permission and have them run the command manually.';
+  if (input.manualPermissionAdvice !== false) {
+    message +=
+      '\n\nIf this operation is truly needed, ask the user for explicit permission and have them run the command manually.';
+  }
 
   return message;
 }

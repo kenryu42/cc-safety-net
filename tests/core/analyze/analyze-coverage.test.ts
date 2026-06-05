@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
 import { analyzeCommand } from '@/core/analyze';
+import { analyzeAwkSystemCalls, REASON_AWK_SYSTEM_DYNAMIC } from '@/core/analyze/awk';
+import { analyzeChildCommand } from '@/core/analyze/child-analyzer';
+import { analyzeFind } from '@/core/analyze/find';
 import type { Config } from '@/types';
 import {
   createLinkedWorktreeFixture,
@@ -118,6 +121,61 @@ describe('analyzeCommand (coverage)', () => {
       config: EMPTY_CONFIG,
     });
     expect(result?.reason).toContain('git reset --hard');
+  });
+
+  test('awk system parser allows safe static commands', () => {
+    expect(analyzeAwkSystemCalls(['awk', 'BEGIN { system("echo ok") }'], () => null)).toBeNull();
+  });
+
+  test('awk system parser handles escaped static strings', () => {
+    const commands: string[] = [];
+    const result = analyzeAwkSystemCalls(
+      ['awk', 'BEGIN { system("echo \\"ok\\"") }'],
+      (command) => {
+        commands.push(command);
+        return null;
+      },
+    );
+    expect(result).toBeNull();
+    expect(commands).toEqual(['echo "ok"']);
+  });
+
+  test('awk system parser decodes hex and octal escapes', () => {
+    const commands: string[] = [];
+    const result = analyzeAwkSystemCalls(
+      ['awk', 'BEGIN { system("rm\\x20-rf\\040/") }'],
+      (command) => {
+        commands.push(command);
+        return 'blocked';
+      },
+    );
+
+    expect(result).toBe('blocked');
+    expect(commands).toEqual(['rm -rf /']);
+  });
+
+  test('awk system parser treats trailing escapes as dynamic', () => {
+    expect(analyzeAwkSystemCalls(['awk', `BEGIN { system("echo \\`], () => null)).toBe(
+      REASON_AWK_SYSTEM_DYNAMIC,
+    );
+  });
+
+  test('awk system parser blocks unclosed string commands', () => {
+    expect(analyzeAwkSystemCalls(['awk', 'BEGIN { system("rm -rf /) }'], () => null)).toBe(
+      REASON_AWK_SYSTEM_DYNAMIC,
+    );
+  });
+
+  test('awk system parser blocks concatenated string commands', () => {
+    expect(analyzeAwkSystemCalls(['awk', 'BEGIN { system("rm " $1) }'], () => null)).toBe(
+      REASON_AWK_SYSTEM_DYNAMIC,
+    );
+  });
+
+  test('awk system parser ignores identifiers containing system', () => {
+    expect(
+      analyzeAwkSystemCalls(['awk', 'BEGIN { subsystem("rm -rf /") }'], () => null),
+    ).toBeNull();
   });
 
   test('fallback scan ignores embedded git when safe', () => {
@@ -399,6 +457,81 @@ describe('analyzeCommand (coverage)', () => {
         config: EMPTY_CONFIG,
       });
       expect(result).toBeNull();
+    });
+  });
+
+  describe('child command analyzer branches', () => {
+    const childContext = {
+      cwd: '/tmp',
+      originalCwd: '/tmp',
+      paranoidRm: false,
+      allowTmpdirVar: true,
+      envAssignments: new Map<string, string>(),
+    };
+    const analyzeNested = (command: string) =>
+      analyzeCommand(command, { cwd: '/tmp', config: EMPTY_CONFIG })?.reason ?? null;
+
+    test('empty child head returns null', () => {
+      expect(analyzeChildCommand([''], childContext)).toBeNull();
+    });
+
+    test('shell child without dynamic input analyzes dash c script', () => {
+      const result = analyzeChildCommand(['sh', '-c', 'git reset --hard'], {
+        ...childContext,
+        analyzeNested,
+      });
+      expect(result).toContain('git reset --hard');
+    });
+
+    test('shell child without dash c script returns null', () => {
+      expect(analyzeChildCommand(['sh'], childContext)).toBeNull();
+    });
+
+    test('dynamic rm child falls back to caller reason when target is otherwise allowed', () => {
+      expect(
+        analyzeChildCommand(['rm', '-rf', '/tmp/a'], childContext, {
+          dynamicInput: true,
+          rmDynamicReason: 'dynamic rm denied',
+        }),
+      ).toBe('dynamic rm denied');
+    });
+
+    test('find exec supports analyzeNested fallback when token analyzer is absent', () => {
+      const result = analyzeFind(['find', '.', '-exec', 'git', 'reset', '--hard', ';'], {
+        cwd: '/tmp',
+        envAssignments: new Map<string, string>(),
+        analyzeNested,
+      });
+      expect(result).toContain('git reset --hard');
+    });
+
+    test('find child command reuses child analyzer for exec commands', () => {
+      expect(
+        analyzeChildCommand(['find', '.', '-exec', 'git', 'reset', '--hard', ';'], {
+          ...childContext,
+          analyzeNested,
+        }),
+      ).toContain('git reset --hard');
+    });
+
+    test('find exec analyzeNested fallback continues when command is safe', () => {
+      expect(
+        analyzeFind(['find', '.', '-exec', 'echo', '{}', ';'], {
+          cwd: '/tmp',
+          envAssignments: new Map<string, string>(),
+          analyzeNested,
+        }),
+      ).toBeNull();
+    });
+
+    test('find exec direct fallback still handles wrapped rm commands', () => {
+      expect(analyzeFind(['find', '.', '-exec', 'busybox', 'rm', '-rf', '{}', ';'])).toContain(
+        'find -exec rm -rf',
+      );
+    });
+
+    test('find exec direct fallback allows safe command', () => {
+      expect(analyzeFind(['find', '.', '-exec', 'echo', '{}', ';'])).toBeNull();
     });
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Configuration display with source tracking and shadow detection.
+ * Rulebook-backed configuration display with source tracking.
  */
 import type { ConfigSourceInfo, EffectiveRule, ShadowedRule } from '@/bin/doctor/types';
 export interface ConfigInfo {

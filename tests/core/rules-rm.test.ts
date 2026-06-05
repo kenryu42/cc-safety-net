@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { analyzeRm, isHomeDirectory } from '@/core/rules-rm';
+import { analyzeRm, isHomeDirectory } from '@/core/analyze/rm';
 import { assertAllowed, assertBlocked, toShellPath, withEnv } from '../helpers.ts';
 
 describe('rm -rf blocked', () => {
@@ -52,6 +52,14 @@ describe('rm -rf blocked', () => {
 
   test('python -c rm -rf blocked', () => {
     assertBlocked('python -c \'import os; os.system("rm -rf /some/path")\'', 'dangerous');
+  });
+
+  test('python -c rm with mixed recursive and force options blocked', () => {
+    assertBlocked('python -c \'import os; os.system("rm -r --force /some/path")\'', 'dangerous');
+    assertBlocked(
+      'python -c \'import os; os.system("rm --recursive -f /some/path")\'',
+      'dangerous',
+    );
   });
 
   test('echo $(rm -rf /some/path) blocked', () => {
@@ -116,8 +124,18 @@ describe('rm -rf allowed', () => {
     assertAllowed('rm -rf /tmp');
   });
 
+  test('rm -rf temp path with dot-dot in filename allowed', () => {
+    assertAllowed('rm -rf /tmp/foo..bar/file');
+  });
+
   test('rm -r without force allowed', () => {
     assertAllowed('rm -r /some/path');
+  });
+
+  test('python -c rm -r path with hyphenated f suffix allowed', () => {
+    assertAllowed('python -c \'import os; os.system("rm -r /builds/project-stuff")\'');
+    assertAllowed('python -c \'import os; os.system("rm -r path/to/proof")\'');
+    assertAllowed('python -c \'import os; os.system("rm -r -- -proof")\'');
   });
 
   test('rm -R without force allowed', () => {
@@ -241,6 +259,22 @@ describe('rm -rf cwd-aware', () => {
       assertAllowed('rm -rf ./dist', tmpDir);
     } finally {
       cleanup();
+    }
+  });
+
+  test('rm -rf symlinked directory outside cwd blocked', () => {
+    const root = mkdtempSync(join(tmpdir(), 'safety-net-rm-symlink-'));
+    try {
+      const cwd = join(root, 'cwd');
+      const outside = join(root, 'outside');
+      mkdirSync(cwd);
+      mkdirSync(outside);
+      writeFileSync(join(outside, 'kept'), 'outside');
+      symlinkSync(outside, join(cwd, 'escape'), 'dir');
+
+      assertBlocked('rm -rf ./escape/', 'rm -rf outside cwd', cwd);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -388,6 +422,44 @@ describe('rm -rf cwd-aware', () => {
     }
   });
 
+  test('rm -rf after time cd bypasses cwd allowlist blocked', () => {
+    setup();
+    try {
+      assertBlocked('time cd .. && rm -rf build', 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('rm -rf after builtin time cd bypasses cwd allowlist blocked', () => {
+    setup();
+    try {
+      assertBlocked('builtin time cd .. && rm -rf build', 'rm -rf', tmpDir);
+      assertBlocked('builtin time -p cd .. && rm -rf build', 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('ANSI-C quoted rm command blocked', () => {
+    setup();
+    try {
+      assertBlocked("$'\\x72\\x6d' -rf /", 'rm -rf', tmpDir);
+      assertBlocked("bash -c $'rm -rf /'", 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('escaped rm with comment quote blocked in default mode', () => {
+    setup();
+    try {
+      assertBlocked("r\\m -rf / #'", 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('rm -rf strict mode allows within cwd', () => {
     setup();
     try {
@@ -438,6 +510,20 @@ describe('rm -rf cwd-aware', () => {
     try {
       assertAllowed('TMPDIR=/tmp/subdir rm -rf $TMPDIR/test-dir', tmpDir);
     } finally {
+      cleanup();
+    }
+  });
+
+  test('TMPDIR symlink from temp to non-temp blocked', () => {
+    setup();
+    const outsideTemp = mkdtempSync(join(process.cwd(), 'outside-temp-'));
+    const tempLink = join(tmpdir(), `safety-net-tmpdir-link-${Date.now()}`);
+    symlinkSync(outsideTemp, tempLink, process.platform === 'win32' ? 'junction' : 'dir');
+    try {
+      assertBlocked(`TMPDIR=${toShellPath(tempLink)} rm -rf $TMPDIR/test-dir`, 'rm -rf', tmpDir);
+    } finally {
+      rmSync(tempLink, { recursive: true, force: true });
+      rmSync(outsideTemp, { recursive: true, force: true });
       cleanup();
     }
   });
@@ -540,7 +626,17 @@ describe('analyzeRm (unit)', () => {
         cwd: '/tmp',
         allowTmpdirVar: false,
       }),
-    ).toContain('rm -rf outside cwd');
+    ).toContain('shell variables');
+  });
+
+  test('blocks shell variable targets with dynamic-path reason', () => {
+    expect(analyzeRm(['rm', '-rf', '$tmpbase', '$outside'], { cwd: '/tmp' })).toContain(
+      'shell variables',
+    );
+  });
+
+  test('blocks backtick targets with dynamic-path reason', () => {
+    expect(analyzeRm(['rm', '-rf', '`pwd`/escape'], { cwd: '/tmp' })).toContain('shell variables');
   });
 
   test('handles non-string cwd defensively', () => {

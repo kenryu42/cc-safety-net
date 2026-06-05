@@ -62,9 +62,41 @@ describe('redactSecrets', () => {
     expect(result).toBe('<redacted>');
   });
 
+  test('redacts raw provider token formats', () => {
+    const tokens = [
+      ['xoxb', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
+      ['npm', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['sk', 'live', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['sk', 'test', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['rk', 'live', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
+      ['pypi', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('-'),
+    ];
+    const result = redactSecrets(tokens.join(' '));
+    for (const token of tokens) {
+      expect(result).not.toContain(token);
+    }
+    expect(result.split(' ')).toEqual(tokens.map(() => '<redacted>'));
+  });
+
   test('redacts URL credentials', () => {
     const result = redactSecrets('https://user:password@example.com');
     expect(result).not.toContain('password');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts non-HTTP URL credentials', () => {
+    const result = redactSecrets(
+      'postgres://user:password@db.example/app mysql://admin:secret@db.example/app',
+    );
+    expect(result).not.toContain('password');
+    expect(result).not.toContain('secret');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts token-only URL credentials', () => {
+    const result = redactSecrets('git://token123@example.com/repo https://token456@example.com');
+    expect(result).not.toContain('token123');
+    expect(result).not.toContain('token456');
     expect(result).toContain('<redacted>');
   });
 
@@ -83,6 +115,37 @@ describe('redactSecrets', () => {
     const result = redactSecrets("curl -H 'Authorization: Basic abc123' https://example.com");
     expect(result).not.toContain('abc123');
     expect(result).toContain('<redacted>');
+  });
+
+  test('redacts cookie and API key headers', () => {
+    const result = redactSecrets(
+      'curl -H "Cookie: session=secret123" -H "X-API-Key: key123" https://example.com',
+    );
+    expect(result).not.toContain('secret123');
+    expect(result).not.toContain('key123');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts PEM private key blocks', () => {
+    const result = redactSecrets(
+      '-----BEGIN PRIVATE KEY-----\nsuper-secret-key\n-----END PRIVATE KEY-----',
+    );
+    expect(result).toBe('<redacted>');
+  });
+
+  test('redacts JWT tokens and AWS access key IDs', () => {
+    const result = redactSecrets(
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature AKIAIOSFODNN7EXAMPLE',
+    );
+    expect(result).not.toContain('eyJhbGci');
+    expect(result).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts database connection env vars', () => {
+    const result = redactSecrets('DATABASE_URL=postgres://user:password@db.example/app');
+    expect(result).not.toContain('password');
+    expect(result).toBe('DATABASE_URL=<redacted>');
   });
 });
 
@@ -165,7 +228,9 @@ describe('writeAuditLog', () => {
     expect(entries[0]).toHaveProperty('segment');
     expect(entries[0]).toHaveProperty('reason');
     expect(entries[0]).toHaveProperty('cwd');
+    expect(entries[0]).toHaveProperty('decision');
 
+    expect(entries[0]?.decision).toBe('deny');
     expect(entries[0]?.cwd).toBe('/home/user/project');
     expect(entries[0]?.reason).toContain('git reset --hard');
   });
@@ -258,5 +323,18 @@ describe('writeAuditLog', () => {
     const entries = readLogEntries(sessionId);
     expect(entries.length).toBe(1);
     expect(entries[0]?.command.length).toBeLessThanOrEqual(300);
+  });
+
+  test('can write allowed debug log entry', () => {
+    const sessionId = 'test-session-allowed';
+    writeAuditLog(sessionId, 'git status', 'git status', 'allowed', '/home/user/project', {
+      homeDir: testDir,
+      decision: 'allow',
+    });
+
+    const entries = readLogEntries(sessionId);
+    expect(entries.length).toBe(1);
+    expect(entries[0]?.decision).toBe('allow');
+    expect(entries[0]?.reason).toBe('allowed');
   });
 });

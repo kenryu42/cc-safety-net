@@ -1,7 +1,7 @@
 /**
  * Hook detection with integrated self-test for the doctor command.
  */
-import type { HookStatus } from '@/bin/doctor/types';
+import type { HookStatus, PiProbeInfo } from '@/bin/doctor/types';
 import type { LoadConfigOptions } from '@/core/config';
 interface HookDetectOptions extends LoadConfigOptions {
     homeDir?: string;
@@ -9,6 +9,7 @@ interface HookDetectOptions extends LoadConfigOptions {
     geminiExtensionsListOutput?: string | null;
     copilotCliVersion?: string | null;
     copilotPluginInstalled?: boolean;
+    piSafetyNetProbe?: PiProbeInfo;
 }
 /**
  * Strip JSONC-style comments and trailing commas from a string.

@@ -2,13 +2,15 @@
 .cursor/
 .claude/
 log*
-plan-*.md
-*-plan-*.md
 .safety-net.json
 .opencode
 .gemini
+docs
+.cc-safetynet-rules
+.cc-safety-net
 coverage
 .codex
+codex-security-scans
 
 # --- Node.js ---
 node_modules/

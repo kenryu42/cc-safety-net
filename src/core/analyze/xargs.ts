@@ -1,9 +1,5 @@
+import { analyzeChildCommand } from '@/core/analyze/child-analyzer';
 import { normalizeChildCommand } from '@/core/analyze/child-command';
-import { analyzeFind } from '@/core/analyze/find';
-import { hasRecursiveForceFlags } from '@/core/analyze/rm-flags';
-import { analyzeGit } from '@/core/rules-git';
-import { analyzeRm } from '@/core/rules-rm';
-import { SHELL_WRAPPERS } from '@/types';
 
 const REASON_XARGS_RM =
   'xargs rm -rf with dynamic input is dangerous. Use explicit file list instead.';
@@ -29,60 +25,46 @@ export function analyzeXargs(
   const childCommand = normalizeChildCommand(rawChildTokens, context);
   const childTokens = childCommand.tokens;
 
-  if (childTokens.length === 0) {
+  const childResult = analyzeChildCommand(
+    childTokens,
+    {
+      cwd: childCommand.cwd,
+      originalCwd: context.originalCwd,
+      paranoidRm: context.paranoidRm,
+      allowTmpdirVar: context.allowTmpdirVar,
+      envAssignments: childCommand.envAssignments,
+      worktreeMode: context.worktreeMode,
+    },
+    {
+      dynamicInput: childCommand.head !== 'git',
+      shellDynamicReason: REASON_XARGS_SHELL,
+      rmDynamicReason: REASON_XARGS_RM,
+    },
+  );
+  if (childResult) {
+    return childResult;
+  }
+
+  if (childCommand.head !== 'git') {
     return null;
   }
 
-  // Check for shell wrapper with -c
-  if (SHELL_WRAPPERS.has(childCommand.head)) {
-    // xargs bash -c is always dangerous - stdin feeds into the shell execution
-    // Either no script arg (stdin IS the script) or script with dynamic input
-    return REASON_XARGS_SHELL;
-  }
-
-  if (childCommand.head === 'rm' && hasRecursiveForceFlags(childTokens)) {
-    const rmResult = analyzeRm(childTokens, {
-      cwd: childCommand.cwd,
-      originalCwd: context.originalCwd,
-      paranoid: context.paranoidRm,
-      allowTmpdirVar: context.allowTmpdirVar,
-    });
-    if (rmResult) {
-      return rmResult;
-    }
-    // Even if analyzeRm passes (e.g., temp paths), xargs rm -rf is still dangerous
-    // because stdin provides dynamic input
-    return REASON_XARGS_RM;
-  }
-
-  if (childCommand.head === 'find') {
-    const findResult = analyzeFind(childTokens);
-    if (findResult) {
-      return findResult;
-    }
-  }
-
-  if (childCommand.head === 'git') {
-    const gitTokens =
-      replacementToken === null ? [...childTokens, XARGS_APPENDED_INPUT] : childTokens;
-    const hasDynamicReplacement =
-      replacementToken !== null &&
-      (childTokens.some((token) => token.includes(replacementToken)) ||
-        Array.from(childCommand.envAssignments.values()).some((value) =>
-          value.includes(replacementToken),
-        ));
-    const gitResult = analyzeGit(gitTokens, {
-      cwd: childCommand.cwd,
-      envAssignments: childCommand.envAssignments,
-      worktreeMode:
-        replacementToken === null || hasDynamicReplacement ? false : context.worktreeMode,
-    });
-    if (gitResult) {
-      return gitResult;
-    }
-  }
-
-  return null;
+  const gitTokens =
+    replacementToken === null ? [...childTokens, XARGS_APPENDED_INPUT] : childTokens;
+  const hasDynamicReplacement =
+    replacementToken !== null &&
+    (childTokens.some((token) => token.includes(replacementToken)) ||
+      Array.from(childCommand.envAssignments.values()).some((value) =>
+        value.includes(replacementToken),
+      ));
+  return analyzeChildCommand(gitTokens, {
+    cwd: childCommand.cwd,
+    originalCwd: context.originalCwd,
+    paranoidRm: context.paranoidRm,
+    allowTmpdirVar: context.allowTmpdirVar,
+    envAssignments: childCommand.envAssignments,
+    worktreeMode: replacementToken === null || hasDynamicReplacement ? false : context.worktreeMode,
+  });
 }
 
 interface XargsParseResult {
@@ -183,8 +165,4 @@ export function extractXargsChildCommandWithInfo(tokens: readonly string[]): Xar
   }
 
   return { childTokens: [], replacementToken };
-}
-
-export function extractXargsChildCommand(tokens: readonly string[]): string[] {
-  return extractXargsChildCommandWithInfo(tokens).childTokens;
 }

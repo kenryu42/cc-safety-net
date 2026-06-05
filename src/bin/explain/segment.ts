@@ -8,28 +8,33 @@ import {
   redactEnvAssignmentTokens,
   redactEnvVars,
 } from '@/bin/explain/redact';
+import { REASON_RECURSION_LIMIT } from '@/core/analyze/analyze-command';
 import {
-  applyShellGitContextEnvSegment,
-  createShellGitContextEnvState,
-  getSegmentGitContextEnvAssignments,
-  REASON_RECURSION_LIMIT,
-} from '@/core/analyze/analyze-command';
+  AWK_INTERPRETERS,
+  analyzeAwkSystemCalls,
+  REASON_AWK_SYSTEM_DYNAMIC,
+} from '@/core/analyze/awk';
 import { DISPLAY_COMMANDS } from '@/core/analyze/constants';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { analyzeFind } from '@/core/analyze/find';
 import { containsDangerousCode, extractInterpreterCodeArg } from '@/core/analyze/interpreters';
 import { analyzeParallel } from '@/core/analyze/parallel';
+import { analyzeRm } from '@/core/analyze/rm';
 import {
   REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS,
   segmentChangesCwd,
 } from '@/core/analyze/segment';
+import {
+  applyShellGitContextEnvSegment,
+  createShellGitContextEnvState,
+  getSegmentGitContextEnvAssignments,
+} from '@/core/analyze/shell-git-env';
 import { extractDashCArg } from '@/core/analyze/shell-wrappers';
 import { isTmpdirOverriddenToNonTemp } from '@/core/analyze/tmpdir';
 import { analyzeXargs } from '@/core/analyze/xargs';
-import { checkCustomRules } from '@/core/rules-custom';
-import { analyzeGit, getGitWorktreeRelaxation } from '@/core/rules-git';
-import { analyzeRm } from '@/core/rules-rm';
+import { analyzeGit, getGitWorktreeRelaxation } from '@/core/git';
+import { checkCustomRules } from '@/core/rules/custom';
 import {
   normalizeCommandToken,
   splitShellCommands,
@@ -219,7 +224,7 @@ export function explainSegment(
   const baseName = head.split('/').pop() ?? head;
   const baseNameLower = baseName.toLowerCase();
 
-  if (SHELL_WRAPPERS.has(baseNameLower)) {
+  if (isShellWrapperCommand(head, baseNameLower)) {
     const innerCmd = extractDashCArg(strippedTokens);
     if (innerCmd) {
       const redactedInnerCmd = redactEnvAssignmentsInString(innerCmd);
@@ -236,6 +241,25 @@ export function explainSegment(
       });
 
       return explainInnerSegments(innerCmd, depth, nestedOptions, steps);
+    }
+  }
+
+  if (AWK_INTERPRETERS.has(baseNameLower)) {
+    const awkReason = analyzeAwkSystemCalls(strippedTokens, (command) => {
+      const nestedResult = explainInnerSegments(command, depth, nestedOptions, steps);
+      return nestedResult?.reason ?? null;
+    });
+    if (awkReason) {
+      steps.push({
+        type: 'rule-check',
+        ruleModule: 'awk',
+        ruleFunction: 'analyzeAwkSystemCalls',
+        matched: true,
+        reason: awkReason,
+      });
+      return {
+        reason: awkReason === REASON_AWK_SYSTEM_DYNAMIC ? REASON_AWK_SYSTEM_DYNAMIC : awkReason,
+      };
     }
   }
 
@@ -325,7 +349,7 @@ export function explainSegment(
     const reason = analyzeGit(strippedTokens, gitOptions);
     steps.push({
       type: 'rule-check',
-      ruleModule: 'rules-git.ts',
+      ruleModule: 'git',
       ruleFunction: 'analyzeGit',
       matched: !!reason || !!relaxation,
       reason: reason ?? relaxation?.originalReason,
@@ -349,7 +373,7 @@ export function explainSegment(
     });
     steps.push({
       type: 'rule-check',
-      ruleModule: 'rules-rm.ts',
+      ruleModule: 'analyze/rm.ts',
       ruleFunction: 'analyzeRm',
       matched: !!reason,
       reason: reason ?? undefined,
@@ -434,7 +458,27 @@ export function explainSegment(
       tokensScanned.push(token);
 
       const cmd = normalizeCommandToken(token);
-      if (cmd === 'rm') {
+      if (isShellWrapperCommand(token, cmd)) {
+        const innerCmd = extractDashCArg([token, ...strippedTokens.slice(i + 1)]);
+        if (innerCmd) {
+          embeddedCommandFound = cmd;
+          const redactedInnerCmd = redactEnvAssignmentsInString(innerCmd);
+          steps.push({
+            type: 'shell-wrapper',
+            wrapper: cmd,
+            innerCommand: redactedInnerCmd,
+          });
+          steps.push({
+            type: 'recurse',
+            reason: 'shell-wrapper',
+            innerCommand: redactedInnerCmd,
+            depth: depth + 1,
+          });
+          fallbackReason =
+            explainInnerSegments(innerCmd, depth, nestedOptions, steps)?.reason ?? null;
+        }
+      }
+      if (!fallbackReason && cmd === 'rm') {
         embeddedCommandFound = 'rm';
         const rmTokens = ['rm', ...strippedTokens.slice(i + 1)];
         fallbackReason = analyzeRm(rmTokens, {
@@ -496,4 +540,8 @@ export function explainSegment(
   }
 
   return null;
+}
+
+function isShellWrapperCommand(head: string, baseNameLower: string): boolean {
+  return SHELL_WRAPPERS.has(baseNameLower) || head === '$SHELL';
 }

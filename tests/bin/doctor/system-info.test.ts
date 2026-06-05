@@ -3,8 +3,15 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { defaultVersionFetcher, getPackageVersion, getSystemInfo } from '@/bin/doctor/system-info';
-import { mockVersionFetcher } from '../../helpers.ts';
+import { chmodSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
+import {
+  defaultVersionFetcher,
+  getPackageVersion,
+  getSystemInfo,
+  type PiProbeRunner,
+} from '@/bin/doctor/system-info';
+import { mockVersionFetcher, withEnv, withTempDir } from '../../helpers.ts';
 
 function createDeferred<T>(): {
   promise: Promise<T>;
@@ -42,6 +49,93 @@ function expectCopilotVersionProbesStarted(calls: string[][]): void {
   expect(calls.some((args) => args[0] === 'copilot' && args[1] === '--version')).toBe(true);
 }
 
+async function withFakePi<T>(
+  mode: 'configured' | 'not-found' | 'nonzero' | 'missing-result' | 'invalid-json' | 'non-object',
+  fn: (cwd: string) => Promise<T>,
+): Promise<T> {
+  return withTempDir('doctor-fake-pi-', async (tmpDir) => {
+    writeFileSync(
+      join(tmpDir, 'pi.js'),
+      `import { writeFileSync } from "node:fs";
+
+if (process.argv[2] === "--version") {
+  console.log("pi 0.4.0");
+  process.exit(0);
+}
+
+if (process.env.FAKE_PI_MODE === "nonzero") {
+  console.error("extension failed");
+  process.exit(7);
+}
+
+if (process.env.FAKE_PI_MODE === "missing-result") {
+  process.exit(0);
+}
+
+if (process.env.FAKE_PI_MODE === "invalid-json") {
+  writeFileSync(process.env.PI_PROBE_OUT, "{");
+  process.exit(0);
+}
+
+if (process.env.FAKE_PI_MODE === "non-object") {
+  writeFileSync(process.env.PI_PROBE_OUT, "[]");
+  process.exit(0);
+}
+
+writeFileSync(
+  process.env.PI_PROBE_OUT,
+  JSON.stringify(
+    process.env.FAKE_PI_MODE === "not-found"
+      ? { installedAndEnabled: false, matched: [] }
+      : {
+          installedAndEnabled: true,
+          matched: [
+            {
+              kind: "command",
+              name: "cc-safety-net",
+              path: "/tmp/safety-net.js",
+              source: "local",
+            },
+            { kind: "event", name: "ignored" },
+            { kind: "tool", name: 42 },
+          ],
+        },
+  ),
+);
+`,
+    );
+    writeFileSync(join(tmpDir, 'pi'), '#!/bin/sh\nexec bun "$0.js" "$@"\n');
+    writeFileSync(join(tmpDir, 'pi.cmd'), '@echo off\r\nbun "%~dp0pi.js" %*\r\n');
+    chmodSync(join(tmpDir, 'pi'), 0o755);
+
+    const originalPath = process.env.PATH;
+    const originalPathAlt = process.env.Path;
+    const originalMode = process.env.FAKE_PI_MODE;
+    process.env.PATH = `${tmpDir}${delimiter}${originalPath ?? originalPathAlt ?? ''}`;
+    if (process.platform === 'win32') process.env.Path = process.env.PATH;
+    process.env.FAKE_PI_MODE = mode;
+    try {
+      return await fn(tmpDir);
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalPathAlt === undefined) {
+        delete process.env.Path;
+      } else {
+        process.env.Path = originalPathAlt;
+      }
+      if (originalMode === undefined) {
+        delete process.env.FAKE_PI_MODE;
+      } else {
+        process.env.FAKE_PI_MODE = originalMode;
+      }
+    }
+  });
+}
+
 describe('getSystemInfo', () => {
   test('returns all required fields', async () => {
     const sysInfo = await getSystemInfo(mockVersionFetcher);
@@ -57,7 +151,14 @@ describe('getSystemInfo', () => {
     expect(sysInfo.openCodeVersion === null || typeof sysInfo.openCodeVersion === 'string').toBe(
       true,
     );
+    expect(sysInfo.codexCliVersion === null || typeof sysInfo.codexCliVersion === 'string').toBe(
+      true,
+    );
     expect(sysInfo.geminiCliVersion === null || typeof sysInfo.geminiCliVersion === 'string').toBe(
+      true,
+    );
+    expect(sysInfo.piCliVersion === null || typeof sysInfo.piCliVersion === 'string').toBe(true);
+    expect(sysInfo.kimiCliVersion === null || typeof sysInfo.kimiCliVersion === 'string').toBe(
       true,
     );
     expect(
@@ -71,6 +172,8 @@ describe('getSystemInfo', () => {
     expect(sysInfo.npmVersion === null || typeof sysInfo.npmVersion === 'string').toBe(true);
     expect(sysInfo.bunVersion === null || typeof sysInfo.bunVersion === 'string').toBe(true);
     expect(typeof sysInfo.copilotPluginInstalled).toBe('boolean');
+    expect(sysInfo.piSafetyNetProbe).toHaveProperty('status');
+    expect(typeof sysInfo.piSafetyNetProbe.installedAndEnabled).toBe('boolean');
   });
 
   test('detects Bun version with mock fetcher', async () => {
@@ -88,6 +191,160 @@ describe('getSystemInfo', () => {
     expect(sysInfo.geminiExtensionsListOutput).toContain(
       'https://github.com/kenryu42/gemini-safety-net',
     );
+  });
+
+  test('includes Kimi CLI version with mock fetcher', async () => {
+    const sysInfo = await getSystemInfo(mockVersionFetcher);
+    expect(sysInfo.kimiCliVersion).toBe('0.3.0');
+  });
+
+  test('includes Pi CLI version with mock fetcher', async () => {
+    const sysInfo = await getSystemInfo(mockVersionFetcher);
+    expect(sysInfo.piCliVersion).toBe('0.4.0');
+  });
+
+  test('includes Codex CLI version with mock fetcher', async () => {
+    const sysInfo = await getSystemInfo(mockVersionFetcher);
+    expect(sysInfo.codexCliVersion).toBe('1.2.0');
+  });
+
+  test('includes successful Pi safety-net probe result', async () => {
+    const piProbeRunner: PiProbeRunner = async () => ({
+      status: 'configured',
+      installedAndEnabled: true,
+      matched: [{ kind: 'command', name: 'cc-safety-net', path: '/tmp/safety-net.js' }],
+    });
+
+    const sysInfo = await getSystemInfo(mockVersionFetcher, { piProbeRunner });
+
+    expect(sysInfo.piSafetyNetProbe).toEqual({
+      status: 'configured',
+      installedAndEnabled: true,
+      matched: [{ kind: 'command', name: 'cc-safety-net', path: '/tmp/safety-net.js' }],
+    });
+  });
+
+  test('reports Pi probe unavailable when Pi CLI is missing', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'pi') return null;
+      return mockVersionFetcher(args);
+    });
+
+    expect(sysInfo.piCliVersion).toBeNull();
+    expect(sysInfo.piSafetyNetProbe).toEqual({
+      status: 'unavailable',
+      installedAndEnabled: false,
+      matched: [],
+    });
+  });
+
+  test('surfaces Pi probe errors without throwing', async () => {
+    const piProbeRunner: PiProbeRunner = async () => ({
+      status: 'error',
+      installedAndEnabled: false,
+      matched: [],
+      error: 'probe failed',
+    });
+
+    const sysInfo = await getSystemInfo(mockVersionFetcher, { piProbeRunner });
+
+    expect(sysInfo.piSafetyNetProbe).toEqual({
+      status: 'error',
+      installedAndEnabled: false,
+      matched: [],
+      error: 'probe failed',
+    });
+  });
+
+  test('runs the default Pi probe through the Pi CLI', async () => {
+    await withFakePi('configured', async (cwd) => {
+      const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd });
+
+      expect(sysInfo.piCliVersion).toBe('0.4.0');
+      expect(sysInfo.piSafetyNetProbe).toEqual({
+        status: 'configured',
+        installedAndEnabled: true,
+        matched: [
+          {
+            kind: 'command',
+            name: 'cc-safety-net',
+            path: '/tmp/safety-net.js',
+            source: 'local',
+          },
+        ],
+      });
+    });
+  });
+
+  test('reports not-found from the default Pi probe when the sentinel is absent', async () => {
+    await withFakePi('not-found', async (cwd) => {
+      const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd });
+
+      expect(sysInfo.piSafetyNetProbe).toEqual({
+        status: 'not-found',
+        installedAndEnabled: false,
+        matched: [],
+      });
+    });
+  });
+
+  test('reports non-zero default Pi probe exits', async () => {
+    await withFakePi('nonzero', async (cwd) => {
+      const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd });
+
+      expect(sysInfo.piSafetyNetProbe.status).toBe('error');
+      expect(sysInfo.piSafetyNetProbe.error).toContain('code 7');
+      expect(sysInfo.piSafetyNetProbe.error).toContain('extension failed');
+    });
+  });
+
+  test('reports missing default Pi probe result files', async () => {
+    await withFakePi('missing-result', async (cwd) => {
+      const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd });
+
+      expect(sysInfo.piSafetyNetProbe.status).toBe('error');
+      expect(sysInfo.piSafetyNetProbe.error).toContain('Pi probe failed');
+    });
+  });
+
+  test('reports invalid default Pi probe JSON', async () => {
+    await withFakePi('invalid-json', async (cwd) => {
+      const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd });
+
+      expect(sysInfo.piSafetyNetProbe.status).toBe('error');
+      expect(sysInfo.piSafetyNetProbe.error).toContain('Failed to parse Pi probe result');
+    });
+  });
+
+  test('reports non-object default Pi probe JSON', async () => {
+    await withFakePi('non-object', async (cwd) => {
+      const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd });
+
+      expect(sysInfo.piSafetyNetProbe).toEqual({
+        status: 'error',
+        installedAndEnabled: false,
+        matched: [],
+        error: 'Pi probe result was not an object',
+      });
+    });
+  });
+
+  test('parses Kimi CLI version output through existing parser', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'kimi') return 'Kimi CLI v1.2.3';
+      return null;
+    });
+
+    expect(sysInfo.kimiCliVersion).toBe('1.2.3');
+  });
+
+  test('parses Codex CLI version output through existing parser', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'codex') return 'Codex CLI v1.2.3';
+      return null;
+    });
+
+    expect(sysInfo.codexCliVersion).toBe('1.2.3');
   });
 
   test('includes Claude plugin list output with mock fetcher', async () => {
@@ -148,8 +405,12 @@ describe('getSystemInfo', () => {
     expect(result.claudeCodeVersion).toBeNull();
     expect(result.claudePluginListOutput).toBeNull();
     expect(result.copilotCliVersion).toBeNull();
+    expect(result.codexCliVersion).toBeNull();
+    expect(result.kimiCliVersion).toBeNull();
+    expect(result.piCliVersion).toBeNull();
     expect(result.geminiExtensionsListOutput).toBeNull();
     expect(result.copilotPluginInstalled).toBe(false);
+    expect(result.piSafetyNetProbe.status).toBe('unavailable');
     expect(result.bunVersion).toBeNull();
     expect(result.nodeVersion).toBeNull();
   });
@@ -159,6 +420,7 @@ describe('getSystemInfo', () => {
     const result = await getSystemInfo(emptyFetcher);
     expect(result.claudeCodeVersion).toBeNull();
     expect(result.copilotCliVersion).toBeNull();
+    expect(result.codexCliVersion).toBeNull();
     expect(result.bunVersion).toBeNull();
   });
 });
@@ -264,6 +526,56 @@ describe('defaultVersionFetcher', () => {
     const result = await defaultVersionFetcher(['bun', '--version']);
     expect(result).toMatch(/^\d+\.\d+/);
   }, 5000);
+
+  test('preserves arguments when resolving Windows exe commands', async () => {
+    if (process.platform === 'win32') return;
+
+    await withTempDir('doctor-windows-exe-', async (tmpDir) => {
+      const commandPath = join(tmpDir, 'fake.EXE');
+      writeFileSync(commandPath, '#!/bin/sh\nprintf "%s" "$1"\n');
+      chmodSync(commandPath, 0o755);
+
+      const result = await withEnv(
+        {
+          PATH: tmpDir,
+          PATHEXT: '.EXE;.CMD',
+          _CC_SAFETY_NET_TEST_SPAWN_PLATFORM: 'win32',
+        },
+        () => defaultVersionFetcher(['fake', 'stderr-only output']),
+      );
+
+      expect(result).toBe('stderr-only output');
+    });
+  });
+
+  test('wraps Windows cmd shims without shelling exe commands', async () => {
+    if (process.platform === 'win32') return;
+
+    await withTempDir('doctor-windows-cmd-', async (tmpDir) => {
+      const extensionlessPath = join(tmpDir, 'fake');
+      const commandPath = join(tmpDir, 'fake.CMD');
+      const comspecPath = join(tmpDir, 'cmd');
+      writeFileSync(extensionlessPath, '#!/bin/sh\nprintf "extensionless"\n');
+      writeFileSync(commandPath, '');
+      writeFileSync(comspecPath, '#!/bin/sh\nprintf "%s" "$3"\n');
+      chmodSync(extensionlessPath, 0o755);
+      chmodSync(comspecPath, 0o755);
+
+      const result = await withEnv(
+        {
+          COMSPEC: comspecPath,
+          PATH: '',
+          Path: tmpDir,
+          PATHEXT: '.CMD',
+          _CC_SAFETY_NET_TEST_SPAWN_PLATFORM: 'win32',
+        },
+        () => defaultVersionFetcher(['fake', 'arg with space']),
+      );
+
+      expect(result).toContain(join(tmpDir, 'fake.CMD'));
+      expect(result).toContain('"arg with space"');
+    });
+  });
 });
 
 describe('version comparison', () => {

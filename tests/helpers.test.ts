@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { withLinkedWorktreeFixture, withTempDir } from './helpers.ts';
+import {
+  withLinkedWorktreeFixture,
+  withReadonlyLinkedWorktreeFixture,
+  withTempDir,
+} from './helpers.ts';
 
 describe('test helpers', () => {
   test('withTempDir waits for async callbacks before cleanup', async () => {
@@ -25,5 +29,23 @@ describe('test helpers', () => {
     });
 
     expect(existsSync(rootDir)).toBe(false);
+  });
+
+  test('withReadonlyLinkedWorktreeFixture reuses a live fixture', async () => {
+    let firstRoot = '';
+    let secondRoot = '';
+
+    await withReadonlyLinkedWorktreeFixture(async (fixture) => {
+      firstRoot = fixture.rootDir;
+      await Promise.resolve();
+      expect(existsSync(fixture.rootDir)).toBe(true);
+    });
+    await withReadonlyLinkedWorktreeFixture((fixture) => {
+      secondRoot = fixture.rootDir;
+      expect(existsSync(fixture.rootDir)).toBe(true);
+    });
+
+    expect(secondRoot).toBe(firstRoot);
+    expect(existsSync(firstRoot)).toBe(true);
   });
 });

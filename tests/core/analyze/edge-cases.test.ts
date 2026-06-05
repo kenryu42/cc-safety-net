@@ -70,6 +70,14 @@ describe('edge cases', () => {
       assertAllowed("bash -- -c 'echo ok'");
     });
 
+    test('$SHELL dash c is recursively analyzed', () => {
+      assertBlocked('$SHELL -c "rm -rf /"', 'rm -rf');
+    });
+
+    test('${SHELL} dash c is recursively analyzed', () => {
+      assertBlocked('${SHELL} -c "rm -rf /"', 'rm -rf');
+    });
+
     test('strict mode bash without dash c allowed', () => {
       withEnv({ SAFETY_NET_STRICT: '1' }, () => {
         assertAllowed('bash -l echo ok');
@@ -164,6 +172,10 @@ describe('edge cases', () => {
       assertBlocked("git reset --hard 'unterminated", 'git reset --hard');
     });
 
+    test('non strict unparseable git reset abbreviated hard still blocked by heuristic', () => {
+      assertBlocked("git reset --har 'unterminated", 'git reset --hard');
+    });
+
     test('non strict unparseable git reset merge still blocked by heuristic', () => {
       assertBlocked("git reset --merge 'unterminated", 'git reset --merge');
     });
@@ -200,6 +212,14 @@ describe('edge cases', () => {
 
     test('command substitution rm f allowed', () => {
       assertAllowed('echo $(rm -f /tmp/a )');
+    });
+
+    test('quote boundary command substitution rm root blocked', () => {
+      assertBlocked("echo 'b\\'$(rm -rf /)'c'", 'extremely dangerous');
+    });
+
+    test('quote boundary command substitution safe command allowed', () => {
+      assertAllowed("echo 'b\\'$(printf ok)'c'");
     });
 
     test('command substitution git status allowed', () => {
@@ -517,6 +537,46 @@ describe('edge cases', () => {
       assertBlocked("echo / | parallel bash -c 'rm -rf {}'", 'rm -rf');
     });
 
+    test('parallel pipe mode treats marker commands as dynamic stdin', () => {
+      const fixture = createLinkedWorktreeFixture();
+      try {
+        withEnv({ SAFETY_NET_WORKTREE: '1' }, () => {
+          assertBlocked(
+            'parallel --pipe git clean -f ::: .',
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+          assertBlocked(
+            'parallel --pipepart git clean -f ::: .',
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+        });
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
+    test('parallel env placeholders make child command dynamic', () => {
+      const fixture = createLinkedWorktreeFixture();
+      try {
+        withEnv({ SAFETY_NET_WORKTREE: '1' }, () => {
+          assertBlocked(
+            `FOO="git clean -f {}" parallel --env FOO sh -c '$FOO' ::: -ffdx`,
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+          assertBlocked(
+            `FOO="git clean -f {}" parallel --env=FOO sh -c '$FOO' ::: -ffdx`,
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+        });
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
     test('parallel commands mode blocks rm rf', () => {
       assertBlocked("parallel ::: 'rm -rf /'", 'rm -rf');
     });
@@ -527,6 +587,10 @@ describe('edge cases', () => {
 
     test('parallel rm rf args after marker without placeholder blocked', () => {
       assertBlocked('parallel rm -rf ::: /', 'root or home');
+    });
+
+    test('parallel rm rf checks every marker arg without placeholder', () => {
+      assertBlocked('parallel rm -rf ::: build /', 'root or home', tempDir);
     });
 
     test('parallel rm rf with replacement args analyzed', () => {
@@ -576,6 +640,14 @@ describe('edge cases', () => {
 
     test('parallel busybox rm rf args after marker without placeholder blocked', () => {
       assertBlocked('parallel busybox rm -rf ::: /', 'root or home');
+    });
+
+    test('parallel busybox rm rf checks every marker arg without placeholder', () => {
+      assertBlocked('parallel busybox rm -rf ::: build /', 'root or home', tempDir);
+    });
+
+    test('parallel rm rf allows safe marker args without placeholder', () => {
+      assertAllowed('parallel rm -rf ::: build dist', tempDir);
     });
 
     test('parallel attached sshlogin disables worktree relaxation', () => {
@@ -798,6 +870,28 @@ describe('edge cases', () => {
     test('perl -e safe allowed', () => {
       assertAllowed('perl -e "print \'ok\'"');
     });
+
+    test('combined interpreter execution flags with dangerous code blocked', () => {
+      assertBlocked('perl -we \'system("rm -rf /")\'', 'dangerous');
+      assertBlocked('python -vc \'import os; os.system("rm -rf /")\'', 'dangerous');
+      assertBlocked('ruby -we \'system("rm -rf /")\'', 'dangerous');
+      assertBlocked('node -pe \'require("child_process").execSync("rm -rf /")\'', 'dangerous');
+    });
+
+    test('interpreter rm recursive force variants blocked', () => {
+      assertBlocked('python -c \'import os; os.system("rm -Rf /")\'', 'dangerous');
+      assertBlocked('python -c \'import os; os.system("rm -FR /")\'', 'dangerous');
+      assertBlocked('python -c \'import os; os.system("rm --recursive --force /")\'', 'dangerous');
+      assertBlocked('python -c \'import os; os.system("rm --force --recursive /")\'', 'dangerous');
+    });
+
+    test('wrapped combined interpreter execution flags with dangerous code blocked', () => {
+      assertBlocked('env perl -we \'system("rm -rf /")\'', 'dangerous');
+    });
+
+    test('safe combined interpreter execution flags allowed', () => {
+      assertAllowed('node -pe "1 + 1"');
+    });
   });
 
   describe('paranoid mode', () => {
@@ -843,6 +937,38 @@ describe('edge cases', () => {
         tempDir,
       );
     });
+
+    test('interpreter dd disk write is blocked', () => {
+      assertBlocked(
+        'python -c \'import os; os.system("dd if=/dev/zero of=/dev/sda")\'',
+        'dangerous command',
+        tempDir,
+      );
+    });
+
+    test('interpreter mkfs is blocked', () => {
+      assertBlocked(
+        'python -c \'import os; os.system("mkfs.ext4 /dev/sda1")\'',
+        'dangerous command',
+        tempDir,
+      );
+    });
+
+    test('interpreter shred is blocked', () => {
+      assertBlocked(
+        'python -c \'import os; os.system("shred -u secret.txt")\'',
+        'dangerous command',
+        tempDir,
+      );
+    });
+
+    test('interpreter git stash drop is blocked', () => {
+      assertBlocked(
+        'python -c \'import os; os.system("git stash drop")\'',
+        'dangerous command',
+        tempDir,
+      );
+    });
   });
 
   describe('display-only commands bypass fallback scanning', () => {
@@ -882,6 +1008,38 @@ describe('edge cases', () => {
       assertAllowed("awk '/rm -rf/ {print}' log.txt");
     });
 
+    test('awk system rm -rf blocked', () => {
+      assertBlocked('awk \'BEGIN { system("rm -rf /") }\'', 'rm -rf');
+    });
+
+    test('awk system rm -rf with hex escapes blocked', () => {
+      assertBlocked('awk \'BEGIN { system("rm\\x20-rf\\x20/") }\'', 'rm -rf');
+    });
+
+    test('awk system rm -rf with octal escapes blocked', () => {
+      assertBlocked('awk \'BEGIN { system("rm\\040-rf\\040/") }\'', 'rm -rf');
+    });
+
+    test('awk system git reset blocked', () => {
+      assertBlocked('awk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('gawk system git reset blocked', () => {
+      assertBlocked('gawk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('nawk system git reset blocked', () => {
+      assertBlocked('nawk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('mawk system git reset blocked', () => {
+      assertBlocked('mawk \'BEGIN { system("git reset --hard") }\'', 'git reset --hard');
+    });
+
+    test('awk dynamic system command blocked conservatively', () => {
+      assertBlocked("awk '{ system($0) }'", 'awk system');
+    });
+
     test('head with git clean -f allowed', () => {
       assertAllowed('head git clean -f');
     });
@@ -896,6 +1054,34 @@ describe('edge cases', () => {
 
     test('less with git push --force allowed', () => {
       assertAllowed('less git push --force');
+    });
+
+    test('timeout executes embedded rm command', () => {
+      assertBlocked('timeout 10 rm -rf /', 'rm -rf');
+    });
+
+    test('time executes embedded git command', () => {
+      assertBlocked('time git reset --hard', 'git reset --hard');
+    });
+
+    test('watch executes embedded git command', () => {
+      assertBlocked('watch -n1 git reset --hard', 'git reset --hard');
+    });
+
+    test('watch with separate interval value executes embedded rm command', () => {
+      assertBlocked('watch -n 1 rm -rf /', 'rm -rf');
+    });
+
+    test('time executes embedded shell wrapper command', () => {
+      assertBlocked("time sh -c 'git reset --hard'", 'git reset --hard');
+    });
+
+    test('watch executes embedded shell wrapper command', () => {
+      assertBlocked("watch sh -c 'git reset --hard'", 'git reset --hard');
+    });
+
+    test('timeout executes embedded shell wrapper command', () => {
+      assertBlocked("timeout 10 sh -c 'rm -rf /'", 'rm -rf');
     });
   });
 

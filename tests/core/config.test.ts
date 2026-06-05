@@ -1,611 +1,283 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
+import { analyzeCommand } from '@/core/analyze';
 import {
-  getProjectConfigPath,
-  getUserConfigPath,
-  type LoadConfigOptions,
+  getLegacyProjectConfigPath,
   loadConfig,
   validateConfig,
   validateConfigFile,
+  validateRulesConfigFile,
 } from '@/core/config';
+import { syncRulesConfig } from '@/core/rules/policy';
+import { writeLockedGitHubRulebookPolicy } from '../helpers.ts';
 
-describe('config validation', () => {
-  let tempDir: string;
-  let userConfigDir: string;
-  let loadOptions: LoadConfigOptions;
+const legacyRule = {
+  name: 'block-git-add-all',
+  command: 'git',
+  subcommand: 'add',
+  block_args: ['-A'],
+  reason: 'Use specific files.',
+};
 
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'safety-net-config-'));
-    userConfigDir = join(tempDir, '.cc-safety-net');
-    loadOptions = { userConfigDir };
+describe('legacy inline config validation', () => {
+  test('accepts legacy inline rules for migration tools', () => {
+    const result = validateConfig({ version: 1, rules: [legacyRule] });
+
+    expect(result.errors).toEqual([]);
+    expect(result.ruleNames).toEqual(new Set(['block-git-add-all']));
   });
 
-  afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  function writeProjectConfig(data: unknown): void {
-    const path = join(tempDir, '.safety-net.json');
-    if (typeof data === 'string') {
-      writeFileSync(path, data, 'utf-8');
-    } else {
-      writeFileSync(path, JSON.stringify(data), 'utf-8');
-    }
-  }
-
-  function loadFromProject(data: unknown) {
-    writeProjectConfig(data);
-    return loadConfig(tempDir, loadOptions);
-  }
-
-  describe('valid configs', () => {
-    test('minimal valid config', () => {
-      const config = loadFromProject({ version: 1 });
-      expect(config.version).toBe(1);
-      expect(config.rules).toEqual([]);
-    });
-
-    test('valid config with rules', () => {
-      const config = loadFromProject({
+  test('rejects malformed legacy inline rules', () => {
+    expect(validateConfig(null).errors).toEqual(['Config must be an object']);
+    expect(validateConfig({ rules: [] }).errors).toContain('version must be 1');
+    expect(validateConfig({ version: 2 }).errors).toContain('version must be 1');
+    expect(validateConfig({ version: 1, rules: {} }).errors).toContain('rules must be an array');
+    expect(validateConfig({ version: 1, rules: ['bad'] }).errors).toContain(
+      'rules[0]: must be an object',
+    );
+    expect(validateConfig({ version: 1, rules: [{ ...legacyRule, name: '1bad' }] }).errors).toEqual(
+      expect.arrayContaining([
+        'rules[0].name: must match pattern (letters, numbers, hyphens, underscores; max 64 chars)',
+      ]),
+    );
+    expect(
+      validateConfig({
         version: 1,
-        rules: [
-          {
-            name: 'block-git-add-all',
-            command: 'git',
-            subcommand: 'add',
-            block_args: ['-A', '--all'],
-            reason: 'Use specific files.',
-          },
-        ],
-      });
-      expect(config.rules.length).toBe(1);
-      const rule = config.rules[0];
-      expect(rule?.name).toBe('block-git-add-all');
-      expect(rule?.command).toBe('git');
-      expect(rule?.subcommand).toBe('add');
-      expect(rule?.block_args).toEqual(['-A', '--all']);
-      expect(rule?.reason).toBe('Use specific files.');
-    });
-
-    test('valid config without subcommand', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'block-npm-global',
-            command: 'npm',
-            block_args: ['-g'],
-            reason: 'No global installs.',
-          },
-        ],
-      });
-      expect(config.rules.length).toBe(1);
-      expect(config.rules[0]?.subcommand).toBeUndefined();
-    });
-
-    test('valid rule name patterns', () => {
-      const validNames = [
-        'a',
-        'A',
-        'rule1',
-        'my-rule',
-        'my_rule',
-        'MyRule123',
-        'a'.repeat(64), // max length
-      ];
-      for (const name of validNames) {
-        const config = loadFromProject({
-          version: 1,
-          rules: [
-            {
-              name,
-              command: 'git',
-              block_args: ['-A'],
-              reason: 'test',
-            },
-          ],
-        });
-        expect(config.rules[0]?.name).toBe(name);
-      }
-    });
-
-    test('unknown fields ignored', () => {
-      const config = loadFromProject({
-        version: 1,
-        future_field: 'ignored',
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            block_args: ['-A'],
-            reason: 'test',
-            unknown_rule_field: true,
-          },
-        ],
-      });
-      expect(config.rules.length).toBe(1);
-    });
-  });
-
-  describe('invalid configs (all return default config silently)', () => {
-    test('validateConfig rejects non-object', () => {
-      const result = validateConfig(null);
-      expect(result.errors).toEqual(['Config must be an object']);
-    });
-
-    test('invalid JSON syntax', () => {
-      const config = loadFromProject('{ invalid json }');
-      expect(config.rules).toEqual([]);
-    });
-
-    test('missing version', () => {
-      const config = loadFromProject({ rules: [] });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('wrong version number', () => {
-      const config = loadFromProject({ version: 2 });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('version not integer', () => {
-      const config = loadFromProject({ version: '1' });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('missing required rule fields', () => {
-      // Missing name
-      let config = loadFromProject({
-        version: 1,
-        rules: [{ command: 'git', block_args: ['-A'], reason: 'x' }],
-      });
-      expect(config.rules).toEqual([]);
-
-      // Missing command
-      config = loadFromProject({
-        version: 1,
-        rules: [{ name: 'test', block_args: ['-A'], reason: 'x' }],
-      });
-      expect(config.rules).toEqual([]);
-
-      // Missing block_args
-      config = loadFromProject({
-        version: 1,
-        rules: [{ name: 'test', command: 'git', reason: 'x' }],
-      });
-      expect(config.rules).toEqual([]);
-
-      // Missing reason
-      config = loadFromProject({
-        version: 1,
-        rules: [{ name: 'test', command: 'git', block_args: ['-A'] }],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('invalid name patterns', () => {
-      const invalidNames = [
-        '1rule', // starts with number
-        '-rule', // starts with hyphen
-        '_rule', // starts with underscore
-        'rule with space', // contains space
-        'rule.name', // contains dot
-        'a'.repeat(65), // too long
-        '', // empty
-      ];
-      for (const name of invalidNames) {
-        const config = loadFromProject({
-          version: 1,
-          rules: [
-            {
-              name,
-              command: 'git',
-              block_args: ['-A'],
-              reason: 'test',
-            },
-          ],
-        });
-        expect(config.rules).toEqual([]);
-      }
-    });
-
-    test('invalid command patterns', () => {
-      const invalidCommands = [
-        '/usr/bin/git', // path, not just command
-        'git add', // contains space
-        '1git', // starts with number
-        '', // empty
-      ];
-      for (const cmd of invalidCommands) {
-        const config = loadFromProject({
-          version: 1,
-          rules: [
-            {
-              name: 'test',
-              command: cmd,
-              block_args: ['-A'],
-              reason: 'test',
-            },
-          ],
-        });
-        expect(config.rules).toEqual([]);
-      }
-    });
-
-    test('invalid subcommand patterns', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            subcommand: 'add files', // space
-            block_args: ['-A'],
-            reason: 'test',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('subcommand must be string when provided', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            subcommand: 123,
-            block_args: ['-A'],
-            reason: 'test',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('duplicate rule names case insensitive', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'MyRule',
-            command: 'git',
-            block_args: ['-A'],
-            reason: 'test',
-          },
-          {
-            name: 'myrule',
-            command: 'npm',
-            block_args: ['-g'],
-            reason: 'test',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('empty block_args', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            block_args: [],
-            reason: 'test',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('empty string in block_args', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            block_args: ['-A', ''],
-            reason: 'test',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('non-string in block_args', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            block_args: ['-A', 123],
-            reason: 'test',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('reason exceeds max length', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            block_args: ['-A'],
-            reason: 'x'.repeat(257),
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('empty reason', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: [
-          {
-            name: 'test',
-            command: 'git',
-            block_args: ['-A'],
-            reason: '',
-          },
-        ],
-      });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('empty config file', () => {
-      const config = loadFromProject('');
-      expect(config.rules).toEqual([]);
-    });
-
-    test('whitespace only config file', () => {
-      const config = loadFromProject('   \n\t  ');
-      expect(config.rules).toEqual([]);
-    });
-
-    test('config not object', () => {
-      const config = loadFromProject('[]');
-      expect(config.rules).toEqual([]);
-    });
-
-    test('rules not array', () => {
-      const config = loadFromProject({ version: 1, rules: {} });
-      expect(config.rules).toEqual([]);
-    });
-
-    test('rule not object', () => {
-      const config = loadFromProject({
-        version: 1,
-        rules: ['not an object'],
-      });
-      expect(config.rules).toEqual([]);
-    });
+        rules: [legacyRule, { ...legacyRule, name: legacyRule.name.toUpperCase() }],
+      }).errors,
+    ).toContain('rules[1].name: duplicate rule name "BLOCK-GIT-ADD-ALL"');
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, command: 'git add' }] }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        'rules[0].command: must match pattern (letters, numbers, hyphens, underscores)',
+      ]),
+    );
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, subcommand: 1 }] }).errors,
+    ).toContain('rules[0].subcommand: must be a string if provided');
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, subcommand: 'add files' }] }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        'rules[0].subcommand: must match pattern (letters, numbers, hyphens, underscores)',
+      ]),
+    );
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, block_args: undefined }] }).errors,
+    ).toContain('rules[0].block_args: required array');
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, block_args: [] }] }).errors,
+    ).toEqual(expect.arrayContaining(['rules[0].block_args: must have at least one element']));
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, block_args: ['-A', 1] }] }).errors,
+    ).toContain('rules[0].block_args[1]: must be a string');
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, block_args: ['-A', ''] }] }).errors,
+    ).toContain('rules[0].block_args[1]: must not be empty');
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, reason: undefined }] }).errors,
+    ).toContain('rules[0].reason: required string');
+    expect(validateConfig({ version: 1, rules: [{ ...legacyRule, reason: '' }] }).errors).toContain(
+      'rules[0].reason: must not be empty',
+    );
+    expect(
+      validateConfig({ version: 1, rules: [{ ...legacyRule, reason: 'x'.repeat(257) }] }).errors,
+    ).toContain('rules[0].reason: must be at most 256 characters');
   });
 });
 
-describe('config scope merging', () => {
+describe('runtime config loading', () => {
   let tempDir: string;
-  let userConfigDir: string;
-  let loadOptions: LoadConfigOptions;
+  let userRulesDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'safety-net-merge-'));
-    userConfigDir = join(tempDir, '.cc-safety-net');
-    loadOptions = { userConfigDir };
+    tempDir = mkdtempSync(join(tmpdir(), 'safety-net-config-'));
+    userRulesDir = join(tempDir, 'home', '.cc-safety-net', 'rules');
   });
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  function writeUserConfig(data: object): void {
-    mkdirSync(userConfigDir, { recursive: true });
-    writeFileSync(join(userConfigDir, 'config.json'), JSON.stringify(data), 'utf-8');
+  test('no config returns built-in only config', () => {
+    expect(loadConfig(tempDir, { userConfigDir: userRulesDir }).rules).toEqual([]);
+  });
+
+  function writeLegacyProjectConfig(rules: unknown[] = []): void {
+    writeFileSync(join(tempDir, '.safety-net.json'), JSON.stringify({ version: 1, rules }));
   }
 
-  function writeProjectConfig(data: object): void {
-    writeFileSync(join(tempDir, '.safety-net.json'), JSON.stringify(data), 'utf-8');
+  function writeEmptyProjectRulesConfig(): void {
+    mkdirSync(join(tempDir, '.cc-safety-net', 'rules'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
+      JSON.stringify({ version: 1, rules: [], overrides: {} }),
+    );
   }
 
-  function configWithRule(rule: {
-    name: string;
-    command: string;
-    block_args: string[];
-    reason: string;
-  }): object {
-    return { version: 1, rules: [rule] };
-  }
+  function expectLegacyFailClosed(): void {
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
 
-  const userRule = {
-    name: 'user-rule',
-    command: 'git',
-    block_args: ['-A'],
-    reason: 'user',
-  };
-
-  const projectRule = {
-    name: 'project-rule',
-    command: 'npm',
-    block_args: ['-g'],
-    reason: 'project',
-  };
-
-  function expectLoadedRuleName(name: string): void {
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(1);
-    expect(config.rules[0]?.name).toBe(name);
-  }
-
-  test('no config returns default', () => {
-    const config = loadConfig(tempDir, loadOptions);
     expect(config.rules).toEqual([]);
-  });
+    expect(config.failClosedReason).toBe(
+      'legacy rules config location is no longer used; ask the user to run `npx -y cc-safety-net rule migrate`.',
+    );
+  }
 
-  test('user scope only', () => {
-    writeUserConfig(configWithRule(userRule));
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(1);
-    expect(config.rules[0]?.name).toBe('user-rule');
-  });
+  function expectPolicyFailClosed(reason: string): void {
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+    const result = analyzeCommand('echo ok', { cwd: tempDir, config });
 
-  test('project scope only', () => {
-    writeProjectConfig(configWithRule(projectRule));
-    expectLoadedRuleName('project-rule');
-  });
-
-  test('both scopes merged', () => {
-    writeUserConfig(configWithRule(userRule));
-    writeProjectConfig(configWithRule(projectRule));
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(2);
-    const ruleNames = new Set(config.rules.map((r) => r.name));
-    expect(ruleNames).toEqual(new Set(['user-rule', 'project-rule']));
-  });
-
-  test('project overrides user on duplicate', () => {
-    writeUserConfig({
-      version: 1,
-      rules: [
-        {
-          name: 'shared-rule',
-          command: 'git',
-          block_args: ['-A'],
-          reason: 'user version',
-        },
-      ],
-    });
-    writeProjectConfig({
-      version: 1,
-      rules: [
-        {
-          name: 'shared-rule',
-          command: 'git',
-          block_args: ['--all'],
-          reason: 'project version',
-        },
-      ],
-    });
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(1);
-    expect(config.rules[0]?.reason).toBe('project version');
-    expect(config.rules[0]?.block_args).toEqual(['--all']);
-  });
-
-  test('project overrides case insensitive', () => {
-    writeUserConfig({
-      version: 1,
-      rules: [
-        {
-          name: 'MyRule',
-          command: 'git',
-          block_args: ['-A'],
-          reason: 'user',
-        },
-      ],
-    });
-    writeProjectConfig({
-      version: 1,
-      rules: [
-        {
-          name: 'myrule',
-          command: 'npm',
-          block_args: ['-g'],
-          reason: 'project',
-        },
-      ],
-    });
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(1);
-    expect(config.rules[0]?.name).toBe('myrule');
-    expect(config.rules[0]?.reason).toBe('project');
-  });
-
-  test('mixed override and merge', () => {
-    writeUserConfig({
-      version: 1,
-      rules: [
-        {
-          name: 'shared-rule',
-          command: 'git',
-          block_args: ['-A'],
-          reason: 'user shared',
-        },
-        {
-          name: 'user-only',
-          command: 'rm',
-          block_args: ['-rf'],
-          reason: 'user only',
-        },
-      ],
-    });
-    writeProjectConfig({
-      version: 1,
-      rules: [
-        {
-          name: 'shared-rule',
-          command: 'git',
-          block_args: ['--all'],
-          reason: 'project shared',
-        },
-        {
-          name: 'project-only',
-          command: 'npm',
-          block_args: ['-g'],
-          reason: 'project only',
-        },
-      ],
-    });
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(3);
-
-    const rulesByName = Object.fromEntries(config.rules.map((r) => [r.name, r]));
-    expect(rulesByName['shared-rule']?.reason).toBe('project shared');
-    expect(rulesByName['user-only']?.reason).toBe('user only');
-    expect(rulesByName['project-only']?.reason).toBe('project only');
-  });
-
-  test('invalid user config ignored', () => {
-    mkdirSync(userConfigDir, { recursive: true });
-    writeFileSync(join(userConfigDir, 'config.json'), '{"version": 2}', 'utf-8');
-
-    writeProjectConfig(configWithRule(projectRule));
-    expectLoadedRuleName('project-rule');
-  });
-
-  test('invalid project config ignored', () => {
-    writeUserConfig(configWithRule(userRule));
-    writeFileSync(join(tempDir, '.safety-net.json'), '{"version": 2}', 'utf-8');
-
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(1);
-    expect(config.rules[0]?.name).toBe('user-rule');
-  });
-
-  test('both invalid returns default', () => {
-    mkdirSync(userConfigDir, { recursive: true });
-    writeFileSync(join(userConfigDir, 'config.json'), '{"version": 2}', 'utf-8');
-    writeFileSync(join(tempDir, '.safety-net.json'), 'invalid json', 'utf-8');
-
-    const config = loadConfig(tempDir, loadOptions);
     expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toContain(reason);
+    expect(result?.reason).toContain(reason);
+  }
+
+  test('empty legacy project config is ignored when project rule config is missing', () => {
+    writeLegacyProjectConfig();
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
   });
 
-  test('empty project rules still merges', () => {
-    writeUserConfig(configWithRule(userRule));
-    writeProjectConfig({ version: 1, rules: [] });
+  test('legacy project config with rules fails closed when project rule config is missing', () => {
+    writeLegacyProjectConfig([
+      {
+        name: 'block-echo',
+        command: 'echo',
+        block_args: ['hello'],
+        reason: 'No hello.',
+      },
+    ]);
 
-    const config = loadConfig(tempDir, loadOptions);
-    expect(config.rules.length).toBe(1);
-    expect(config.rules[0]?.name).toBe('user-rule');
+    expectLegacyFailClosed();
+  });
+
+  test('empty legacy user config is ignored when user rule config is missing', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'home', '.cc-safety-net', 'config.json'),
+      JSON.stringify({ version: 1, rules: [] }),
+    );
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('legacy user config with missing rules is ignored when user rule config is missing', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'home', '.cc-safety-net', 'config.json'),
+      JSON.stringify({ version: 1 }),
+    );
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('legacy user config with rules fails closed when user rule config is missing', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'home', '.cc-safety-net', 'config.json'),
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            name: 'block-echo',
+            command: 'echo',
+            block_args: ['hello'],
+            reason: 'No hello.',
+          },
+        ],
+      }),
+    );
+
+    expectLegacyFailClosed();
+  });
+
+  test('invalid legacy project config fails closed', () => {
+    writeFileSync(join(tempDir, '.safety-net.json'), '{bad json');
+
+    expectLegacyFailClosed();
+  });
+
+  test('invalid legacy user config fails closed', () => {
+    mkdirSync(join(tempDir, 'home', '.cc-safety-net'), { recursive: true });
+    writeFileSync(join(tempDir, 'home', '.cc-safety-net', 'config.json'), '{bad json');
+
+    expectLegacyFailClosed();
+  });
+
+  test('legacy files with rules fail closed when new rule config has no migration evidence', () => {
+    writeLegacyProjectConfig([
+      {
+        name: 'block-echo',
+        command: 'echo',
+        block_args: ['hello'],
+        reason: 'No hello.',
+      },
+    ]);
+    writeEmptyProjectRulesConfig();
+
+    expectLegacyFailClosed();
+  });
+
+  test('empty legacy files are ignored when new rule config has no migration evidence', () => {
+    writeLegacyProjectConfig();
+    writeEmptyProjectRulesConfig();
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('legacy files are ignored after migration evidence exists', async () => {
+    writeLegacyProjectConfig();
+    mkdirSync(join(tempDir, '.cc-safety-net', 'rules', 'project-rules'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
+      JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
+    );
+    writeFileSync(
+      join(tempDir, '.cc-safety-net', 'rules', 'project-rules', 'rulebook.json'),
+      JSON.stringify({
+        rulebook_version: 1,
+        name: 'project-rules',
+        version: '1.0.0',
+        migrated_from: '.safety-net.json',
+        allowed_commands: ['git'],
+        rules: [],
+        tests: [],
+      }),
+    );
+    expect((await syncRulesConfig({ cwd: tempDir, userConfigDir: userRulesDir })).ok).toBe(true);
+
+    const config = loadConfig(tempDir, { userConfigDir: userRulesDir });
+
+    expect(config.rules).toEqual([]);
+    expect(config.failClosedReason).toBeUndefined();
+  });
+
+  test('unreadable rulebook cache entries fail closed', () => {
+    writeLockedGitHubRulebookPolicy(tempDir, '{}', { cacheAsDirectory: true });
+
+    expectPolicyFailClosed('failed to read cached rulebook');
+  });
+
+  test('invalid rulebook cache JSON fails closed', () => {
+    writeLockedGitHubRulebookPolicy(tempDir, '{');
+
+    expectPolicyFailClosed('invalid cached rulebook');
   });
 });
 
@@ -620,42 +292,44 @@ describe('validate config file', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test('valid file returns empty errors', () => {
+  test('valid legacy file returns empty errors for migration tools', () => {
     const path = join(tempDir, 'config.json');
     writeFileSync(path, JSON.stringify({ version: 1 }), 'utf-8');
-    const result = validateConfigFile(path);
-    expect(result.errors).toEqual([]);
+
+    expect(validateConfigFile(path).errors).toEqual([]);
   });
 
-  test('nonexistent file returns error', () => {
-    const result = validateConfigFile('/nonexistent/config.json');
-    expect(result.errors.length).toBe(1);
-    expect(result.errors[0]).toContain('not found');
-  });
-
-  test('invalid file returns errors', () => {
+  test('invalid legacy file returns validation errors', () => {
     const path = join(tempDir, 'config.json');
     writeFileSync(path, JSON.stringify({ version: 2 }), 'utf-8');
-    const result = validateConfigFile(path);
-    expect(result.errors.length).toBe(1);
-    expect(result.errors[0]).toContain('version');
+
+    expect(validateConfigFile(path).errors).toEqual(['version must be 1']);
   });
 
-  test('empty file returns error', () => {
+  test('file read errors are reported', () => {
+    expect(validateConfigFile('/nonexistent/config.json').errors[0]).toContain('not found');
     const path = join(tempDir, 'config.json');
     writeFileSync(path, '', 'utf-8');
-    const result = validateConfigFile(path);
-    expect(result.errors).toEqual(['Config file is empty']);
+    expect(validateConfigFile(path).errors).toEqual(['Config file is empty']);
+  });
+
+  test('validates rulebook source config files', () => {
+    const path = join(tempDir, 'rule.json');
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
+      'utf-8',
+    );
+
+    const result = validateRulesConfigFile(path);
+
+    expect(result.errors).toEqual([]);
+    expect(result.ruleNames).toEqual(new Set(['project-rules']));
   });
 });
 
 describe('config path helpers', () => {
-  test('getUserConfigPath returns the expected suffix', () => {
-    const p = getUserConfigPath();
-    expect(p).toContain(`${sep}.cc-safety-net${sep}config.json`);
-  });
-
-  test('getProjectConfigPath resolves cwd', () => {
-    expect(getProjectConfigPath('/tmp')).toBe(resolve('/tmp', '.safety-net.json'));
+  test('getLegacyProjectConfigPath resolves cwd', () => {
+    expect(getLegacyProjectConfigPath('/tmp')).toBe(resolve('/tmp', '.safety-net.json'));
   });
 });

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { envTruthy } from '@/core/env';
+import { ENV_FLAGS, envTruthy, getCCSafetyNetEnvModes } from '@/core/env';
 
 /**
  * Read piped stdin content asynchronously.
@@ -64,7 +64,12 @@ function isPluginEnabled(): boolean {
     }
 
     return settings.enabledPlugins[pluginKey] === true;
-  } catch {
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(
+        `CC Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     // On any error (invalid JSON, etc.), default to disabled
     return false;
   }
@@ -77,38 +82,34 @@ export async function printStatusline(): Promise<void> {
   let status: string;
 
   if (!enabled) {
-    status = '🛡️ Safety Net ❌';
+    status = '🛡️ CC Safety Net ❌';
   } else {
-    const strict = envTruthy('SAFETY_NET_STRICT');
-    const paranoidAll = envTruthy('SAFETY_NET_PARANOID');
-    const paranoidRm = paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM');
-    const paranoidInterpreters = paranoidAll || envTruthy('SAFETY_NET_PARANOID_INTERPRETERS');
-    const worktreeMode = envTruthy('SAFETY_NET_WORKTREE');
+    const modes = getCCSafetyNetEnvModes();
 
     let modeEmojis = '';
 
     // Strict mode: 🔒
-    if (strict) {
+    if (modes.strict) {
       modeEmojis += '🔒';
     }
 
     // Paranoid modes: 👁️ if PARANOID or (PARANOID_RM + PARANOID_INTERPRETERS)
     // Otherwise individual emojis: 🗑️ for RM, 🐚 for interpreters
-    if (paranoidAll || (paranoidRm && paranoidInterpreters)) {
+    if (modes.paranoidAll || (modes.paranoidRm && modes.paranoidInterpreters)) {
       modeEmojis += '👁️';
-    } else if (paranoidRm) {
+    } else if (modes.paranoidRm) {
       modeEmojis += '🗑️';
-    } else if (paranoidInterpreters) {
+    } else if (modes.paranoidInterpreters) {
       modeEmojis += '🐚';
     }
 
-    if (worktreeMode) {
+    if (modes.worktreeMode) {
       modeEmojis += '🌳';
     }
 
     // If no mode flags, show ✅
     const statusEmoji = modeEmojis || '✅';
-    status = `🛡️ Safety Net ${statusEmoji}`;
+    status = `🛡️ CC Safety Net ${statusEmoji}`;
   }
 
   // Check for piped stdin input and prepend with separator

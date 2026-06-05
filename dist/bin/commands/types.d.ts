@@ -12,6 +12,15 @@ export interface CommandOption {
     argument?: string;
 }
 /**
+ * Command subcommand definition for CLI help generation.
+ */
+export interface CommandSubcommand {
+    /** Usage pattern, e.g., "sync [--check]" */
+    usage: string;
+    /** Human-readable description */
+    description: string;
+}
+/**
  * Command definition for CLI help generation and routing.
  */
 export interface Command {
@@ -25,6 +34,8 @@ export interface Command {
     usage: string;
     /** Available options for this command */
     options: CommandOption[];
+    /** Available subcommands for this command */
+    subcommands?: CommandSubcommand[];
     /** Example invocations (optional) */
     examples?: string[];
     /** Positional argument description, e.g., "<command>" */

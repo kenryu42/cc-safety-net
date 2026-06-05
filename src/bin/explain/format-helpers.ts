@@ -3,6 +3,7 @@
  */
 
 import { colorizeToken } from '@/bin/utils/colors';
+import { ENV_FLAGS } from '@/core/env';
 import type { TraceStep } from '@/types';
 
 /**
@@ -183,7 +184,7 @@ export function formatStepStyleD(
     case 'worktree-relaxation': {
       lines.push('');
       lines.push(`STEP ${stepNum} ${box.h} Worktree relaxation`);
-      lines.push(`  Mode:   SAFETY_NET_WORKTREE`);
+      lines.push(`  Mode:   ${ENV_FLAGS.worktree.name}`);
       lines.push(`  Git cwd: ${step.gitCwd}`);
       lines.push(`  Result: Allowed local discard in linked worktree`);
       return { lines, incrementStep: true };

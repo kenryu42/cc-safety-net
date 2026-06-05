@@ -4,7 +4,7 @@ import { formatBlockedMessage } from '@/core/format';
 describe('formatBlockedMessage', () => {
   test('includes reason in output', () => {
     const result = formatBlockedMessage({ reason: 'test reason' });
-    expect(result).toContain('BLOCKED by Safety Net');
+    expect(result).toContain('BLOCKED by CC Safety Net');
     expect(result).toContain('Reason: test reason');
   });
 
@@ -78,6 +78,14 @@ describe('formatBlockedMessage', () => {
   test('includes footer about asking user', () => {
     const result = formatBlockedMessage({ reason: 'test reason' });
     expect(result).toContain('ask the user');
+  });
+
+  test('omits footer when manual permission advice is disabled', () => {
+    const result = formatBlockedMessage({
+      reason: 'test reason',
+      manualPermissionAdvice: false,
+    });
+    expect(result).not.toContain('ask the user');
   });
 
   test('applies redact function to command', () => {

@@ -2,8 +2,13 @@
  * Tests for the explain command paranoid mode.
  */
 import { describe, expect, test } from 'bun:test';
-import { explainCommand } from '@/bin/explain/index';
+import { explainCommand as explainCommandBase } from '@/bin/explain/index';
+import type { ExplainOptions } from '@/types';
 import { withEnv } from '../../helpers.ts';
+
+function explainCommand(command: string, options?: ExplainOptions) {
+  return explainCommandBase(command, { config: { version: 1, rules: [] }, ...options });
+}
 
 describe('explainCommand paranoid mode', () => {
   test('interpreter blocked in paranoid mode', () => {
@@ -22,6 +27,14 @@ describe('explainCommand paranoid mode', () => {
 
   test('SAFETY_NET_PARANOID enables paranoid interpreters', () => {
     withEnv({ SAFETY_NET_PARANOID: '1' }, () => {
+      const result = explainCommand('node -e "console.log(1)"');
+      expect(result.result).toBe('blocked');
+      expect(result.reason).toContain('paranoid');
+    });
+  });
+
+  test('CC_SAFETY_NET_PARANOID enables paranoid interpreters', () => {
+    withEnv({ CC_SAFETY_NET_PARANOID: '1' }, () => {
       const result = explainCommand('node -e "console.log(1)"');
       expect(result.result).toBe('blocked');
       expect(result.reason).toContain('paranoid');

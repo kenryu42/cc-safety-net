@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { findCommand } from '@/bin/commands';
-import { CUSTOM_RULES_DOC } from '@/bin/custom-rules-doc';
+import { type CommandName, findCommand } from '@/bin/commands';
 import { parseDoctorFlags, runDoctor } from '@/bin/doctor/index';
 import {
   explainCommand,
@@ -9,23 +8,27 @@ import {
   parseExplainFlags,
 } from '@/bin/explain/index';
 import { printHelp, printVersion, showCommandHelp } from '@/bin/help';
-import { runClaudeCodeHook } from '@/bin/hooks/claude-code';
-import { runCopilotCliHook } from '@/bin/hooks/copilot-cli';
-import { runGeminiCLIHook } from '@/bin/hooks/gemini-cli';
+import { runHookInstallCommand } from '@/bin/hook/install';
+import {
+  findHookIntegrationByFlag,
+  findLegacyTopLevelHookIntegration,
+  type HookIntegration,
+} from '@/bin/hook/integrations';
+import { runRuleCommand } from '@/bin/rule';
 import { printStatusline } from '@/bin/statusline';
-import { verifyConfig } from '@/bin/verify-config';
 
-function printCustomRulesDoc(): void {
-  console.log(CUSTOM_RULES_DOC);
-}
+type ParsedCommand =
+  | { mode: 'hook'; integration: HookIntegration }
+  | { mode: 'hook-install'; args: string[] }
+  | { mode: 'hook-uninstall'; args: string[] }
+  | { mode: 'rule'; args: string[] }
+  | { mode: 'statusline' }
+  | { mode: 'doctor'; args: string[] }
+  | { mode: 'explain'; args: string[] };
 
-type CommandMode =
-  | 'claude-code'
-  | 'copilot-cli'
-  | 'gemini-cli'
-  | 'statusline'
-  | 'doctor'
-  | 'explain';
+type ParsedCommandHandler<T extends ParsedCommand['mode']> = (
+  command: Extract<ParsedCommand, { mode: T }>,
+) => Promise<void>;
 
 /**
  * Check if --help or -h is present in args (but not as a quoted command argument).
@@ -84,9 +87,32 @@ function handleCommandHelp(args: readonly string[]): boolean {
   return false;
 }
 
-function handleCliFlags(): CommandMode | null {
-  const args = process.argv.slice(2);
+const commandParsers = {
+  explain: (args: string[]): ParsedCommand => ({ mode: 'explain', args }),
+  rule: (args: string[]): ParsedCommand => ({ mode: 'rule', args }),
+  statusline: (args: string[]): ParsedCommand => {
+    if (args.includes('--claude-code') || args.includes('-cc')) return { mode: 'statusline' };
+    console.error('statusline requires --claude-code (-cc)');
+    showCommandHelp('statusline');
+    process.exit(1);
+  },
+  hook: (args: string[]): ParsedCommand => {
+    if (args[0] === 'install') return { mode: 'hook-install', args: args.slice(1) };
+    if (args[0] === 'uninstall') return { mode: 'hook-uninstall', args: args.slice(1) };
 
+    const integration = findHookIntegrationByFlag(args);
+    if (integration) return { mode: 'hook', integration };
+
+    console.error(
+      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --kimi-cli',
+    );
+    showCommandHelp('hook');
+    process.exit(1);
+  },
+  doctor: (args: string[]): ParsedCommand => ({ mode: 'doctor', args }),
+} satisfies Record<CommandName, (args: string[]) => ParsedCommand>;
+
+function parseCliArgs(args: string[]): ParsedCommand | null {
   // Handle "help <command>" pattern first
   if (handleHelpCommand(args)) {
     return null;
@@ -95,10 +121,6 @@ function handleCliFlags(): CommandMode | null {
   // Handle "<command> --help" pattern
   if (handleCommandHelp(args)) {
     return null;
-  }
-
-  if (args[0] === 'explain') {
-    return 'explain';
   }
 
   if (args.length === 0 || hasHelpFlag(args)) {
@@ -111,67 +133,58 @@ function handleCliFlags(): CommandMode | null {
     process.exit(0);
   }
 
-  if (args.includes('--verify-config') || args.includes('-vc')) {
-    process.exit(verifyConfig());
-  }
-
-  if (args.includes('--custom-rules-doc')) {
-    printCustomRulesDoc();
+  const commandName = args[0];
+  if (!commandName) {
+    printHelp();
     process.exit(0);
   }
 
-  if (args.includes('doctor') || args.includes('--doctor')) {
-    return 'doctor';
+  const command = findCommand(commandName);
+  if (command) {
+    return commandParsers[command.name](args.slice(1));
   }
 
-  if (args.includes('--statusline')) {
-    return 'statusline';
-  }
+  const legacyIntegration = findLegacyTopLevelHookIntegration(commandName);
+  if (legacyIntegration) return { mode: 'hook', integration: legacyIntegration };
+  if (commandName === '--statusline') return { mode: 'statusline' };
 
-  if (args.includes('--claude-code') || args.includes('-cc')) {
-    return 'claude-code';
-  }
-
-  if (args.includes('--copilot-cli') || args.includes('-cp')) {
-    return 'copilot-cli';
-  }
-
-  if (args.includes('--gemini-cli') || args.includes('-gc')) {
-    return 'gemini-cli';
-  }
-
-  console.error(`Unknown option: ${args[0]}`);
+  console.error(`Unknown option: ${commandName}`);
   console.error("Run 'cc-safety-net --help' for usage.");
   process.exit(1);
 }
 
-async function main(): Promise<void> {
-  const mode = handleCliFlags();
-  if (mode === 'claude-code') {
-    await runClaudeCodeHook();
-  } else if (mode === 'copilot-cli') {
-    await runCopilotCliHook();
-  } else if (mode === 'gemini-cli') {
-    await runGeminiCLIHook();
-  } else if (mode === 'statusline') {
+const commandHandlers = {
+  hook: async (command) => {
+    await command.integration.run();
+  },
+  'hook-install': async (command) => {
+    process.exit(runHookInstallCommand('install', command.args));
+  },
+  'hook-uninstall': async (command) => {
+    process.exit(runHookInstallCommand('uninstall', command.args));
+  },
+  rule: async (command) => {
+    process.exit(await runRuleCommand(command.args));
+  },
+  statusline: async (_command) => {
     await printStatusline();
-  } else if (mode === 'doctor') {
-    const flags = parseDoctorFlags(process.argv.slice(2));
+  },
+  doctor: async (command) => {
+    const flags = parseDoctorFlags(command.args);
     const exitCode = await runDoctor({
       json: flags.json,
       skipUpdateCheck: flags.skipUpdateCheck,
     });
     process.exit(exitCode);
-  } else if (mode === 'explain') {
-    const args = process.argv.slice(3);
-
+  },
+  explain: async (command) => {
     // Check for --help in explain args
-    if (hasHelpFlag(args) || args.length === 0) {
+    if (hasHelpFlag(command.args) || command.args.length === 0) {
       showCommandHelp('explain');
       process.exit(0);
     }
 
-    const flags = parseExplainFlags(args);
+    const flags = parseExplainFlags(command.args);
     if (!flags) {
       process.exit(1);
     }
@@ -185,10 +198,47 @@ async function main(): Promise<void> {
       console.log(formatTraceHuman(result, { asciiOnly }));
     }
     process.exit(0);
+  },
+} satisfies { [Mode in ParsedCommand['mode']]: ParsedCommandHandler<Mode> };
+
+function assertNever(command: never): never {
+  throw new Error(`Unhandled command mode: ${JSON.stringify(command)}`);
+}
+
+async function runParsedCommand(command: ParsedCommand): Promise<void> {
+  switch (command.mode) {
+    case 'hook':
+      await commandHandlers.hook(command);
+      return;
+    case 'hook-install':
+      await commandHandlers['hook-install'](command);
+      return;
+    case 'hook-uninstall':
+      await commandHandlers['hook-uninstall'](command);
+      return;
+    case 'rule':
+      await commandHandlers.rule(command);
+      return;
+    case 'statusline':
+      await commandHandlers.statusline(command);
+      return;
+    case 'doctor':
+      await commandHandlers.doctor(command);
+      return;
+    case 'explain':
+      await commandHandlers.explain(command);
+      return;
+    default:
+      assertNever(command);
   }
 }
 
+async function main(): Promise<void> {
+  const command = parseCliArgs(process.argv.slice(2));
+  if (command) await runParsedCommand(command);
+}
+
 main().catch((error: unknown) => {
-  console.error('Safety Net error:', error);
+  console.error('CC Safety Net error:', error);
   process.exit(1);
 });

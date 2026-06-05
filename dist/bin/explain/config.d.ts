@@ -5,7 +5,9 @@
 import type { AnalyzeOptions, ExplainOptions } from '@/types';
 export interface GetConfigSourceOptions {
     cwd?: string;
-    /** Override user config path for testing */
+    /** Override user rules config directory for testing */
+    userConfigDir?: string;
+    /** Override user rules config path for testing */
     userConfigPath?: string;
 }
 /**

@@ -15,7 +15,7 @@ import {
   formatUpdateSection,
 } from '@/bin/doctor/format';
 import { getSystemInfo } from '@/bin/doctor/system-info';
-import type { DoctorReport, EffectiveRule, HookStatus } from '@/bin/doctor/types';
+import type { DoctorReport, EffectiveRule, HookStatus, SystemInfo } from '@/bin/doctor/types';
 import { mockVersionFetcher, withStdoutColor } from '../../helpers.ts';
 
 function createDoctorReport(overrides: Partial<DoctorReport> = {}): DoctorReport {
@@ -33,13 +33,21 @@ function createDoctorReport(overrides: Partial<DoctorReport> = {}): DoctorReport
       claudeCodeVersion: null,
       claudePluginListOutput: null,
       openCodeVersion: null,
+      codexCliVersion: null,
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
+      kimiCliVersion: null,
+      piCliVersion: null,
       nodeVersion: '22.0.0',
       npmVersion: '10.0.0',
       bunVersion: '1.0.0',
       copilotPluginInstalled: false,
+      piSafetyNetProbe: {
+        status: 'unavailable',
+        installedAndEnabled: false,
+        matched: [],
+      },
       platform: 'darwin',
     },
     ...overrides,
@@ -145,6 +153,22 @@ describe('formatHooksSection', () => {
     expect(output).toContain('Configured');
   });
 
+  test('formats Kimi CLI hooks', () => {
+    const hooks: HookStatus[] = [{ platform: 'kimi-cli', status: 'configured' }];
+
+    const output = formatHooksSection(hooks);
+    expect(output).toContain('Kimi CLI');
+    expect(output).toContain('Configured');
+  });
+
+  test('formats Pi hooks', () => {
+    const hooks: HookStatus[] = [{ platform: 'pi', status: 'configured' }];
+
+    const output = formatHooksSection(hooks);
+    expect(output).toContain('Pi');
+    expect(output).toContain('Configured');
+  });
+
   test('does not show config source paths in text output', () => {
     const hooks: HookStatus[] = [
       {
@@ -242,7 +266,7 @@ describe('formatEnvironmentSection', () => {
     // Should be a table with Variable and Status columns
     expect(output).toContain('Variable');
     expect(output).toContain('Status');
-    expect(output).toContain('SAFETY_NET_STRICT');
+    expect(output).toContain('CC_SAFETY_NET_STRICT');
     // Should have table borders
     expect(output).toContain('┌');
     expect(output).toContain('┘');
@@ -251,11 +275,14 @@ describe('formatEnvironmentSection', () => {
   test('shows ✓ for enabled variables', () => {
     const envVars = [
       {
-        name: 'SAFETY_NET_STRICT',
+        name: 'CC_SAFETY_NET_STRICT',
         description: 'Fail-closed',
         defaultBehavior: 'permissive',
         value: '1',
         isSet: true,
+        legacyName: 'SAFETY_NET_STRICT',
+        legacyValue: undefined,
+        legacyIsSet: false,
       },
     ];
     const output = formatEnvironmentSection(envVars);
@@ -265,11 +292,14 @@ describe('formatEnvironmentSection', () => {
   test('shows ✗ for disabled variables', () => {
     const envVars = [
       {
-        name: 'SAFETY_NET_STRICT',
+        name: 'CC_SAFETY_NET_STRICT',
         description: 'Fail-closed',
         defaultBehavior: 'permissive',
         value: undefined,
         isSet: false,
+        legacyName: 'SAFETY_NET_STRICT',
+        legacyValue: undefined,
+        legacyIsSet: false,
       },
     ];
     const output = formatEnvironmentSection(envVars);
@@ -393,24 +423,46 @@ describe('formatSystemInfoSection', () => {
     expect(output).toContain('Platform');
     expect(output).toContain('Bun');
     expect(output).toContain('Copilot CLI');
+    expect(output).toContain('Codex');
+    expect(output).toContain('Kimi CLI');
+    expect(output).toContain('Pi');
+    expect(output.indexOf('cc-safety-net')).toBeLessThan(output.indexOf('Claude Code'));
+    expect(output.indexOf('Claude Code')).toBeLessThan(output.indexOf('Codex'));
+    expect(output.indexOf('Codex')).toBeLessThan(output.indexOf('Copilot CLI'));
+    expect(output.indexOf('Copilot CLI')).toBeLessThan(output.indexOf('Gemini CLI'));
+    expect(output.indexOf('Gemini CLI')).toBeLessThan(output.indexOf('Kimi CLI'));
+    expect(output.indexOf('Kimi CLI')).toBeLessThan(output.indexOf('OpenCode'));
+    expect(output.indexOf('OpenCode')).toBeLessThan(output.indexOf('Pi'));
+    expect(output.indexOf('Pi')).toBeLessThan(output.indexOf('Node.js'));
+    expect(output.indexOf('Node.js')).toBeLessThan(output.indexOf('npm'));
+    expect(output.indexOf('npm')).toBeLessThan(output.indexOf('Bun'));
+    expect(output.indexOf('Bun')).toBeLessThan(output.indexOf('Platform'));
     // Should have table borders
     expect(output).toContain('┌');
     expect(output).toContain('┘');
   });
 
   test('formats null versions as "not found"', () => {
-    const sysInfo = {
+    const sysInfo: SystemInfo = {
       version: 'dev',
       claudeCodeVersion: null,
       claudePluginListOutput: null,
       openCodeVersion: null,
+      codexCliVersion: null,
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
+      kimiCliVersion: null,
+      piCliVersion: null,
       nodeVersion: '22.0.0',
       npmVersion: null,
       bunVersion: '1.0.0',
       copilotPluginInstalled: false,
+      piSafetyNetProbe: {
+        status: 'unavailable',
+        installedAndEnabled: false,
+        matched: [],
+      },
       platform: 'darwin arm64',
     };
     const output = formatSystemInfoSection(sysInfo);
@@ -422,13 +474,13 @@ describe('formatConfigSection', () => {
   test('formats config with no rules', () => {
     const report = createDoctorReport({
       userConfig: {
-        path: '/home/user/.cc-safety-net/config.json',
+        path: '/home/user/.cc-safety-net/rules/rule.json',
         exists: false,
         valid: false,
         ruleCount: 0,
       },
       projectConfig: {
-        path: './.safety-net.json',
+        path: './.cc-safety-net/rules/rule.json',
         exists: false,
         valid: false,
         ruleCount: 0,
@@ -444,13 +496,13 @@ describe('formatConfigSection', () => {
   test('formats config with shadow warnings', () => {
     const report = createDoctorReport({
       userConfig: {
-        path: '/home/user/.cc-safety-net/config.json',
+        path: '/home/user/.cc-safety-net/rules/rule.json',
         exists: true,
         valid: true,
         ruleCount: 1,
       },
       projectConfig: {
-        path: './.safety-net.json',
+        path: './.cc-safety-net/rules/rule.json',
         exists: true,
         valid: true,
         ruleCount: 1,
@@ -473,14 +525,14 @@ describe('formatConfigSection', () => {
   test('formats config with invalid config showing errors', () => {
     const report = createDoctorReport({
       userConfig: {
-        path: '/home/user/.cc-safety-net/config.json',
+        path: '/home/user/.cc-safety-net/rules/rule.json',
         exists: true,
         valid: false,
         ruleCount: 0,
         errors: ['Invalid version: expected 1, got 99'],
       },
       projectConfig: {
-        path: './.safety-net.json',
+        path: './.cc-safety-net/rules/rule.json',
         exists: true,
         valid: false,
         ruleCount: 0,

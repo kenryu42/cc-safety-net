@@ -1,7 +1,11 @@
 import { dangerousInText } from '@/core/analyze/dangerous-text';
 import { analyzeSegment, segmentChangesCwd } from '@/core/analyze/segment';
-import { parseEnvAssignment, splitShellCommands } from '@/core/shell';
-import { GIT_CONFIG_AFFECTING_ENV_NAMES, GIT_CONTEXT_ENV_OVERRIDES } from '@/core/worktree';
+import {
+  applyShellGitContextEnvSegment,
+  createShellGitContextEnvState,
+  getSegmentGitContextEnvAssignments,
+} from '@/core/analyze/shell-git-env';
+import { getBasename, splitShellCommandsWithInfo } from '@/core/shell';
 import {
   type AnalyzeNestedOverrides,
   type AnalyzeOptions,
@@ -12,11 +16,10 @@ import {
 
 const REASON_STRICT_UNPARSEABLE =
   'Command could not be safely analyzed (strict mode). Verify manually.';
+const DYNAMIC_SUBSTITUTION_TOKEN = '$__CC_SAFETY_NET_DYNAMIC_SUBSTITUTION__';
 
 export const REASON_RECURSION_LIMIT =
   'Command exceeds maximum recursion depth and cannot be safely analyzed.';
-const GIT_CONTEXT_ENV_OVERRIDE_NAMES: ReadonlySet<string> = new Set(GIT_CONTEXT_ENV_OVERRIDES);
-const GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
 
 export type InternalOptions = AnalyzeOptions & { config: Config };
 
@@ -29,15 +32,18 @@ export function analyzeCommandInternal(
     return { reason: REASON_RECURSION_LIMIT, segment: command };
   }
 
-  const segments = splitShellCommands(command);
+  const segments = splitShellCommandsWithInfo(command);
+  if (depth === 0 && options.config.failClosedReason && isFailClosedRepairCommand(segments)) {
+    return null;
+  }
 
   // Strict mode: block if command couldn't be parsed (unclosed quotes, etc.)
   // Detected when splitShellCommands returns a single segment containing the raw command
   if (
     options.strict &&
     segments.length === 1 &&
-    segments[0]?.length === 1 &&
-    segments[0][0] === command &&
+    segments[0]?.tokens.length === 1 &&
+    segments[0].tokens[0] === command &&
     command.includes(' ')
   ) {
     return { reason: REASON_STRICT_UNPARSEABLE, segment: command };
@@ -50,7 +56,10 @@ export function analyzeCommandInternal(
     options.effectiveCwd !== undefined ? options.effectiveCwd : options.cwd;
   const shellGitContextState = createShellGitContextEnvState(options.envAssignments);
 
-  for (const segment of segments) {
+  for (const segmentInfo of segments) {
+    const segment = segmentInfo.hasDynamicSubstitution
+      ? appendDynamicSubstitutionSentinelForGit(segmentInfo.tokens)
+      : segmentInfo.tokens;
     const segmentStr = segment.join(' ');
     const segmentEnvAssignments = getSegmentGitContextEnvAssignments(segment, shellGitContextState);
 
@@ -100,434 +109,62 @@ export function analyzeCommandInternal(
   return null;
 }
 
-export interface ShellGitContextEnvState {
-  effectiveEnvAssignments?: ReadonlyMap<string, string>;
-  shellAssignments: Map<string, string>;
-  exportedNames: Set<string>;
-  allexport: boolean;
-  keywordExport: boolean;
+function appendDynamicSubstitutionSentinelForGit(tokens: string[]): string[] {
+  if (!tokens.some((token) => getBasename(token).toLowerCase() === 'git')) {
+    return tokens;
+  }
+  return [...tokens, DYNAMIC_SUBSTITUTION_TOKEN];
 }
 
-export function createShellGitContextEnvState(
-  effectiveEnvAssignments?: ReadonlyMap<string, string>,
-): ShellGitContextEnvState {
-  return {
-    effectiveEnvAssignments,
-    shellAssignments: new Map(),
-    exportedNames: getInitiallyExportedGitContextNames(effectiveEnvAssignments),
-    allexport: false,
-    keywordExport: false,
-  };
+function isFailClosedRepairCommand(
+  segments: ReturnType<typeof splitShellCommandsWithInfo>,
+): boolean {
+  if (segments.length !== 1 || segments[0]?.hasDynamicSubstitution) {
+    return false;
+  }
+
+  const segment = segments[0];
+  if (!segment) {
+    return false;
+  }
+
+  const tokens = segment.tokens;
+  if (tokens[0] === 'cc-safety-net') {
+    return tokens[1] === 'rule' && isRuleSyncArgs(tokens.slice(2));
+  }
+
+  if (tokens[0] === 'npx') {
+    return (tokens[1] === '-y' || tokens[1] === '--yes') && isPackageRuleSyncRepair(tokens, 2);
+  }
+
+  if (tokens[0] === 'bunx' || tokens[0] === 'pnpx') {
+    return isPackageRuleSyncRepair(tokens, 1);
+  }
+
+  if ((tokens[0] === 'pnpm' || tokens[0] === 'yarn') && tokens[1] === 'dlx') {
+    return isPackageRuleSyncRepair(tokens, 2);
+  }
+
+  return false;
 }
 
-export function applyShellGitContextEnvSegment(
-  tokens: readonly string[],
-  state: ShellGitContextEnvState,
-): void {
-  const commandInfo = getShellCommandInfo(tokens);
-  if (!commandInfo) {
-    return;
-  }
-
-  const { command, commandIndex, leadingAssignments } = commandInfo;
-  if (command === null) {
-    for (const assignment of leadingAssignments.values()) {
-      setShellGitContextAssignment(state, assignment);
-    }
-    return;
-  }
-
-  if (command === 'set') {
-    const changes = getSetOptionChanges(tokens, commandIndex);
-    if (changes.allexport !== null) {
-      state.allexport = changes.allexport;
-    }
-    if (changes.keywordExport !== null) {
-      state.keywordExport = changes.keywordExport;
-    }
-    return;
-  }
-
-  if (
-    command !== 'export' &&
-    command !== 'typeset' &&
-    command !== 'declare' &&
-    command !== 'readonly'
-  ) {
-    return;
-  }
-
-  for (const assignment of leadingAssignments.values()) {
-    setShellGitContextAssignment(state, assignment);
-  }
-
-  if (command === 'export') {
-    const operandsStart = getExportOperandsStart(tokens, commandIndex);
-    if (operandsStart === null) {
-      return;
-    }
-    for (const token of tokens.slice(operandsStart)) {
-      addExportedGitContextEnvAssignment(state, token);
-    }
-    return;
-  }
-
-  const operandsInfo = getTypesetOperandsInfo(tokens, commandIndex);
-  if (operandsInfo === null) {
-    return;
-  }
-  for (const token of tokens.slice(operandsInfo.operandsStart)) {
-    addTypesetGitContextEnvAssignment(
-      state,
-      token,
-      operandsInfo.exports,
-      command === 'readonly' ? leadingAssignments : undefined,
-    );
-  }
-}
-
-export function getSegmentGitContextEnvAssignments(
-  tokens: readonly string[],
-  state: ShellGitContextEnvState,
-): ReadonlyMap<string, string> | undefined {
-  if (!state.keywordExport) {
-    return state.effectiveEnvAssignments;
-  }
-
-  let nextEnvAssignments: Map<string, string> | null = null;
-  for (const token of tokens) {
-    const assignment = parseGitContextEnvAssignment(token);
-    if (!assignment) {
-      continue;
-    }
-    nextEnvAssignments ??= new Map(state.effectiveEnvAssignments ?? []);
-    nextEnvAssignments.set(assignment.name, assignment.value);
-  }
-
-  return nextEnvAssignments ?? state.effectiveEnvAssignments;
-}
-
-interface GitContextAssignment {
-  name: string;
-  value: string;
-}
-
-interface ShellCommandInfo {
-  command: string | null;
-  commandIndex: number;
-  leadingAssignments: Map<string, GitContextAssignment>;
-}
-
-function getShellCommandInfo(tokens: readonly string[]): ShellCommandInfo | null {
-  const leadingAssignments = new Map<string, GitContextAssignment>();
-  let i = 0;
-
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      return null;
-    }
-    const assignment = parseShellAssignment(token);
-    if (!assignment) {
-      break;
-    }
-    if (isTrackedGitEnvName(assignment.name)) {
-      leadingAssignments.set(assignment.name, assignment);
-    }
-    i++;
-  }
-
-  if (i >= tokens.length) {
-    return { command: null, commandIndex: i, leadingAssignments };
-  }
-
-  let commandIndex = i;
-  let command = tokens[commandIndex] ?? null;
-  if (command === 'builtin') {
-    commandIndex++;
-    if (tokens[commandIndex] === '--') {
-      commandIndex++;
-    }
-    command = tokens[commandIndex] ?? null;
-  }
-  if (command === 'command') {
-    const commandBuiltinInfo = getCommandBuiltinTarget(tokens, commandIndex);
-    if (!commandBuiltinInfo) {
-      return null;
-    }
-    commandIndex = commandBuiltinInfo.commandIndex;
-    command = commandBuiltinInfo.command;
-  }
-  if (command === null) {
-    return null;
-  }
-
-  return { command, commandIndex, leadingAssignments };
-}
-
-function getCommandBuiltinTarget(
-  tokens: readonly string[],
-  commandIndex: number,
-): { command: string; commandIndex: number } | null {
-  let i = commandIndex + 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      return null;
-    }
-    if (token === '--') {
-      i++;
-      break;
-    }
-    if (token === '-p') {
-      i++;
-      continue;
-    }
-    if (token === '-v' || token === '-V') {
-      return null;
-    }
-    break;
-  }
-
-  const command = tokens[i];
-  return command ? { command, commandIndex: i } : null;
-}
-
-function parseShellAssignment(token: string): GitContextAssignment | null {
-  return parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment(token);
-}
-
-function parseGitContextEnvAssignment(token: string): GitContextAssignment | null {
-  const assignment = parseEnvAssignment(token) ?? parseGitContextAppendEnvAssignment(token);
-  if (!assignment || !isTrackedGitEnvName(assignment.name)) {
-    return null;
-  }
-  return assignment;
-}
-
-function parseGitContextAppendEnvAssignment(token: string): GitContextAssignment | null {
-  const match = token.match(GIT_CONTEXT_APPEND_ASSIGNMENT_RE);
-  const name = match?.[1];
-  if (!name || !isTrackedGitEnvName(name)) {
-    return null;
-  }
-  const eqIdx = token.indexOf('=');
-  return { name, value: token.slice(eqIdx + 1) };
-}
-
-function isTrackedGitEnvName(name: string): boolean {
+function isPackageRuleSyncRepair(tokens: string[], packageIndex: number): boolean {
   return (
-    GIT_CONTEXT_ENV_OVERRIDE_NAMES.has(name) ||
-    GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) ||
-    isGitConfigEnvName(name)
+    isCCSafetyNetPackage(tokens[packageIndex]) &&
+    tokens[packageIndex + 1] === 'rule' &&
+    isRuleSyncArgs(tokens.slice(packageIndex + 2))
   );
 }
 
-function isGitConfigEnvName(name: string): boolean {
+function isRuleSyncArgs(args: string[]): boolean {
   return (
-    name === 'GIT_CONFIG_COUNT' ||
-    name === 'GIT_CONFIG_PARAMETERS' ||
-    /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name)
+    args.length >= 1 &&
+    args.length <= 2 &&
+    args.filter((arg) => arg === 'sync').length === 1 &&
+    args.every((arg) => arg === 'sync' || arg === '--global' || arg === '-g')
   );
 }
 
-function getInitiallyExportedGitContextNames(
-  effectiveEnvAssignments?: ReadonlyMap<string, string>,
-): Set<string> {
-  const exportedNames = new Set<string>();
-  for (const name of Object.keys(process.env)) {
-    if (isTrackedGitEnvName(name)) {
-      exportedNames.add(name);
-    }
-  }
-  for (const name of effectiveEnvAssignments?.keys() ?? []) {
-    if (isTrackedGitEnvName(name)) {
-      exportedNames.add(name);
-    }
-  }
-  return exportedNames;
-}
-
-function setShellGitContextAssignment(
-  state: ShellGitContextEnvState,
-  assignment: GitContextAssignment,
-): void {
-  state.shellAssignments.set(assignment.name, assignment.value);
-  if (state.allexport || state.exportedNames.has(assignment.name)) {
-    setEffectiveGitContextAssignment(state, assignment);
-  }
-}
-
-function setEffectiveGitContextAssignment(
-  state: ShellGitContextEnvState,
-  assignment: GitContextAssignment,
-): void {
-  const nextEnvAssignments = new Map(state.effectiveEnvAssignments ?? []);
-  nextEnvAssignments.set(assignment.name, assignment.value);
-  state.effectiveEnvAssignments = nextEnvAssignments;
-}
-
-function addExportedGitContextEnvAssignment(state: ShellGitContextEnvState, token: string): void {
-  const assignment = parseGitContextEnvAssignment(token);
-  if (assignment) {
-    state.shellAssignments.set(assignment.name, assignment.value);
-    state.exportedNames.add(assignment.name);
-    setEffectiveGitContextAssignment(state, assignment);
-    return;
-  }
-
-  if (isTrackedGitEnvName(token)) {
-    exportTrackedGitContextEnvName(state, token);
-  }
-}
-
-function addTypesetGitContextEnvAssignment(
-  state: ShellGitContextEnvState,
-  token: string,
-  exports: boolean,
-  readonlyLeadingAssignments?: ReadonlyMap<string, GitContextAssignment>,
-): void {
-  const assignment = parseGitContextEnvAssignment(token);
-  if (assignment) {
-    state.shellAssignments.set(assignment.name, assignment.value);
-    if (exports) {
-      state.exportedNames.add(assignment.name);
-      setEffectiveGitContextAssignment(state, assignment);
-    } else if (state.allexport || state.exportedNames.has(assignment.name)) {
-      setEffectiveGitContextAssignment(state, assignment);
-    }
-    return;
-  }
-
-  const readonlyAssignment = readonlyLeadingAssignments?.get(token);
-  if (readonlyAssignment) {
-    state.exportedNames.add(token);
-    setEffectiveGitContextAssignment(state, readonlyAssignment);
-    return;
-  }
-
-  if (exports && isTrackedGitEnvName(token)) {
-    exportTrackedGitContextEnvName(state, token);
-  }
-}
-
-function exportTrackedGitContextEnvName(state: ShellGitContextEnvState, name: string): void {
-  state.exportedNames.add(name);
-  setEffectiveGitContextAssignment(state, {
-    name,
-    value: state.shellAssignments.get(name) ?? '',
-  });
-}
-
-function getExportOperandsStart(tokens: readonly string[], commandIndex: number): number | null {
-  let i = commandIndex + 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      return null;
-    }
-    if (token === '--') {
-      return i + 1;
-    }
-    if (token === '-p') {
-      i++;
-      continue;
-    }
-    if (token.startsWith('-')) {
-      return null;
-    }
-    return i;
-  }
-  return i;
-}
-
-interface TypesetOperandsInfo {
-  operandsStart: number;
-  exports: boolean;
-}
-
-function getTypesetOperandsInfo(
-  tokens: readonly string[],
-  commandIndex: number,
-): TypesetOperandsInfo | null {
-  let i = commandIndex + 1;
-  let hasExportFlag = false;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      return null;
-    }
-    if (token === '--') {
-      return { operandsStart: i + 1, exports: hasExportFlag };
-    }
-    if (token.startsWith('-')) {
-      if (token.slice(1).includes('x')) {
-        hasExportFlag = true;
-      }
-      i++;
-      continue;
-    }
-    if (token.startsWith('+')) {
-      if (token.slice(1).includes('x')) {
-        hasExportFlag = false;
-      }
-      i++;
-      continue;
-    }
-    return { operandsStart: i, exports: hasExportFlag };
-  }
-  return { operandsStart: i, exports: hasExportFlag };
-}
-
-interface SetOptionChanges {
-  allexport: boolean | null;
-  keywordExport: boolean | null;
-}
-
-function getSetOptionChanges(tokens: readonly string[], commandIndex: number): SetOptionChanges {
-  const changes: SetOptionChanges = { allexport: null, keywordExport: null };
-  let i = commandIndex + 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      return changes;
-    }
-    if (token === '--') {
-      return changes;
-    }
-    if (token === '-o' || token === '+o') {
-      if (tokens[i + 1] === 'allexport') {
-        changes.allexport = token === '-o';
-      }
-      if (tokens[i + 1] === 'keyword') {
-        changes.keywordExport = token === '-o';
-      }
-      i += 2;
-      continue;
-    }
-    if (token.startsWith('-') && token.length > 1) {
-      const flags = token.slice(1);
-      if (flags.includes('a')) {
-        changes.allexport = true;
-      }
-      if (flags.includes('k')) {
-        changes.keywordExport = true;
-      }
-      i++;
-      continue;
-    }
-    if (token.startsWith('+') && token.length > 1) {
-      const flags = token.slice(1);
-      if (flags.includes('a')) {
-        changes.allexport = false;
-      }
-      if (flags.includes('k')) {
-        changes.keywordExport = false;
-      }
-      i++;
-      continue;
-    }
-    return changes;
-  }
-  return changes;
+function isCCSafetyNetPackage(value: string | undefined): boolean {
+  return /^cc-safety-net(?:@[a-zA-Z0-9._-]+)?$/.test(value ?? '');
 }
