@@ -10,7 +10,7 @@ import {
   REASON_STRICT_UNPARSEABLE,
 } from '@/bin/explain/segment';
 import { dangerousInText } from '@/core/analyze/dangerous-text';
-import { segmentChangesCwd } from '@/core/analyze/segment';
+import { resolveCwdAfterSegment } from '@/core/analyze/segment';
 import {
   applyShellGitContextEnvSegment,
   createShellGitContextEnvState,
@@ -108,12 +108,14 @@ export function explainCommand(command: string, options?: ExplainOptions): Expla
         token: redactEnvAssignmentsInString(segment[0]),
         matched: false,
       });
-      if (segmentChangesCwd(segment)) {
-        segmentSteps.push({
-          type: 'cwd-change',
-          segment: redactEnvAssignmentsInString(segment.join(' ')),
-          effectiveCwdNowUnknown: true,
-        });
+      const nextCwd = resolveCwdAfterSegment(segment, effectiveCwd);
+      if (nextCwd !== undefined) {
+        if (nextCwd !== null) {
+          effectiveCwd = nextCwd;
+          trace.segments.push({ index: i, steps: segmentSteps });
+          continue;
+        }
+        segmentSteps.push(cwdChangeStep(segment));
         effectiveCwd = null;
       }
       trace.segments.push({ index: i, steps: segmentSteps });
@@ -137,12 +139,15 @@ export function explainCommand(command: string, options?: ExplainOptions): Expla
       blockSegment = redactEnvAssignmentsInString(segment.join(' '));
     }
 
-    if (segmentChangesCwd(segment)) {
-      segmentSteps.push({
-        type: 'cwd-change',
-        segment: redactEnvAssignmentsInString(segment.join(' ')),
-        effectiveCwdNowUnknown: true,
-      });
+    const nextCwd = resolveCwdAfterSegment(segment, effectiveCwd);
+    if (nextCwd !== undefined) {
+      if (nextCwd !== null) {
+        effectiveCwd = nextCwd;
+        applyShellGitContextEnvSegment(segment, shellGitContextState);
+        trace.segments.push({ index: i, steps: segmentSteps });
+        continue;
+      }
+      segmentSteps.push(cwdChangeStep(segment));
       effectiveCwd = null;
     }
 
@@ -159,6 +164,14 @@ export function explainCommand(command: string, options?: ExplainOptions): Expla
     customRule: getCustomRuleMetadata(blockReason, options, analyzeOpts.cwd ?? process.cwd()),
     configSource,
     configValid,
+  };
+}
+
+function cwdChangeStep(segment: readonly string[]): TraceStep {
+  return {
+    type: 'cwd-change',
+    segment: redactEnvAssignmentsInString(segment.join(' ')),
+    effectiveCwdNowUnknown: true,
   };
 }
 
