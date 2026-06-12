@@ -346,6 +346,15 @@ describe('rm -rf cwd-aware', () => {
     }
   });
 
+  test('cd to current cwd keeps rm -rf relative path allowed', () => {
+    setup();
+    try {
+      assertAllowed(`cd ${toShellPath(tmpDir)} && rm -rf build`, tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('paranoid rm blocks within cwd', () => {
     setup();
     try {
