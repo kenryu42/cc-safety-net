@@ -64,7 +64,7 @@
     ]
   },
   "dependencies": {
-    "shell-quote": "^1.8.3"
+    "shell-quote": "^1.8.4"
   },
   "trustedDependencies": [
     "@ast-grep/cli"
