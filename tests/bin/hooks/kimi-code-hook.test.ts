@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { expectNoHookOutput, getHookDenyReason, kimiShellInput, runKimiHook } from './hook-helpers';
 
-describe('Kimi CLI hook', () => {
+describe('Kimi Code hook', () => {
   describe('blocked commands', () => {
     test('blocks rm -rf via Shell tool', async () => {
       const { stdout, exitCode } = await runKimiHook(kimiShellInput('rm -rf /'));
@@ -48,13 +48,13 @@ describe('Kimi CLI hook', () => {
     test('empty input produces deny output', async () => {
       const result = await runKimiHook('');
 
-      expect(getHookDenyReason(result, 'kimi-cli')).toContain('Missing hook input JSON.');
+      expect(getHookDenyReason(result, 'kimi-code')).toContain('Missing hook input JSON.');
     });
 
     test('whitespace-only input produces deny output', async () => {
       const result = await runKimiHook('   \n\t  ');
 
-      expect(getHookDenyReason(result, 'kimi-cli')).toContain('Missing hook input JSON.');
+      expect(getHookDenyReason(result, 'kimi-code')).toContain('Missing hook input JSON.');
     });
 
     test('strict mode blocks invalid JSON', async () => {
@@ -62,7 +62,7 @@ describe('Kimi CLI hook', () => {
         SAFETY_NET_STRICT: '1',
       });
 
-      expect(getHookDenyReason({ stdout, stderr: '', exitCode }, 'kimi-cli')).toContain(
+      expect(getHookDenyReason({ stdout, stderr: '', exitCode }, 'kimi-code')).toContain(
         'Failed to parse hook input JSON.',
       );
     });
@@ -70,7 +70,7 @@ describe('Kimi CLI hook', () => {
     test('non-strict mode blocks invalid JSON', async () => {
       const result = await runKimiHook('{invalid json');
 
-      expect(getHookDenyReason(result, 'kimi-cli')).toContain('Failed to parse hook input JSON.');
+      expect(getHookDenyReason(result, 'kimi-code')).toContain('Failed to parse hook input JSON.');
     });
   });
 

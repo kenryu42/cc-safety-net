@@ -103,7 +103,7 @@ function _createCodexPluginVersion(codexHome: string): void {
   });
 }
 
-function _writeKimiConfig(configPath: string, content = 'cc-safety-net hook --kimi-cli'): void {
+function _writeKimiConfig(configPath: string, content = 'cc-safety-net hook --kimi-code'): void {
   mkdirSync(join(configPath, '..'), { recursive: true });
   writeFileSync(configPath, content);
 }
@@ -158,7 +158,7 @@ describe('detectAllHooks', () => {
       expect(copilot?.method).toBe('hook config');
       expect(copilot?.selfTest?.passed).toBe(copilot?.selfTest?.total);
 
-      const kimi = hooks.find((hook) => hook.platform === 'kimi-cli');
+      const kimi = hooks.find((hook) => hook.platform === 'kimi-code');
       expect(kimi?.status).toBe('n/a');
     } finally {
       rmSync(tmpBase, { recursive: true, force: true });
@@ -178,7 +178,7 @@ describe('detectAllHooks', () => {
         'codex',
         'copilot-cli',
         'gemini-cli',
-        'kimi-cli',
+        'kimi-code',
         'opencode',
         'pi',
       ]);
@@ -676,7 +676,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi CLI: configured when home config contains hook command', () => {
+  test('Kimi Code: configured when home config contains hook command', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -686,7 +686,7 @@ describe('detectAllHooks', () => {
 
     try {
       const kimi = detectAllHooks(projectDir, { homeDir }).find(
-        (hook) => hook.platform === 'kimi-cli',
+        (hook) => hook.platform === 'kimi-code',
       );
 
       expect(kimi?.status).toBe('configured');
@@ -698,17 +698,17 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi CLI: configured when hook command is quoted in TOML', () => {
+  test('Kimi Code: configured when hook command is quoted in TOML', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
     const configPath = join(homeDir, '.kimi', 'config.toml');
     mkdirSync(projectDir, { recursive: true });
-    _writeKimiConfig(configPath, 'pre_tool_use = "cc-safety-net hook --kimi-cli"');
+    _writeKimiConfig(configPath, 'pre_tool_use = "cc-safety-net hook --kimi-code"');
 
     try {
       const kimi = detectAllHooks(projectDir, { homeDir }).find(
-        (hook) => hook.platform === 'kimi-cli',
+        (hook) => hook.platform === 'kimi-code',
       );
 
       expect(kimi?.status).toBe('configured');
@@ -718,7 +718,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi CLI: configured from KIMI_SHARE_DIR config', () => {
+  test('Kimi Code: configured from KIMI_SHARE_DIR config', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -726,11 +726,11 @@ describe('detectAllHooks', () => {
     const configPath = join(kimiShareDir, 'config.toml');
     mkdirSync(homeDir, { recursive: true });
     mkdirSync(projectDir, { recursive: true });
-    _writeKimiConfig(configPath, 'bunx cc-safety-net hook --kimi-cli');
+    _writeKimiConfig(configPath, 'bunx cc-safety-net hook --kimi-code');
 
     try {
       const kimi = withEnv({ KIMI_SHARE_DIR: kimiShareDir }, () =>
-        detectAllHooks(projectDir, { homeDir }).find((hook) => hook.platform === 'kimi-cli'),
+        detectAllHooks(projectDir, { homeDir }).find((hook) => hook.platform === 'kimi-code'),
       );
 
       expect(kimi?.status).toBe('configured');
@@ -740,7 +740,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi CLI: n/a when config file is missing', () => {
+  test('Kimi Code: n/a when config file is missing', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -749,7 +749,7 @@ describe('detectAllHooks', () => {
 
     try {
       const kimi = detectAllHooks(projectDir, { homeDir }).find(
-        (hook) => hook.platform === 'kimi-cli',
+        (hook) => hook.platform === 'kimi-code',
       );
 
       expect(kimi?.status).toBe('n/a');
@@ -760,7 +760,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi CLI: n/a when config does not contain hook command', () => {
+  test('Kimi Code: n/a when config does not contain hook command', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -770,7 +770,7 @@ describe('detectAllHooks', () => {
 
     try {
       const kimi = detectAllHooks(projectDir, { homeDir }).find(
-        (hook) => hook.platform === 'kimi-cli',
+        (hook) => hook.platform === 'kimi-code',
       );
 
       expect(kimi?.status).toBe('n/a');
@@ -781,7 +781,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi CLI: n/a with error when config cannot be read', () => {
+  test('Kimi Code: n/a with error when config cannot be read', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -791,7 +791,7 @@ describe('detectAllHooks', () => {
 
     try {
       const kimi = detectAllHooks(projectDir, { homeDir }).find(
-        (hook) => hook.platform === 'kimi-cli',
+        (hook) => hook.platform === 'kimi-code',
       );
 
       expect(kimi?.status).toBe('n/a');

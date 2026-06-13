@@ -64,9 +64,9 @@ describe('hook command routing', () => {
     expect(output.reason).toContain('git reset --hard');
   });
 
-  test('Kimi CLI routes through hook command only', async () => {
+  test('Kimi Code routes through hook command only', async () => {
     const { stdout, exitCode } = await runCli(
-      ['hook', '--kimi-cli'],
+      ['hook', '--kimi-code'],
       JSON.stringify(kimiShellInput('git status')),
     );
 
@@ -74,20 +74,20 @@ describe('hook command routing', () => {
     expect(stdout).toBe('');
   });
 
-  test('hook kimi-cli is not a platform subcommand', async () => {
-    const { stdout, exitCode } = await runCli(['hook', 'kimi-cli']);
+  test('hook kimi-code is not a platform subcommand', async () => {
+    const { stdout, exitCode } = await runCli(['hook', 'kimi-code']);
 
     expect(exitCode).toBe(1);
     expect(stdout).toContain('cc-safety-net hook');
-    expect(stdout).toContain('-kc, --kimi-cli');
+    expect(stdout).toContain('-kc, --kimi-code');
   });
 
-  test('top-level Kimi CLI flags are not legacy compatibility aliases', async () => {
-    const longFlag = await runCli(['--kimi-cli']);
+  test('top-level Kimi Code flags are not legacy compatibility aliases', async () => {
+    const longFlag = await runCli(['--kimi-code']);
     const shortFlag = await runCli(['-kc']);
 
     expect(longFlag.exitCode).toBe(1);
-    expect(longFlag.stderr).toContain('Unknown option: --kimi-cli');
+    expect(longFlag.stderr).toContain('Unknown option: --kimi-code');
     expect(shortFlag.exitCode).toBe(1);
     expect(shortFlag.stderr).toContain('Unknown option: -kc');
   });
@@ -110,6 +110,6 @@ describe('hook command routing', () => {
     expect(stdout).toContain('-cc, --claude-code');
     expect(stdout).toContain('-cp, --copilot-cli');
     expect(stdout).toContain('-gc, --gemini-cli');
-    expect(stdout).toContain('-kc, --kimi-cli');
+    expect(stdout).toContain('-kc, --kimi-code');
   });
 });

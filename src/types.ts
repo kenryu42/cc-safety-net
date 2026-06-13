@@ -92,8 +92,8 @@ export interface GeminiHookOutput {
   suppressOutput?: boolean;
 }
 
-/** Kimi CLI hook input format */
-export interface KimiCliHookInput {
+/** Kimi Code hook input format */
+export interface KimiCodeHookInput {
   session_id?: string;
   cwd?: string;
   hook_event_name: string;

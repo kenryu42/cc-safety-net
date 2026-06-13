@@ -7,7 +7,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-D27656)](#claude-code-installation)
 [![Copilot CLI](https://img.shields.io/badge/Copilot%20CLI-4EA5C9)](#github-copilot-cli-installation)
 [![Gemini CLI](https://img.shields.io/badge/Gemini%20CLI-678AE3)](#gemini-cli-installation)
-[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-5587FF)](#kimi-cli-installation)
+[![Kimi Code](https://img.shields.io/badge/Kimi%20Code-5587FF)](#kimi-code-installation)
 [![OpenCode](https://img.shields.io/badge/OpenCode-black)](#opencode-installation)
 [![Pi](https://img.shields.io/badge/Pi%20Coding-22262E)](#pi-installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
@@ -31,7 +31,7 @@ A Coding Agent CLI plugin that acts as a safety net, catching destructive git an
   - [Claude Code Installation](#claude-code-installation)
   - [Gemini CLI Installation](#gemini-cli-installation)
   - [GitHub Copilot CLI Installation](#github-copilot-cli-installation)
-  - [Kimi CLI Installation](#kimi-cli-installation)
+  - [Kimi Code Installation](#kimi-code-installation)
   - [OpenCode Installation](#opencode-installation)
   - [Pi Installation](#pi-installation)
 - [Status Line Integration](#status-line-integration)
@@ -218,12 +218,12 @@ gemini extensions install https://github.com/kenryu42/gemini-safety-net
 
 ---
 
-### Kimi CLI Installation
+### Kimi Code Installation
 
-Install CC Safety Net into your Kimi CLI config:
+Install CC Safety Net into your Kimi Code config:
 
 ```bash
-npx -y cc-safety-net hook install --kimi-cli
+npx -y cc-safety-net hook install --kimi-code
 ```
 
 ---

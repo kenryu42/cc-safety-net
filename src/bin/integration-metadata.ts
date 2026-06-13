@@ -50,12 +50,12 @@ const integrationMetadata = [
     },
   },
   {
-    id: 'kimi-cli',
-    displayName: 'Kimi CLI',
+    id: 'kimi-code',
+    displayName: 'Kimi Code',
     doctorVisible: true,
     runtimeHook: {
-      flags: ['-kc', '--kimi-cli'],
-      description: 'Run as Kimi CLI PreToolUse hook',
+      flags: ['-kc', '--kimi-code'],
+      description: 'Run as Kimi Code PreToolUse hook',
       legacyTopLevel: false,
       order: 4,
     },

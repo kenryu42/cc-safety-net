@@ -13,7 +13,7 @@ export type HookResult = {
   exitCode: number;
 };
 
-export type HookFormat = 'claude-code' | 'copilot-cli' | 'gemini-cli' | 'kimi-cli';
+export type HookFormat = 'claude-code' | 'copilot-cli' | 'gemini-cli' | 'kimi-code';
 
 export const TEST_HOOK_CWD = mkdtempSync(join(tmpdir(), 'safety-net-hook-cwd-'));
 
@@ -210,7 +210,7 @@ export async function runGeminiHook(
 }
 
 /**
- * Runs the Kimi CLI hook.
+ * Runs the Kimi Code hook.
  */
 export async function runKimiHook(
   input: object | string,

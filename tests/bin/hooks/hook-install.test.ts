@@ -7,9 +7,9 @@ import { runCli } from './hook-helpers';
 const KIMI_HOOK_BLOCK = `[[hooks]]
 event = "PreToolUse"
 matcher = "Shell"
-command = "npx -y cc-safety-net hook --kimi-cli"`;
+command = "npx -y cc-safety-net hook --kimi-code"`;
 const KIMI_INLINE_HOOK =
-  '{ event = "PreToolUse", matcher = "Shell", command = "npx -y cc-safety-net hook --kimi-cli" }';
+  '{ event = "PreToolUse", matcher = "Shell", command = "npx -y cc-safety-net hook --kimi-code" }';
 
 function makeTempHome(name: string) {
   const dir = join(tmpdir(), `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -26,12 +26,12 @@ function writeKimiConfig(homeDir: string, content: string) {
 }
 
 async function runKimiInstall(homeDir: string, configPath: string) {
-  const result = await runCli(['hook', 'install', '--kimi-cli'], '', { HOME: homeDir });
+  const result = await runCli(['hook', 'install', '--kimi-code'], '', { HOME: homeDir });
   return { result, content: readFileSync(configPath, 'utf-8') };
 }
 
 async function runKimiUninstall(homeDir: string, configPath: string) {
-  const result = await runCli(['hook', 'uninstall', '--kimi-cli'], '', { HOME: homeDir });
+  const result = await runCli(['hook', 'uninstall', '--kimi-code'], '', { HOME: homeDir });
   return { result, content: readFileSync(configPath, 'utf-8') };
 }
 
@@ -62,36 +62,36 @@ describe('hook install command', () => {
     }
   });
 
-  test('requires Kimi CLI as the install target', async () => {
+  test('requires Kimi Code as the install target', async () => {
     const homeDir = makeTempHome('safety-net-install');
 
     try {
       const result = await runCli(['hook', 'install'], '', { HOME: homeDir });
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('Choose exactly one install target: --kimi-cli');
+      expect(result.stderr).toContain('Choose exactly one install target: --kimi-code');
       expect(existsSync(join(homeDir, '.kimi', 'config.toml'))).toBe(false);
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
   });
 
-  test('Kimi CLI: creates default config when missing', async () => {
+  test('Kimi Code: creates default config when missing', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
 
     try {
-      const result = await runCli(['hook', 'install', '--kimi-cli'], '', { HOME: homeDir });
+      const result = await runCli(['hook', 'install', '--kimi-code'], '', { HOME: homeDir });
       const configPath = join(homeDir, '.kimi', 'config.toml');
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain(`Installed Kimi CLI hook in ${configPath}`);
+      expect(result.stdout).toContain(`Installed Kimi Code hook in ${configPath}`);
       expect(readFileSync(configPath, 'utf-8').trim()).toBe(KIMI_HOOK_BLOCK);
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
   });
 
-  test('Kimi CLI: honors KIMI_SHARE_DIR and removes top-level hooks array', async () => {
+  test('Kimi Code: honors KIMI_SHARE_DIR and removes top-level hooks array', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
     const shareDir = join(homeDir, 'custom-kimi');
     const configPath = join(shareDir, 'config.toml');
@@ -107,7 +107,7 @@ hooks = []
     );
 
     try {
-      const result = await runCli(['hook', 'install', '--kimi-cli'], '', {
+      const result = await runCli(['hook', 'install', '--kimi-code'], '', {
         HOME: homeDir,
         KIMI_SHARE_DIR: shareDir,
       });
@@ -122,7 +122,7 @@ hooks = []
     }
   });
 
-  test('Kimi CLI: install is idempotent', async () => {
+  test('Kimi Code: install is idempotent', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
     const configPath = writeKimiConfig(homeDir, `${KIMI_HOOK_BLOCK}\n`);
 
@@ -130,14 +130,14 @@ hooks = []
       const installed = await runKimiInstall(homeDir, configPath);
 
       expect(installed.result.exitCode).toBe(0);
-      expect(installed.content.match(/cc-safety-net hook --kimi-cli/g)?.length).toBe(1);
+      expect(installed.content.match(/cc-safety-net hook --kimi-code/g)?.length).toBe(1);
       expect(installed.result.stdout).toContain('already installed');
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
   });
 
-  test('Kimi CLI: preserves non-empty inline hooks array syntax', async () => {
+  test('Kimi Code: preserves non-empty inline hooks array syntax', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
     const configPath = writeKimiConfig(
       homeDir,
@@ -158,7 +158,7 @@ hooks = []
     }
   });
 
-  test('Kimi CLI: preserves inline hooks array with hash comments', async () => {
+  test('Kimi Code: preserves inline hooks array with hash comments', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
     const configPath = writeKimiConfig(
       homeDir,
@@ -183,7 +183,7 @@ hooks = []
     const homeDir = makeTempHome('safety-net-install');
 
     try {
-      const result = await runCli(['hook', 'install', '--kimi-cli', 'extra'], '', {
+      const result = await runCli(['hook', 'install', '--kimi-code', 'extra'], '', {
         HOME: homeDir,
       });
 
@@ -199,7 +199,7 @@ hooks = []
     const homeDir = makeTempHome('safety-net-install');
 
     try {
-      const result = await runCli(['hook', 'install', '--opencode', '--kimi-cli'], '', {
+      const result = await runCli(['hook', 'install', '--opencode', '--kimi-code'], '', {
         HOME: homeDir,
       });
 
@@ -216,7 +216,7 @@ hooks = []
     writeFileSync(homePath, '');
 
     try {
-      const result = await runCli(['hook', 'install', '--kimi-cli'], '', { HOME: homePath });
+      const result = await runCli(['hook', 'install', '--kimi-code'], '', { HOME: homePath });
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Check that every parent path component is a directory.');
@@ -240,7 +240,7 @@ describe('hook uninstall command', () => {
     }
   });
 
-  test('Kimi CLI: removes managed table hook block only', async () => {
+  test('Kimi Code: removes managed table hook block only', async () => {
     const homeDir = makeTempHome('safety-net-kimi-uninstall');
     const configPath = writeKimiConfig(
       homeDir,
@@ -259,15 +259,15 @@ command = "prettier --write"
       const uninstalled = await runKimiUninstall(homeDir, configPath);
 
       expect(uninstalled.result.exitCode).toBe(0);
-      expect(uninstalled.result.stdout).toContain(`Uninstalled Kimi CLI hook from ${configPath}`);
+      expect(uninstalled.result.stdout).toContain(`Uninstalled Kimi Code hook from ${configPath}`);
       expect(uninstalled.content).toContain('prettier --write');
-      expect(uninstalled.content).not.toContain('cc-safety-net hook --kimi-cli');
+      expect(uninstalled.content).not.toContain('cc-safety-net hook --kimi-code');
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
   });
 
-  test('Kimi CLI: removes managed inline hook and preserves inline syntax', async () => {
+  test('Kimi Code: removes managed inline hook and preserves inline syntax', async () => {
     const homeDir = makeTempHome('safety-net-kimi-uninstall');
     const configPath = writeKimiConfig(
       homeDir,
@@ -286,14 +286,14 @@ command = "prettier --write"
       expect(uninstalled.content).toContain('hooks = [');
       expect(uninstalled.content).toContain('.kimi/hooks/validate.sh');
       expect(uninstalled.content).toContain('.kimi/hooks/check-complete.sh');
-      expect(uninstalled.content).not.toContain('cc-safety-net hook --kimi-cli');
+      expect(uninstalled.content).not.toContain('cc-safety-net hook --kimi-code');
       expect(uninstalled.content).not.toContain('[[hooks]]');
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
   });
 
-  test('Kimi CLI: removes inline hook with hash comments in hooks array', async () => {
+  test('Kimi Code: removes inline hook with hash comments in hooks array', async () => {
     const homeDir = makeTempHome('safety-net-kimi-uninstall');
     const configPath = writeKimiConfig(
       homeDir,
@@ -312,7 +312,7 @@ command = "prettier --write"
       expect(uninstalled.result.exitCode).toBe(0);
       expect(uninstalled.content).toContain(preservedComment);
       expect(uninstalled.content).toContain('.kimi/hooks/validate.sh');
-      expect(uninstalled.content).not.toContain('cc-safety-net hook --kimi-cli');
+      expect(uninstalled.content).not.toContain('cc-safety-net hook --kimi-code');
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
@@ -323,7 +323,7 @@ command = "prettier --write"
     const configPath = writeKimiConfig(homeDir, `${KIMI_HOOK_BLOCK}\n`);
 
     try {
-      const result = await runCli(['hook', 'uninstall', '--kimi-cli', 'extra'], '', {
+      const result = await runCli(['hook', 'uninstall', '--kimi-code', 'extra'], '', {
         HOME: homeDir,
       });
 
@@ -335,7 +335,7 @@ command = "prettier --write"
     }
   });
 
-  test('Kimi CLI: uninstall is idempotent when managed hook is absent', async () => {
+  test('Kimi Code: uninstall is idempotent when managed hook is absent', async () => {
     const homeDir = makeTempHome('safety-net-kimi-uninstall');
     const configPath = writeKimiConfig(
       homeDir,

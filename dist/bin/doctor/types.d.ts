@@ -122,8 +122,8 @@ export interface SystemInfo {
     geminiExtensionsListOutput: string | null;
     /** Copilot CLI version (from `copilot --binary-version`, falling back to `copilot --version`) */
     copilotCliVersion: string | null;
-    /** Kimi CLI version (from `kimi --version`) */
-    kimiCliVersion: string | null;
+    /** Kimi Code version (from `kimi --version`) */
+    kimiCodeVersion: string | null;
     /** Pi CLI version (from `pi --version`) */
     piCliVersion: string | null;
     /** Node.js version (from `node --version`) */

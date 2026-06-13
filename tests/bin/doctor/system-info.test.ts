@@ -158,7 +158,7 @@ describe('getSystemInfo', () => {
       true,
     );
     expect(sysInfo.piCliVersion === null || typeof sysInfo.piCliVersion === 'string').toBe(true);
-    expect(sysInfo.kimiCliVersion === null || typeof sysInfo.kimiCliVersion === 'string').toBe(
+    expect(sysInfo.kimiCodeVersion === null || typeof sysInfo.kimiCodeVersion === 'string').toBe(
       true,
     );
     expect(
@@ -193,9 +193,9 @@ describe('getSystemInfo', () => {
     );
   });
 
-  test('includes Kimi CLI version with mock fetcher', async () => {
+  test('includes Kimi Code version with mock fetcher', async () => {
     const sysInfo = await getSystemInfo(mockVersionFetcher);
-    expect(sysInfo.kimiCliVersion).toBe('0.3.0');
+    expect(sysInfo.kimiCodeVersion).toBe('0.3.0');
   });
 
   test('includes Pi CLI version with mock fetcher', async () => {
@@ -329,13 +329,13 @@ describe('getSystemInfo', () => {
     });
   });
 
-  test('parses Kimi CLI version output through existing parser', async () => {
+  test('parses Kimi Code version output through existing parser', async () => {
     const sysInfo = await getSystemInfo(async (args) => {
-      if (args[0] === 'kimi') return 'Kimi CLI v1.2.3';
+      if (args[0] === 'kimi') return 'Kimi Code v1.2.3';
       return null;
     });
 
-    expect(sysInfo.kimiCliVersion).toBe('1.2.3');
+    expect(sysInfo.kimiCodeVersion).toBe('1.2.3');
   });
 
   test('parses Codex CLI version output through existing parser', async () => {
@@ -406,7 +406,7 @@ describe('getSystemInfo', () => {
     expect(result.claudePluginListOutput).toBeNull();
     expect(result.copilotCliVersion).toBeNull();
     expect(result.codexCliVersion).toBeNull();
-    expect(result.kimiCliVersion).toBeNull();
+    expect(result.kimiCodeVersion).toBeNull();
     expect(result.piCliVersion).toBeNull();
     expect(result.geminiExtensionsListOutput).toBeNull();
     expect(result.copilotPluginInstalled).toBe(false);

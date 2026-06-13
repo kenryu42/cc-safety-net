@@ -7,7 +7,7 @@ import { runClaudeCodeHook } from '@/bin/hook/claude-code';
 import { handleBlockedHookCommand } from '@/bin/hook/common';
 import { runCopilotCliHook } from '@/bin/hook/copilot-cli';
 import { runGeminiCLIHook } from '@/bin/hook/gemini-cli';
-import { runKimiCliHook } from '@/bin/hook/kimi-cli';
+import { runKimiCodeHook } from '@/bin/hook/kimi-code';
 import { writeLockedGitHubRulebookPolicy } from '../../helpers';
 import {
   claudeCodeBashInput,
@@ -82,8 +82,8 @@ describe('hook adapter direct integration', () => {
     expect(output.reason).toContain('git reset --hard');
   });
 
-  test('Kimi CLI hook blocks supported Shell commands', async () => {
-    const output = await runHookJson(runKimiCliHook, kimiShellInput('git reset --hard'));
+  test('Kimi Code hook blocks supported Shell commands', async () => {
+    const output = await runHookJson(runKimiCodeHook, kimiShellInput('git reset --hard'));
 
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain('git reset --hard');
@@ -111,7 +111,7 @@ describe('hook adapter direct integration', () => {
   });
 
   test('allowed commands with debug sessions return no hook output', async () => {
-    const output = await runWithInput(runKimiCliHook, kimiShellInput('git status'), {
+    const output = await runWithInput(runKimiCodeHook, kimiShellInput('git status'), {
       CC_SAFETY_NET_DEBUG: '1',
     });
 

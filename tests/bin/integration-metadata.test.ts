@@ -12,7 +12,7 @@ describe('integration metadata', () => {
       'Codex',
       'Copilot CLI',
       'Gemini CLI',
-      'Kimi CLI',
+      'Kimi Code',
       'OpenCode',
       'Pi',
     ]);
@@ -24,7 +24,7 @@ describe('integration metadata', () => {
       'codex',
       'copilot-cli',
       'gemini-cli',
-      'kimi-cli',
+      'kimi-code',
       'opencode',
       'pi',
     ]);
@@ -35,13 +35,13 @@ describe('integration metadata', () => {
       'claude-code',
       'copilot-cli',
       'gemini-cli',
-      'kimi-cli',
+      'kimi-code',
     ]);
     expect(runtimeHookIntegrationMetadata.map((integration) => integration.flags)).toEqual([
       ['-cc', '--claude-code'],
       ['-cp', '--copilot-cli'],
       ['-gc', '--gemini-cli'],
-      ['-kc', '--kimi-cli'],
+      ['-kc', '--kimi-code'],
     ]);
     expect(runtimeHookIntegrationMetadata.map((integration) => integration.legacyTopLevel)).toEqual(
       [true, true, true, false],

@@ -1,7 +1,7 @@
 import { runClaudeCodeHook } from '@/bin/hook/claude-code';
 import { runCopilotCliHook } from '@/bin/hook/copilot-cli';
 import { runGeminiCLIHook } from '@/bin/hook/gemini-cli';
-import { runKimiCliHook } from '@/bin/hook/kimi-cli';
+import { runKimiCodeHook } from '@/bin/hook/kimi-code';
 import {
   type RuntimeHookIntegrationId,
   runtimeHookIntegrationMetadata,
@@ -20,7 +20,7 @@ const hookRunners = {
   'claude-code': runClaudeCodeHook,
   'copilot-cli': runCopilotCliHook,
   'gemini-cli': runGeminiCLIHook,
-  'kimi-cli': runKimiCliHook,
+  'kimi-code': runKimiCodeHook,
 } satisfies Record<RuntimeHookIntegrationId, () => Promise<void>>;
 
 export const hookIntegrations: readonly HookIntegration[] = runtimeHookIntegrationMetadata.map(

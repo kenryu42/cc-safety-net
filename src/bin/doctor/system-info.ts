@@ -471,7 +471,7 @@ export async function getSystemInfo(
     geminiCliVersion: parseVersion(geminiRaw),
     geminiExtensionsListOutput,
     copilotCliVersion: parseVersion(copilotRaw),
-    kimiCliVersion: parseVersion(kimiRaw),
+    kimiCodeVersion: parseVersion(kimiRaw),
     piCliVersion: parseVersion(piRaw),
     nodeVersion: parseVersion(nodeRaw),
     npmVersion: parseVersion(npmRaw),

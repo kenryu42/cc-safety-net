@@ -6428,8 +6428,8 @@ var CLAUDE_CODE_HOOK_EVENT = "PreToolUse";
 var CLAUDE_CODE_TOOL_NAME = "Bash";
 var GEMINI_CLI_HOOK_EVENT = "BeforeTool";
 var GEMINI_CLI_TOOL_NAME = "run_shell_command";
-var KIMI_CLI_HOOK_EVENT = "PreToolUse";
-var KIMI_CLI_TOOL_NAME = "Shell";
+var KIMI_CODE_HOOK_EVENT = "PreToolUse";
+var KIMI_CODE_TOOL_NAME = "Shell";
 
 // src/bin/hook/claude-code.ts
 async function runClaudeCodeHook() {
@@ -6478,8 +6478,8 @@ async function runGeminiCLIHook() {
   });
 }
 
-// src/bin/hook/kimi-cli.ts
-async function runKimiCliHook() {
+// src/bin/hook/kimi-code.ts
+async function runKimiCodeHook() {
   await runConfiguredHookAdapter({
     createDenyOutput: (message) => ({
       hookSpecificOutput: {
@@ -6488,7 +6488,7 @@ async function runKimiCliHook() {
         permissionDecisionReason: message
       }
     }),
-    isSupported: (input) => input.hook_event_name === KIMI_CLI_HOOK_EVENT && input.tool_name === KIMI_CLI_TOOL_NAME,
+    isSupported: (input) => input.hook_event_name === KIMI_CODE_HOOK_EVENT && input.tool_name === KIMI_CODE_TOOL_NAME,
     getCommand: (input) => input.tool_input?.command,
     getCwd: (input) => input.cwd,
     getSessionId: (input) => input.session_id
@@ -6536,12 +6536,12 @@ var integrationMetadata = [
     }
   },
   {
-    id: "kimi-cli",
-    displayName: "Kimi CLI",
+    id: "kimi-code",
+    displayName: "Kimi Code",
     doctorVisible: true,
     runtimeHook: {
-      flags: ["-kc", "--kimi-cli"],
-      description: "Run as Kimi CLI PreToolUse hook",
+      flags: ["-kc", "--kimi-code"],
+      description: "Run as Kimi Code PreToolUse hook",
       legacyTopLevel: false,
       order: 4
     }
@@ -6574,7 +6574,7 @@ var hookRunners = {
   "claude-code": runClaudeCodeHook,
   "copilot-cli": runCopilotCliHook,
   "gemini-cli": runGeminiCLIHook,
-  "kimi-cli": runKimiCliHook
+  "kimi-code": runKimiCodeHook
 };
 var hookIntegrations = runtimeHookIntegrationMetadata.map((integration) => ({
   ...integration,
@@ -6598,8 +6598,8 @@ var hookCommand = {
   description: "Run as an agent CLI hook (reads JSON from stdin)",
   usage: "hook <coding cli>",
   subcommands: [
-    { usage: "install --kimi-cli", description: "Install Kimi CLI hook config" },
-    { usage: "uninstall --kimi-cli", description: "Uninstall Kimi CLI hook config" }
+    { usage: "install --kimi-code", description: "Install Kimi Code hook config" },
+    { usage: "uninstall --kimi-code", description: "Uninstall Kimi Code hook config" }
   ],
   options: [
     ...platformOptions,
@@ -6608,7 +6608,7 @@ var hookCommand = {
       description: "Show this help"
     }
   ],
-  examples: [...platformExamples, "cc-safety-net hook install --kimi-cli"]
+  examples: [...platformExamples, "cc-safety-net hook install --kimi-code"]
 };
 
 // src/bin/commands/rule.ts
@@ -7257,7 +7257,7 @@ function formatSystemInfoTable(system) {
     { label: "Codex", value: system.codexCliVersion },
     { label: "Copilot CLI", value: system.copilotCliVersion },
     { label: "Gemini CLI", value: system.geminiCliVersion },
-    { label: "Kimi CLI", value: system.kimiCliVersion },
+    { label: "Kimi Code", value: system.kimiCodeVersion },
     { label: "OpenCode", value: system.openCodeVersion },
     { label: "Pi", value: system.piCliVersion },
     { label: "Node.js", value: system.nodeVersion },
@@ -7301,7 +7301,7 @@ var CLAUDE_PLUGIN_LIST_CONFIG_PATH = "claude plugin list";
 var CLAUDE_SAFETY_NET_PLUGIN_ID = "safety-net@cc-marketplace";
 var GEMINI_EXTENSIONS_LIST_CONFIG_PATH = "gemini extensions list";
 var GEMINI_SAFETY_NET_SOURCE = "https://github.com/kenryu42/gemini-safety-net";
-var KIMI_HOOK_COMMAND_PATTERN = /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*--kimi-cli(\s|["']|$)/;
+var KIMI_HOOK_COMMAND_PATTERN = /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*--kimi-code(\s|["']|$)/;
 var CODEX_PLUGIN_HOOKS_WARNING = "Codex plugin hooks are behind a feature flag. Add `plugin_hooks = true` under [features] in $CODEX_HOME/config.toml.";
 var CODEX_SAFETY_NET_PLUGIN_ID = "safety-net@cc-marketplace";
 var SELF_TEST_CASES = [
@@ -7533,25 +7533,25 @@ function detectGeminiCLI(extensionsListOutput) {
 function _getKimiConfigPath(homeDir) {
   return join10(process.env.KIMI_SHARE_DIR || join10(homeDir, ".kimi"), "config.toml");
 }
-function detectKimiCLI(homeDir) {
+function detectKimiCode(homeDir) {
   const configPath = _getKimiConfigPath(homeDir);
   if (!existsSync13(configPath)) {
-    return { platform: "kimi-cli", status: "n/a", configPath };
+    return { platform: "kimi-code", status: "n/a", configPath };
   }
   try {
     if (!KIMI_HOOK_COMMAND_PATTERN.test(readFileSync10(configPath, "utf-8"))) {
-      return { platform: "kimi-cli", status: "n/a", configPath };
+      return { platform: "kimi-code", status: "n/a", configPath };
     }
   } catch (e) {
     return {
-      platform: "kimi-cli",
+      platform: "kimi-code",
       status: "n/a",
       configPath,
       errors: [`Failed to read ${configPath}: ${e instanceof Error ? e.message : String(e)}`]
     };
   }
   return {
-    platform: "kimi-cli",
+    platform: "kimi-code",
     status: "configured",
     method: "hook config",
     configPath,
@@ -7910,8 +7910,8 @@ function detectAllHooks(cwd, options2) {
         return detectGeminiCLI(options2?.geminiExtensionsListOutput);
       case "copilot-cli":
         return detectCopilotCLI();
-      case "kimi-cli":
-        return detectKimiCLI(homeDir);
+      case "kimi-code":
+        return detectKimiCode(homeDir);
       case "pi":
         return detectPi(options2?.piSafetyNetProbe);
       case "codex":
@@ -8290,7 +8290,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher, options2 = {}) {
     geminiCliVersion: parseVersion(geminiRaw),
     geminiExtensionsListOutput,
     copilotCliVersion: parseVersion(copilotRaw),
-    kimiCliVersion: parseVersion(kimiRaw),
+    kimiCodeVersion: parseVersion(kimiRaw),
     piCliVersion: parseVersion(piRaw),
     nodeVersion: parseVersion(nodeRaw),
     npmVersion: parseVersion(npmRaw),
@@ -9543,7 +9543,7 @@ function showCommandHelp(commandName) {
 // src/bin/hook/install.ts
 import { homedir as homedir6 } from "node:os";
 
-// src/bin/hook/install/kimi-cli.ts
+// src/bin/hook/install/kimi-code.ts
 import { existsSync as existsSync16, mkdirSync as mkdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync3 } from "node:fs";
 import { dirname as dirname9, join as join12 } from "node:path";
 
@@ -9631,8 +9631,8 @@ function removeArrayRangeItem(content, item) {
   return `${content.slice(0, removeStart)}${content.slice(removeEnd)}`;
 }
 
-// src/bin/hook/install/kimi-cli.ts
-var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-cli";
+// src/bin/hook/install/kimi-code.ts
+var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-code";
 var KIMI_HOOK_BLOCK = `[[hooks]]
 event = "PreToolUse"
 matcher = "Shell"
@@ -9667,8 +9667,8 @@ function skipTomlComment(content, index) {
 function findTomlArrayClose(content, openIndex) {
   return findMatchingBracket(content, openIndex, {
     skipComment: skipTomlComment,
-    stringError: "Unterminated string in Kimi CLI config",
-    bracketError: "Unmatched hooks array in Kimi CLI config"
+    stringError: "Unterminated string in Kimi Code config",
+    bracketError: "Unmatched hooks array in Kimi Code config"
   });
 }
 function findTopLevelInlineHooksArray(content) {
@@ -9727,7 +9727,7 @@ function removeKimiInlineHook(content, hooksRange) {
     end: itemStart + KIMI_INLINE_HOOK.length
   });
 }
-function installKimiCli(homeDir) {
+function installKimiCode(homeDir) {
   const configPath = getKimiConfigPath(homeDir);
   mkdirSync4(dirname9(configPath), { recursive: true });
   if (!existsSync16(configPath)) {
@@ -9741,7 +9741,7 @@ function installKimiCli(homeDir) {
   writeFileSync3(configPath, appendKimiHook(content));
   return { path: configPath, alreadyInstalled: false };
 }
-function uninstallKimiCli(homeDir) {
+function uninstallKimiCode(homeDir) {
   const configPath = getKimiConfigPath(homeDir);
   if (!existsSync16(configPath))
     return { path: configPath, alreadyInstalled: false };
@@ -9760,21 +9760,21 @@ function getHomeDir() {
   return process.env.HOME ?? homedir6();
 }
 function parseInstallTarget(args, action) {
-  const unknownOption = args.find((arg) => arg.startsWith("-") && !["--kimi-cli"].includes(arg));
+  const unknownOption = args.find((arg) => arg.startsWith("-") && !["--kimi-code"].includes(arg));
   if (unknownOption)
     throw new Error(`Unknown install option: ${unknownOption}`);
   const unexpectedArg = args.find((arg) => !arg.startsWith("-"));
   if (unexpectedArg)
     throw new Error(`Unexpected argument for hook ${action}: ${unexpectedArg}`);
-  if (!args.includes("--kimi-cli"))
-    throw new Error("Choose exactly one install target: --kimi-cli");
+  if (!args.includes("--kimi-code"))
+    throw new Error("Choose exactly one install target: --kimi-code");
 }
 function runHookInstallCommand(action, args) {
   try {
     parseInstallTarget(args, action);
     const homeDir = getHomeDir();
-    const result = action === "install" ? installKimiCli(homeDir) : uninstallKimiCli(homeDir);
-    const name = "Kimi CLI";
+    const result = action === "install" ? installKimiCode(homeDir) : uninstallKimiCode(homeDir);
+    const name = "Kimi Code";
     const pastTense = action === "install" ? "Installed" : "Uninstalled";
     console.log(action === "install" && result.alreadyInstalled ? `${name} hook already installed in ${result.path}` : action === "uninstall" && !result.alreadyInstalled ? `${name} hook not installed in ${result.path}` : `${pastTense} ${name} hook ${action === "install" ? "in" : "from"} ${result.path}`);
     return 0;
@@ -10792,7 +10792,7 @@ var commandParsers = {
     const integration = findHookIntegrationByFlag(args);
     if (integration)
       return { mode: "hook", integration };
-    console.error("hook requires a subcommand or integration flag. Try: cc-safety-net hook install --kimi-cli");
+    console.error("hook requires a subcommand or integration flag. Try: cc-safety-net hook install --kimi-code");
     showCommandHelp("hook");
     process.exit(1);
   },

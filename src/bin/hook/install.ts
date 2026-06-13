@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { installKimiCli, uninstallKimiCli } from '@/bin/hook/install/kimi-cli';
+import { installKimiCode, uninstallKimiCode } from '@/bin/hook/install/kimi-code';
 
 type HookAction = 'install' | 'uninstall';
 
@@ -8,21 +8,21 @@ function getHomeDir() {
 }
 
 function parseInstallTarget(args: readonly string[], action: HookAction): void {
-  const unknownOption = args.find((arg) => arg.startsWith('-') && !['--kimi-cli'].includes(arg));
+  const unknownOption = args.find((arg) => arg.startsWith('-') && !['--kimi-code'].includes(arg));
 
   if (unknownOption) throw new Error(`Unknown install option: ${unknownOption}`);
   const unexpectedArg = args.find((arg) => !arg.startsWith('-'));
   if (unexpectedArg) throw new Error(`Unexpected argument for hook ${action}: ${unexpectedArg}`);
-  if (!args.includes('--kimi-cli'))
-    throw new Error('Choose exactly one install target: --kimi-cli');
+  if (!args.includes('--kimi-code'))
+    throw new Error('Choose exactly one install target: --kimi-code');
 }
 
 export function runHookInstallCommand(action: HookAction, args: readonly string[]): number {
   try {
     parseInstallTarget(args, action);
     const homeDir = getHomeDir();
-    const result = action === 'install' ? installKimiCli(homeDir) : uninstallKimiCli(homeDir);
-    const name = 'Kimi CLI';
+    const result = action === 'install' ? installKimiCode(homeDir) : uninstallKimiCode(homeDir);
+    const name = 'Kimi Code';
     const pastTense = action === 'install' ? 'Installed' : 'Uninstalled';
 
     console.log(

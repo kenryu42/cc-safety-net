@@ -33,12 +33,12 @@ declare const integrationMetadata: readonly [{
         readonly order: 3;
     };
 }, {
-    readonly id: "kimi-cli";
-    readonly displayName: "Kimi CLI";
+    readonly id: "kimi-code";
+    readonly displayName: "Kimi Code";
     readonly doctorVisible: true;
     readonly runtimeHook: {
-        readonly flags: readonly ["-kc", "--kimi-cli"];
-        readonly description: "Run as Kimi CLI PreToolUse hook";
+        readonly flags: readonly ["-kc", "--kimi-code"];
+        readonly description: "Run as Kimi Code PreToolUse hook";
         readonly legacyTopLevel: false;
         readonly order: 4;
     };
@@ -56,12 +56,12 @@ type RuntimeHookIntegrationMetadata = Extract<(typeof integrationMetadata)[numbe
     runtimeHook: object;
 }>;
 export type RuntimeHookIntegrationId = RuntimeHookIntegrationMetadata['id'];
-export declare const doctorIntegrationOrder: ("claude-code" | "codex" | "copilot-cli" | "gemini-cli" | "kimi-cli" | "opencode" | "pi")[];
+export declare const doctorIntegrationOrder: ("claude-code" | "codex" | "copilot-cli" | "gemini-cli" | "kimi-code" | "opencode" | "pi")[];
 export declare const runtimeHookIntegrationMetadata: {
-    id: "claude-code" | "copilot-cli" | "gemini-cli" | "kimi-cli";
-    displayName: "Claude Code" | "Copilot CLI" | "Gemini CLI" | "Kimi CLI";
-    flags: readonly ["-cc", "--claude-code"] | readonly ["-cp", "--copilot-cli"] | readonly ["-gc", "--gemini-cli"] | readonly ["-kc", "--kimi-cli"];
-    description: "Run as Claude Code PreToolUse hook" | "Run as Copilot CLI PreToolUse hook" | "Run as Gemini CLI BeforeTool hook" | "Run as Kimi CLI PreToolUse hook";
+    id: "claude-code" | "copilot-cli" | "gemini-cli" | "kimi-code";
+    displayName: "Claude Code" | "Copilot CLI" | "Gemini CLI" | "Kimi Code";
+    flags: readonly ["-cc", "--claude-code"] | readonly ["-cp", "--copilot-cli"] | readonly ["-gc", "--gemini-cli"] | readonly ["-kc", "--kimi-code"];
+    description: "Run as Claude Code PreToolUse hook" | "Run as Copilot CLI PreToolUse hook" | "Run as Gemini CLI BeforeTool hook" | "Run as Kimi Code PreToolUse hook";
     legacyTopLevel: boolean;
 }[];
 export declare function getIntegrationDisplayName(id: IntegrationId): string;

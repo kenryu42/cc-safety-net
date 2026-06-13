@@ -10,7 +10,7 @@ describe('hook integration registry', () => {
     expect(findHookIntegrationByFlag(['hook', '--claude-code'])?.id).toBe('claude-code');
     expect(findHookIntegrationByFlag(['hook', '-cp'])?.id).toBe('copilot-cli');
     expect(findHookIntegrationByFlag(['hook', '-gc'])?.id).toBe('gemini-cli');
-    expect(findHookIntegrationByFlag(['hook', '--kimi-cli'])?.id).toBe('kimi-cli');
+    expect(findHookIntegrationByFlag(['hook', '--kimi-code'])?.id).toBe('kimi-code');
     expect(findHookIntegrationByFlag(['hook', '--unknown'])).toBeUndefined();
   });
 
@@ -18,15 +18,15 @@ describe('hook integration registry', () => {
     expect(findLegacyTopLevelHookIntegration('--claude-code')?.id).toBe('claude-code');
     expect(findLegacyTopLevelHookIntegration('-cp')?.id).toBe('copilot-cli');
     expect(findLegacyTopLevelHookIntegration('-gc')?.id).toBe('gemini-cli');
-    expect(findLegacyTopLevelHookIntegration('--kimi-cli')).toBeUndefined();
+    expect(findLegacyTopLevelHookIntegration('--kimi-code')).toBeUndefined();
     expect(findLegacyTopLevelHookIntegration(undefined)).toBeUndefined();
   });
 
-  test('keeps Kimi CLI in hook help metadata without top-level compatibility', () => {
-    const kimi = hookIntegrations.find((integration) => integration.id === 'kimi-cli');
+  test('keeps Kimi Code in hook help metadata without top-level compatibility', () => {
+    const kimi = hookIntegrations.find((integration) => integration.id === 'kimi-code');
 
-    expect(kimi?.displayName).toBe('Kimi CLI');
-    expect(kimi?.flags).toEqual(['-kc', '--kimi-cli']);
+    expect(kimi?.displayName).toBe('Kimi Code');
+    expect(kimi?.flags).toEqual(['-kc', '--kimi-code']);
     expect(kimi?.legacyTopLevel).toBe(false);
   });
 

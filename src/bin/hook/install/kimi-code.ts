@@ -8,7 +8,7 @@ import {
 } from '@/bin/hook/config-edit';
 import type { InstallResult } from '@/bin/hook/install/types';
 
-const KIMI_HOOK_COMMAND = 'npx -y cc-safety-net hook --kimi-cli';
+const KIMI_HOOK_COMMAND = 'npx -y cc-safety-net hook --kimi-code';
 const KIMI_HOOK_BLOCK = `[[hooks]]
 event = "PreToolUse"
 matcher = "Shell"
@@ -49,8 +49,8 @@ function skipTomlComment(content: string, index: number) {
 function findTomlArrayClose(content: string, openIndex: number) {
   return findMatchingBracket(content, openIndex, {
     skipComment: skipTomlComment,
-    stringError: 'Unterminated string in Kimi CLI config',
-    bracketError: 'Unmatched hooks array in Kimi CLI config',
+    stringError: 'Unterminated string in Kimi Code config',
+    bracketError: 'Unmatched hooks array in Kimi Code config',
   });
 }
 
@@ -118,7 +118,7 @@ function removeKimiInlineHook(content: string, hooksRange: TextRange) {
   });
 }
 
-export function installKimiCli(homeDir: string): InstallResult {
+export function installKimiCode(homeDir: string): InstallResult {
   const configPath = getKimiConfigPath(homeDir);
   mkdirSync(dirname(configPath), { recursive: true });
 
@@ -134,7 +134,7 @@ export function installKimiCli(homeDir: string): InstallResult {
   return { path: configPath, alreadyInstalled: false };
 }
 
-export function uninstallKimiCli(homeDir: string): InstallResult {
+export function uninstallKimiCode(homeDir: string): InstallResult {
   const configPath = getKimiConfigPath(homeDir);
   if (!existsSync(configPath)) return { path: configPath, alreadyInstalled: false };
 

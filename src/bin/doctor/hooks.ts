@@ -60,7 +60,7 @@ const CLAUDE_PLUGIN_LIST_CONFIG_PATH = 'claude plugin list';
 const CLAUDE_SAFETY_NET_PLUGIN_ID = 'safety-net@cc-marketplace';
 const GEMINI_EXTENSIONS_LIST_CONFIG_PATH = 'gemini extensions list';
 const GEMINI_SAFETY_NET_SOURCE = 'https://github.com/kenryu42/gemini-safety-net';
-const KIMI_HOOK_COMMAND_PATTERN = /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*--kimi-cli(\s|["']|$)/;
+const KIMI_HOOK_COMMAND_PATTERN = /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*--kimi-code(\s|["']|$)/;
 const CODEX_PLUGIN_HOOKS_WARNING =
   'Codex plugin hooks are behind a feature flag. Add `plugin_hooks = true` under [features] in $CODEX_HOME/config.toml.';
 const CODEX_SAFETY_NET_PLUGIN_ID = 'safety-net@cc-marketplace';
@@ -392,20 +392,20 @@ function _getKimiConfigPath(homeDir: string): string {
   return join(process.env.KIMI_SHARE_DIR || join(homeDir, '.kimi'), 'config.toml');
 }
 
-function detectKimiCLI(homeDir: string): HookStatus {
+function detectKimiCode(homeDir: string): HookStatus {
   const configPath = _getKimiConfigPath(homeDir);
 
   if (!existsSync(configPath)) {
-    return { platform: 'kimi-cli', status: 'n/a', configPath };
+    return { platform: 'kimi-code', status: 'n/a', configPath };
   }
 
   try {
     if (!KIMI_HOOK_COMMAND_PATTERN.test(readFileSync(configPath, 'utf-8'))) {
-      return { platform: 'kimi-cli', status: 'n/a', configPath };
+      return { platform: 'kimi-code', status: 'n/a', configPath };
     }
   } catch (e) {
     return {
-      platform: 'kimi-cli',
+      platform: 'kimi-code',
       status: 'n/a',
       configPath,
       errors: [`Failed to read ${configPath}: ${e instanceof Error ? e.message : String(e)}`],
@@ -413,7 +413,7 @@ function detectKimiCLI(homeDir: string): HookStatus {
   }
 
   return {
-    platform: 'kimi-cli',
+    platform: 'kimi-code',
     status: 'configured',
     method: 'hook config',
     configPath,
@@ -872,8 +872,8 @@ export function detectAllHooks(cwd: string, options?: HookDetectOptions): HookSt
         return detectGeminiCLI(options?.geminiExtensionsListOutput);
       case 'copilot-cli':
         return detectCopilotCLI();
-      case 'kimi-cli':
-        return detectKimiCLI(homeDir);
+      case 'kimi-code':
+        return detectKimiCode(homeDir);
       case 'pi':
         return detectPi(options?.piSafetyNetProbe);
       case 'codex':

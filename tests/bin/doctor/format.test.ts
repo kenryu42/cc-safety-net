@@ -37,7 +37,7 @@ function createDoctorReport(overrides: Partial<DoctorReport> = {}): DoctorReport
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
-      kimiCliVersion: null,
+      kimiCodeVersion: null,
       piCliVersion: null,
       nodeVersion: '22.0.0',
       npmVersion: '10.0.0',
@@ -153,11 +153,11 @@ describe('formatHooksSection', () => {
     expect(output).toContain('Configured');
   });
 
-  test('formats Kimi CLI hooks', () => {
-    const hooks: HookStatus[] = [{ platform: 'kimi-cli', status: 'configured' }];
+  test('formats Kimi Code hooks', () => {
+    const hooks: HookStatus[] = [{ platform: 'kimi-code', status: 'configured' }];
 
     const output = formatHooksSection(hooks);
-    expect(output).toContain('Kimi CLI');
+    expect(output).toContain('Kimi Code');
     expect(output).toContain('Configured');
   });
 
@@ -424,14 +424,14 @@ describe('formatSystemInfoSection', () => {
     expect(output).toContain('Bun');
     expect(output).toContain('Copilot CLI');
     expect(output).toContain('Codex');
-    expect(output).toContain('Kimi CLI');
+    expect(output).toContain('Kimi Code');
     expect(output).toContain('Pi');
     expect(output.indexOf('cc-safety-net')).toBeLessThan(output.indexOf('Claude Code'));
     expect(output.indexOf('Claude Code')).toBeLessThan(output.indexOf('Codex'));
     expect(output.indexOf('Codex')).toBeLessThan(output.indexOf('Copilot CLI'));
     expect(output.indexOf('Copilot CLI')).toBeLessThan(output.indexOf('Gemini CLI'));
-    expect(output.indexOf('Gemini CLI')).toBeLessThan(output.indexOf('Kimi CLI'));
-    expect(output.indexOf('Kimi CLI')).toBeLessThan(output.indexOf('OpenCode'));
+    expect(output.indexOf('Gemini CLI')).toBeLessThan(output.indexOf('Kimi Code'));
+    expect(output.indexOf('Kimi Code')).toBeLessThan(output.indexOf('OpenCode'));
     expect(output.indexOf('OpenCode')).toBeLessThan(output.indexOf('Pi'));
     expect(output.indexOf('Pi')).toBeLessThan(output.indexOf('Node.js'));
     expect(output.indexOf('Node.js')).toBeLessThan(output.indexOf('npm'));
@@ -452,7 +452,7 @@ describe('formatSystemInfoSection', () => {
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
-      kimiCliVersion: null,
+      kimiCodeVersion: null,
       piCliVersion: null,
       nodeVersion: '22.0.0',
       npmVersion: null,

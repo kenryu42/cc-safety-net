@@ -424,7 +424,7 @@ function formatSystemInfoTable(system: SystemInfo): string {
     { label: 'Codex', value: system.codexCliVersion },
     { label: 'Copilot CLI', value: system.copilotCliVersion },
     { label: 'Gemini CLI', value: system.geminiCliVersion },
-    { label: 'Kimi CLI', value: system.kimiCliVersion },
+    { label: 'Kimi Code', value: system.kimiCodeVersion },
     { label: 'OpenCode', value: system.openCodeVersion },
     { label: 'Pi', value: system.piCliVersion },
     { label: 'Node.js', value: system.nodeVersion },
