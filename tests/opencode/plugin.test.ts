@@ -70,10 +70,8 @@ describe('OpenCode plugin', () => {
   test('writes audit log for blocked commands with session id', async () => {
     const homeDir = mkdtempSync(join(tmpdir(), 'safety-net-opencode-home-'));
     const projectDir = mkdtempSync(join(tmpdir(), 'safety-net-opencode-project-'));
-    const originalHome = process.env.HOME;
-    process.env.HOME = homeDir;
     try {
-      const plugin = await loadToolPlugin(projectDir);
+      const plugin = await loadToolPlugin(projectDir, homeDir);
 
       await expect(
         plugin['tool.execute.before'](
@@ -91,11 +89,6 @@ describe('OpenCode plugin', () => {
       expect(entry.reason).toContain('git reset --hard');
       expect(entry.cwd).toBe(projectDir);
     } finally {
-      if (originalHome === undefined) {
-        delete process.env.HOME;
-      } else {
-        process.env.HOME = originalHome;
-      }
       rmSync(homeDir, { recursive: true, force: true });
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -118,8 +111,9 @@ describe('OpenCode plugin', () => {
   });
 });
 
-async function loadToolPlugin(directory: string): Promise<ToolPlugin> {
+async function loadToolPlugin(directory: string, homeDir?: string): Promise<ToolPlugin> {
   return (await CCSafetyNetPlugin({
     directory,
+    homeDir,
   } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as ToolPlugin;
 }

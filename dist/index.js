@@ -6336,7 +6336,7 @@ function loadBuiltinCommands(disabledCommands) {
 }
 // src/index.ts
 var REASON_SAFETY_NET_FAILED_CLOSED = "CC Safety Net failed closed because command analysis failed unexpectedly.";
-var CCSafetyNetPlugin = async ({ directory }) => {
+var CCSafetyNetPlugin = async ({ directory, homeDir }) => {
   const modes = getCCSafetyNetEnvModes();
   return {
     config: async (opencodeConfig) => {
@@ -6369,7 +6369,9 @@ var CCSafetyNetPlugin = async ({ directory }) => {
         }
         if (result) {
           if (input.sessionID) {
-            writeAuditLog(input.sessionID, command2, result.segment, result.reason, directory);
+            writeAuditLog(input.sessionID, command2, result.segment, result.reason, directory, {
+              homeDir
+            });
           }
           const message = formatBlockedMessage({
             reason: result.reason,
