@@ -11,12 +11,12 @@ import type { InstallResult } from '@/bin/hook/install/types';
 const KIMI_HOOK_COMMAND = 'npx -y cc-safety-net hook --kimi-code';
 const KIMI_HOOK_BLOCK = `[[hooks]]
 event = "PreToolUse"
-matcher = "Shell"
+matcher = "Bash"
 command = "${KIMI_HOOK_COMMAND}"`;
-const KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Shell", command = "${KIMI_HOOK_COMMAND}" }`;
+const KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Bash", command = "${KIMI_HOOK_COMMAND}" }`;
 
 function getKimiConfigPath(homeDir: string) {
-  return join(process.env.KIMI_SHARE_DIR ?? join(homeDir, '.kimi'), 'config.toml');
+  return join(process.env.KIMI_CODE_HOME ?? join(homeDir, '.kimi-code'), 'config.toml');
 }
 
 function removeTopLevelEmptyHooksArray(content: string) {

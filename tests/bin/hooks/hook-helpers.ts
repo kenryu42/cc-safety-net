@@ -101,7 +101,7 @@ export function kimiShellInput(command: string, cwd = TEST_HOOK_CWD) {
     hook_event_name: 'PreToolUse',
     session_id: 'kimi-test-session',
     cwd,
-    tool_name: 'Shell',
+    tool_name: 'Bash',
     tool_input: { command },
     tool_call_id: 'kimi-test-tool-call',
   };

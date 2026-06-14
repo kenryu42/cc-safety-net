@@ -6,10 +6,10 @@ import { runCli } from './hook-helpers';
 
 const KIMI_HOOK_BLOCK = `[[hooks]]
 event = "PreToolUse"
-matcher = "Shell"
+matcher = "Bash"
 command = "npx -y cc-safety-net hook --kimi-code"`;
 const KIMI_INLINE_HOOK =
-  '{ event = "PreToolUse", matcher = "Shell", command = "npx -y cc-safety-net hook --kimi-code" }';
+  '{ event = "PreToolUse", matcher = "Bash", command = "npx -y cc-safety-net hook --kimi-code" }';
 
 function makeTempHome(name: string) {
   const dir = join(tmpdir(), `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -18,7 +18,7 @@ function makeTempHome(name: string) {
 }
 
 function writeKimiConfig(homeDir: string, content: string) {
-  const shareDir = join(homeDir, '.kimi');
+  const shareDir = join(homeDir, '.kimi-code');
   const configPath = join(shareDir, 'config.toml');
   mkdirSync(shareDir, { recursive: true });
   writeFileSync(configPath, content);
@@ -70,7 +70,7 @@ describe('hook install command', () => {
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Choose exactly one install target: --kimi-code');
-      expect(existsSync(join(homeDir, '.kimi', 'config.toml'))).toBe(false);
+      expect(existsSync(join(homeDir, '.kimi-code', 'config.toml'))).toBe(false);
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
@@ -81,7 +81,7 @@ describe('hook install command', () => {
 
     try {
       const result = await runCli(['hook', 'install', '--kimi-code'], '', { HOME: homeDir });
-      const configPath = join(homeDir, '.kimi', 'config.toml');
+      const configPath = join(homeDir, '.kimi-code', 'config.toml');
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain(`Installed Kimi Code hook in ${configPath}`);
@@ -91,7 +91,7 @@ describe('hook install command', () => {
     }
   });
 
-  test('Kimi Code: honors KIMI_SHARE_DIR and removes top-level hooks array', async () => {
+  test('Kimi Code: honors KIMI_CODE_HOME and removes top-level hooks array', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
     const shareDir = join(homeDir, 'custom-kimi');
     const configPath = join(shareDir, 'config.toml');
@@ -109,7 +109,7 @@ hooks = []
     try {
       const result = await runCli(['hook', 'install', '--kimi-code'], '', {
         HOME: homeDir,
-        KIMI_SHARE_DIR: shareDir,
+        KIMI_CODE_HOME: shareDir,
       });
       const content = readFileSync(configPath, 'utf-8');
 
@@ -189,7 +189,7 @@ hooks = []
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unexpected argument for hook install: extra');
-      expect(existsSync(join(homeDir, '.kimi', 'config.toml'))).toBe(false);
+      expect(existsSync(join(homeDir, '.kimi-code', 'config.toml'))).toBe(false);
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }
@@ -205,7 +205,7 @@ hooks = []
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown install option: --opencode');
-      expect(existsSync(join(homeDir, '.kimi', 'config.toml'))).toBe(false);
+      expect(existsSync(join(homeDir, '.kimi-code', 'config.toml'))).toBe(false);
     } finally {
       rmSync(homeDir, { recursive: true, force: true });
     }

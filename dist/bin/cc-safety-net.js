@@ -6429,7 +6429,7 @@ var CLAUDE_CODE_TOOL_NAME = "Bash";
 var GEMINI_CLI_HOOK_EVENT = "BeforeTool";
 var GEMINI_CLI_TOOL_NAME = "run_shell_command";
 var KIMI_CODE_HOOK_EVENT = "PreToolUse";
-var KIMI_CODE_TOOL_NAME = "Shell";
+var KIMI_CODE_TOOL_NAME = "Bash";
 
 // src/bin/hook/claude-code.ts
 async function runClaudeCodeHook() {
@@ -7531,7 +7531,7 @@ function detectGeminiCLI(extensionsListOutput) {
   };
 }
 function _getKimiConfigPath(homeDir) {
-  return join10(process.env.KIMI_SHARE_DIR || join10(homeDir, ".kimi"), "config.toml");
+  return join10(process.env.KIMI_CODE_HOME || join10(homeDir, ".kimi-code"), "config.toml");
 }
 function detectKimiCode(homeDir) {
   const configPath = _getKimiConfigPath(homeDir);
@@ -9635,11 +9635,11 @@ function removeArrayRangeItem(content, item) {
 var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-code";
 var KIMI_HOOK_BLOCK = `[[hooks]]
 event = "PreToolUse"
-matcher = "Shell"
+matcher = "Bash"
 command = "${KIMI_HOOK_COMMAND}"`;
-var KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Shell", command = "${KIMI_HOOK_COMMAND}" }`;
+var KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Bash", command = "${KIMI_HOOK_COMMAND}" }`;
 function getKimiConfigPath(homeDir) {
-  return join12(process.env.KIMI_SHARE_DIR ?? join12(homeDir, ".kimi"), "config.toml");
+  return join12(process.env.KIMI_CODE_HOME ?? join12(homeDir, ".kimi-code"), "config.toml");
 }
 function removeTopLevelEmptyHooksArray(content) {
   const result = content.split(`

@@ -226,6 +226,8 @@ Install CC Safety Net into your Kimi Code config:
 npx -y cc-safety-net hook install --kimi-code
 ```
 
+Optional: run `npx skill add kenryu42/cc-safety-net` to add the `/cc-safety-net` skill for configuring custom rules.
+
 ---
 
 

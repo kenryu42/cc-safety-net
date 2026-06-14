@@ -389,7 +389,7 @@ function detectGeminiCLI(extensionsListOutput: string | null | undefined): HookS
 }
 
 function _getKimiConfigPath(homeDir: string): string {
-  return join(process.env.KIMI_SHARE_DIR || join(homeDir, '.kimi'), 'config.toml');
+  return join(process.env.KIMI_CODE_HOME || join(homeDir, '.kimi-code'), 'config.toml');
 }
 
 function detectKimiCode(homeDir: string): HookStatus {

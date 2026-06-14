@@ -82,7 +82,7 @@ describe('hook adapter direct integration', () => {
     expect(output.reason).toContain('git reset --hard');
   });
 
-  test('Kimi Code hook blocks supported Shell commands', async () => {
+  test('Kimi Code hook blocks supported Bash commands', async () => {
     const output = await runHookJson(runKimiCodeHook, kimiShellInput('git reset --hard'));
 
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');

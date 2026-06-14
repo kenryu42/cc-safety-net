@@ -3,7 +3,7 @@ import { expectNoHookOutput, getHookDenyReason, kimiShellInput, runKimiHook } fr
 
 describe('Kimi Code hook', () => {
   describe('blocked commands', () => {
-    test('blocks rm -rf via Shell tool', async () => {
+    test('blocks rm -rf via Bash tool', async () => {
       const { stdout, exitCode } = await runKimiHook(kimiShellInput('rm -rf /'));
 
       expect(exitCode).toBe(0);
@@ -21,7 +21,7 @@ describe('Kimi Code hook', () => {
   });
 
   describe('non-target tool', () => {
-    test('ignores non-Shell tools', async () => {
+    test('ignores non-Bash tools', async () => {
       const input = {
         hook_event_name: 'PreToolUse',
         tool_name: 'ReadFile',
@@ -36,7 +36,7 @@ describe('Kimi Code hook', () => {
     test('ignores non-PreToolUse events', async () => {
       const input = {
         hook_event_name: 'PostToolUse',
-        tool_name: 'Shell',
+        tool_name: 'Bash',
         tool_input: { command: 'rm -rf /' },
       };
 
@@ -78,7 +78,7 @@ describe('Kimi Code hook', () => {
     test('missing command in tool_input produces no output', async () => {
       const input = {
         hook_event_name: 'PreToolUse',
-        tool_name: 'Shell',
+        tool_name: 'Bash',
         tool_input: {},
       };
 
