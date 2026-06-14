@@ -1,5 +1,6 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { analyzeCommand, loadConfig } from '@/core/analyze';
+import { writeAuditLog } from '@/core/audit';
 import { getCCSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
@@ -44,6 +45,9 @@ export const CCSafetyNetPlugin: Plugin = async ({ directory }) => {
           );
         }
         if (result) {
+          if (input.sessionID) {
+            writeAuditLog(input.sessionID, command, result.segment, result.reason, directory);
+          }
           const message = formatBlockedMessage({
             reason: result.reason,
             command,

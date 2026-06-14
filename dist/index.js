@@ -6187,6 +6187,66 @@ function analyzeCommand(command2, options2 = {}) {
   return analyzeCommandInternal(command2, 0, { ...options2, config });
 }
 
+// src/core/audit.ts
+import { appendFileSync, existsSync as existsSync10, mkdirSync as mkdirSync3 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { join as join8 } from "node:path";
+function sanitizeSessionIdForFilename(sessionId) {
+  const raw = sessionId.trim();
+  if (!raw) {
+    return null;
+  }
+  let safe = raw.replace(/[^A-Za-z0-9_.-]+/g, "_");
+  safe = safe.replace(/^[._-]+|[._-]+$/g, "").slice(0, 128);
+  if (!safe || safe === "." || safe === "..") {
+    return null;
+  }
+  return safe;
+}
+function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {}) {
+  const safeSessionId = sanitizeSessionIdForFilename(sessionId);
+  if (!safeSessionId) {
+    return;
+  }
+  const home = options2.homeDir ?? process.env.HOME ?? homedir3();
+  const logsDir = join8(home, ".cc-safety-net", "logs");
+  try {
+    if (!existsSync10(logsDir)) {
+      mkdirSync3(logsDir, { recursive: true });
+    }
+    const logFile = join8(logsDir, `${safeSessionId}.jsonl`);
+    const entry = {
+      ts: new Date().toISOString(),
+      decision: options2.decision ?? "deny",
+      command: redactSecrets(command2).slice(0, 300),
+      segment: redactSecrets(segment).slice(0, 300),
+      reason,
+      cwd
+    };
+    appendFileSync(logFile, `${JSON.stringify(entry)}
+`, "utf-8");
+  } catch {}
+}
+function redactSecrets(text) {
+  let result = text;
+  result = result.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "<redacted>");
+  result = result.replace(/\b((?:DATABASE|POSTGRES|POSTGRESQL|MYSQL|MARIADB|REDIS|MONGO(?:DB)?|DB)_URL)=([^\s]+)/gi, "$1=<redacted>");
+  result = result.replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIALS)[A-Z0-9_]*)=([^\s]+)/gi, "$1=<redacted>");
+  result = result.replace(/(['"]?\s*(?:authorization|cookie|x-api-key|api-key)\s*:\s*)([^'"\r\n]+)(['"]?)/gi, "$1<redacted>$3");
+  result = result.replace(/(['"]?\s*authorization\s*:\s*)([^'"]+)(['"]?)/gi, "$1<redacted>$3");
+  result = result.replace(/(authorization\s*:\s*)([^\s"']+)(\s+[^\s"']+)?/gi, "$1<redacted>");
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@/]+)@/gi, "$1<redacted>:<redacted>@");
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)@/gi, "$1<redacted>@");
+  result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bxoxb-[A-Za-z0-9-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bnpm_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
+  result = result.replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bpypi-[A-Za-z0-9_-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g, "<redacted>");
+  result = result.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "<redacted>");
+  return result;
+}
+
 // src/core/format.ts
 function formatBlockedMessage(input) {
   const { reason, command: command2, segment } = input;
@@ -6308,6 +6368,9 @@ var CCSafetyNetPlugin = async ({ directory }) => {
           }));
         }
         if (result) {
+          if (input.sessionID) {
+            writeAuditLog(input.sessionID, command2, result.segment, result.reason, directory);
+          }
           const message = formatBlockedMessage({
             reason: result.reason,
             command: command2,
