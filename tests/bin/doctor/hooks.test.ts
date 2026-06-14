@@ -680,7 +680,7 @@ describe('detectAllHooks', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
-    const configPath = join(homeDir, '.kimi', 'config.toml');
+    const configPath = join(homeDir, '.kimi-code', 'config.toml');
     mkdirSync(projectDir, { recursive: true });
     _writeKimiConfig(configPath);
 
@@ -702,7 +702,7 @@ describe('detectAllHooks', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
-    const configPath = join(homeDir, '.kimi', 'config.toml');
+    const configPath = join(homeDir, '.kimi-code', 'config.toml');
     mkdirSync(projectDir, { recursive: true });
     _writeKimiConfig(configPath, 'pre_tool_use = "cc-safety-net hook --kimi-code"');
 
@@ -718,7 +718,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Kimi Code: configured from KIMI_SHARE_DIR config', () => {
+  test('Kimi Code: configured from KIMI_CODE_HOME config', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -729,7 +729,7 @@ describe('detectAllHooks', () => {
     _writeKimiConfig(configPath, 'bunx cc-safety-net hook --kimi-code');
 
     try {
-      const kimi = withEnv({ KIMI_SHARE_DIR: kimiShareDir }, () =>
+      const kimi = withEnv({ KIMI_CODE_HOME: kimiShareDir }, () =>
         detectAllHooks(projectDir, { homeDir }).find((hook) => hook.platform === 'kimi-code'),
       );
 
@@ -753,7 +753,7 @@ describe('detectAllHooks', () => {
       );
 
       expect(kimi?.status).toBe('n/a');
-      expect(kimi?.configPath).toBe(join(homeDir, '.kimi', 'config.toml'));
+      expect(kimi?.configPath).toBe(join(homeDir, '.kimi-code', 'config.toml'));
       expect(kimi?.selfTest).toBeUndefined();
     } finally {
       rmSync(tmpBase, { recursive: true, force: true });
@@ -764,7 +764,7 @@ describe('detectAllHooks', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
-    const configPath = join(homeDir, '.kimi', 'config.toml');
+    const configPath = join(homeDir, '.kimi-code', 'config.toml');
     mkdirSync(projectDir, { recursive: true });
     _writeKimiConfig(configPath, 'hooks = []');
 
@@ -785,7 +785,7 @@ describe('detectAllHooks', () => {
     const tmpBase = join(tmpdir(), `doctor-kimi-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
-    const configPath = join(homeDir, '.kimi', 'config.toml');
+    const configPath = join(homeDir, '.kimi-code', 'config.toml');
     mkdirSync(projectDir, { recursive: true });
     mkdirSync(configPath, { recursive: true });
 

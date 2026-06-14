@@ -18,7 +18,7 @@ function makeTempHome(name: string) {
 }
 
 function writeKimiConfig(homeDir: string, content: string) {
-  const shareDir = join(homeDir, '.kimi');
+  const shareDir = join(homeDir, '.kimi-code');
   const configPath = join(shareDir, 'config.toml');
   mkdirSync(shareDir, { recursive: true });
   writeFileSync(configPath, content);
@@ -91,7 +91,7 @@ describe('hook install command', () => {
     }
   });
 
-  test('Kimi Code: honors KIMI_SHARE_DIR and removes top-level hooks array', async () => {
+  test('Kimi Code: honors KIMI_CODE_HOME and removes top-level hooks array', async () => {
     const homeDir = makeTempHome('safety-net-kimi-install');
     const shareDir = join(homeDir, 'custom-kimi');
     const configPath = join(shareDir, 'config.toml');
@@ -109,7 +109,7 @@ hooks = []
     try {
       const result = await runCli(['hook', 'install', '--kimi-code'], '', {
         HOME: homeDir,
-        KIMI_SHARE_DIR: shareDir,
+        KIMI_CODE_HOME: shareDir,
       });
       const content = readFileSync(configPath, 'utf-8');
 
