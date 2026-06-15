@@ -7941,7 +7941,7 @@ import { existsSync as existsSync14 } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir as tmpdir4 } from "node:os";
 import { delimiter, extname, join as join11 } from "node:path";
-var CURRENT_VERSION = "1.0.5";
+var CURRENT_VERSION = "1.0.6";
 var VERSION_FETCH_TIMEOUT_MS = 2000;
 var PI_PROBE_TIMEOUT_MS = 5000;
 var PI_SENTINEL_COMMAND = "cc-safety-net";
@@ -9450,7 +9450,7 @@ function formatTraceJson(result) {
   return JSON.stringify(result, null, 2);
 }
 // src/bin/help.ts
-var version = "1.0.5";
+var version = "1.0.6";
 var INDENT = "  ";
 var PROGRAM_NAME = "cc-safety-net";
 function formatOptionFlags(option) {
