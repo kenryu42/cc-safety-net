@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { assertValidRulebook, type Rulebook } from '@/core/rules/rulebook';
 import type { Config, CustomRule } from '@/types';
@@ -36,8 +36,11 @@ interface ScopePolicy {
 
 export function loadRulesPolicy(options: RulesPolicyOptions = {}): LoadedRulesPolicy {
   const paths = getPolicyPaths(options);
+  const sameConfigPath = isSameConfigPath(paths.userConfigPath, paths.projectConfigPath);
   const user = readRulesConfig(paths.userConfigPath);
-  const project = readRulesConfig(paths.projectConfigPath);
+  const project = sameConfigPath
+    ? { config: null, errors: [] }
+    : readRulesConfig(paths.projectConfigPath);
   const errors = [
     ...getLegacyRulesConfigErrors(paths, options),
     ...user.errors.map((error) => `${paths.userConfigPath}: ${error}`),
@@ -281,6 +284,20 @@ export function rulesPolicyToConfig(policy: LoadedRulesPolicy): Config {
     };
   }
   return { version: 1, rules: policy.rules };
+}
+
+function isSameConfigPath(userConfigPath: string, projectConfigPath: string): boolean {
+  if (resolve(userConfigPath) === resolve(projectConfigPath)) {
+    return true;
+  }
+  if (!existsSync(userConfigPath) || !existsSync(projectConfigPath)) {
+    return false;
+  }
+  try {
+    return realpathSync(userConfigPath) === realpathSync(projectConfigPath);
+  } catch {
+    return false;
+  }
 }
 
 function getLegacyRulesConfigErrors(

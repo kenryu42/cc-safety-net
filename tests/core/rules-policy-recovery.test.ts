@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { analyzeCommand } from '@/core/analyze';
 import {
   addRulebookSource,
   getProjectRulesConfigPath,
@@ -1024,6 +1025,29 @@ describe('rules policy recovery coverage', () => {
       expect(loadRulesPolicy({ cwd: tempDir, userConfigDir }).errors).toContain(
         'duplicate active rulebook name "shared"',
       );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('loads user rule config once when cwd is the home directory', async () => {
+    const tempDir = makeTempDir('rules-policy-home-cwd');
+    const homeDir = join(tempDir, 'home');
+    const userConfigDir = join(homeDir, '.cc-safety-net', 'rules');
+
+    try {
+      writeRulebook(join(userConfigDir, 'user-rules', 'rulebook.json'), 'user-rules');
+      writeDefaultRulesConfig(getUserRulesConfigPath({ userConfigDir }), ['user-rules']);
+      expect((await syncRulesConfig({ cwd: homeDir, userConfigDir, global: true })).ok).toBe(true);
+
+      const policy = loadRulesPolicy({ cwd: homeDir, userConfigDir });
+      const config = rulesPolicyToConfig(policy);
+
+      expect(policy.errors).toEqual([]);
+      expect(policy.rulebooks.map((rulebook) => rulebook.source)).toEqual(['user']);
+      expect(policy.rules.map((rule) => rule.name)).toEqual(['user-rules/block-docker-prune']);
+      expect(config.failClosedReason).toBeUndefined();
+      expect(analyzeCommand('echo ok', { cwd: homeDir, config })).toBeNull();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

@@ -236,6 +236,29 @@ describe('rule list', () => {
     expect(result.stderr).toContain('Unknown option for rule list: --global');
   });
 
+  test('does not load global rules twice when listing from home directory', async () => {
+    await withTempDir('safety-net-rule-list-home-cwd-', async (tempDir) => {
+      const homeDir = join(tempDir, 'home');
+      mkdirSync(homeDir, { recursive: true });
+      const env = {
+        CC_SAFETY_NET_HOME: join(homeDir, '.cc-safety-net'),
+        HOME: homeDir,
+      };
+
+      expect((await runCCSafetyNetCli(['rule', 'init', '--global'], env, homeDir)).exitCode).toBe(
+        0,
+      );
+      const result = await runCCSafetyNetCli(['rule', 'list'], env, homeDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.output).toContain('Active sources (1):');
+      expect(result.output).toContain('[user] user-rules 1.0.0');
+      expect(result.output).not.toContain('[project] user-rules 1.0.0');
+      expect(result.output).not.toContain('duplicate active rulebook name');
+    });
+  });
+
   test('prints empty merged policy', async () => {
     await withTempDir('safety-net-rule-list-empty-', async (tempDir) => {
       const result = await runRuleList(tempDir);

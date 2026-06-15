@@ -5134,7 +5134,7 @@ function writeJsonAtomic(path, value) {
 }
 
 // src/core/rules/policy/scope-policy.ts
-import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync6, realpathSync as realpathSync7 } from "node:fs";
 import { dirname as dirname6, isAbsolute as isAbsolute6, join as join6, relative, resolve as resolve5, sep as sep4 } from "node:path";
 
 // src/core/rules/rulebook.ts
@@ -5560,8 +5560,9 @@ function sha256Digest(content) {
 // src/core/rules/policy/scope-policy.ts
 function loadRulesPolicy(options2 = {}) {
   const paths = getPolicyPaths(options2);
+  const sameConfigPath = isSameConfigPath(paths.userConfigPath, paths.projectConfigPath);
   const user = readRulesConfig(paths.userConfigPath);
-  const project = readRulesConfig(paths.projectConfigPath);
+  const project = sameConfigPath ? { config: null, errors: [] } : readRulesConfig(paths.projectConfigPath);
   const errors = [
     ...getLegacyRulesConfigErrors(paths, options2),
     ...user.errors.map((error) => `${paths.userConfigPath}: ${error}`),
@@ -5731,6 +5732,19 @@ function rulesPolicyToConfig(policy) {
     };
   }
   return { version: 1, rules: policy.rules };
+}
+function isSameConfigPath(userConfigPath, projectConfigPath) {
+  if (resolve5(userConfigPath) === resolve5(projectConfigPath)) {
+    return true;
+  }
+  if (!existsSync7(userConfigPath) || !existsSync7(projectConfigPath)) {
+    return false;
+  }
+  try {
+    return realpathSync7(userConfigPath) === realpathSync7(projectConfigPath);
+  } catch {
+    return false;
+  }
 }
 function getLegacyRulesConfigErrors(paths, options2) {
   return Array.from(new Set([
