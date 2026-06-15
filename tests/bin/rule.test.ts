@@ -240,7 +240,10 @@ describe('rule list', () => {
     await withTempDir('safety-net-rule-list-home-cwd-', async (tempDir) => {
       const homeDir = join(tempDir, 'home');
       mkdirSync(homeDir, { recursive: true });
-      const env = { HOME: homeDir };
+      const env = {
+        CC_SAFETY_NET_HOME: join(homeDir, '.cc-safety-net'),
+        HOME: homeDir,
+      };
 
       expect((await runCCSafetyNetCli(['rule', 'init', '--global'], env, homeDir)).exitCode).toBe(
         0,
