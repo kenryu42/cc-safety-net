@@ -163,10 +163,9 @@ pi install npm:cc-safety-net
 
 Full blocked/allowed command lists: [Blocked Commands](https://ccsafetynet.com/docs/reference/blocked-commands) · [Allowed Commands](https://ccsafetynet.com/docs/reference/allowed-commands).
 
-## Why not just use deny rules or a sandbox?
+## Why not just use a sandbox?
 
-- **vs wildcard deny rules** — Deny rules match raw command strings, so `rm -r -f /` bypasses `Bash(rm -rf:*)`, and `sh -c "rm -rf /"` bypasses a `Bash(rm:*)` rule. CC Safety Net parses command semantics, so flag reordering, whitespace, shell variables, and wrappers don't evade it. See [Design Principles](https://ccsafetynet.com/docs/guides/design-principles).
-- **vs OS-level sandboxing** — A workspace-writable sandbox still permits `git reset --hard`, `git push --force`, and `rm -rf .` *inside* the project directory, because the OS only sees writes to an allowed path. Sandboxing contains blast radius; CC Safety Net catches the destructive operations sandboxing permits. Use both for defense-in-depth. See [vs Sandboxing](https://ccsafetynet.com/docs/guides/vs-sandboxing).
+A workspace-writable sandbox still permits `git reset --hard`, `git push --force`, and `rm -rf .` *inside* the project directory, because the OS only sees writes to an allowed path. Sandboxing contains blast radius; CC Safety Net catches the destructive operations sandboxing permits — use both for defense-in-depth. See [vs Sandboxing](https://ccsafetynet.com/docs/guides/vs-sandboxing).
 
 ## Modes
 
