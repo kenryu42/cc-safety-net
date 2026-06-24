@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import {
   defaultVersionFetcher,
@@ -589,4 +589,105 @@ describe('version comparison', () => {
     expect(typeof version).toBe('string');
     expect(version === 'dev' || /^\d+\.\d+\.\d+/.test(version)).toBe(true);
   });
+});
+
+describe('parseVersion via getSystemInfo', () => {
+  test('returns first line as-is when output has no version pattern', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'claude') return 'some-unversioned-output';
+      return null;
+    });
+    expect(sysInfo.claudeCodeVersion).toBe('some-unversioned-output');
+  });
+
+  test('returns null for output that trims to empty', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'claude') return '   \n   ';
+      return null;
+    });
+    expect(sysInfo.claudeCodeVersion).toBeNull();
+  });
+});
+
+describe('defaultVersionFetcher Windows path resolution', () => {
+  test('resolves commands with path separators on simulated Windows', async () => {
+    if (process.platform === 'win32') return;
+
+    await withTempDir('doctor-windows-path-sep-', async (tmpDir) => {
+      const subDir = join(tmpDir, 'bin');
+      mkdirSync(subDir);
+      const commandPath = join(subDir, 'mytool.EXE');
+      writeFileSync(commandPath, '#!/bin/sh\nprintf "path-sep-output"\n');
+      chmodSync(commandPath, 0o755);
+
+      const result = await withEnv(
+        {
+          PATH: tmpDir,
+          PATHEXT: '.EXE',
+          _CC_SAFETY_NET_TEST_SPAWN_PLATFORM: 'win32',
+        },
+        () => defaultVersionFetcher([`${subDir}/mytool`, '--version']),
+      );
+
+      expect(result).toBe('path-sep-output');
+    });
+  });
+
+  test('falls back to original command when path separator command is not found', async () => {
+    if (process.platform === 'win32') return;
+
+    const result = await withEnv(
+      {
+        PATH: '/nonexistent',
+        PATHEXT: '.EXE',
+        _CC_SAFETY_NET_TEST_SPAWN_PLATFORM: 'win32',
+      },
+      () => defaultVersionFetcher(['./nonexistent-cmd', '--version']),
+    );
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('getSystemInfo runCommand paths', () => {
+  function installFakePi(tmpDir: string, probeBody: string) {
+    writeFileSync(
+      join(tmpDir, 'pi.js'),
+      `if (process.argv[2] === "--version") { console.log("pi 0.4.0"); process.exit(0); }\n${probeBody}`,
+    );
+    writeFileSync(join(tmpDir, 'pi'), '#!/bin/sh\nexec bun "$0.js" "$@"\n');
+    chmodSync(join(tmpDir, 'pi'), 0o755);
+  }
+
+  async function withPiOnPath(tmpDir: string, fn: () => Promise<void>) {
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${tmpDir}${delimiter}${originalPath ?? ''}`;
+    try {
+      await fn();
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  }
+
+  test('handles Pi probe timeout scenario via defaultPiProbeRunner', async () => {
+    await withTempDir('doctor-pi-timeout-', async (tmpDir) => {
+      installFakePi(tmpDir, 'setTimeout(() => {}, 60000);');
+      await withPiOnPath(tmpDir, async () => {
+        const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd: tmpDir });
+        expect(sysInfo.piSafetyNetProbe.status).toBe('error');
+        expect(sysInfo.piSafetyNetProbe.error).toContain('timed out');
+      });
+    });
+  }, 10000);
+
+  test('handles Pi probe spawn error via defaultPiProbeRunner', async () => {
+    await withTempDir('doctor-pi-spawn-error-', async (tmpDir) => {
+      installFakePi(tmpDir, 'process.stderr.write("spawn error simulation\\n"); process.exit(1);');
+      await withPiOnPath(tmpDir, async () => {
+        const sysInfo = await getSystemInfo(defaultVersionFetcher, { cwd: tmpDir });
+        expect(sysInfo.piSafetyNetProbe.status).toBe('error');
+        expect(sysInfo.piSafetyNetProbe.error).toContain('code');
+      });
+    });
+  }, 10000);
 });

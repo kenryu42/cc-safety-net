@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import {
   getGitExecutionContext,
   hasGitContextEnvOverride,
@@ -20,15 +20,9 @@ import {
 import {
   createLinkedWorktreeFixture,
   createSubmoduleLikeGitFileFixture,
+  getLinkedGitDir,
   withEnv,
 } from '../../helpers.ts';
-
-function getLinkedGitDir(worktree: string): string {
-  const dotGitPath = join(worktree, '.git');
-  const firstLine = readFileSync(dotGitPath, 'utf-8').split(/\r?\n/, 1)[0] ?? '';
-  const rawGitDir = firstLine.slice('gitdir:'.length).trim();
-  return isAbsolute(rawGitDir) ? rawGitDir : resolve(dirname(dotGitPath), rawGitDir);
-}
 
 describe('worktree git execution context', () => {
   test('handles missing and invalid cwd', () => {
@@ -345,6 +339,62 @@ describe('linked worktree detection', () => {
     writeFileSync(
       join(gitDir, 'config.worktree'),
       `[core]\n\tworktree = '${fixture.linkedWorktree}'\n`,
+    );
+    try {
+      expect(isLinkedWorktree(fixture.linkedWorktree)).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test('handles escape sequences in double-quoted core.worktree values', () => {
+    const fixture = createLinkedWorktreeFixture();
+    const gitDir = getLinkedGitDir(fixture.linkedWorktree);
+    // Use \n \t \b and unknown escape sequences in worktree path to cover unescaping
+    writeFileSync(
+      join(gitDir, 'config.worktree'),
+      '[core]\n\tworktree = "/nonexistent/\\n\\t\\b\\x"\n',
+    );
+    try {
+      // The path won't match, so isLinkedWorktree returns false
+      expect(isLinkedWorktree(fixture.linkedWorktree)).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test('handles trailing backslash in double-quoted core.worktree values', () => {
+    const fixture = createLinkedWorktreeFixture();
+    const gitDir = getLinkedGitDir(fixture.linkedWorktree);
+    writeFileSync(join(gitDir, 'config.worktree'), '[core]\n\tworktree = "/nonexistent/path\\"\n');
+    try {
+      expect(isLinkedWorktree(fixture.linkedWorktree)).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test('returns false when cwd resolves to a file instead of a directory', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'safety-net-worktree-file-'));
+    const filePath = join(tempDir, 'afile');
+    writeFileSync(filePath, 'content');
+    try {
+      expect(getGitExecutionContext(['git', 'status'], filePath)).toEqual({
+        gitCwd: null,
+        hasExplicitGitContext: false,
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns false for isLinkedWorktree when sameFilesystemPath throws', () => {
+    const fixture = createLinkedWorktreeFixture();
+    const gitDir = getLinkedGitDir(fixture.linkedWorktree);
+    // Point config.worktree to a path with a nonexistent parent (will cause realpath to fail)
+    writeFileSync(
+      join(gitDir, 'config.worktree'),
+      `[core]\n\tworktree = "${fixture.rootDir}/nonexistent-parent/sub"\n`,
     );
     try {
       expect(isLinkedWorktree(fixture.linkedWorktree)).toBe(false);
