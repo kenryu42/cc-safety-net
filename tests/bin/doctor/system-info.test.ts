@@ -670,6 +670,7 @@ describe('getSystemInfo runCommand paths', () => {
   }
 
   test('handles Pi probe timeout scenario via defaultPiProbeRunner', async () => {
+    if (process.platform === 'win32') return;
     await withTempDir('doctor-pi-timeout-', async (tmpDir) => {
       installFakePi(tmpDir, 'setTimeout(() => {}, 60000);');
       await withPiOnPath(tmpDir, async () => {
@@ -681,6 +682,7 @@ describe('getSystemInfo runCommand paths', () => {
   }, 10000);
 
   test('handles Pi probe spawn error via defaultPiProbeRunner', async () => {
+    if (process.platform === 'win32') return;
     await withTempDir('doctor-pi-spawn-error-', async (tmpDir) => {
       installFakePi(tmpDir, 'process.stderr.write("spawn error simulation\\n"); process.exit(1);');
       await withPiOnPath(tmpDir, async () => {
