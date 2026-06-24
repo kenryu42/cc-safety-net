@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { debugError } from '@/core/env';
 import { hasConfigAffectingEnvAssignment, isGitConfigEnvName } from './env';
 import { findDotGitInAncestors, GIT_GLOBAL_OPTS_WITH_VALUE } from './worktree';
 
@@ -235,7 +236,8 @@ function resolveGitDirFromDotGit(dotGitPath: string): string | null {
       return null;
     }
     return isAbsolute(rawGitDir) ? rawGitDir : resolve(dirname(dotGitPath), rawGitDir);
-  } catch {
+  } catch (error) {
+    debugError(`failed to resolve .git dir at ${dotGitPath}`, error);
     return null;
   }
 }
@@ -252,7 +254,8 @@ function resolveCommonGitDir(gitDir: string): string | null {
       return null;
     }
     return isAbsolute(rawCommonDir) ? rawCommonDir : resolve(gitDir, rawCommonDir);
-  } catch {
+  } catch (error) {
+    debugError(`failed to resolve commondir in ${gitDir}`, error);
     return null;
   }
 }
@@ -261,7 +264,8 @@ function gitConfigFileEnablesRecursiveSubmodules(configPath: string): boolean {
   let content: string;
   try {
     content = readFileSync(configPath, 'utf-8');
-  } catch {
+  } catch (error) {
+    debugError(`failed to read git config ${configPath}`, error);
     return true;
   }
 

@@ -41,6 +41,14 @@ export function getEnvFlagValue(flag: EnvFlag): string | undefined {
   return undefined;
 }
 
+export function debugError(context: string, error: unknown): void {
+  if (envTruthy(ENV_FLAGS.debug)) {
+    console.error(
+      `CC Safety Net debug: ${context}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export function envFlagIsSet(flag: EnvFlag): boolean {
   return (
     process.env[flag.name] !== undefined ||

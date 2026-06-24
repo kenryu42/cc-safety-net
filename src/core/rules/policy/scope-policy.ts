@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { debugError } from '@/core/env';
 import { assertValidRulebook, type Rulebook } from '@/core/rules/rulebook';
 import type { Config, CustomRule } from '@/types';
 import { readRulesConfig } from './config-file';
@@ -295,7 +296,8 @@ function isSameConfigPath(userConfigPath: string, projectConfigPath: string): bo
   }
   try {
     return realpathSync(userConfigPath) === realpathSync(projectConfigPath);
-  } catch {
+  } catch (error) {
+    debugError('realpath comparison failed', error);
     return false;
   }
 }
@@ -342,7 +344,8 @@ function legacyRulesConfigNeedsMigration(legacyPath: string): boolean {
     if (config.rules === undefined) return false;
     if (!Array.isArray(config.rules)) return true;
     return config.rules.length > 0;
-  } catch {
+  } catch (error) {
+    debugError(`failed to parse legacy rules config ${legacyPath}`, error);
     return true;
   }
 }
@@ -362,7 +365,8 @@ export function getRulebookMigratedFrom(configDir: string, source: string): stri
   try {
     const rulebook = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
     return typeof rulebook.migrated_from === 'string' ? rulebook.migrated_from : null;
-  } catch {
+  } catch (error) {
+    debugError(`failed to read rulebook at ${join(configDir, source, RULEBOOK_FILE)}`, error);
     return null;
   }
 }

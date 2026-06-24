@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { debugError } from '@/core/env';
 import { runRulebookFixtures } from '@/core/rules/rulebook';
 import { NAME_PATTERN } from '@/types';
 import { readRulesConfig, readScopeRulesConfig, writeJsonAtomic } from './config-file';
@@ -286,8 +287,8 @@ function repairLocalRulesScope(options: SyncRulesConfigOptions): void {
       version: 1,
       rulebooks: resolved.map((item) => item.entry),
     });
-  } catch {
-    // Normal policy loading will report the unrepaired validation error.
+  } catch (error) {
+    debugError('local rules repair failed', error);
   }
 }
 
