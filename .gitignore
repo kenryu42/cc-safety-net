@@ -12,6 +12,10 @@ coverage
 .codex
 codex-security-scans
 
+# --- Secrets ---
+.env
+.env.*
+
 # --- Node.js ---
 node_modules/
 droid-wiki

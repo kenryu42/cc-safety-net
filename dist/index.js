@@ -6252,10 +6252,14 @@ function redactSecrets(text) {
   result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@/]+)@/gi, "$1<redacted>:<redacted>@");
   result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)@/gi, "$1<redacted>@");
   result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "<redacted>");
-  result = result.replace(/\bxoxb-[A-Za-z0-9-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bxox[bpas]-[A-Za-z0-9-]{20,}\b/g, "<redacted>");
   result = result.replace(/\bnpm_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
   result = result.replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
   result = result.replace(/\bpypi-[A-Za-z0-9_-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bsk-ant-(?:api\d+-)?[A-Za-z0-9_-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bAIzaSy[A-Za-z0-9_-]{33}\b/g, "<redacted>");
+  result = result.replace(/\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g, "<redacted>");
   result = result.replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g, "<redacted>");
   result = result.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "<redacted>");
   return result;
