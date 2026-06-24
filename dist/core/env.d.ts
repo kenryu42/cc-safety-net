@@ -36,4 +36,5 @@ export declare function getCCSafetyNetEnvModes(): {
 };
 export declare function envTruthy(flag: string | EnvFlag): boolean;
 export declare function getEnvFlagValue(flag: EnvFlag): string | undefined;
+export declare function debugError(context: string, error: unknown): void;
 export declare function envFlagIsSet(flag: EnvFlag): boolean;

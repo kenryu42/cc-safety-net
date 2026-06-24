@@ -2077,6 +2077,11 @@ function getEnvFlagValue(flag) {
   }
   return;
 }
+function debugError(context, error) {
+  if (envTruthy(ENV_FLAGS.debug)) {
+    console.error(`CC Safety Net debug: ${context}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 function envFlagIsSet(flag) {
   return process.env[flag.name] !== undefined || !!flag.legacyName && process.env[flag.legacyName] !== undefined;
 }
@@ -3153,7 +3158,8 @@ function resolveGitDirFromDotGit(dotGitPath) {
       return null;
     }
     return isAbsolute4(rawGitDir) ? rawGitDir : resolve3(dirname3(dotGitPath), rawGitDir);
-  } catch {
+  } catch (error) {
+    debugError(`failed to resolve .git dir at ${dotGitPath}`, error);
     return null;
   }
 }
@@ -3168,7 +3174,8 @@ function resolveCommonGitDir(gitDir) {
       return null;
     }
     return isAbsolute4(rawCommonDir) ? rawCommonDir : resolve3(gitDir, rawCommonDir);
-  } catch {
+  } catch (error) {
+    debugError(`failed to resolve commondir in ${gitDir}`, error);
     return null;
   }
 }
@@ -3176,7 +3183,8 @@ function gitConfigFileEnablesRecursiveSubmodules(configPath) {
   let content;
   try {
     content = readFileSync2(configPath, "utf-8");
-  } catch {
+  } catch (error) {
+    debugError(`failed to read git config ${configPath}`, error);
     return true;
   }
   let section = "";
@@ -5742,7 +5750,8 @@ function isSameConfigPath(userConfigPath, projectConfigPath) {
   }
   try {
     return realpathSync7(userConfigPath) === realpathSync7(projectConfigPath);
-  } catch {
+  } catch (error) {
+    debugError("realpath comparison failed", error);
     return false;
   }
 }
@@ -5776,7 +5785,8 @@ function legacyRulesConfigNeedsMigration(legacyPath) {
     if (!Array.isArray(config.rules))
       return true;
     return config.rules.length > 0;
-  } catch {
+  } catch (error) {
+    debugError(`failed to parse legacy rules config ${legacyPath}`, error);
     return true;
   }
 }
@@ -5795,7 +5805,8 @@ function getRulebookMigratedFrom(configDir, source) {
   try {
     const rulebook = JSON.parse(readFileSync6(path, "utf-8"));
     return typeof rulebook.migrated_from === "string" ? rulebook.migrated_from : null;
-  } catch {
+  } catch (error) {
+    debugError(`failed to read rulebook at ${join6(configDir, source, RULEBOOK_FILE)}`, error);
     return null;
   }
 }
@@ -6054,7 +6065,9 @@ function repairLocalRulesScope(options2) {
       version: 1,
       rulebooks: resolved.map((item) => item.entry)
     });
-  } catch {}
+  } catch (error) {
+    debugError("local rules repair failed", error);
+  }
 }
 function preserveDisplayRef(item, previousLock, discoveredDisplayRefs) {
   const previousEntry = previousLock?.rulebooks.find((entry) => entry.spec === item.entry.spec && entry.kind === "github");
@@ -6303,7 +6316,9 @@ function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {})
     };
     appendFileSync(logFile, `${JSON.stringify(entry)}
 `, "utf-8");
-  } catch {}
+  } catch (error) {
+    debugError("audit log write failed", error);
+  }
 }
 function redactSecrets(text) {
   let result = text;

@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { debugError } from '@/core/env';
 import type { AuditLogEntry } from '@/types';
 
 type AuditLogDecision = 'allow' | 'deny';
@@ -66,8 +67,8 @@ export function writeAuditLog(
     };
 
     appendFileSync(logFile, `${JSON.stringify(entry)}\n`, 'utf-8');
-  } catch {
-    // Silently ignore errors (matches Python behavior)
+  } catch (error) {
+    debugError('audit log write failed', error);
   }
 }
 
