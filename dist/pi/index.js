@@ -1537,27 +1537,22 @@ function parseGitContextAppendEnvAssignment(token) {
   const eqIdx = token.indexOf("=");
   return { name, value: token.slice(eqIdx + 1) };
 }
-function hasGitSshEnvAssignment(envAssignments) {
+function hasEnvAssignmentIn(envAssignments, names) {
   if (!envAssignments) {
     return false;
   }
   for (const key of envAssignments.keys()) {
-    if (GIT_SSH_ENV_NAMES.has(key)) {
+    if (names.has(key)) {
       return true;
     }
   }
   return false;
 }
+function hasGitSshEnvAssignment(envAssignments) {
+  return hasEnvAssignmentIn(envAssignments, GIT_SSH_ENV_NAMES);
+}
 function hasConfigAffectingEnvAssignment(envAssignments) {
-  if (!envAssignments) {
-    return false;
-  }
-  for (const key of envAssignments.keys()) {
-    if (GIT_CONFIG_AFFECTING_ENV_NAMES.has(key)) {
-      return true;
-    }
-  }
-  return false;
+  return hasEnvAssignmentIn(envAssignments, GIT_CONFIG_AFFECTING_ENV_NAMES);
 }
 
 // src/core/path.ts
@@ -2013,20 +2008,36 @@ function findPrimaryTakesValue(token) {
   return FIND_PRIMARIES_WITH_VALUE.has(token) || /^-newer[A-Za-z]{2}$/.test(token);
 }
 
-// src/core/analyze/interpreters.ts
-function extractInterpreterCodeArg(tokens) {
+// src/core/analyze/shell-wrappers.ts
+function extractFlagArg(tokens, flags, options2) {
+  const rejectDashNext = options2?.rejectDashNext ?? false;
   for (let i = 1;i < tokens.length; i++) {
     const token = tokens[i];
     if (!token)
       continue;
-    if ((token === "-c" || token === "-e") && tokens[i + 1]) {
+    if (flags.includes(token) && tokens[i + 1]) {
       return tokens[i + 1] ?? null;
     }
-    if (token.startsWith("-") && !token.startsWith("--") && (token.includes("c") || token.includes("e")) && tokens[i + 1]) {
-      return tokens[i + 1] ?? null;
+    if (token.startsWith("-") && !token.startsWith("--") && flags.some((flag) => token.includes(flag[1] ?? ""))) {
+      const nextToken = tokens[i + 1];
+      if (!nextToken)
+        continue;
+      if (rejectDashNext && nextToken.startsWith("-"))
+        continue;
+      return nextToken;
     }
   }
   return null;
+}
+var SHELL_CODE_FLAGS = ["-c"];
+function extractDashCArg(tokens) {
+  return extractFlagArg(tokens, SHELL_CODE_FLAGS, { rejectDashNext: true });
+}
+
+// src/core/analyze/interpreters.ts
+var INTERPRETER_CODE_FLAGS = ["-c", "-e"];
+function extractInterpreterCodeArg(tokens) {
+  return extractFlagArg(tokens, INTERPRETER_CODE_FLAGS);
 }
 function containsDangerousCode(code) {
   for (const pattern of DANGEROUS_PATTERNS) {
@@ -2315,25 +2326,6 @@ function isNormalizedPathWithin(target, cwd) {
   const normalizedTarget = normalizePathForComparison(target);
   const normalizedCwd = normalizePathForComparison(cwd);
   return normalizedTarget.startsWith(`${normalizedCwd}${sep2}`) || normalizedTarget === normalizedCwd;
-}
-
-// src/core/analyze/shell-wrappers.ts
-function extractDashCArg(tokens) {
-  for (let i = 1;i < tokens.length; i++) {
-    const token = tokens[i];
-    if (!token)
-      continue;
-    if (token === "-c" && tokens[i + 1]) {
-      return tokens[i + 1] ?? null;
-    }
-    if (token.startsWith("-") && token.includes("c") && !token.startsWith("--")) {
-      const nextToken = tokens[i + 1];
-      if (nextToken && !nextToken.startsWith("-")) {
-        return nextToken;
-      }
-    }
-  }
-  return null;
 }
 
 // src/core/git/worktree.ts
@@ -6388,14 +6380,14 @@ function parseHookJson(inputText, outputDeny, strictReason) {
   }
 }
 function analyzeHookCommand(command2, cwd) {
-  const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
+  const modes = getCCSafetyNetEnvModes();
   return analyzeCommand(command2, {
     cwd,
     config: loadConfig(cwd, { repairLocalRulebooks: true }),
-    strict: envTruthy(ENV_FLAGS.strict),
-    paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
-    paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
-    worktreeMode: envTruthy(ENV_FLAGS.worktree)
+    strict: modes.strict,
+    paranoidRm: modes.paranoidRm,
+    paranoidInterpreters: modes.paranoidInterpreters,
+    worktreeMode: modes.worktreeMode
   });
 }
 function handleBlockedHookCommand(command2, cwd, sessionId, outputDeny) {
