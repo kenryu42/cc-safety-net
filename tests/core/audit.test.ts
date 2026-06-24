@@ -65,6 +65,9 @@ describe('redactSecrets', () => {
   test('redacts raw provider token formats', () => {
     const tokens = [
       ['xoxb', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
+      ['xoxp', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
+      ['xoxa', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
+      ['xoxs', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
       ['npm', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
       ['sk', 'live', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
       ['sk', 'test', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'),
@@ -76,6 +79,19 @@ describe('redactSecrets', () => {
       expect(result).not.toContain(token);
     }
     expect(result.split(' ')).toEqual(tokens.map(() => '<redacted>'));
+  });
+
+  test('redacts AI provider API keys', () => {
+    const openaiKey = 'sk-proj-abcdefghijklmnopqrstuvwxyz1234567890';
+    const anthropicKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890';
+    const googleKey = 'AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q';
+    const sendgridKey = 'SG.abcdefghijklmnopqrstuv.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst';
+
+    const result = redactSecrets(`${openaiKey} ${anthropicKey} ${googleKey} ${sendgridKey}`);
+    expect(result).not.toContain(openaiKey);
+    expect(result).not.toContain(anthropicKey);
+    expect(result).not.toContain(googleKey);
+    expect(result).not.toContain(sendgridKey);
   });
 
   test('redacts URL credentials', () => {
