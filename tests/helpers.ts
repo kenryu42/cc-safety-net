@@ -1,9 +1,9 @@
 import { expect } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { VersionFetcher } from '@/bin/doctor/system-info';
 import { analyzeCommand } from '@/core/analyze';
 import { loadConfig } from '@/core/config';
@@ -269,6 +269,14 @@ export function createLinkedWorktreeFixture(): LinkedWorktreeFixture {
       rmSync(rootDir, { recursive: true, force: true });
     },
   };
+}
+
+/** @internal */
+export function getLinkedGitDir(worktree: string): string {
+  const dotGitPath = join(worktree, '.git');
+  const firstLine = readFileSync(dotGitPath, 'utf-8').split(/\r?\n/, 1)[0] ?? '';
+  const rawGitDir = firstLine.slice('gitdir:'.length).trim();
+  return isAbsolute(rawGitDir) ? rawGitDir : resolve(dirname(dotGitPath), rawGitDir);
 }
 
 export async function withLinkedWorktreeFixture<T>(
