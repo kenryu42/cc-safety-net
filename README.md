@@ -37,6 +37,10 @@ We learned the [hard way](https://www.reddit.com/r/ClaudeAI/comments/1pgxckk/cla
 
 CC Safety Net works across seven coding agent CLIs: **Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Kimi Code, OpenCode, and Pi**. Each integration is documented at [Architecture](https://ccsafetynet.com/docs/guides/architecture).
 
+## Supported platforms
+
+CC Safety Net runs on **Windows, macOS, and Linux**. It detects the host OS to apply correct behavior — case-insensitive path comparison on Windows, both `/` and `\` path separators, and `cmd.exe`/PowerShell command resolution via `COMSPEC`/`PATHEXT`.
+
 ## Prerequisites
 
 - **Node.js** 18 or higher.
