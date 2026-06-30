@@ -1,23 +1,10 @@
+import { extractFlagArg } from '@/core/analyze/shell-wrappers';
 import { DANGEROUS_PATTERNS } from '@/types';
 
-export function extractInterpreterCodeArg(tokens: readonly string[]): string | null {
-  for (let i = 1; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (!token) continue;
+const INTERPRETER_CODE_FLAGS = ['-c', '-e'] as const;
 
-    if ((token === '-c' || token === '-e') && tokens[i + 1]) {
-      return tokens[i + 1] ?? null;
-    }
-    if (
-      token.startsWith('-') &&
-      !token.startsWith('--') &&
-      (token.includes('c') || token.includes('e')) &&
-      tokens[i + 1]
-    ) {
-      return tokens[i + 1] ?? null;
-    }
-  }
-  return null;
+export function extractInterpreterCodeArg(tokens: readonly string[]): string | null {
+  return extractFlagArg(tokens, INTERPRETER_CODE_FLAGS);
 }
 
 export function containsDangerousCode(code: string): boolean {

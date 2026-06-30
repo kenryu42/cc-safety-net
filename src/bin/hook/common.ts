@@ -1,6 +1,6 @@
 import { analyzeCommand, loadConfig } from '@/core/analyze';
 import { redactSecrets, writeAuditLog } from '@/core/audit';
-import { ENV_FLAGS, envTruthy } from '@/core/env';
+import { ENV_FLAGS, envTruthy, getCCSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 
 export const REASON_SAFETY_NET_FAILED_CLOSED =
@@ -81,14 +81,14 @@ export function parseHookJson<T>(
 }
 
 function analyzeHookCommand(command: string, cwd: string) {
-  const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
+  const modes = getCCSafetyNetEnvModes();
   return analyzeCommand(command, {
     cwd,
     config: loadConfig(cwd, { repairLocalRulebooks: true }),
-    strict: envTruthy(ENV_FLAGS.strict),
-    paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
-    paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
-    worktreeMode: envTruthy(ENV_FLAGS.worktree),
+    strict: modes.strict,
+    paranoidRm: modes.paranoidRm,
+    paranoidInterpreters: modes.paranoidInterpreters,
+    worktreeMode: modes.worktreeMode,
   });
 }
 
