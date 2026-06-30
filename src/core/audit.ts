@@ -114,10 +114,16 @@ export function redactSecrets(text: string): string {
   result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '<redacted>');
 
   // Common provider token prefixes
-  result = result.replace(/\bxoxb-[A-Za-z0-9-]{20,}\b/g, '<redacted>');
+  result = result.replace(/\bxox[bpas]-[A-Za-z0-9-]{20,}\b/g, '<redacted>');
   result = result.replace(/\bnpm_[A-Za-z0-9_]{20,}\b/g, '<redacted>');
   result = result.replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9_]{20,}\b/g, '<redacted>');
   result = result.replace(/\bpypi-[A-Za-z0-9_-]{20,}\b/g, '<redacted>');
+
+  // AI provider API keys
+  result = result.replace(/\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b/g, '<redacted>');
+  result = result.replace(/\bsk-ant-(?:api\d+-)?[A-Za-z0-9_-]{20,}\b/g, '<redacted>');
+  result = result.replace(/\bAIzaSy[A-Za-z0-9_-]{33}\b/g, '<redacted>');
+  result = result.replace(/\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g, '<redacted>');
 
   // JWTs and AWS access key IDs
   result = result.replace(
