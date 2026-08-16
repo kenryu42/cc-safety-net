@@ -2609,3 +2609,99 @@ describe('secret protection exempts every documented explain invocation', () => 
     }
   });
 });
+
+describe('secret protection allow paths', () => {
+  const cwd = join(tmpdir(), 'secret-protection-allow-project');
+
+  test('an exact-file allow entry suppresses pattern rules for that file only', () => {
+    const config = { disabledRules: new Set<string>(), denyPaths: [], allowPaths: ['.env.test'] };
+    expect(findSensitivePathTarget(['.env.test'], cwd, config)).toBeNull();
+    expect(findSensitivePathTarget(['.env.production'], cwd, config)?.ruleId).toBe(
+      'secret.pattern.env-variant',
+    );
+  });
+
+  test('a directory allow entry vouches for its descendants only', () => {
+    const home = mkdtempSync(join(tmpdir(), 'secret-protection-allow-home-'));
+    try {
+      withEnv({ HOME: home }, () => {
+        const config = {
+          disabledRules: new Set<string>(),
+          denyPaths: [],
+          allowPaths: ['~/projects/vulcan'],
+        };
+        expect(findSensitivePathTarget(['~/projects/vulcan/.env.test'], home, config)).toBeNull();
+        expect(findSensitivePathTarget(['~/projects/other/.env.test'], home, config)?.ruleId).toBe(
+          'secret.pattern.env-variant',
+        );
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a ** glob entry matches at any depth and nothing else', () => {
+    const config = {
+      disabledRules: new Set<string>(),
+      denyPaths: [],
+      allowPaths: ['**/.env.test'],
+    };
+    expect(findSensitivePathTarget(['.env.test'], cwd, config)).toBeNull();
+    expect(findSensitivePathTarget(['deep/nested/.env.test'], cwd, config)).toBeNull();
+    expect(findSensitivePathTarget(['.env.staging'], cwd, config)?.ruleId).toBe(
+      'secret.pattern.env-variant',
+    );
+  });
+
+  test('a single * stays within one path segment', () => {
+    const config = {
+      disabledRules: new Set<string>(),
+      denyPaths: [],
+      allowPaths: ['apps/*/.env.test'],
+    };
+    expect(findSensitivePathTarget(['apps/web/.env.test'], cwd, config)).toBeNull();
+    expect(findSensitivePathTarget(['apps/web/deep/.env.test'], cwd, config)?.ruleId).toBe(
+      'secret.pattern.env-variant',
+    );
+  });
+
+  test('? matches exactly one non-separator character', () => {
+    const config = { disabledRules: new Set<string>(), denyPaths: [], allowPaths: ['.env.v?'] };
+    expect(findSensitivePathTarget(['.env.v1'], cwd, config)).toBeNull();
+    expect(findSensitivePathTarget(['.env.v12'], cwd, config)?.ruleId).toBe(
+      'secret.pattern.env-variant',
+    );
+  });
+
+  test('an explicit deny beats an allow for the same path', () => {
+    const config = {
+      disabledRules: new Set<string>(),
+      denyPaths: ['.env.test'],
+      allowPaths: ['.env.test'],
+    };
+    expect(findSensitivePathTarget(['.env.test'], cwd, config)?.ruleId).toBe('secret.deny-path');
+  });
+
+  test('allow entries never suppress coding-CLI self-protection rules', () => {
+    const home = mkdtempSync(join(tmpdir(), 'secret-protection-allow-cli-'));
+    try {
+      withEnv({ HOME: home, CLAUDE_CONFIG_DIR: '' }, () => {
+        const config = {
+          disabledRules: new Set<string>(),
+          denyPaths: [],
+          allowPaths: ['~/.claude'],
+        };
+        expect(findSensitivePathTarget(['~/.claude/.credentials.json'], home, config)?.ruleId).toBe(
+          'secret.cli.claude-code',
+        );
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('matching is case-insensitive like every other secret rule', () => {
+    const config = { disabledRules: new Set<string>(), denyPaths: [], allowPaths: ['.ENV.TEST'] };
+    expect(findSensitivePathTarget(['.env.test'], cwd, config)).toBeNull();
+  });
+});

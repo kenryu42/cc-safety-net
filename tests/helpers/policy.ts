@@ -74,6 +74,7 @@ export function policySnapshot(input: TestPolicyInput = {}): PolicySnapshot {
       enabled: input.secretProtection?.enabled ?? true,
       disabledRules: Array.from(input.secretProtection?.disabledRules ?? []),
       denyPaths: [...(input.secretProtection?.denyPaths ?? [])],
+      allowPaths: [...(input.secretProtection?.allowPaths ?? [])],
     },
   };
   return createPolicySnapshot(
@@ -131,6 +132,7 @@ export function loadTestPolicy(
       ...snapshot.policy.secretProtection,
       disabledRules: new Set(snapshot.policy.secretProtection.disabledRules),
       denyPaths: [...snapshot.policy.secretProtection.denyPaths],
+      allowPaths: [...snapshot.policy.secretProtection.allowPaths],
     },
     ...(snapshot.state === 'degraded' ? { configFallbackReason: snapshot.reason } : {}),
   };

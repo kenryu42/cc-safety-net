@@ -1,7 +1,11 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { processHomeDir } from '@/ir/environment';
-import { getDestructiveAllowPathError, getSecretDenyPathError } from '@/policy/allow-paths';
+import {
+  getDestructiveAllowPathError,
+  getSecretAllowPathError,
+  getSecretDenyPathError,
+} from '@/policy/allow-paths';
 import { getCCSafetyNetEnvModes } from '@/policy/env';
 import { getUserPolicyDiagnostics } from '@/policy/schema';
 import {
@@ -83,6 +87,7 @@ export type GuiPolicy = {
     enabled: boolean;
     overrides: Record<string, 'on' | 'off'>;
     deny_paths: string[];
+    allow_paths: string[];
   };
   audit: {
     retention_days: number;
@@ -107,6 +112,7 @@ export const DEFAULT_GUI_POLICY: GuiPolicy = {
     enabled: true,
     overrides: {},
     deny_paths: [],
+    allow_paths: [],
   },
   audit: {
     retention_days: DEFAULT_AUDIT_RETENTION_DAYS,
@@ -332,6 +338,7 @@ export function normalizeGuiPolicy(value: unknown): GuiPolicy {
       enabled: typeof secret.enabled === 'boolean' ? secret.enabled : true,
       overrides: repairRuleOverrides(secret.overrides, SECRET_PROTECTION_RULE_ID_SET),
       deny_paths: repairDenyPaths(secret.deny_paths),
+      allow_paths: repairSecretAllowPaths(secret.allow_paths),
     },
     audit: {
       retention_days: clampAuditRetentionDays(
@@ -360,6 +367,12 @@ function repairAllowPaths(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const home = processHomeDir();
   return value.filter((path): path is string => getDestructiveAllowPathError(path, home) === null);
+}
+
+function repairSecretAllowPaths(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const home = processHomeDir();
+  return value.filter((path): path is string => getSecretAllowPathError(path, home) === null);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -439,6 +452,7 @@ function createEmptyPolicy(): PartialPolicy {
       enabled: true,
       disabledRules: resolveSecretDisabledRules({}),
       denyPaths: [],
+      allowPaths: [],
     },
   };
 }
@@ -455,6 +469,7 @@ function normalizePolicyConfig(config: GuiPolicy): PartialPolicy {
       enabled: config.secret_protection.enabled,
       disabledRules: resolveSecretDisabledRules(config.secret_protection.overrides),
       denyPaths: [...config.secret_protection.deny_paths],
+      allowPaths: [...config.secret_protection.allow_paths],
     },
   };
 }

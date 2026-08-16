@@ -13,7 +13,12 @@ type Policy = {
     overrides: RuleOverrides;
     allow_paths: string[];
   };
-  secret_protection: { enabled: boolean; overrides: RuleOverrides; deny_paths: string[] };
+  secret_protection: {
+    enabled: boolean;
+    overrides: RuleOverrides;
+    deny_paths: string[];
+    allow_paths: string[];
+  };
   audit: { retention_days: number };
 };
 type RuleState = {
@@ -345,6 +350,7 @@ const collectFormPolicy = () => ({
     enabled: draftPolicy.secret_protection.enabled,
     overrides: draftPolicy.secret_protection.overrides,
     deny_paths: draftPolicy.secret_protection.deny_paths,
+    allow_paths: draftPolicy.secret_protection.allow_paths,
   },
   audit: draftPolicy.audit,
 });
@@ -1401,6 +1407,24 @@ const pathLists = {
       return errorText(result);
     },
   }),
+  'secret-allow-paths': createPathList('secret-allow-paths', {
+    getPaths: () => draftPolicy.secret_protection.allow_paths,
+    setPaths: (paths: string[]) => {
+      draftPolicy.secret_protection.allow_paths = paths;
+    },
+    isDisabled: () => !draftPolicy.secret_protection.enabled,
+    itemLabel: 'allow path',
+    validateAdditions: async (paths: string[]) => {
+      const candidate = collectFormPolicy();
+      candidate.secret_protection = {
+        ...candidate.secret_protection,
+        allow_paths: paths,
+      };
+      const result = await requestPolicyPreview(candidate);
+      if (result.ok && result.data?.preview) return null;
+      return errorText(result);
+    },
+  }),
   'allow-paths': createPathList('allow-paths', {
     getPaths: () => draftPolicy.destructive_command_protection.allow_paths,
     setPaths: (paths: string[]) => {
@@ -1423,7 +1447,9 @@ const pathLists = {
 // The two lists are addressed by name from a data attribute, so a lookup has to
 // prove the attribute names one of them.
 const pathListFor = (name: string | undefined) =>
-  name === 'deny-paths' || name === 'allow-paths' ? pathLists[name] : null;
+  name === 'deny-paths' || name === 'allow-paths' || name === 'secret-allow-paths'
+    ? pathLists[name]
+    : null;
 // A default-off rule needs an explicit 'on' override to become active, so the switch state
 // cannot be read from the presence of an override alone.
 const secretRuleIsActive = (rule: SecretRule, overrides: RuleOverrides) =>
@@ -1864,6 +1890,16 @@ function render() {
     '</button></div>' +
     '<p class="paths-hint" id="deny-paths-hint" hidden></p>' +
     '<ul class="paths-list" id="deny-paths-list"></ul>' +
+    '</div></section>' +
+    '<section class="rule-tier">' +
+    '<button type="button" class="rule-tier-head" aria-expanded="false" aria-controls="secret-allow-paths-content"><span class="panel-chevron" aria-hidden="true"></span><span class="tier-label"><strong id="secret-allow-paths-label">Allow paths</strong><small>Configured paths, subtrees, and glob patterns (*, **, ?) are exempt from the pattern rules. Deny paths and coding CLI protections still apply. Entries covering the home directory are rejected.</small></span><span class="tier-counts" id="secret-allow-paths-count"></span></button>' +
+    '<div class="tier-content paths-content" id="secret-allow-paths-content" hidden>' +
+    '<p class="muted">Paste multiple lines to add several paths at once.</p>' +
+    '<div class="paths-add"><input type="text" id="secret-allow-paths-input" data-path-input="secret-allow-paths" autocomplete="off" spellcheck="false" placeholder="~/project/.env.test or **/.env.test" aria-labelledby="secret-allow-paths-label"><button type="button" class="icon-button" id="secret-allow-paths-add-button" data-path-add="secret-allow-paths" aria-label="Add allow path">' +
+    pathListIcons.add +
+    '</button></div>' +
+    '<p class="paths-hint" id="secret-allow-paths-hint" hidden></p>' +
+    '<ul class="paths-list" id="secret-allow-paths-list"></ul>' +
     '</div></section>';
   qs<HTMLTextAreaElement>('raw').value = state.errors.length
     ? state.raw
@@ -1873,6 +1909,7 @@ function render() {
   renderDestructiveCommands();
   renderSecretPatterns();
   pathLists['deny-paths'].render();
+  pathLists['secret-allow-paths'].render();
   pathLists['allow-paths'].render();
   updateRawSource();
   renderRetention(state);
@@ -1925,6 +1962,7 @@ const restoreDraft = () => {
   renderDestructiveCommands();
   renderSecretPatterns();
   pathLists['deny-paths'].render();
+  pathLists['secret-allow-paths'].render();
   pathLists['allow-paths'].render();
   syncRawFromForm();
   updateDirtyStatus();
@@ -2185,6 +2223,7 @@ document.addEventListener('change', (event) => {
       syncMasterBadges();
       renderSecretPatterns();
       pathLists['deny-paths'].render();
+      pathLists['secret-allow-paths'].render();
       syncRawFromForm();
       updateDirtyStatus();
     })();

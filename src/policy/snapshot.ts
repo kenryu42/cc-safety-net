@@ -30,6 +30,7 @@ export function loadPolicySnapshot(options: PolicySnapshotOptions = {}): PolicyS
       enabled: userPolicy.secretProtection.enabled ?? true,
       disabledRules: [...(userPolicy.secretProtection.disabledRules ?? [])],
       denyPaths: [...userPolicy.secretProtection.denyPaths],
+      allowPaths: [...(userPolicy.secretProtection.allowPaths ?? [])],
     },
   };
 

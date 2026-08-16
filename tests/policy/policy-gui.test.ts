@@ -195,6 +195,7 @@ describe('policy GUI helpers', () => {
             'secret.unknown': 'off',
           },
           deny_paths: ['private/token.txt', '', 42, '~', '/'],
+          allow_paths: ['**/.env.test', '~/projects/fixtures', '', 42, '~', '**'],
         },
         extra: true,
       }),
@@ -225,6 +226,7 @@ describe('policy GUI helpers', () => {
         enabled: false,
         overrides: { 'secret.ext.pem': 'off' },
         deny_paths: ['private/token.txt'],
+        allow_paths: ['**/.env.test', '~/projects/fixtures'],
       },
       // The fixture carries no audit section, so repair supplies the default.
       audit: { retention_days: 30 },

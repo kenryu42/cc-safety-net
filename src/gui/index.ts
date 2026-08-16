@@ -375,6 +375,7 @@ function explainDraftCommand(
       enabled: draft.secret_protection.enabled,
       disabledRules: [...resolveSecretDisabledRules(draft.secret_protection.overrides)],
       denyPaths: draft.secret_protection.deny_paths,
+      allowPaths: draft.secret_protection.allow_paths,
     },
   });
   return explainCommand(command, {

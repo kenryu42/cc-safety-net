@@ -49,6 +49,7 @@ const SNAPSHOT: PolicySnapshot = Object.freeze({
       enabled: true,
       disabledRules: Object.freeze([]),
       denyPaths: Object.freeze([]),
+      allowPaths: Object.freeze([]),
     }),
   }),
 });

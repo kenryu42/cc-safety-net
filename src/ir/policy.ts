@@ -32,6 +32,7 @@ export interface SecretProtectionConfig {
   enabled?: boolean;
   disabledRules?: ReadonlySet<string>;
   denyPaths: string[];
+  allowPaths?: string[];
 }
 
 export type DestructiveCommandRuleOverride = 'on' | 'off';
@@ -99,6 +100,7 @@ export type EffectivePolicy = {
     readonly enabled: boolean;
     readonly disabledRules: readonly string[];
     readonly denyPaths: readonly string[];
+    readonly allowPaths: readonly string[];
   };
 };
 

@@ -417,3 +417,46 @@ describe('configuration schemas', () => {
     }
   });
 });
+
+test('validates secret protection allow paths', () => {
+  const allowPolicy = (allow_paths: unknown) => ({
+    version: 1,
+    secret_protection: { allow_paths },
+  });
+  const disablesEverything =
+    'cannot cover the home directory or a path above it (this would disable secret protection everywhere)';
+
+  expect(
+    getUserPolicyDiagnostics(
+      allowPolicy(['.env.test', '**/.env.test', '~/projects/vulcan', '/opt/fixtures']),
+    ),
+  ).toEqual([]);
+  expect(getUserPolicyDiagnostics(allowPolicy('.env.test'))).toEqual([
+    'secret_protection.allow_paths must be an array of paths',
+  ]);
+  expect(getUserPolicyDiagnostics(allowPolicy([' ', 42]))).toEqual([
+    'secret_protection.allow_paths[0] must be a non-empty path string',
+    'secret_protection.allow_paths[1] must be a non-empty path string',
+  ]);
+  expect(getUserPolicyDiagnostics(allowPolicy(['~', homedir(), '$HOME', '${HOME}']))).toEqual([
+    `secret_protection.allow_paths[0] ${disablesEverything}`,
+    `secret_protection.allow_paths[1] ${disablesEverything}`,
+    `secret_protection.allow_paths[2] ${disablesEverything}`,
+    `secret_protection.allow_paths[3] ${disablesEverything}`,
+  ]);
+  expect(getUserPolicyDiagnostics(allowPolicy(['/', dirname(homedir()), '**']))).toEqual([
+    `secret_protection.allow_paths[0] ${disablesEverything}`,
+    `secret_protection.allow_paths[1] ${disablesEverything}`,
+    `secret_protection.allow_paths[2] ${disablesEverything}`,
+  ]);
+  expect(
+    getUserPolicyDiagnostics(allowPolicy(['~/.cc-safety-net', '~/.cc-safety-net/policy.json'])),
+  ).toEqual([
+    "secret_protection.allow_paths[0] cannot cover the guard's own configuration",
+    "secret_protection.allow_paths[1] cannot cover the guard's own configuration",
+  ]);
+  expect(getUserPolicySchema().safeParse(allowPolicy(['~'])).success).toBeFalse();
+  expect(
+    getUserPolicySchema().safeParse(allowPolicy(['.env.test', '~/projects/vulcan'])).success,
+  ).toBeTrue();
+});

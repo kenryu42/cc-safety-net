@@ -21,6 +21,7 @@ import type { SecretProtectionConfig } from '@/ir/policy';
 import type { SemanticFactStore, SemanticFacts, ShellSyntaxFacts } from '@/ir/semantic-facts';
 import { getShellCommandString } from '@/parser/shell';
 import { advanceQuoteScanState } from '@/parser/shell/shared';
+import { compilePathGlob, hasGlobChars } from '@/policy/allow-paths';
 import {
   SECRET_BASENAME_RULES,
   SECRET_BROAD_SSH_KEY_BASENAME_RULE,
@@ -221,6 +222,7 @@ type SecretProtectionPolicy = {
   readonly enabled?: boolean;
   readonly disabledRules?: ReadonlySet<string> | readonly string[];
   readonly denyPaths: readonly string[];
+  readonly allowPaths?: readonly string[];
 };
 
 type SecretInspectionOptions = {
@@ -256,6 +258,17 @@ function findSensitivePolicyPathTarget(
     if (activeDefaultTargets && !activeDefaultTargets.has(target)) continue;
     const ruleId = isSensitivePath(target, cwd, config, budget);
     if (ruleId) {
+      // A configured allow entry vouches for paths the user manages themselves
+      // (a repo's .env.test, a fixtures directory). It suppresses the pattern
+      // tiers only: an explicit deny already returned above, and the coding-CLI
+      // tier stays exempt so no allow entry can expose the agent's own
+      // credentials or configuration.
+      if (
+        !ruleId.startsWith('secret.cli.') &&
+        matchesAllowedPath(target, cwd, config?.allowPaths ?? [], configCwd, budget)
+      ) {
+        continue;
+      }
       return { target, ruleId };
     }
   }
@@ -1682,6 +1695,54 @@ function matchesPolicyPath(
       comparable(normalizeAbsoluteCandidatePath(path, configCwd, budget)),
     ),
   );
+}
+
+// Non-glob allow entries use exactly the deny-path semantics (same-or-child of
+// a fully normalized root, symlinks resolved). Glob entries are patterns, not
+// real paths, so they are absolutized textually — home expanded, relative
+// entries rooted at the config cwd — and never symlink-resolved; the TARGET
+// side still goes through full candidate normalization, so every
+// canonicalization protection applies to what the pattern is tested against.
+function matchesAllowedPath(
+  target: string,
+  cwd: string,
+  allowPaths: readonly string[],
+  configCwd: string,
+  budget: PathCanonicalizationBudget,
+): boolean {
+  if (allowPaths.length === 0) return false;
+  const normalized = comparable(normalizeAbsoluteCandidatePath(target, cwd, budget));
+  if (!normalized) return false;
+  return allowPaths.some((entry) => {
+    if (!hasGlobChars(entry)) {
+      return isSameOrChildPath(
+        normalized,
+        comparable(normalizeAbsoluteCandidatePath(entry, configCwd, budget)),
+      );
+    }
+    const pattern = absolutePathGlob(entry, configCwd, budget);
+    return pattern !== '' && compilePathGlob(comparable(pattern)).test(normalized);
+  });
+}
+
+// The pattern's literal root (everything before the first glob segment) goes
+// through the same candidate normalization as targets — home expansion,
+// config-cwd resolution, symlink resolution of the existing prefix — so a
+// pattern rooted under a symlinked directory (macOS /var → /private/var)
+// matches the canonicalized target. The glob remainder is appended verbatim.
+function absolutePathGlob(
+  entry: string,
+  configCwd: string,
+  budget: PathCanonicalizationBudget,
+): string {
+  const normalized = normalizePathText(entry);
+  if (!normalized) return '';
+  const separatorIndex = normalized.lastIndexOf('/', normalized.search(/[*?]/));
+  const root =
+    separatorIndex < 0 ? '.' : separatorIndex === 0 ? '/' : normalized.slice(0, separatorIndex);
+  const resolvedRoot = normalizeAbsoluteCandidatePath(root, configCwd, budget);
+  if (!resolvedRoot) return '';
+  return appendPath(resolvedRoot, normalized.slice(separatorIndex + 1));
 }
 
 function isSkippablePathForBroadSignatures(comparablePath: string): boolean {
