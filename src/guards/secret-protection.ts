@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AWK_INTERPRETERS, extractAwkSystemCommands } from '@/analyzer/awk';
 import {
@@ -153,6 +153,11 @@ const CC_SAFETY_NET_ENTRYPOINTS = new Set([
   'src/cli/cc-safety-net.ts',
   'dist/bin/cc-safety-net.js',
 ]);
+// Both published bin names, the runners that resolve a package by name, and the
+// runtimes that execute an entrypoint file (directly or via `run`).
+const CC_SAFETY_NET_BIN_NAMES = new Set(['cc-safety-net', 'ccsn']);
+const PACKAGE_RUNNERS = new Set(['bunx', 'npx', 'pnpx']);
+const SCRIPT_RUNTIMES = new Set(['bun', 'node']);
 const INTERPRETERS_BY_CLUSTERED_CODE_EVAL_FLAG = new Map([
   ['c', new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'python'])],
   ['e', new Set(['node', 'deno', 'bun', 'ruby', 'perl', 'rscript', 'osascript'])],
@@ -478,20 +483,40 @@ function extractSegmentPathTargets(
   ];
 }
 
+/**
+ * How many tokens precede `explain`, or null when this is not a safety-net
+ * explain invocation. Every form the documentation prints is recognized —
+ * `bunx cc-safety-net explain ...` and `bun run <entrypoint> explain ...`
+ * included — because explain only ANALYSES the command it is handed and never
+ * opens it, so a form that is not recognized blocks on its own argument.
+ */
+function safetyNetExplainPrefixLength(command: string, tokens: readonly string[]): number | null {
+  if (CC_SAFETY_NET_BIN_NAMES.has(command)) {
+    return tokens[0] === 'explain' ? 0 : null;
+  }
+  if (PACKAGE_RUNNERS.has(command)) {
+    return CC_SAFETY_NET_BIN_NAMES.has(basename(tokens[0] ?? '')) && tokens[1] === 'explain'
+      ? 1
+      : null;
+  }
+  if (SCRIPT_RUNTIMES.has(command)) {
+    if (isSafetyNetEntrypoint(tokens[0]) && tokens[1] === 'explain') return 1;
+    if (tokens[0] === 'run' && isSafetyNetEntrypoint(tokens[1]) && tokens[2] === 'explain')
+      return 2;
+  }
+  return null;
+}
+
 function extractSafetyNetExplainPathTargets(
   executable: string,
   command: string,
   tokens: readonly string[],
 ): string[] | null {
-  const direct = command === 'cc-safety-net' && tokens[0] === 'explain';
-  const runtime =
-    (command === 'bun' || command === 'node') &&
-    isSafetyNetEntrypoint(tokens[0]) &&
-    tokens[1] === 'explain';
-  if (!direct && !runtime) return null;
+  const prefixLength = safetyNetExplainPrefixLength(command, tokens);
+  if (prefixLength === null) return null;
 
-  const targets = runtime ? [executable, tokens[0] ?? ''] : [executable];
-  const args = tokens.slice(runtime ? 2 : 1);
+  const targets = [executable, ...tokens.slice(0, prefixLength)];
+  const args = tokens.slice(prefixLength + 1);
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--json' || arg === '--help' || arg === '-h') continue;
@@ -1794,17 +1819,26 @@ function expandHomePath(path: string, home: string): string {
   return path;
 }
 
-// Drive-qualified (C:\...) and UNC (\\server\share) candidates use backslash
-// separators on every platform, so they are normalized wherever the analyzer
-// runs. Everything else on POSIX keeps its backslashes: there a backslash is an
-// escape character, never a separator, and rewriting it to `/` turned the
-// surviving regex text of `git grep "process\.env"` into `process/.env`, whose
-// basename is `.env`. Shell-level escapes never reach here — the parser removes
-// them first, so `cat \.env` still arrives as `.env`.
-const WINDOWS_SEPARATED_PATH = /^(?:[A-Za-z]:[\\/]|\\\\[^\\])/;
-
+/**
+ * Whether a backslash in this candidate separates path components.
+ *
+ * On Windows it always does. Off Windows it does so only for a candidate that
+ * is drive-qualified (`C:\...`, `D:/...`) or UNC (`\\server\share`), which is
+ * asked of `node:path` rather than pattern-matched so the platform's own
+ * definition covers the forward-slash drive form and extended-length prefixes.
+ * A Windows root longer than one character is exactly that set — `win32`
+ * reports a bare `\` as an absolute root too, and off Windows `\.npmrc` is a
+ * regex for `.npmrc`, not the drive-relative path it would be on Windows.
+ *
+ * Everything else off Windows keeps its backslashes, because there a backslash
+ * is an escape character: rewriting it turned the surviving regex text of
+ * `git grep "process\.env"` into `process/.env`, whose basename is `.env`.
+ * Shell-level escapes never reach here — the parser removes them first — so
+ * `cat \.env` still arrives as `.env` and stays blocked.
+ */
 function usesBackslashSeparators(value: string): boolean {
-  return process.platform === 'win32' || WINDOWS_SEPARATED_PATH.test(value);
+  if (process.platform === 'win32') return true;
+  return win32.parse(value).root.length > 1;
 }
 
 function normalizePathText(value: string): string {

@@ -1,4 +1,4 @@
-import{a as j}from"../chunks/index-25nh5wqs.js";import{M as y,N as Y,O as F,P as G,Q as U,_ as L,ib as R,ja as b,jb as K,la as h,mb as S,na as O,ta as B}from"../chunks/index-669xh73x.js";var P="cc-safety-net",N="Manage CC Safety Net rulebooks",w="Help me configure CC Safety Net.";function f(H){H.registerCommand(P,{description:N,handler:async(z,q)=>{H.sendUserMessage(A(z),q.isIdle()?void 0:{deliverAs:"followUp"})}})}function A(H){return`${j.slice(j.indexOf("## Workflow")).trimEnd()}
+import{a as j}from"../chunks/index-25nh5wqs.js";import{M as y,N as Y,O as F,P as G,Q as U,_ as L,ib as R,ja as b,jb as K,la as h,mb as S,na as O,ta as B}from"../chunks/index-deawn7c5.js";var P="cc-safety-net",N="Manage CC Safety Net rulebooks",w="Help me configure CC Safety Net.";function f(H){H.registerCommand(P,{description:N,handler:async(z,q)=>{H.sendUserMessage(A(z),q.isIdle()?void 0:{deliverAs:"followUp"})}})}function A(H){return`${j.slice(j.indexOf("## Workflow")).trimEnd()}
 
 ## User request
 

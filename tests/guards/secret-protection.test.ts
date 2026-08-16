@@ -2570,3 +2570,42 @@ describe('secret protection home rules survive a symlinked credential directory'
     }
   });
 });
+
+describe('secret protection exempts every documented explain invocation', () => {
+  // `explain` analyses a command string; it never opens the path it is asked
+  // about. The exemption existed only for the bare binary and the `bun <file>`
+  // form, so the invocations CONTRIBUTING actually prints — `bunx cc-safety-net
+  // explain ...` and the package script `bun run src/cli/cc-safety-net.ts
+  // explain ...` — blocked on their own argument.
+  test('allows explain through the runner forms the docs use', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    // The argument has to contain a separator: that is what makes its basename
+    // match a rule, and it is the shape a developer actually debugs with.
+    for (const command of [
+      `cc-safety-net explain 'cat ~/.ssh/id_rsa'`,
+      `bun dist/bin/cc-safety-net.js explain 'cat ~/.ssh/id_rsa'`,
+      `node dist/bin/cc-safety-net.js explain 'cat ~/.ssh/id_rsa'`,
+      `bun run src/cli/cc-safety-net.ts explain 'cat ~/.ssh/id_rsa'`,
+      `bun run dist/bin/cc-safety-net.js explain --json 'cat ~/.ssh/id_rsa'`,
+      `bunx cc-safety-net explain 'cat ~/.ssh/id_rsa'`,
+      `npx cc-safety-net explain 'cat ~/.ssh/id_rsa'`,
+    ]) {
+      expect(findSensitiveTargetInCommand(command, cwd), command).toBeNull();
+    }
+  });
+
+  test('does not widen the exemption beyond explain', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const command of [
+      `bun run src/cli/other.ts explain ~/.ssh/id_rsa`,
+      `bun run src/cli/cc-safety-net.ts hook --coding-cli ~/.ssh/id_rsa`,
+      `bunx some-other-tool explain ~/.ssh/id_rsa`,
+      `bun run src/cli/cc-safety-net.ts explain 'git status' && cat .env`,
+      `bun run src/cli/cc-safety-net.ts run ~/.ssh/id_rsa`,
+    ]) {
+      expect(findSensitiveTargetInCommand(command, cwd), command).not.toBeNull();
+    }
+  });
+});
