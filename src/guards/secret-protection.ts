@@ -5,6 +5,7 @@ import { AWK_INTERPRETERS, extractAwkSystemCommands } from '@/analyzer/awk';
 import {
   createPathCanonicalizationBudget,
   type PathCanonicalizationBudget,
+  PathCanonicalizationLimitError,
   resolveExistingPath,
 } from '@/analyzer/path-canonicalization';
 import { extractXargsChildCommandWithInfo } from '@/analyzer/xargs';
@@ -1170,22 +1171,46 @@ const ENV_EXEMPTION_BASENAMES = new Set([
 
 const ENV_EXEMPTION_PREFIXES = ['.env.example.', '.env.sample.'];
 
-// Any scheme but `file:` addresses another host. Kept deliberately broad so
-// http, https and ftp are covered without enumerating them.
-const REMOTE_URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
-const FILE_URL_SCHEME = /^file:/i;
-
+// Parsed by the URL API rather than pattern-matched, so scheme casing,
+// userinfo and IPv6 hosts need no bespoke handling. The host check is what
+// keeps a drive-qualified Windows path out: `new URL('C:\\Users\\me\\.npmrc')`
+// parses happily with protocol `c:` and an EMPTY host, and must stay a path.
+// `file:` is excluded because normalizeFileUriPath resolves it to a real local
+// path before any of this runs.
 function isRemoteUrl(target: string): boolean {
-  const trimmed = target.trim();
-  return REMOTE_URL_SCHEME.test(trimmed) && !FILE_URL_SCHEME.test(trimmed);
+  let url: URL;
+  try {
+    url = new URL(target.trim());
+  } catch {
+    return false;
+  }
+  return url.protocol !== 'file:' && url.host !== '';
 }
 
 // Whitespace is what separates a real filename from a sentence that happens to
 // start with one. Paths containing spaces are unaffected: only the BASENAME is
 // tested, and only for the prefix rules that would otherwise match unbounded
-// trailing text.
+// trailing text. A candidate that EXISTS is a path whatever it looks like, so
+// a duplicate such as `.env.production copy` is still matched.
 function isFilenameShaped(name: string): boolean {
   return name.length > 0 && !/\s/.test(name);
+}
+
+function candidateExistsOnDisk(
+  target: string,
+  cwd: string,
+  budget: PathCanonicalizationBudget,
+): boolean {
+  try {
+    const absolute = normalizeAbsoluteCandidatePath(target, cwd, budget);
+    return absolute !== '' && processPathResolver.entryKind(absolute) !== 'missing';
+  } catch (error) {
+    // A budget exhaustion is a deliberate signal the callers act on; anything
+    // else (ENAMETOOLONG, ELOOP, EACCES) only means "cannot confirm it exists",
+    // and this probe is a rescue for the shape heuristic, never the guard.
+    if (error instanceof PathCanonicalizationLimitError) throw error;
+    return false;
+  }
 }
 
 const SKIPPABLE_PATH_SEGMENTS = new Set(['node_modules', '__pycache__']);
@@ -1221,7 +1246,8 @@ function isSensitivePath(
   // `.env.` or `id_rsa-` is read as a path — and the exemption lists, which
   // compare basenames exactly, cannot rescue it: the sentence fragment
   // `.env.example) and then ...` was blocked while `.env.example` is allowed.
-  const filenameShapedName = isFilenameShaped(comparableName);
+  const filenameShapedName =
+    isFilenameShaped(comparableName) || candidateExistsOnDisk(target, cwd, budget);
 
   // Env templates (.env.example, ...) stay readable even inside sensitive
   // directories, matching the original caller-side exemption.
@@ -1234,10 +1260,18 @@ function isSensitivePath(
 
   // Sensitive home directories (~/.ssh, ~/.aws, ...) are deny-by-default
   // wholesale and take priority over the public-key exemption below.
+  //
+  // Matched against the un-resolved home-relative form as well, because these
+  // rules name a LITERAL location: dotfile managers, password managers and
+  // encrypted volumes commonly make ~/.ssh a symlink, and canonicalizing the
+  // candidate rewrites it to the link target, which no longer starts with
+  // `~/.ssh`. Resolving the link would otherwise disable the rule that names it.
+  const comparableUnresolvedPath = comparable(normalizeUnresolvedHomePath(target, cwd, budget));
   for (const rule of SECRET_HOME_PATH_RULES) {
-    const suffix = rule.suffixParts.join('/');
+    const prefix = `~/${rule.suffixParts.join('/')}`;
     if (
-      (comparablePath === `~/${suffix}` || comparablePath.startsWith(`~/${suffix}/`)) &&
+      (isSameOrChildHomePath(comparablePath, prefix) ||
+        isSameOrChildHomePath(comparableUnresolvedPath, prefix)) &&
       isSecretRuleEnabled(rule.id, config)
     ) {
       return rule.id;
@@ -1686,6 +1720,36 @@ function normalizeCandidatePath(
   }
 
   const relativeHomePath = canonicalAbsolute.slice(home.length);
+  return relativeHomePath ? `~${relativeHomePath}` : '~';
+}
+
+function isSameOrChildHomePath(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/**
+ * The home-relative form of a candidate WITHOUT resolving symlinks, or '' when
+ * it does not sit under the home directory. Home rules name a literal location,
+ * so they must see the path the user wrote, not where a link points.
+ */
+function normalizeUnresolvedHomePath(
+  target: string,
+  cwd: string,
+  budget: PathCanonicalizationBudget,
+): string {
+  const { home, normalized } = prepareCandidatePath(target, budget);
+  if (!normalized || !home) return '';
+  const expanded = expandHomePath(normalized, home);
+  const absolute = isAbsolute(expanded) ? expanded : normalizePathText(resolve(cwd, expanded));
+  // The home root itself may be reached through a symlinked ancestor (on macOS
+  // /var is a link to /private/var), so an absolute candidate is tested against
+  // both the canonical and the literal home root before being given up on.
+  const literalHome = normalizePathText(process.env.HOME ?? homedir());
+  const root = [home, literalHome].find(
+    (candidate) => candidate !== '' && isSameOrChildPath(absolute, candidate),
+  );
+  if (root === undefined) return '';
+  const relativeHomePath = absolute.slice(root.length);
   return relativeHomePath ? `~${relativeHomePath}` : '~';
 }
 

@@ -2379,10 +2379,194 @@ describe('secret protection remote URLs are not local paths', () => {
     const cwd = join(tmpdir(), 'secret-protection-project');
 
     expect(findSensitivePathTarget([pathToFileURL('/tmp/app/.env').href], cwd)).not.toBeNull();
+    // `file://localhost/...` normalizes to an empty host, but any other file
+    // host keeps it — so the scheme check, not the host check, is what keeps
+    // these local.
+    expect(findSensitivePathTarget(['file://localhost/tmp/app/.env'], cwd)).not.toBeNull();
+    expect(findSensitivePathTarget(['file://otherhost/home/u/.env'], cwd)).not.toBeNull();
     expect(
       findSensitiveTargetInCommand('curl -sL https://example.com/x -o .env', cwd, undefined, {
         strict: false,
       }),
     ).not.toBeNull();
+  });
+});
+
+describe('secret protection URL parsing is not pattern matching', () => {
+  // `new URL()` accepts a drive letter as a scheme, so host emptiness — not the
+  // scheme — is what separates a remote address from a Windows path.
+  test('a drive-qualified Windows path is never mistaken for a remote URL', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    expect(findSensitivePathTarget(['C:\\Users\\me\\.npmrc'], cwd)?.ruleId).toBe(
+      'secret.basename.npmrc',
+    );
+    expect(findSensitivePathTarget(['c:/Users/me/.env'], cwd)?.ruleId).toBe('secret.basename.env');
+  });
+
+  test('scheme casing, userinfo and ports do not change the verdict', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const target of [
+      'HTTPS://EXAMPLE.COM/x/.env.test',
+      'https://user:pass@example.com/x/.npmrc',
+      'https://example.com:8443/x/credentials',
+    ]) {
+      expect(findSensitivePathTarget([target], cwd), target).toBeNull();
+    }
+  });
+
+  // http and https always resolve an authority (`http:///etc/x` parses with host
+  // `etc`), so a genuinely hostless candidate needs a non-special scheme. Those
+  // address nothing remote and must stay local paths.
+  test('a hostless scheme is still treated as a local path', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    expect(findSensitivePathTarget(['customscheme:/etc/.npmrc'], cwd)?.ruleId).toBe(
+      'secret.basename.npmrc',
+    );
+  });
+
+  test('user deny paths still apply to remote URLs', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    expect(
+      findSensitivePathTarget(['https://example.com/internal/secret.txt'], cwd, {
+        disabledRules: new Set(),
+        denyPaths: ['https://example.com/internal/secret.txt'],
+      }),
+    ).not.toBeNull();
+  });
+});
+
+describe('secret protection prefix rules trust the filesystem over shape', () => {
+  // The whitespace heuristic must not lose a real duplicate: macOS names copies
+  // `<file> copy`, so `.env.production copy` is a genuine secret on disk.
+  test('an existing sensitive file with spaces is still matched', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'secret-protection-copy-'));
+    try {
+      writeFileSync(join(dir, '.env.production copy'), 'TOKEN=1');
+      writeFileSync(join(dir, 'id_rsa-old copy'), 'KEY');
+
+      expect(findSensitivePathTarget(['.env.production copy'], dir)?.ruleId).toBe(
+        'secret.pattern.env-variant',
+      );
+      expect(findSensitivePathTarget(['id_rsa-old copy'], dir)).not.toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('prose that does not exist on disk is still ignored', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'secret-protection-prose-'));
+    try {
+      expect(findSensitivePathTarget(['.env.example) and then some prose here'], dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('secret protection filesystem probe never throws out of the guard', () => {
+  // `entryKind` uses lstat with `throwIfNoEntry: false`, which suppresses ENOENT
+  // but NOT ENAMETOOLONG. An oversized candidate must answer "not a path"
+  // instead of propagating an exception out of a security guard.
+  test('an oversized candidate is answered, not thrown', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+    const oversized = `.env.${'a b'.repeat(4000)}`;
+
+    expect(() => findSensitivePathTarget([oversized], cwd)).not.toThrow();
+    expect(findSensitivePathTarget([oversized], cwd)).toBeNull();
+  });
+
+  test('an unreadable or looping candidate is answered, not thrown', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'secret-protection-loop-'));
+    try {
+      symlinkSync(join(dir, 'loop'), join(dir, 'loop'));
+      expect(() => findSensitivePathTarget(['.env.prod copy'], dir)).not.toThrow();
+      expect(() => findSensitiveTargetInCommand('cat "loop/.env.a b"', dir)).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('secret protection home rules survive a symlinked credential directory', () => {
+  // Dotfile managers (chezmoi, stow), password managers and encrypted volumes
+  // routinely make ~/.ssh and ~/.aws symlinks. Canonicalizing the candidate
+  // rewrites it to the link TARGET, which no longer starts with `~/.ssh`, so
+  // resolving the link silently defeated the rule that names it.
+  function homeWithSymlinkedCredentials() {
+    const home = mkdtempSync(join(tmpdir(), 'secret-protection-home-'));
+    mkdirSync(join(home, 'vault', 'ssh'), { recursive: true });
+    mkdirSync(join(home, 'vault', 'aws'), { recursive: true });
+    symlinkSync(join(home, 'vault', 'ssh'), join(home, '.ssh'), 'dir');
+    symlinkSync(join(home, 'vault', 'aws'), join(home, '.aws'), 'dir');
+    writeFileSync(join(home, 'vault', 'ssh', 'config'), 'Host *');
+    writeFileSync(join(home, 'vault', 'ssh', 'work_deploy_key'), 'KEY');
+    writeFileSync(join(home, 'vault', 'aws', 'config'), '[default]');
+    return home;
+  }
+
+  test('blocks credential files under a symlinked ~/.ssh and ~/.aws', () => {
+    const home = homeWithSymlinkedCredentials();
+    try {
+      withEnv({ HOME: home }, () => {
+        for (const target of [
+          '~/.ssh',
+          '~/.ssh/config',
+          '~/.ssh/work_deploy_key',
+          '~/.aws',
+          '~/.aws/config',
+        ]) {
+          expect(findSensitivePathTarget([target], home), target).not.toBeNull();
+        }
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('blocks the same paths written absolutely rather than through ~', () => {
+    const home = homeWithSymlinkedCredentials();
+    try {
+      withEnv({ HOME: home }, () => {
+        expect(findSensitivePathTarget([join(home, '.ssh', 'config')], home)).not.toBeNull();
+        expect(
+          findSensitiveTargetInCommand(`cat ${join(home, '.ssh', 'config')}`, home, undefined, {
+            strict: false,
+          }),
+        ).not.toBeNull();
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a real (unlinked) home directory keeps working', () => {
+    const home = mkdtempSync(join(tmpdir(), 'secret-protection-realhome-'));
+    try {
+      mkdirSync(join(home, '.ssh'), { recursive: true });
+      writeFileSync(join(home, '.ssh', 'config'), 'Host *');
+      withEnv({ HOME: home }, () => {
+        expect(findSensitivePathTarget(['~/.ssh/config'], home)?.ruleId).toBe('secret.home.ssh');
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('an unrelated symlinked directory is still not sensitive', () => {
+    const home = mkdtempSync(join(tmpdir(), 'secret-protection-unrelated-'));
+    try {
+      mkdirSync(join(home, 'vault', 'notes'), { recursive: true });
+      symlinkSync(join(home, 'vault', 'notes'), join(home, 'notes'), 'dir');
+      writeFileSync(join(home, 'vault', 'notes', 'todo.md'), '# todo');
+      withEnv({ HOME: home }, () => {
+        expect(findSensitivePathTarget(['~/notes/todo.md'], home)).toBeNull();
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
