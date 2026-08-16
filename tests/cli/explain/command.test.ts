@@ -541,18 +541,28 @@ describe('explainCommand rm with home directory', () => {
   });
 
   test('temp-target rm in home directory cwd is allowed', () => {
-    const homeDir = process.env.HOME;
-    if (!homeDir) return;
-    const result = explainCommand('rm -rf /tmp/test-dir', { cwd: homeDir });
-    expect(result.result).toBe('allowed');
-    const allSteps = getTraceSteps(result);
-    const analyzeRmStep = allSteps.find(
-      (s) =>
-        s.type === 'rule-check' &&
-        s.ruleModule === 'analyze/rm.ts' &&
-        s.ruleFunction === 'analyzeRm',
-    );
-    expect(analyzeRmStep).toBeDefined();
+    // Hermetic for the same reason as the case above. Project rule discovery
+    // resolves `<cwd>/.cc-safety-net/rules`, so passing the machine's real HOME
+    // as cwd loaded whatever personal rulebook the developer happens to keep
+    // there: a user rule such as `block-rm-dangerous` turned this green case red
+    // on their machine and stayed green on everyone else's.
+    const homeDir = mkdtempSync(join(tmpdir(), 'explain-temp-home-'));
+    try {
+      withEnv({ HOME: homeDir, CC_SAFETY_NET_HOME: join(homeDir, '.cc-safety-net') }, () => {
+        const result = explainCommand('rm -rf /tmp/test-dir', { cwd: homeDir });
+        expect(result.result).toBe('allowed');
+        const allSteps = getTraceSteps(result);
+        const analyzeRmStep = allSteps.find(
+          (s) =>
+            s.type === 'rule-check' &&
+            s.ruleModule === 'analyze/rm.ts' &&
+            s.ruleFunction === 'analyzeRm',
+        );
+        expect(analyzeRmStep).toBeDefined();
+      });
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true });
+    }
   });
 });
 
