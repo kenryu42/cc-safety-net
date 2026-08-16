@@ -1170,6 +1170,24 @@ const ENV_EXEMPTION_BASENAMES = new Set([
 
 const ENV_EXEMPTION_PREFIXES = ['.env.example.', '.env.sample.'];
 
+// Any scheme but `file:` addresses another host. Kept deliberately broad so
+// http, https and ftp are covered without enumerating them.
+const REMOTE_URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+const FILE_URL_SCHEME = /^file:/i;
+
+function isRemoteUrl(target: string): boolean {
+  const trimmed = target.trim();
+  return REMOTE_URL_SCHEME.test(trimmed) && !FILE_URL_SCHEME.test(trimmed);
+}
+
+// Whitespace is what separates a real filename from a sentence that happens to
+// start with one. Paths containing spaces are unaffected: only the BASENAME is
+// tested, and only for the prefix rules that would otherwise match unbounded
+// trailing text.
+function isFilenameShaped(name: string): boolean {
+  return name.length > 0 && !/\s/.test(name);
+}
+
 const SKIPPABLE_PATH_SEGMENTS = new Set(['node_modules', '__pycache__']);
 
 const SKIPPABLE_PATH_SEGMENT_PAIRS = [
@@ -1183,6 +1201,14 @@ function isSensitivePath(
   config: SecretProtectionPolicy | undefined,
   budget: PathCanonicalizationBudget,
 ): string | null {
+  // A remote URL names something on another host, so no local secret can be
+  // read through it: `curl https://raw.githubusercontent.com/o/r/main/.env.test`
+  // touches nothing on this machine. `file:` URLs are excluded because
+  // normalizeFileUriPath turns those into real local paths first.
+  if (isRemoteUrl(target)) {
+    return null;
+  }
+
   const normalized = normalizeCandidatePath(target, cwd, budget);
   if (!normalized) {
     return null;
@@ -1190,6 +1216,12 @@ function isSensitivePath(
 
   const comparableName = comparable(normalized.split('/').pop() ?? '');
   const comparablePath = comparable(normalized);
+  // Prefix rules below match the START of a basename, so they need a candidate
+  // that could be a filename at all. Without this, any prose beginning with
+  // `.env.` or `id_rsa-` is read as a path — and the exemption lists, which
+  // compare basenames exactly, cannot rescue it: the sentence fragment
+  // `.env.example) and then ...` was blocked while `.env.example` is allowed.
+  const filenameShapedName = isFilenameShaped(comparableName);
 
   // Env templates (.env.example, ...) stay readable even inside sensitive
   // directories, matching the original caller-side exemption.
@@ -1220,6 +1252,7 @@ function isSensitivePath(
     if (comparableName === rule.basename && isSecretRuleEnabled(rule.id, config)) return rule.id;
   }
   if (
+    filenameShapedName &&
     comparableName.startsWith(ENV_PREFIX) &&
     isSecretRuleEnabled(SECRET_ENV_VARIANT_RULE.id, config)
   ) {
@@ -1229,7 +1262,11 @@ function isSensitivePath(
   // Catch rename-shielded variants (id_rsa.bak, id_rsa-old) without flagging
   // unrelated lookalikes (id_rsafoo, credentials.json).
   for (const rule of SECRET_VARIANT_SEPARATOR_RULES) {
-    if (comparableName.length > rule.prefix.length && comparableName.startsWith(rule.prefix)) {
+    if (
+      filenameShapedName &&
+      comparableName.length > rule.prefix.length &&
+      comparableName.startsWith(rule.prefix)
+    ) {
       const next = comparableName.slice(rule.prefix.length)[0];
       if ((next === '-' || next === '_') && isSecretRuleEnabled(rule.id, config)) return rule.id;
     }
@@ -1693,10 +1730,22 @@ function expandHomePath(path: string, home: string): string {
   return path;
 }
 
+// Drive-qualified (C:\...) and UNC (\\server\share) candidates use backslash
+// separators on every platform, so they are normalized wherever the analyzer
+// runs. Everything else on POSIX keeps its backslashes: there a backslash is an
+// escape character, never a separator, and rewriting it to `/` turned the
+// surviving regex text of `git grep "process\.env"` into `process/.env`, whose
+// basename is `.env`. Shell-level escapes never reach here — the parser removes
+// them first, so `cat \.env` still arrives as `.env`.
+const WINDOWS_SEPARATED_PATH = /^(?:[A-Za-z]:[\\/]|\\\\[^\\])/;
+
+function usesBackslashSeparators(value: string): boolean {
+  return process.platform === 'win32' || WINDOWS_SEPARATED_PATH.test(value);
+}
+
 function normalizePathText(value: string): string {
-  const normalized = value
-    .trim()
-    .replace(/\\/g, '/')
+  const trimmed = value.trim();
+  const normalized = (usesBackslashSeparators(trimmed) ? trimmed.replace(/\\/g, '/') : trimmed)
     .replace(/\/{2,}/g, '/')
     .replace(/^\.\//, '');
   if (normalized === '/') {

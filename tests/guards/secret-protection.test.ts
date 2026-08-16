@@ -343,16 +343,46 @@ describe('secret protection path matching', () => {
     });
   });
 
-  test('normalizes Windows-style separators', () => {
-    const cwd = join(tmpdir(), 'secret-protection-project');
+  test.skipIf(process.platform !== 'win32')(
+    'normalizes Windows-style separators, including relative ones',
+    () => {
+      const cwd = join(tmpdir(), 'secret-protection-project');
 
-    expect(
-      findSensitivePathTarget(['protected\\child.txt'], cwd, {
-        disabledRules: new Set(),
-        denyPaths: ['protected'],
-      }),
-    ).not.toBeNull();
-  });
+      expect(
+        findSensitivePathTarget(['protected\\child.txt'], cwd, {
+          disabledRules: new Set(),
+          denyPaths: ['protected'],
+        }),
+      ).not.toBeNull();
+    },
+  );
+
+  // A relative backslash path and a POSIX regex are the same string: only what
+  // follows the backslash differs, and `protected\child.txt` cannot be opened on
+  // POSIX anyway. So off Windows the backslash keeps its POSIX meaning (an
+  // escape) and only drive-qualified or UNC candidates are separator-normalized.
+  test.skipIf(process.platform === 'win32')(
+    'normalizes drive-qualified and UNC separators off Windows',
+    () => {
+      const cwd = join(tmpdir(), 'secret-protection-project');
+
+      // Drive-qualified and UNC candidates still split on backslashes, so the
+      // built-in basename rules keep matching them off Windows.
+      expect(findSensitivePathTarget(['C:\\Users\\me\\.npmrc'], cwd)?.ruleId).toBe(
+        'secret.basename.npmrc',
+      );
+      expect(findSensitivePathTarget(['\\\\server\\share\\.netrc'], cwd)?.ruleId).toBe(
+        'secret.basename.netrc',
+      );
+      // A relative backslash candidate is a literal filename here, not a path.
+      expect(
+        findSensitivePathTarget(['protected\\child.txt'], cwd, {
+          disabledRules: new Set(),
+          denyPaths: ['protected'],
+        }),
+      ).toBeNull();
+    },
+  );
 
   test('allows generic secrets directories while preserving sensitive filename rules', () => {
     const cwd = join(tmpdir(), 'secret-protection-project');
@@ -2218,5 +2248,141 @@ describe('secret protection public keys in sensitive directories', () => {
     ]) {
       expect(findSensitivePathTarget([target], cwd), target).toBeNull();
     }
+  });
+});
+
+describe('secret protection POSIX backslash handling', () => {
+  // On POSIX a backslash is an escape character, not a path separator. Regex
+  // arguments that survive shell quoting therefore reach the scanner with the
+  // backslash intact, and normalizing it to `/` turned `process\.env` into
+  // `process/.env`, whose basename is `.env`.
+  test('does not treat a POSIX backslash as a path separator', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const target of ['process\\.env', 'fix\\.env', 'x\\.npmrc', 'a\\.netrc']) {
+      expect(findSensitivePathTarget([target], cwd), target).toBeNull();
+    }
+  });
+
+  test('leaves regex arguments to unmodelled search tools alone', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const command of [
+      'git grep -n "process\\.env" -- .',
+      'git log --grep "fix\\.env"',
+      'git grep -n "\\.npmrc"',
+    ]) {
+      expect(
+        findSensitiveTargetInCommand(command, cwd, undefined, { strict: false }),
+        command,
+      ).toBeNull();
+    }
+  });
+
+  // Shell-level escapes are removed by the parser before matching, so dropping
+  // the normalization must not reopen `cat \.env`.
+  test('still blocks shell-escaped sensitive operands', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const command of ['cat \\.env', 'cat .en\\v', 'cat \\.npmrc']) {
+      expect(
+        findSensitiveTargetInCommand(command, cwd, undefined, { strict: false }),
+        command,
+      ).not.toBeNull();
+    }
+  });
+
+  test('still treats Windows-shaped candidates as paths', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const target of [
+      'C:\\Users\\me\\.npmrc',
+      'D:/projects/app/.env',
+      '\\\\server\\share\\.netrc',
+    ]) {
+      expect(findSensitivePathTarget([target], cwd), target).not.toBeNull();
+    }
+  });
+});
+
+describe('secret protection prefix rules require filename-shaped basenames', () => {
+  // `.env.` matched as an unbounded prefix, so an English sentence beginning
+  // with `.env.example)` was read as a path — and, because the exemption list
+  // matches the basename exactly, the template name inside prose was blocked
+  // while the template file itself is allowed.
+  test('ignores prose that merely begins with a sensitive prefix', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const target of [
+      '.env.example) and then some prose here',
+      '.env.production is documented in the README',
+      'id_rsa-based auth is fine for this repo',
+      'id_ed25519_or_similar keys are covered below',
+    ]) {
+      expect(findSensitivePathTarget([target], cwd), target).toBeNull();
+    }
+  });
+
+  test('ignores interpreter string literals that are prose, not paths', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+    const command = 'python3 -c "x = \'.env.example) and then some prose here\'"';
+
+    expect(findSensitiveTargetInCommand(command, cwd, undefined, { strict: false })).toBeNull();
+  });
+
+  test('still blocks real env variants and rename-shielded keys', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const target of [
+      '.env.production',
+      '.env.production.local',
+      '/app/.env.ci',
+      'id_rsa-old',
+      'id_rsa.bak',
+    ]) {
+      expect(findSensitivePathTarget([target], cwd), target).not.toBeNull();
+    }
+  });
+});
+
+describe('secret protection remote URLs are not local paths', () => {
+  // Fetching a public template over https reads nothing on this machine, so a
+  // remote URL must not be matched against local secret-path rules.
+  test('ignores http and https URLs', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const target of [
+      'https://raw.githubusercontent.com/o/r/main/.env.test',
+      'https://example.com/x/.npmrc',
+      'https://example.com/a/credentials',
+      'http://example.com/keys/id_rsa',
+    ]) {
+      expect(findSensitivePathTarget([target], cwd), target).toBeNull();
+    }
+  });
+
+  test('ignores remote URLs passed to a fetching command', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    for (const command of [
+      'curl -sL https://raw.githubusercontent.com/o/r/main/.env.test',
+      'wget https://example.com/a/credentials',
+    ]) {
+      expect(
+        findSensitiveTargetInCommand(command, cwd, undefined, { strict: false }),
+        command,
+      ).toBeNull();
+    }
+  });
+
+  test('still blocks file: URLs and local operands beside a URL', () => {
+    const cwd = join(tmpdir(), 'secret-protection-project');
+
+    expect(findSensitivePathTarget([pathToFileURL('/tmp/app/.env').href], cwd)).not.toBeNull();
+    expect(
+      findSensitiveTargetInCommand('curl -sL https://example.com/x -o .env', cwd, undefined, {
+        strict: false,
+      }),
+    ).not.toBeNull();
   });
 });
