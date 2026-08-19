@@ -167,7 +167,7 @@ describe('runLogsCommand', () => {
   test('prints short timestamps in the user timezone for human output', async () => {
     const root = mkdtempSync(join(tmpdir(), 'safety-net-logs-command-timezone-'));
     const logsDir = join(root, 'logs');
-    const ts = '2026-07-14T01:42:31.582Z';
+    const ts = '2026-08-14T01:42:31.582Z';
     try {
       mkdirSync(logsDir, { recursive: true });
       writeJsonlFixture(join(logsDir, 'timezone.jsonl'), [
@@ -189,8 +189,8 @@ describe('runLogsCommand', () => {
         'Asia/Tokyo',
       );
 
-      expect(table.stdout).toContain('2026-07-14 10:42');
-      expect(detail.stdout).toContain('ts:        2026-07-14 10:42');
+      expect(table.stdout).toContain('2026-08-14 10:42');
+      expect(detail.stdout).toContain('ts:        2026-08-14 10:42');
       expect((JSON.parse(json.stdout) as AuditLogEntry[])[0]?.ts).toBe(ts);
     } finally {
       rmSync(root, { recursive: true, force: true });
