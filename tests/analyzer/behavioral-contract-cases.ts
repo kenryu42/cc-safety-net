@@ -119,6 +119,23 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'allows acli comment list',
+      command: 'acli jira workitem comment list --key KEY-1',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'blocks acli comment create nested in a shell',
+      command: "sh -c 'acli jira workitem comment create --key KEY-1 --body hi'",
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'acli.comment-write',
+        intent: 'manual_only',
+        reasonIncludes: 'posts a Jira or Confluence comment',
+      },
+    },
+    {
       name: 'allows an executable assembled by command substitution at standard safety',
       command: '$(printf r)m -rf /',
       options: options({ cwd: paths.cwd }),

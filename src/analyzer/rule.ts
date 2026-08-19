@@ -1,3 +1,4 @@
+import { analyzeAcliMatch } from '@/analyzer/acli';
 import type { NestedCommandAnalyzeContext } from '@/analyzer/child-command';
 import type { DerivedCommandWorkBudget } from '@/analyzer/derived-command-budget';
 import { analyzeFindMatch } from '@/analyzer/find';
@@ -93,6 +94,10 @@ export const ANALYZER_RULES: readonly AnalyzerRule[] = [
   {
     heads: new Set(['git']),
     analyze: (context) => analyzeGitMatch(context.words, gitAnalyzeOptions(context)),
+  },
+  {
+    heads: new Set(['acli']),
+    analyze: (context) => analyzeAcliMatch(context.words),
   },
   {
     heads: new Set(['find']),

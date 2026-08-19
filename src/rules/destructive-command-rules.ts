@@ -67,6 +67,10 @@ export const DESTRUCTIVE_COMMAND_RULE_IDS = [
   'shell.dynamic-structure',
   'shell.dynamic-executable',
   'raw-text.dangerous-command',
+  'acli.comment-write',
+  'acli.edit',
+  'acli.create',
+  'acli.transition',
 ] as const;
 
 export const DESTRUCTIVE_COMMAND_RULE_ID_SET = new Set<string>(DESTRUCTIVE_COMMAND_RULE_IDS);
@@ -564,6 +568,38 @@ export const DESTRUCTIVE_COMMAND_RULE_METADATA: readonly DestructiveCommandRuleM
     description: 'Blocks dangerous commands detected in raw command text.',
     example: "git reset --hard 'unterminated",
     intent: 'stop_and_explain',
+  },
+  {
+    id: 'acli.comment-write',
+    category: 'Atlassian',
+    label: 'acli comment write',
+    description: 'Blocks acli commands that create or update Jira or Confluence comments.',
+    example: 'acli jira workitem comment create --key KEY-1 --body hi',
+    intent: 'manual_only',
+  },
+  {
+    id: 'acli.edit',
+    category: 'Atlassian',
+    label: 'acli content edit',
+    description: 'Blocks acli commands that edit Jira work items or Confluence content.',
+    example: 'acli jira workitem edit --key KEY-1 --summary x',
+    intent: 'manual_only',
+  },
+  {
+    id: 'acli.create',
+    category: 'Atlassian',
+    label: 'acli create',
+    description: 'Blocks acli commands that create Jira work items or Confluence pages or blogs.',
+    example: 'acli jira workitem create --summary x',
+    intent: 'manual_only',
+  },
+  {
+    id: 'acli.transition',
+    category: 'Atlassian',
+    label: 'acli work item transition',
+    description: 'Blocks acli commands that transition Jira work items.',
+    example: 'acli jira workitem transition --key KEY-1',
+    intent: 'manual_only',
   },
 ] as const;
 

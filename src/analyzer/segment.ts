@@ -622,6 +622,7 @@ function recordCommandAnalyzerTrace(
 ): void {
   const details = {
     git: ['git', 'analyzeGit'],
+    acli: ['analyze/acli.ts', 'analyzeAcli'],
     rm: ['analyze/rm.ts', 'analyzeRm'],
     find: ['analyze/find.ts', 'analyzeFind'],
     xargs: ['analyze/xargs.ts', 'analyzeXargs'],
