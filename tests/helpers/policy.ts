@@ -100,7 +100,7 @@ export function analyzeTestCommand(
   return analyzeCommand(command, {
     environment: TEST_ENVIRONMENT,
     effectiveCapabilities: getCCSafetyNetEnvModes(snapshot.policy).capabilities,
-    protectedGitMetadata: resolveProtectedGitMetadata(options.cwd),
+    protectedGitMetadata: resolveProtectedGitMetadata([options.cwd]),
     ...analyzeOptions,
     policySnapshot: snapshot,
   });

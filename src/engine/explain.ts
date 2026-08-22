@@ -199,7 +199,7 @@ function buildAnalyzeOptions(explainOptions?: ExplainOptions): AnalyzeInput {
     effectiveCwd: cwd,
     policySnapshot,
     environment: createProcessEnvironment(),
-    protectedGitMetadata: resolveProtectedGitMetadata(cwd),
+    protectedGitMetadata: resolveProtectedGitMetadata([cwd]),
     effectiveCapabilities: modes.capabilities,
     strict: explainOptions?.strict ?? modes.strict,
     paranoidRm: modes.paranoidRm,

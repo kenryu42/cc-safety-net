@@ -1,6 +1,6 @@
 import type { ShellCommand, ToolCall, URI } from '@ampcode/plugin';
 import { writeIntegrationDenialAudit } from '@/integrations/audit';
-import { resolveContainedCwd } from '@/integrations/cwd-containment';
+import { resolveCanonicalCwd, resolveContainedCwd } from '@/integrations/cwd-containment';
 import {
   createFailedClosedDenial,
   formatDenial,
@@ -123,7 +123,7 @@ function getAmpToolInvocation(
 
   const executionCwd =
     typeof shell.command.dir === 'string'
-      ? resolveContainedCwd(shell.command.dir, [workspaceRoot])
+      ? resolveCanonicalCwd(shell.command.dir, workspaceRoot)
       : workspaceRoot;
   if (!executionCwd) {
     return malformedAmpToolCall(

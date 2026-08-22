@@ -138,7 +138,10 @@ export function evaluateGuard(
     };
   }
   const protectedGitMetadata = callDependency('policy-protection', command, () =>
-    dependencies.resolveGitMetadata(invocation.context.executionCwd),
+    dependencies.resolveGitMetadata([
+      invocation.context.executionCwd,
+      invocation.context.configCwd,
+    ]),
   );
   const policyTarget = callDependency('policy-protection', command, () =>
     dependencies.findPolicyMutation(facts),

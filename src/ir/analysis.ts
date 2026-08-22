@@ -29,10 +29,14 @@ export type PathResolver = Readonly<{
   entryKind: (path: string) => 'symlink' | 'present' | 'missing';
 }>;
 
-/** Git control-plane paths that must not be mutated, resolved once at the entry point. */
+/**
+ * Git control-plane paths that must not be mutated, resolved once at the entry
+ * point. May cover several repositories when the execution and configuration
+ * directories live in different ones.
+ */
 export type ProtectedGitMetadata = Readonly<{
-  entry: string;
-  markerFile: string | null;
+  entries: readonly string[];
+  markerFiles: readonly string[];
   directories: readonly string[];
   hooksDirectories: readonly string[];
 }>;

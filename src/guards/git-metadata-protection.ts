@@ -28,7 +28,10 @@ type GitMetadataTarget = Readonly<{ target: string }>;
 
 export function findGitMetadataMutationTargetInSemanticFacts(
   facts: SemanticFacts,
-  metadata = resolveProtectedGitMetadata(facts.invocation.context.executionCwd),
+  metadata = resolveProtectedGitMetadata([
+    facts.invocation.context.executionCwd,
+    facts.invocation.context.configCwd,
+  ]),
 ): GitMetadataTarget | null {
   const context = createPathCanonicalizationContext(createProcessEnvironment());
   const cwd = facts.invocation.context.executionCwd;
@@ -61,13 +64,46 @@ export function findGitMetadataMutationTargetInSemanticFacts(
 }
 
 export function resolveProtectedGitMetadata(
-  cwd: string | undefined,
+  cwds: readonly (string | undefined)[],
   context = createPathCanonicalizationContext(createProcessEnvironment()),
 ): ProtectedGitMetadata | null {
-  if (typeof cwd !== 'string' || !cwd) return null;
-  const dotGitPath = findDotGitInAncestors(normalizeProtectedPathCandidate(cwd, cwd, context));
-  if (!dotGitPath) return null;
+  const anchors = [
+    ...new Map(
+      cwds
+        .filter((cwd): cwd is string => typeof cwd === 'string' && cwd !== '')
+        .flatMap((cwd) => {
+          const dotGitPath = findDotGitInAncestors(
+            normalizeProtectedPathCandidate(cwd, cwd, context),
+          );
+          return dotGitPath ? [[comparePath(dotGitPath), { dotGitPath, cwd }] as const] : [];
+        }),
+    ).values(),
+  ].flatMap((anchor) => resolveGitMetadataAnchor(anchor.dotGitPath, anchor.cwd, context));
+  if (anchors.length === 0) return null;
+  return Object.freeze({
+    entries: Object.freeze([...new Set(anchors.map((anchor) => anchor.entry))]),
+    markerFiles: Object.freeze([
+      ...new Set(anchors.flatMap((anchor) => (anchor.markerFile ? [anchor.markerFile] : []))),
+    ]),
+    directories: Object.freeze([...new Set(anchors.flatMap((anchor) => anchor.directories))]),
+    hooksDirectories: Object.freeze([
+      ...new Set(anchors.flatMap((anchor) => anchor.hooksDirectories)),
+    ]),
+  });
+}
 
+type GitMetadataAnchor = Readonly<{
+  entry: string;
+  markerFile: string | null;
+  directories: readonly string[];
+  hooksDirectories: readonly string[];
+}>;
+
+function resolveGitMetadataAnchor(
+  dotGitPath: string,
+  cwd: string,
+  context: PathCanonicalizationContext,
+): GitMetadataAnchor[] {
   try {
     const entry = normalizeProtectedPathCandidate(dotGitPath, cwd, context);
     const stat = statSync(dotGitPath);
@@ -87,23 +123,25 @@ export function resolveProtectedGitMetadata(
           : canonicalDirectories,
       ),
     ];
-    return Object.freeze({
-      entry: comparePath(entry),
-      markerFile: markerFile ? comparePath(markerFile) : null,
-      directories: Object.freeze(directories),
-      // Keep both the lexical hooks path and its canonical target so a
-      // symlinked hooks directory stays protected on either alias.
-      hooksDirectories: Object.freeze([
-        ...new Set(
-          directories.flatMap((directory) => {
-            const lexical = comparePath(join(directory, 'hooks'));
-            return [lexical, comparePath(normalizeProtectedPathCandidate(lexical, cwd, context))];
-          }),
-        ),
-      ]),
-    });
+    return [
+      {
+        entry: comparePath(entry),
+        markerFile: markerFile ? comparePath(markerFile) : null,
+        directories,
+        // Keep both the lexical hooks path and its canonical target so a
+        // symlinked hooks directory stays protected on either alias.
+        hooksDirectories: [
+          ...new Set(
+            directories.flatMap((directory) => {
+              const lexical = comparePath(join(directory, 'hooks'));
+              return [lexical, comparePath(normalizeProtectedPathCandidate(lexical, cwd, context))];
+            }),
+          ),
+        ],
+      },
+    ];
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -124,7 +162,7 @@ export function isProtectedGitDeleteTarget(
     const matchesHidden = dotEntryGlobs || candidate.slice(globBase.length).includes('/.');
     const covers = (path: string) =>
       matchesHidden ? isEqualOrWithin(path, globBase) : isGlobVisibleDescendant(path, globBase);
-    if (metadata.markerFile && covers(metadata.markerFile)) return true;
+    if (metadata.markerFiles.some(covers)) return true;
     return recursive && protectedRoots(metadata).some(covers);
   }
   if (isProtectedExactOrHookTarget(candidate, metadata)) return true;
@@ -170,7 +208,7 @@ function isProtectedGitWriteTarget(
   context: PathCanonicalizationContext,
 ): boolean {
   if (!metadata) return false;
-  return isProtectedGitWriteLikeTarget(target, cwd, metadata, context, metadata.entry);
+  return isProtectedGitWriteLikeTarget(target, cwd, metadata, context, metadata.entries);
 }
 
 function isProtectedGitRedirectionTarget(
@@ -180,7 +218,7 @@ function isProtectedGitRedirectionTarget(
   context: PathCanonicalizationContext,
 ): boolean {
   if (!metadata) return false;
-  return isProtectedGitWriteLikeTarget(target, cwd, metadata, context, metadata.markerFile);
+  return isProtectedGitWriteLikeTarget(target, cwd, metadata, context, metadata.markerFiles);
 }
 
 function isProtectedGitWriteLikeTarget(
@@ -188,10 +226,10 @@ function isProtectedGitWriteLikeTarget(
   cwd: string,
   metadata: ProtectedGitMetadata,
   context: PathCanonicalizationContext,
-  exactTarget: string | null,
+  exactTargets: readonly string[],
 ): boolean {
   const candidate = comparePath(normalizeProtectedPathCandidate(target, cwd, context));
-  return candidate === exactTarget || isProtectedHookTarget(candidate, metadata);
+  return exactTargets.includes(candidate) || isProtectedHookTarget(candidate, metadata);
 }
 
 export function isProtectedGitHookNameSelection(
@@ -210,7 +248,7 @@ export function isProtectedGitHookNameSelection(
 
 function isProtectedExactOrHookTarget(candidate: string, metadata: ProtectedGitMetadata): boolean {
   return (
-    candidate === metadata.entry ||
+    metadata.entries.includes(candidate) ||
     metadata.directories.includes(candidate) ||
     isProtectedHookTarget(candidate, metadata)
   );
@@ -223,7 +261,7 @@ function isProtectedHookTarget(candidate: string, metadata: ProtectedGitMetadata
 function protectedRoots(metadata: ProtectedGitMetadata): readonly string[] {
   // Hooks directories can be symlinked outside the Git directory, so ancestor
   // deletion must also cover their canonical targets.
-  return [metadata.entry, ...metadata.directories, ...metadata.hooksDirectories];
+  return [...metadata.entries, ...metadata.directories, ...metadata.hooksDirectories];
 }
 
 function isEqualOrWithin(target: string, root: string): boolean {

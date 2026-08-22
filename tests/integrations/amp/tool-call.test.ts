@@ -264,20 +264,60 @@ describe('Amp tool.call event', () => {
     });
   });
 
-  test('fails closed when the dir escapes the workspace root', () => {
+  test('analyzes an out-of-workspace dir against its canonical path', () => {
     withTempDir((dir) => {
       const outside = mkdtempSync(join(tmpdir(), 'safety-net-amp-outside-'));
       try {
         symlinkSync(outside, join(dir, 'outside-link'));
-        for (const badDir of ['..', '../../outside', outside, 'outside-link', 'missing']) {
-          expect(handleAmpToolCall(shellEvent('git status', badDir), ampApi(dir))).toEqual({
-            action: 'reject-and-continue',
-            message: expect.stringContaining('CC Safety Net failed closed'),
-          });
-        }
+        const calls: AnalyzeCall[] = [];
+        const handler = createAmpToolCallHandler({
+          guardDependencies: { analyzeCommand: captureAnalyzeCalls(calls) },
+        });
+
+        expect(handler(shellEvent('git status', outside), ampApi(dir))).toEqual({
+          action: 'allow',
+        });
+        expect(handler(shellEvent('git status', 'outside-link'), ampApi(dir))).toEqual({
+          action: 'allow',
+        });
+        expect(calls.map((call) => call.cwd)).toEqual([
+          realpathSync(outside),
+          realpathSync(outside),
+        ]);
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }
+    });
+  });
+
+  test('still protects the workspace repo git metadata from an out-of-workspace dir', () => {
+    withTempDir((dir) => {
+      mkdirSync(join(dir, '.git'));
+      const outside = mkdtempSync(join(tmpdir(), 'safety-net-amp-outside-'));
+      try {
+        withEnv({ HOME: join(dir, 'home') }, () => {
+          const result = handleAmpToolCall(
+            shellEvent(`rm -rf ${join(realpathSync(dir), '.git')}`, outside),
+            ampApi(dir),
+          );
+
+          expect(result).toEqual({
+            action: 'reject-and-continue',
+            message: expect.stringContaining('Git metadata and hooks are protected'),
+          });
+        });
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('fails closed when the dir cannot be canonicalized', () => {
+    withTempDir((dir) => {
+      expect(handleAmpToolCall(shellEvent('git status', 'missing'), ampApi(dir))).toEqual({
+        action: 'reject-and-continue',
+        message: expect.stringContaining('CC Safety Net failed closed'),
+      });
     });
   });
 

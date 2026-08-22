@@ -330,8 +330,8 @@ describe('guard evaluation', () => {
   test('resolves Git metadata once and shares it with both protection paths', async () => {
     await withTempDir('cc-safety-net-guard-git-metadata-', (cwd) => {
       const metadata = Object.freeze({
-        entry: join(cwd, '.git'),
-        markerFile: null,
+        entries: Object.freeze([join(cwd, '.git')]),
+        markerFiles: Object.freeze([]),
         directories: Object.freeze([join(cwd, '.git')]),
         hooksDirectories: Object.freeze([join(cwd, '.git', 'hooks')]),
       });

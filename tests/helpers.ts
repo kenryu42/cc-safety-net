@@ -38,7 +38,7 @@ function getOptionsFromEnv(
     cwd,
     policySnapshot: snapshot,
     environment,
-    protectedGitMetadata: resolveProtectedGitMetadata(cwd),
+    protectedGitMetadata: resolveProtectedGitMetadata([cwd]),
     effectiveCapabilities: getCCSafetyNetEnvModes(snapshot.policy).capabilities,
     strict: envTruthy('SAFETY_NET_STRICT'),
     paranoidRm: envTruthy('SAFETY_NET_PARANOID') || envTruthy('SAFETY_NET_PARANOID_RM'),
