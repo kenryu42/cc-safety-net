@@ -8,6 +8,7 @@
   "files": {
     "includes": [
       "src/**",
+      "next/**",
       "tests/**",
       "scripts/**",
       "knip.ts",

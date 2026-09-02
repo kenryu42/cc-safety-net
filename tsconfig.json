@@ -19,7 +19,8 @@
 
     // Path aliases
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@next/*": ["./next/*"]
     },
 
     // Best practices
@@ -38,7 +39,7 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*", "tests/**/*", "scripts/**/*"],
+  "include": ["src/**/*", "next/**/*", "tests/**/*", "scripts/**/*"],
   // The frontend is browser code with its own lib and globals; tsconfig.gui.json covers it.
   "exclude": ["node_modules", "dist", "src/gui/frontend"]
 }

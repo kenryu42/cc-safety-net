@@ -23,6 +23,13 @@ timeout on the one Git subprocess.
   strings, stage names, rule ids, and intents they assert are literal contract constants, so the
   `next/` harness (Phase 3) imports the same corpus files and the `next/` gate must reproduce those
   values verbatim. The cutover commit re-points the type imports and nothing else.
+- While `src/` exists, every ported module under `next/` carries a differential test under
+  `tests/next/` that feeds the same inputs (the corpus commands, fixed tables, a seeded fuzz) to
+  the `src/` module and the `next/` module and asserts equal output. Existing test files are never
+  copied (`jscpd` scans `tests/`); fresh domain tests cover only behavior the port changes. The
+  cutover commit deletes the differential tests and re-points the legacy domain tests.
+- `next/` is outside `knip` and `jscpd` until Phase 5 gives it real entries (`next/entries/`);
+  until then `tsc` (`noUnusedLocals`) and the differential tests are the dead-code checks.
 - A row marked `knownGap` runs as `test.failing` against `src/` and as a plain test against
   `next/`. The cutover commit removes the marker together with the `src/` run. Adding a row is the
   only way to change expected behavior.
@@ -71,7 +78,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   goldens (`tests/integrations/format.test.ts`), explain trace goldens
   (`tests/cli/explain/trace-golden.test.ts`), doctor finding ids (`tests/cli/doctor/findings.test.ts`).
 
-### Phase 1 — Core services (L) `[ ]`
+### Phase 1 — Core services (L) `[~]`
 
 - `next/core/`: shell parser and command tree (words with text, raw, quoted, provenance; nested
   programs; heredocs with live substitutions; statuses complete, partial, invalid, limited;
@@ -80,8 +87,15 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   `worktreeFacts(cwd)` with a spawn timeout), safe file I/O (symlink-refusing identity-checked
   reads, atomic writes, JSONC and TOML surgical edits), redaction, the denial renderer, and the
   rule catalog (59 destructive records, 134 secret records, the v1 and v2 custom-rule compiler).
-- Decisions to settle: word-part model; the exact PowerShell subset; which caps are rule-visible
-  reclassifications (brace overflow, Git config count, `env -S`) versus `AnalysisLimit` throws.
+- Decisions settled: the word model stays as shipped (text, raw, span, provenance, quoted
+  boolean, parts) because no consumer needs more; the PowerShell subset is exactly what ships;
+  parser caps stay parser limits that yield status `limited`; brace overflow, the Git config
+  count, and `env -S` overflow stay rule-visible, every other breach throws `AnalysisLimit`.
+- Layout: `next/core/shell/` (model, parse, posix, powershell, heredoc, traversal, tokens,
+  projection), `next/core/tool-input.ts`, `next/core/budget.ts`, `next/core/environment.ts`,
+  `next/core/paths/`, `next/core/git/`, `next/core/io/`, `next/core/redaction.ts`,
+  `next/core/denial.ts`, `next/core/decision.ts`, `next/core/rules/`. Imports use the
+  `@next/*` alias, re-pointed to `@/*` at cutover.
 - Validation: parser domain tests per construct; property test "any string under the caps yields
   a status and never throws except `AnalysisLimit`"; redaction goldens; budget breach per counter.
 - Acceptance: the parser assigns the expected status to every corpus command; the architecture
