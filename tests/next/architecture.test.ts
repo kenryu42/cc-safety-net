@@ -14,11 +14,9 @@ import { join, relative } from 'node:path';
 const NEXT_ROOT = join(import.meta.dir, '..', '..', 'next');
 
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
-    return entry.name.endsWith('.ts') ? [path] : [];
-  });
+  return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
+    .filter((entry) => entry.endsWith('.ts'))
+    .map((entry) => join(dir, entry));
 }
 
 const IMPORT_SPECIFIER =

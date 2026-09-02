@@ -78,7 +78,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   goldens (`tests/integrations/format.test.ts`), explain trace goldens
   (`tests/cli/explain/trace-golden.test.ts`), doctor finding ids (`tests/cli/doctor/findings.test.ts`).
 
-### Phase 1 — Core services (L) `[~]`
+### Phase 1 — Core services (L) `[x]`
 
 - `next/core/`: shell parser and command tree (words with text, raw, quoted, provenance; nested
   programs; heredocs with live substitutions; statuses complete, partial, invalid, limited;
@@ -102,6 +102,15 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   test enforces `next/` never imports `src/`.
 - Risk: the parser is the product's largest liability; every added case needs a corpus row on
   both sides of the standard-allow / strict-deny line.
+- Landed: every module is a verbatim port with differential tests against `src/` (both corpora,
+  fixed tables, seeded fuzz). Named deviations: `worktreeFacts` yields null (no relaxation) on any
+  spawn failure, timeout, or unexpected exit status; the `LIMITS` table gives the analyzer-work
+  breaches an error code and collapses their wording to the two documented reasons plus recursion
+  depth; `resolveProtectedGitMetadata` takes one cwd. Carried to Phase 3: union
+  `gitMetadata(execDir)` and `gitMetadata(policyDir)` when they differ; port
+  `src/analyzer/git/env.ts` (import `isGitConfigEnvName` from `next/core/git/worktree.ts`) and
+  `normalizeProtectedFileCandidate`; the effective-rule filter (`filterDestructiveCommandMatch`,
+  `resolveEffectiveDestructiveCommandRules`, `createCommandAnalysisPolicy`) belongs to Phase 2 or 3.
 
 ### Phase 2 — Policy loader (M) `[ ]`
 
