@@ -237,6 +237,29 @@ export function normalizeProtectedPathCandidate(
   return resolveExistingPath(lexical, environment.paths, budget).replace(/\\/g, '/');
 }
 
+/**
+ * Canonicalizes like normalizeProtectedPathCandidate, but skips the ancestor walk
+ * for candidates whose basename cannot match the protected file: resolveExistingPath
+ * appends missing components verbatim, so a nonexistent path always resolves to its
+ * own lexical basename. A single budgeted probe still catches an existing symlink
+ * aliasing the protected file. Returns null when the candidate is disqualified.
+ */
+export function normalizeProtectedFileCandidate(
+  target: string,
+  cwd: string,
+  environment: Environment,
+  budget: Budget,
+  isPlausibleBasename: (name: string) => boolean,
+): string | null {
+  const lexical = lexicallyNormalizeCandidate(target, cwd, environment);
+  if (!lexical) return null;
+  if (isPlausibleBasename(basename(lexical))) {
+    return resolveExistingPath(lexical, environment.paths, budget).replace(/\\/g, '/');
+  }
+  const probed = probeExistingPath(lexical, environment.paths, budget);
+  return probed === null ? null : probed.replace(/\\/g, '/');
+}
+
 function lexicallyNormalizeCandidate(
   target: string,
   cwd: string,

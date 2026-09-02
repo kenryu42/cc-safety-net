@@ -64,6 +64,8 @@ describe('test environment', () => {
       entries: new Map<string, FakeEntry>([
         ['/repo', 'present'],
         ['/link', { symlink: '/repo' }],
+        ['/tree', 'directory'],
+        ['/tree-link', { symlink: '/tree' }],
         ['/broken', { symlink: '/nowhere' }],
         ['/loop-a', { symlink: '/loop-b' }],
         ['/loop-b', { symlink: '/loop-a' }],
@@ -78,6 +80,9 @@ describe('test environment', () => {
     expect(environment.paths.realpath('/broken')).toBeNull();
     expect(environment.paths.realpath('/loop-a')).toBeNull();
     expect(environment.paths.realpath('/missing')).toBeNull();
+    expect(environment.paths.isDirectory('/tree')).toBe(true);
+    expect(environment.paths.isDirectory('/tree-link')).toBe(true);
+    expect(environment.paths.isDirectory('/repo')).toBe(false);
     expect(environment.env.size).toBe(0);
     expect(environment.home).toBe('/home/user');
     expect(environment.tmpdir).toBe('/tmp');

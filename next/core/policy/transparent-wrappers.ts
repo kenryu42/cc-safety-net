@@ -6,7 +6,8 @@ import {
 } from '@next/core/rules/constants';
 import { getBasename, normalizeCommandToken } from '@next/core/shell/tokens';
 
-const BUILTIN_ANALYZED_COMMANDS = new Set(['rm', 'find', 'xargs', 'parallel']);
+/** Commands the analyzer inspects itself, so a wrapper may never claim their names. */
+export const BUILTIN_ANALYZED_COMMANDS = new Set(['rm', 'find', 'xargs', 'parallel']);
 const RESERVED_TRANSPARENT_WRAPPERS = new Set([
   'git',
   'busybox',

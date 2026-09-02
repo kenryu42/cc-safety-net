@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from 'node:fs';
+import { lstatSync, realpathSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from './git/metadata';
 import { resolveWorktreeFacts, type WorktreeFacts } from './git/worktree';
@@ -10,6 +10,8 @@ export type PathResolver = Readonly<{
   realpath: (path: string) => string | null;
   /** What sits at the path: a symlink, some other existing entry, or nothing. */
   entryKind: (path: string) => 'symlink' | 'present' | 'missing';
+  /** Whether a directory sits at the path, following symlinks; false when it cannot be read. */
+  isDirectory: (path: string) => boolean;
 }>;
 
 /** Ambient process state the gate reads, captured once at the entry point. */
@@ -38,6 +40,15 @@ export const processPathResolver: PathResolver = {
     if (!stats) return 'missing';
     return stats.isSymbolicLink() ? 'symlink' : 'present';
   },
+  // `throwIfNoEntry` covers only a missing entry; an unreadable parent still throws, and the
+  // callers treat every unanswerable path the same way.
+  isDirectory: (path) => {
+    try {
+      return statSync(path).isDirectory();
+    } catch {
+      return false;
+    }
+  },
 };
 
 /** Snapshot the current process state for one gate call. */
@@ -54,8 +65,8 @@ export function createProcessEnvironment(): Environment {
   });
 }
 
-/** What the in-memory filesystem holds at a path: a plain entry or a symlink to another path. */
-export type FakeEntry = 'present' | { symlink: string };
+/** What the in-memory filesystem holds at a path: a file, a directory, or a symlink to one. */
+export type FakeEntry = 'present' | 'directory' | { symlink: string };
 
 /**
  * An environment over an in-memory filesystem for tests: only the listed paths exist, a symlink
@@ -75,7 +86,11 @@ export function createTestEnvironment(
         entryKind: (path) => {
           const entry = entries.get(path);
           if (entry === undefined) return 'missing';
-          return entry === 'present' ? 'present' : 'symlink';
+          return typeof entry === 'string' ? 'present' : 'symlink';
+        },
+        isDirectory: (path) => {
+          const target = fakeRealpath(entries, path, new Set());
+          return target !== null && entries.get(target) === 'directory';
         },
       },
     },
@@ -90,7 +105,7 @@ function fakeRealpath(
 ): string | null {
   const entry = entries.get(path);
   if (entry === undefined || seen.has(path)) return null;
-  if (entry === 'present') return path;
+  if (typeof entry === 'string') return path;
   return fakeRealpath(entries, entry.symlink, new Set([...seen, path]));
 }
 

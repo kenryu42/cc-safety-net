@@ -127,7 +127,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - Effective-capability resolution (`env.ts`), effective destructive-rule state, the per-match filter and `resolveCommandAnalysisContext` live under `next/core/policy/`; Phase 3 imports them and `isInterpreterCommand` from there, and appends the remaining analyzer vocabulary to `next/core/rules/constants.ts` (Phase 2 added `COMMAND_PATTERN`, `MAX_REASON_LENGTH`, `SHELL_WRAPPERS`, `INTERPRETERS`, `PYTHON_INTERPRETER_PATTERN`, `AWK_INTERPRETERS`).
 - Carried: `src/policy/diff.ts` and the GUI read/write/preview/repair helpers (Phases 7 and 9); `getRulesConfigRuntimeErrorsForConfig`, the rule.json and starter-rulebook writers, `sources.ts`, the sync budget, and the legacy config validators (Phase 8); lock and legacy path helpers (Phases 7/8); Phase 4 calls `readRetentionDays(environment, options)` at prune time.
 
-### Phase 3 — Gate (XL) `[ ]`
+### Phase 3 — Gate (XL) `[~]`
 
 - `next/gate/`: intake (input caps, route table, three containment modes), the decision pipeline
   with a single catch boundary, the guard walk (`cd` and simple-assignment tracking) shared by
@@ -141,6 +141,19 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   (seam errors, replaced files, oversized input, `toolInputTruncated`, 1,025 `GIT_CONFIG_COUNT`).
 - Acceptance: 100% of corpus rows including the former known-gap rows; strict-unverifiable rows;
   every budget counter has a breach test.
+- 3a landed (the verbatim port): `next/gate/` holds 53 files ported from the analyzer, guards,
+  secret matcher, trace recorder, intake, and pipeline, each with a normalized-diff self-check
+  and differential tests; both corpora run through the ported `evaluateGuard`; a harvested-literal
+  differential replays every string literal in the legacy test suites at standard and strict;
+  trace, tool-route, and failure-injection parity hold. Three review lenses and a re-review found
+  no wrong port. Carried to 3b: the shared guard walk (the secret guard gains `cd` tracking, the
+  known-gap row flips to a plain test against `next/`, and the harvested differential must
+  classify that divergence class); budget unification (`createBudget()` is still called once per
+  guard and the analyzer keeps its own derived, parallel, strip, recursion, heredoc, and
+  control-flow caps); the trace sink through `evaluateGuard`; the `gitMetadata(execDir)` and
+  `gitMetadata(policyDir)` union if the pipeline stage did not land it; `BUILTIN_ANALYZED_COMMANDS`
+  duplicated between core and gate. Intake keeps two `statSync`/`accessSync` reads as the host
+  boundary, and `process.platform` stays ambient as in `src/`.
 
 ### Phase 4 — Audit (S) `[ ]`
 
