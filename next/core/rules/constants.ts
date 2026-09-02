@@ -9,9 +9,6 @@ export const GIT_GLOBAL_OPTS_WITH_VALUE: ReadonlySet<string> = new Set([
   '--config-env',
 ]);
 
-export const MAX_RECURSION_DEPTH = 10;
-export const MAX_STRIP_ITERATIONS = 20;
-
 export const COMMAND_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 export const MAX_REASON_LENGTH = 256;
 

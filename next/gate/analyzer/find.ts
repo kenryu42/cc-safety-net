@@ -1,3 +1,4 @@
+import { type Budget, createBudget } from '@next/core/budget';
 import {
   getEffectiveTmpdirValue,
   hasUnsafeTmpdirWordSplitting,
@@ -19,11 +20,6 @@ import {
   REASON_GIT_METADATA_PROTECTION,
 } from '@next/gate/guards/git-metadata-protection';
 import { analysisWordText, textCommandWords } from './command-words';
-import {
-  createDerivedCommandWorkBudget,
-  type DerivedCommandWorkBudget,
-  reserveDerivedCommandTokens,
-} from './derived-command-budget';
 import {
   classifyRecursiveDeleteTarget,
   createRecursiveDeleteTargetContext,
@@ -92,7 +88,7 @@ const FIND_PRIMARY_ARITY = new Map<string, number>([
 ]);
 
 export interface AnalyzeFindContext extends RecursiveDeleteTargetTrustOptions {
-  derivedCommandWorkBudget?: DerivedCommandWorkBudget;
+  budget?: Budget;
   envAssignments?: ReadonlyMap<string, string>;
   policy?: DestructiveCommandRulePolicy &
     Partial<Pick<EffectivePolicy, 'destructiveCommandAllowPaths'>>;
@@ -123,8 +119,7 @@ export function analyzeFindMatch(
     if (match) return match;
   }
 
-  const derivedCommandWorkBudget =
-    context.derivedCommandWorkBudget ?? createDerivedCommandWorkBudget();
+  const budget = context.budget ?? createBudget();
   // Check all executable child primaries for dangerous commands
   let i = 0;
   while (i < tokens.length) {
@@ -139,7 +134,7 @@ export function analyzeFindMatch(
       continue;
     }
 
-    reserveDerivedCommandTokens(derivedCommandWorkBudget, tokens.length - i - 1);
+    budget.charge('derivedTokens', tokens.length - i - 1);
     const execCommand = getFindExecCommand(tokens, i);
     i = execCommand.nextIndex;
     const directMatch = analyzeFindExecCommand(execCommand.tokens, context.environment);
@@ -271,6 +266,7 @@ function hasOnlyTrustedTempDeleteTargets(
       context.tmpdirWordSplittingUnsafe ??
       hasUnsafeTmpdirWordSplitting(envAssignments, context.environment),
     trustedTmpdirValue,
+    budget: context.budget,
   });
 
   return targets.every((target) => {

@@ -156,6 +156,7 @@ function gitCorpusArgvs(): readonly (readonly string[])[] {
 }
 
 describe('next/gate/analyzer/git versus src/analyzer/git', () => {
+  // Spawns git once per environment row, so the default per-test timeout is too short.
   test('every Git command decides the same in and out of a linked worktree', () => {
     const rows = [...GIT_ARGVS, ...gitCorpusArgvs()];
     let matches = 0;
@@ -223,7 +224,7 @@ describe('next/gate/analyzer/git versus src/analyzer/git', () => {
 
     expect(matches).toBeGreaterThan(100);
     expect(relaxations).toBeGreaterThan(10);
-  });
+  }, 60_000);
 
   test('dynamic arguments withhold the relaxation on both sides', () => {
     const env = new Map<string, string>();

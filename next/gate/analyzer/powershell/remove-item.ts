@@ -1,3 +1,4 @@
+import type { Budget } from '@next/core/budget';
 import { isUnsupportedWindowsNamespacePath } from '@next/core/paths/canonicalization';
 import {
   type DestructiveCommandRulePolicy,
@@ -43,6 +44,7 @@ const REASON_REMOVE_ITEM_PIPELINE =
 
 interface AnalyzePowerShellRemoveItemOptions {
   environment: EnvironmentContext;
+  budget?: Budget;
   cwd?: string;
   originalCwd?: string;
   strict?: boolean;

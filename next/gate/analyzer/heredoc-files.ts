@@ -1,14 +1,13 @@
 import { isAbsolute, resolve } from 'node:path';
-import { createBudget } from '@next/core/budget';
+import type { Budget } from '@next/core/budget';
 import { resolveExistingPath } from '@next/core/paths/canonicalization';
 import type { PathResolver } from '@next/gate/analysis';
-
-export const MAX_TRACKED_HEREDOC_FILES = 64;
 
 export function resolveTrackedHeredocPath(
   source: string,
   effectiveCwd: string | null | undefined,
   paths: PathResolver,
+  budget: Budget,
 ): string | undefined {
   const path = isAbsolute(source)
     ? resolve(source)
@@ -17,7 +16,7 @@ export function resolveTrackedHeredocPath(
       : undefined;
   if (!path) return undefined;
   try {
-    return resolveExistingPath(path, paths, createBudget());
+    return resolveExistingPath(path, paths, budget);
   } catch {
     return path;
   }

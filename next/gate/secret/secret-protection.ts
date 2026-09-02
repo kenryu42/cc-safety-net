@@ -1,7 +1,11 @@
 import { isAbsolute, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AnalysisLimit, type Budget, createBudget } from '@next/core/budget';
-import { normalizeMsysDrivePath, resolveExistingPath } from '@next/core/paths/canonicalization';
+import {
+  normalizeMsysDrivePath,
+  normalizeProtectedPathCandidate,
+  resolveExistingPath,
+} from '@next/core/paths/canonicalization';
 import type { SecretProtectionConfig } from '@next/core/policy/types';
 import { AWK_INTERPRETERS } from '@next/core/rules/constants';
 import {
@@ -21,6 +25,10 @@ import type { EnvironmentContext } from '@next/gate/analysis';
 import { extractAwkSystemCommands } from '@next/gate/analyzer/awk';
 import { extractXargsChildCommandWithInfo } from '@next/gate/analyzer/xargs';
 import type { CommandSyntaxFacts, SemanticFactStore, SemanticFacts } from '@next/gate/facts';
+import {
+  applyShellState,
+  type ProtectedPathShellState,
+} from '@next/gate/guards/protected-path-scanner';
 import { safetyNetSubcommandIndex } from '@next/gate/guards/safety-net-invocation';
 import {
   createSemanticFacts,
@@ -216,6 +224,16 @@ type SecretTarget = {
   ruleId: string;
 };
 
+/**
+ * One operand and the directory it resolves against: the walk tracks `cd` the way the
+ * protected-path scanner does, so a segment after `cd ~` reads `.ssh/config` from home while the
+ * evidence stays the operand the command actually spells.
+ */
+type SecretCandidate = {
+  readonly target: string;
+  readonly cwd: string;
+};
+
 type SecretProtectionPolicy = {
   readonly disabledRules?: readonly string[];
   readonly denyPaths: readonly string[];
@@ -238,24 +256,39 @@ export function findSensitivePathTarget(
   config?: SecretProtectionConfig,
   configCwd = cwd,
 ): SecretTarget | null {
-  return findSensitivePolicyPathTarget(targets, cwd, config, configCwd, environment);
+  return findSensitivePolicyPathTarget(
+    targets.map((target) => ({ target, cwd })),
+    config,
+    configCwd,
+    environment,
+    createBudget(),
+  );
 }
 
 function findSensitivePolicyPathTarget(
-  targets: readonly string[],
-  cwd: string,
+  candidates: readonly SecretCandidate[],
   config: SecretProtectionPolicy | undefined,
   configCwd: string,
   environment: EnvironmentContext,
+  budget: Budget,
   activeDefaultTargets?: ReadonlySet<string>,
 ): SecretTarget | null {
-  const budget = createBudget();
-  for (const target of targets) {
-    if (matchesPolicyPath(target, cwd, config?.denyPaths ?? [], configCwd, environment, budget)) {
+  for (const candidate of candidates) {
+    const target = candidate.target;
+    if (
+      matchesPolicyPath(
+        target,
+        candidate.cwd,
+        config?.denyPaths ?? [],
+        configCwd,
+        environment,
+        budget,
+      )
+    ) {
       return { target, ruleId: 'secret.deny-path' };
     }
     if (activeDefaultTargets && !activeDefaultTargets.has(target)) continue;
-    const ruleId = isSensitivePath(target, cwd, config, environment, budget);
+    const ruleId = isSensitivePath(target, candidate.cwd, config, environment, budget);
     if (ruleId) {
       // A configured allow entry vouches for paths the user manages themselves
       // (a repo's .env.test, a fixtures directory). It suppresses the pattern
@@ -264,7 +297,14 @@ function findSensitivePolicyPathTarget(
       // credentials or configuration.
       if (
         !ruleId.startsWith('secret.cli.') &&
-        matchesAllowedPath(target, cwd, config?.allowPaths ?? [], configCwd, environment, budget)
+        matchesAllowedPath(
+          target,
+          candidate.cwd,
+          config?.allowPaths ?? [],
+          configCwd,
+          environment,
+          budget,
+        )
       ) {
         continue;
       }
@@ -291,7 +331,7 @@ export function findSensitiveTargetInCommand(
       command,
     ),
   );
-  return findSensitiveTargetInSemanticFacts(facts, config, environment, options);
+  return findSensitiveTargetInSemanticFacts(facts, config, environment, createBudget(), options);
 }
 
 /** @internal */
@@ -307,6 +347,7 @@ export function findSensitiveTargetInToolInput(
     createSemanticFacts(createToolInvocation('', input, route, { executionCwd, configCwd }, null)),
     config,
     environment,
+    createBudget(),
   );
 }
 
@@ -314,30 +355,31 @@ export function findSensitiveTargetInSemanticFacts(
   facts: SemanticFacts,
   config: SecretProtectionPolicy | undefined,
   environment: EnvironmentContext,
+  budget: Budget,
   options: SecretInspectionOptions = {},
 ): SecretTarget | null {
-  const targets = extractToolPathTargets(facts, environment);
+  const candidates = extractToolPathTargets(facts, environment, budget);
   const target = findSensitivePolicyPathTarget(
-    targets,
-    facts.invocation.context.executionCwd,
+    candidates,
     config,
     facts.invocation.context.configCwd,
     environment,
+    budget,
   );
-  const refinedTargets =
+  const refined =
     target?.ruleId !== 'secret.deny-path' && options.strict === false
-      ? extractToolPathTargets(facts, environment, { refineJavaScriptInlineData: true })
-      : targets;
+      ? extractToolPathTargets(facts, environment, budget, { refineJavaScriptInlineData: true })
+      : candidates;
   const refinedTarget =
-    refinedTargets.length === targets.length
+    refined.length === candidates.length
       ? target
       : findSensitivePolicyPathTarget(
-          targets,
-          facts.invocation.context.executionCwd,
+          candidates,
           config,
           facts.invocation.context.configCwd,
           environment,
-          new Set(refinedTargets),
+          budget,
+          new Set(refined.map((candidate) => candidate.target)),
         );
   if (
     refinedTarget?.ruleId !== 'secret.deny-path' &&
@@ -379,8 +421,10 @@ function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentCon
 function extractToolPathTargets(
   facts: SemanticFacts,
   environment: EnvironmentContext,
+  budget: Budget,
   options: PathExtractionOptions = {},
-): string[] {
+): SecretCandidate[] {
+  const cwd = facts.invocation.context.executionCwd;
   if (facts.invocation.route.kind === 'command') {
     const command = getCommandSyntaxFact(facts, 'input-candidate');
     return command
@@ -389,11 +433,15 @@ function extractToolPathTargets(
           facts.store,
           options,
           environment,
+          cwd,
+          budget,
           isPowerShell(command),
         )
       : [];
   }
-  if (facts.invocation.route.kind !== 'unknown') return [...facts.paths];
+  if (facts.invocation.route.kind !== 'unknown') {
+    return facts.paths.map((target) => ({ target, cwd }));
+  }
 
   const command = getCommandSyntaxFact(facts, 'input-candidate');
   return [
@@ -403,10 +451,12 @@ function extractToolPathTargets(
           facts.store,
           options,
           environment,
+          cwd,
+          budget,
           isPowerShell(command),
         )
       : []),
-    ...facts.paths,
+    ...facts.paths.map((target) => ({ target, cwd })),
   ];
 }
 
@@ -419,21 +469,28 @@ function extractCommandPathTargets(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
   powershell = false,
-): string[] {
+): SecretCandidate[] {
   if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
   if (syntax.status === 'unclosed-quote') return [];
   if (syntax.status === 'invalid') throw new Error('Unable to parse command for secret protection');
 
   const targets = [
-    ...syntax.assignmentFallbacks,
+    ...syntax.assignmentFallbacks.map((target) => ({ target, cwd })),
     ...extractCommandSubstitutionPathTargets(
       projectSensitiveShellText(syntax.source, environment),
       store,
       options,
       environment,
+      cwd,
+      budget,
     ),
   ];
+  // The same walk the protected-path guards run: a segment's operands resolve against the cwd in
+  // force when it runs, and only a completed segment moves that cwd.
+  let state: ProtectedPathShellState = { cwd, variables: new Map() };
   let segment: string[] = [];
   let pipeProducer: string[] | null = null;
 
@@ -444,12 +501,23 @@ function extractCommandPathTargets(
         pipeProducer = null;
         continue;
       }
-      targets.push(...extractSegmentPathTargets(segment, store, options, environment));
+      targets.push(
+        ...extractSegmentPathTargets(segment, store, options, environment, state.cwd, budget),
+      );
       if (pipeProducer !== null) {
         targets.push(
-          ...extractPipeCarrierPathTargets(pipeProducer, segment, store, options, environment),
+          ...extractPipeCarrierPathTargets(
+            pipeProducer,
+            segment,
+            store,
+            options,
+            environment,
+            state.cwd,
+            budget,
+          ),
         );
       }
+      state = applyShellState(segment, state, environment, budget, normalizeProtectedPathCandidate);
       pipeProducer = PIPE_OPERATORS.has(entry.operator) ? segment : null;
       segment = [];
       continue;
@@ -466,7 +534,7 @@ function extractCommandPathTargets(
         segment.push(target);
         continue;
       }
-      if (target) targets.push(target);
+      if (target) targets.push({ target, cwd: state.cwd });
       continue;
     }
     segment.push(
@@ -475,10 +543,20 @@ function extractCommandPathTargets(
   }
 
   if (segment.length > 0) {
-    targets.push(...extractSegmentPathTargets(segment, store, options, environment));
+    targets.push(
+      ...extractSegmentPathTargets(segment, store, options, environment, state.cwd, budget),
+    );
     if (pipeProducer !== null) {
       targets.push(
-        ...extractPipeCarrierPathTargets(pipeProducer, segment, store, options, environment),
+        ...extractPipeCarrierPathTargets(
+          pipeProducer,
+          segment,
+          store,
+          options,
+          environment,
+          state.cwd,
+          budget,
+        ),
       );
     }
   }
@@ -491,12 +569,15 @@ function extractSegmentPathTargets(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
-): string[] {
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
+  const here = (target: string) => ({ target, cwd });
   // Capture the value bound by `VAR=value` assignments as a candidate path so
   // that later variable indirection (e.g. `f=.env; cat "$f"` or
   // `f=.env; python3 -c "open('$f')"`) is caught at the assignment site,
   // regardless of how the variable is dereferenced afterwards.
-  const assignmentValues = extractLeadingAssignmentValues(tokens);
+  const assignmentValues = extractLeadingAssignmentValues(tokens).map(here);
   const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
   if (stripped.length === 0) return assignmentValues;
 
@@ -506,33 +587,36 @@ function extractSegmentPathTargets(
   const explainTargets = extractSafetyNetExplainPathTargets(executable, command, post);
 
   if (explainTargets) {
-    return [...assignmentValues, ...explainTargets];
+    return [...assignmentValues, ...explainTargets.map(here)];
   }
 
   if (NON_PATH_OPERAND_COMMANDS.has(command)) {
     return assignmentValues;
   }
   if (PATTERN_FIRST_COMMANDS.has(command)) {
-    return [...assignmentValues, ...extractPatternCommandTargets(post)];
+    return [...assignmentValues, ...extractPatternCommandTargets(post).map(here)];
   }
   if (PATH_ROOT_COMMANDS.has(command)) {
-    return [...assignmentValues, ...extractFindCommandTargets(post, store, options, environment)];
+    return [
+      ...assignmentValues,
+      ...extractFindCommandTargets(post, store, options, environment, cwd, budget).map(here),
+    ];
   }
   if (AWK_INTERPRETERS.has(command)) {
     return [
       ...assignmentValues,
-      ...post.flatMap((token) => extractOperandPathCandidates('awk', token)),
+      ...post.flatMap((token) => extractOperandPathCandidates('awk', token)).map(here),
       ...post.flatMap((token) =>
-        extractAwkSystemCommandTargets(token, store, options, environment),
+        extractAwkSystemCommandTargets(token, store, options, environment, cwd, budget),
       ),
-      ...post.flatMap(extractAwkGetlineRedirectTargets),
+      ...post.flatMap(extractAwkGetlineRedirectTargets).map(here),
     ];
   }
   if (command === 'curl') {
     return [
       ...assignmentValues,
-      ...post.flatMap((token) => extractOperandPathCandidates(command, token)),
-      ...extractCurlUploadPathTargets(post),
+      ...post.flatMap((token) => extractOperandPathCandidates(command, token)).map(here),
+      ...extractCurlUploadPathTargets(post).map(here),
     ];
   }
   if (isCodeInterpreter(command)) {
@@ -542,11 +626,14 @@ function extractSegmentPathTargets(
         throw new StructuralShellSyntaxLimitError();
       }
     }
-    return [...assignmentValues, ...extractInterpreterPathTargets(command, post, options)];
+    return [
+      ...assignmentValues,
+      ...extractInterpreterPathTargets(command, post, options).map(here),
+    ];
   }
   return [
     ...assignmentValues,
-    ...post.flatMap((token) => extractOperandPathCandidates(command, token)),
+    ...post.flatMap((token) => extractOperandPathCandidates(command, token)).map(here),
   ];
 }
 
@@ -586,9 +673,11 @@ function extractPipeCarrierPathTargets(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
-): string[] {
-  if (xargsReadsPipeInputAsPath(consumer, store, options, environment)) {
-    return extractDisplayCommandOperands(producer);
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
+  if (xargsReadsPipeInputAsPath(consumer, store, options, environment, cwd, budget)) {
+    return extractDisplayCommandOperands(producer).map((target) => ({ target, cwd }));
   }
 
   const stdinInterpreter = getStdinScriptInterpreter(consumer);
@@ -598,8 +687,15 @@ function extractPipeCarrierPathTargets(
 
   return extractDisplayCommandBodies(producer).flatMap((body) =>
     SHELL_STDIN_INTERPRETERS.has(stdinInterpreter)
-      ? extractCommandPathTargets(store.getShellSyntax(body), store, options, environment)
-      : extractPathLiteralsFromCode(body),
+      ? extractCommandPathTargets(
+          store.getShellSyntax(body),
+          store,
+          options,
+          environment,
+          cwd,
+          budget,
+        )
+      : extractPathLiteralsFromCode(body).map((target) => ({ target, cwd })),
   );
 }
 
@@ -674,6 +770,8 @@ function xargsReadsPipeInputAsPath(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
 ): boolean {
   const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
   if (stripped.length === 0 || basename(stripped[0] ?? '').toLowerCase() !== 'xargs') {
@@ -694,8 +792,8 @@ function xargsReadsPipeInputAsPath(
     replacementToken === null
       ? [...xargsChildTokens, PIPE_INPUT_PATH_MARKER]
       : xargsChildTokens.map((token) => token.split(replacementToken).join(PIPE_INPUT_PATH_MARKER));
-  return extractSegmentPathTargets(childTokens, store, options, environment).some((target) =>
-    target.includes(PIPE_INPUT_PATH_MARKER),
+  return extractSegmentPathTargets(childTokens, store, options, environment, cwd, budget).some(
+    (candidate) => candidate.target.includes(PIPE_INPUT_PATH_MARKER),
   );
 }
 
@@ -851,6 +949,8 @@ function extractFindCommandTargets(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
 ): string[] {
   const expressionIndex = tokens.findIndex(
     (token) => token.startsWith('-') || token === '(' || token === '!' || token === ';',
@@ -861,7 +961,14 @@ function extractFindCommandTargets(
     const execTokens = tokens.slice(i + 1);
     const terminatorIndex = execTokens.findIndex((token) => FIND_EXEC_TERMINATORS.has(token));
     const execCommand = terminatorIndex === -1 ? execTokens : execTokens.slice(0, terminatorIndex);
-    const execTargets = extractSegmentPathTargets(execCommand, store, options, environment);
+    const execTargets = extractSegmentPathTargets(
+      execCommand,
+      store,
+      options,
+      environment,
+      cwd,
+      budget,
+    ).map((candidate) => candidate.target);
     targets.push(...execTargets.filter((target) => target !== '{}'));
     if (!execTargets.includes('{}')) continue;
     targets.push(
@@ -934,11 +1041,20 @@ function extractAwkSystemCommandTargets(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
-): string[] {
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
   if (!code.includes('system')) return [];
   return (
     extractAwkSystemCommands(code)?.commands.flatMap((command) =>
-      extractCommandPathTargets(store.getShellSyntax(command), store, options, environment),
+      extractCommandPathTargets(
+        store.getShellSyntax(command),
+        store,
+        options,
+        environment,
+        cwd,
+        budget,
+      ),
     ) ?? []
   );
 }
@@ -1060,16 +1176,18 @@ function extractCommandSubstitutionPathTargets(
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
-): string[] {
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
   return extractCommandSubstitutionBodies(command).flatMap((body) => {
     const syntax = store.getShellSyntax(body);
     // A body a shell cannot parse never executes as extracted here: the real shell either
     // aborts or reads different bounds (which the structural projection already scanned).
     if (syntax.status === 'invalid') return [];
     return [
-      ...extractCommandPathTargets(syntax, store, options, environment),
+      ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
       ...(commandSubstitutionDecodesBase64(syntax, environment)
-        ? extractBase64DecodedPathCandidates(syntax, environment)
+        ? extractBase64DecodedPathCandidates(syntax, environment).map((target) => ({ target, cwd }))
         : []),
     ];
   });

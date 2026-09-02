@@ -31,6 +31,7 @@ export interface RecursiveDeleteTargetTrustOptions {
 export interface RecursiveDeleteTargetOptions extends RecursiveDeleteTargetTrustOptions {
   paranoid?: boolean;
   posixShell?: boolean;
+  budget?: Budget;
 }
 
 export interface RecursiveDeleteTargetContext {
@@ -139,7 +140,7 @@ export function createRecursiveDeleteTargetContext(
 ): RecursiveDeleteTargetContext {
   const homeDir = options.environment.home;
   const paths = options.environment.paths;
-  const budget = createBudget();
+  const budget = options.budget ?? createBudget();
   return {
     anchoredCwd: options.originalCwd ?? options.cwd ?? null,
     resolvedCwd: options.cwd ?? null,

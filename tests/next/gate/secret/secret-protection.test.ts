@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createProcessEnvironment, type Environment } from '@next/core/environment';
 import type { SecretProtectionConfig } from '@next/core/policy/types';
 import { SECRET_DEFAULT_OFF_RULE_ID_SET } from '@next/core/rules/secret';
+import { getCommandFromToolInput } from '@next/core/tool-input';
 import type { ToolRoute } from '@next/gate/invocation';
 import {
   findSensitivePathTarget,
@@ -16,7 +17,8 @@ import {
   findSensitivePathTarget as shippedPathScan,
   findSensitiveTargetInToolInput as shippedRouteScan,
 } from '@/guards/secret-protection';
-import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
+import { describeOutcome, type Outcome, writeTree } from '../../helpers/fixture-tree';
+import { deniedByTrackedCwd } from '../../helpers/gate-differential';
 import {
   corpusCommands,
   corpusToolInputs,
@@ -164,6 +166,31 @@ function pathPair(targets: readonly string[], config?: SecretProtectionConfig, c
     ),
     shipped: describeOutcome(() => shippedPathScan(targets, repo, config, configCwd)),
   };
+}
+
+/**
+ * The command, when the pair differs only because the shared guard walk resolved a relative
+ * operand against a cd-tracked cwd: the shipped matcher walks segments without that tracking, so
+ * it reports nothing there. Null for every other pair, which the callers still assert on.
+ */
+function trackedCwdDivergence(
+  command: string,
+  pair: {
+    readonly ported: Outcome<{ target: string; ruleId: string } | null>;
+    readonly shipped: Outcome<{ target: string; ruleId: string } | null>;
+  },
+): string | null {
+  if (!pair.shipped.ok || pair.shipped.value !== null) return null;
+  if (!pair.ported.ok || pair.ported.value === null) return null;
+  return deniedByTrackedCwd(
+    command,
+    pair.ported.value.target,
+    pair.ported.value.ruleId,
+    repo,
+    environment,
+  )
+    ? command
+    : null;
 }
 
 /** The rule id the port reports for one command in standard mode, or null. */
@@ -488,16 +515,25 @@ describe('secret protection through the shell', () => {
   });
 
   test('the corpus commands and the seeded fuzz agree with the shipped matcher', () => {
-    for (const command of corpusCommands()) {
+    const corpusWalk = corpusCommands().flatMap((command) => {
       const pair = commandPair(command, { strict: false });
+      const divergence = trackedCwdDivergence(command, pair);
+      if (divergence !== null) return [divergence];
       expect(pair.ported, command).toStrictEqual(pair.shipped);
-    }
-    for (const command of fuzzShellSources(400, FUZZ_SEED)) {
-      for (const mode of MODES) {
+      return [];
+    });
+    const fuzzWalk = fuzzShellSources(400, FUZZ_SEED).flatMap((command) =>
+      MODES.flatMap((mode) => {
         const pair = commandPair(command, mode);
+        const divergence = trackedCwdDivergence(command, pair);
+        if (divergence !== null) return [divergence];
         expect(pair.ported, command).toStrictEqual(pair.shipped);
-      }
-    }
+        return [];
+      }),
+    );
+    // The one input the shared guard walk decides differently, and nothing the fuzz reaches.
+    expect([...new Set(corpusWalk)]).toStrictEqual(['cd ~ && cat .ssh/config']);
+    expect([...new Set(fuzzWalk)]).toStrictEqual([]);
   });
 });
 
@@ -540,12 +576,18 @@ describe('secret protection through tool inputs', () => {
   });
 
   test('the corpus tool inputs agree with the shipped matcher on every route', () => {
-    for (const row of corpusToolInputs()) {
-      for (const route of [{ kind: 'unknown' }, { kind: 'path' }] as const) {
+    const walk = corpusToolInputs().flatMap((row) => {
+      const command = getCommandFromToolInput(row.input);
+      return ([{ kind: 'unknown' }, { kind: 'path' }] as const).flatMap((route) => {
         const pair = routePair(row.input, route);
+        const divergence = command === undefined ? null : trackedCwdDivergence(command, pair);
+        if (divergence !== null) return [divergence];
         expect(pair.ported, `${row.toolName} ${route.kind}`).toStrictEqual(pair.shipped);
-      }
-    }
+        return [];
+      });
+    });
+    // An `unknown` route walks the command it carries, so the closed gap shows up here too.
+    expect([...new Set(walk)]).toStrictEqual(['cd ~ && cat .ssh/config']);
   });
 });
 

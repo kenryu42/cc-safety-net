@@ -38,10 +38,10 @@
  * derived bytes 1 MiB; placeholder replacements 16,384. Caught in `analyzeCommandInternal` → deny
  * "Parallel command expands beyond CC Safety Net's analysis limits…": none, an ordinary deny.
  *
- * The table below reports the derived-command and parallel breaches with the command-analysis
- * wording, not the two sentences above: design §4.8 names two wordings plus recursion depth, and
- * no corpus row or contract line asserts either sentence (the contract lists budget reason
- * strings as detail). Phase 3 bakes this choice into the denial text.
+ * The table below keeps both sentences above as the reason of the kinds that report them, so the
+ * denial text a user reads is unchanged. What the unification adds is the classification: the
+ * pipeline catches an analyzer-cap breach, answers with the same ordinary denial `src` returns,
+ * and attaches the kind's `errorCode` to the evaluation for the audit.
  *
  * Not breaches (no entry below): text-scanner work units (`src/analyzer/text-scanner.ts`) are a
  * measurement the linear-scan tests read; positional expansion (`src/analyzer/shell-execution.ts`,
@@ -77,6 +77,12 @@ export const REASON_SAFETY_NET_FAILED_CLOSED =
 
 export const REASON_HOOK_INPUT_UNREADABLE = 'Failed to parse hook input JSON.';
 
+export const REASON_DERIVED_COMMAND_WORK_LIMIT =
+  "Command analysis exceeds CC Safety Net's derived-command work limit. Reduce nested or embedded command complexity and retry.";
+
+export const REASON_PARALLEL_ANALYSIS_LIMIT =
+  "Parallel command expands beyond CC Safety Net's analysis limits. Reduce the template or explicit argument list and retry.";
+
 /** The audit error classes a limit breach maps to; `unexpected-error` is for everything else. */
 export type AnalysisErrorCode =
   | 'path-canonicalization-limit'
@@ -97,6 +103,14 @@ const TOOL_INPUT = {
   errorCode: 'tool-input-limit',
   reason: REASON_SAFETY_NET_FAILED_CLOSED,
 } as const;
+const DERIVED = {
+  errorCode: 'structural-shell-syntax-limit',
+  reason: REASON_DERIVED_COMMAND_WORK_LIMIT,
+} as const;
+const PARALLEL = {
+  errorCode: 'structural-shell-syntax-limit',
+  reason: REASON_PARALLEL_ANALYSIS_LIMIT,
+} as const;
 
 export const LIMITS = Object.freeze({
   realpathAttempts: { cap: 16_384, ...PATH },
@@ -105,21 +119,31 @@ export const LIMITS = Object.freeze({
   pathEnvironmentExpansion: { cap: 64, ...PATH },
   /** A nested program the parser reported `limited`; the parser's own caps decide. */
   structuralShellSyntax: STRUCTURAL,
-  /** A depth that unwinds, not a running total: compare against the cap and throw; do not charge. */
+  /** Compared by the analyzer, which returns the recursion denial on the open segment; never thrown. */
   recursionDepth: {
     cap: 10,
     errorCode: 'structural-shell-syntax-limit',
     reason: REASON_RECURSION_LIMIT,
   },
-  derivedTokens: { cap: 16_384, ...STRUCTURAL },
-  trackedHeredocFiles: { cap: 64, ...STRUCTURAL },
+  derivedTokens: { cap: 16_384, ...DERIVED },
+  /** Per state list, compare directly; do not charge. */
+  trackedHeredocFiles: { cap: 64, ...DERIVED },
   /** Per deduplication of one state list, not cumulative: compare against the cap directly. */
-  controlFlowStates: { cap: 64, ...STRUCTURAL },
-  wrapperPeelIterations: { cap: 20, ...STRUCTURAL },
-  parallelChildAnalyses: { cap: 1_024, ...STRUCTURAL },
-  parallelDerivedTokens: { cap: 16_384, ...STRUCTURAL },
-  parallelDerivedBytes: { cap: 1024 * 1024, ...STRUCTURAL },
-  parallelPlaceholderReplacements: { cap: 16_384, ...STRUCTURAL },
+  controlFlowStates: { cap: 64, ...DERIVED },
+  /**
+   * Per segment peel and per child normalization, compare directly; also thrown for a `command`
+   * wrapper still at the head.
+   */
+  wrapperPeelIterations: { cap: 20, ...DERIVED },
+  /**
+   * A derived child command the analyzer cannot normalize: no candidate, or an `env -S` value
+   * that needs the quote language.
+   */
+  derivedCommandShape: DERIVED,
+  parallelChildAnalyses: { cap: 1_024, ...PARALLEL },
+  parallelDerivedTokens: { cap: 16_384, ...PARALLEL },
+  parallelDerivedBytes: { cap: 1024 * 1024, ...PARALLEL },
+  parallelPlaceholderReplacements: { cap: 16_384, ...PARALLEL },
   hookInputBytes: {
     cap: 8 * 1024 * 1024,
     errorCode: 'tool-input-limit',

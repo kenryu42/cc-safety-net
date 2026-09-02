@@ -67,14 +67,15 @@ export function findPolicyConfigMutationTargetInToolInput(
   return findPolicyConfigMutationTargetInSemanticFacts(
     createSemanticFacts(createToolInvocation(toolName, input, route, context, null)),
     environment,
+    createBudget(),
   );
 }
 
 export function findPolicyConfigMutationTargetInSemanticFacts(
   facts: SemanticFacts,
   environment: EnvironmentContext,
+  budget: Budget,
 ): PolicyConfigTarget | null {
-  const budget = createBudget();
   const identity = createPolicyPathIdentity(facts.invocation.context, environment, budget);
   if (facts.invocation.route.kind === 'patch') {
     return findPolicyConfigMutationTargetInPaths(

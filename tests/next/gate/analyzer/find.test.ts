@@ -332,11 +332,12 @@ describe('find analysis', () => {
   test('a derived-command budget shared across many exec bodies fails closed on both sides', () => {
     const source = `find . ${'-exec rm {} \\; '.repeat(120)}`.trim();
     const pair = analyzePair(source, { label: 'budget', cwd: workspace }, 'tokens');
-    expect(pair.next.match).toStrictEqual(pair.shipped.match);
     expect(pair.next.match.ok).toBeFalse();
-    expect(pair.next.match.ok ? '' : pair.next.match.error.name).toBe(
-      'DerivedCommandWorkLimitError',
+    expect(pair.shipped.match.ok).toBe(pair.next.match.ok);
+    expect(pair.next.match.ok ? '' : pair.next.match.error.message).toBe(
+      pair.shipped.match.ok ? '' : pair.shipped.match.error.message,
     );
+    expect(pair.next.match.ok ? '' : pair.next.match.error.name).toBe('AnalysisLimit');
   });
 
   test('the corpus commands and the seeded fuzz agree with the shipped analyzer', () => {

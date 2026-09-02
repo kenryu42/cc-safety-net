@@ -5,6 +5,7 @@ import { policySnapshot } from '../../helpers/policy';
 import {
   bashCall,
   createGateTree,
+  deniedByTrackedCwd,
   type GateVerdict,
   portedVerdict,
   shippedVerdict,
@@ -73,6 +74,20 @@ type Mismatch = {
 /** Room for a slow machine: a batch decides a few thousand invocations against both gates. */
 const BATCH_TIMEOUT_MS = 30_000;
 
+/**
+ * The one class of difference the port is meant to have: a secret denial the shared guard walk
+ * reaches because a `cd` moved the tracked cwd. Collected instead of failing, then pinned to the
+ * exact inputs below so a second literal cannot slip into the class unnoticed.
+ */
+const walkDivergences: Mismatch[] = [];
+
+function evidenceSegment(verdict: GateVerdict): string | undefined {
+  const evidence = Array.isArray(verdict.evidence) ? verdict.evidence[0] : undefined;
+  if (typeof evidence !== 'object' || evidence === null || !('segment' in evidence))
+    return undefined;
+  return typeof evidence.segment === 'string' ? evidence.segment : undefined;
+}
+
 /** Which verdicts the replay actually reached, so the batches cannot pass by deciding nothing. */
 const reached = new Set<string>();
 
@@ -89,7 +104,26 @@ function disagreements(input: string, index: number): Mismatch[] {
       const shipped = shippedVerdict(call, dependencies);
       reached.add(`${ported.outcome} ${String(ported.stage)} ${ported.ruleId ?? ''}`.trim());
       if (Bun.deepEquals(ported, shipped, true)) return [];
-      return [{ input, where: place.where, level: entry.level, ported, shipped }];
+      const mismatch = { input, where: place.where, level: entry.level, ported, shipped };
+      const segment = evidenceSegment(ported);
+      if (
+        ported.outcome === 'deny' &&
+        ported.stage === 'secret-protection' &&
+        (shipped.outcome === 'allow' || shipped.stage === 'command-analysis') &&
+        segment !== undefined &&
+        deniedByTrackedCwd(
+          input,
+          segment,
+          ported.ruleId,
+          place.cwd,
+          environment,
+          entry.snapshot.policy.secretProtection,
+        )
+      ) {
+        walkDivergences.push(mismatch);
+        return [];
+      }
+      return [mismatch];
     }),
   );
 }
@@ -119,6 +153,18 @@ describe(`${HARVESTED_LITERAL_COUNT} literals harvested from the shipped test su
       BATCH_TIMEOUT_MS,
     );
   }
+
+  test('the accepted differences are the tracked-cwd secret denials and nothing else', () => {
+    const inputs = [...new Set(walkDivergences.map((entry) => entry.input))].sort();
+    console.log(
+      `tracked-cwd divergences: ${walkDivergences.length} over ${inputs.length} input(s) ${JSON.stringify(inputs)}`,
+    );
+    expect(inputs).toStrictEqual(['cd ~ && cat .ssh/config']);
+    expect(
+      walkDivergences.filter((entry) => entry.ported.ruleId?.startsWith('secret.') !== true),
+    ).toStrictEqual([]);
+    expect(walkDivergences.filter((entry) => entry.shipped.outcome !== 'allow')).toStrictEqual([]);
+  });
 
   test('the replay reached allows, analyzer denials and secret denials', () => {
     expect([...reached].some((entry) => entry.startsWith('allow'))).toBeTrue();

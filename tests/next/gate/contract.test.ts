@@ -164,8 +164,9 @@ describe('pipeline-only contract through the ported gate', () => {
     userPolicyPath,
     userPolicyDir: dirname(userPolicyPath),
   })) {
-    const run = contractCase.knownGap ? test.failing : test;
-    run(contractCase.name, () => {
+    // A `knownGap` row runs plain here: the marker records what the shipped pipeline decides
+    // wrongly, and the port is the implementation that closes it.
+    test(contractCase.name, () => {
       expectContract(
         evaluate(
           invocationFor(

@@ -1,10 +1,11 @@
+import { AnalysisLimit, type Budget, LIMITS } from '@next/core/budget';
 import {
   destructiveCommandRuleIsEnabled,
   filterDestructiveCommandMatch,
 } from '@next/core/policy/effective-rules';
 import { isInterpreterCommand } from '@next/core/policy/transparent-wrappers';
 import type { CommandAnalysisPolicy } from '@next/core/policy/types';
-import { MAX_RECURSION_DEPTH, SHELL_WRAPPERS } from '@next/core/rules/constants';
+import { SHELL_WRAPPERS } from '@next/core/rules/constants';
 import { destructiveCommandMatch } from '@next/core/rules/destructive';
 import {
   type CommandHeredoc,
@@ -30,29 +31,12 @@ import type { CommandTraceContext } from '@next/gate/trace';
 import { analysisWordText, analyzedViewWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
 import { isDataOnlyQuotedAssignment } from './deferred-assignment';
-import {
-  createDerivedCommandWorkBudget,
-  type DerivedCommandWorkBudget,
-  DerivedCommandWorkLimitError,
-  REASON_DERIVED_COMMAND_WORK_LIMIT,
-  reserveDerivedCommandTokens,
-} from './derived-command-budget';
-import {
-  isPersistentHeredocFilePath,
-  MAX_TRACKED_HEREDOC_FILES,
-  resolveTrackedHeredocPath,
-} from './heredoc-files';
+import { isPersistentHeredocFilePath, resolveTrackedHeredocPath } from './heredoc-files';
 import {
   containsDangerousCode,
   REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS,
 } from './interpreters';
-import {
-  createParallelAnalysisBudget,
-  type ParallelAnalysisBudget,
-  ParallelAnalysisLimitError,
-  REASON_PARALLEL_ANALYSIS_LIMIT,
-} from './parallel-budget';
 import { analyzePowerShellCommandViewMatch } from './powershell/remove-item';
 import { REASON_RECURSION_LIMIT, REASON_STRICT_UNPARSEABLE } from './reasons';
 import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
@@ -70,24 +54,17 @@ import { stripWrapperWords } from './wrapper-prelude';
 export type InternalOptions = AnalyzeInput & {
   policy: CommandAnalysisPolicy;
   factStore?: SemanticFactStore;
-  derivedCommandWorkBudget?: DerivedCommandWorkBudget;
-  parallelBudget?: ParallelAnalysisBudget;
+  budget: Budget;
   scanWork?: { units: number };
   literalHeredocFiles?: ReadonlyMap<string, string>;
   functionDefinitions?: ReadonlyMap<string, CommandProgram>;
   rootProgram?: CommandProgram;
 };
 
-type ActiveInternalOptions = InternalOptions & {
-  derivedCommandWorkBudget: DerivedCommandWorkBudget;
-  parallelBudget: ParallelAnalysisBudget;
-};
-
 const REASON_UNQUOTED_HEREDOC =
   'Unquoted heredoc input is not supported safely. Quote the delimiter or ask the user to verify.';
 const REASON_UNSUPPORTED_HEREDOC =
   'This heredoc form or stdin consumer is not supported safely. Use a quoted heredoc with a supported consumer (cat, tee, git apply, git commit, gh pr create, gh issue create), or ask the user to verify.';
-const MAX_CONTROL_FLOW_STATES = 64;
 
 export function analyzeCommandInternal(
   command: string,
@@ -95,53 +72,7 @@ export function analyzeCommandInternal(
   options: InternalOptions,
   parsedProgram?: CommandProgram,
 ): AnalyzeResult | null {
-  const ownsDerivedCommandWorkBudget = options.derivedCommandWorkBudget === undefined;
-  const ownsParallelBudget = options.parallelBudget === undefined;
-  try {
-    return analyzeCommandWithBudget(
-      command,
-      depth,
-      {
-        ...options,
-        derivedCommandWorkBudget:
-          options.derivedCommandWorkBudget ?? createDerivedCommandWorkBudget(),
-        parallelBudget: options.parallelBudget ?? createParallelAnalysisBudget(),
-      },
-      parsedProgram,
-    );
-  } catch (error) {
-    const reason =
-      error instanceof DerivedCommandWorkLimitError && ownsDerivedCommandWorkBudget
-        ? REASON_DERIVED_COMMAND_WORK_LIMIT
-        : error instanceof ParallelAnalysisLimitError && ownsParallelBudget
-          ? REASON_PARALLEL_ANALYSIS_LIMIT
-          : undefined;
-    if (!reason) {
-      throw error;
-    }
-    // The breach lands on the segment being analyzed, or globally when no segment is open.
-    const segmentIndex = options.trace?.currentSegmentIndex;
-    if (segmentIndex !== undefined) {
-      options.trace?.recordSegment({ type: 'error', message: reason });
-    }
-    if (segmentIndex === undefined) {
-      options.trace?.recordGlobal({ type: 'error', message: reason });
-    }
-    return {
-      reason,
-      segment: command,
-      intent: 'stop_and_explain',
-    };
-  }
-}
-
-function analyzeCommandWithBudget(
-  command: string,
-  depth: number,
-  options: ActiveInternalOptions,
-  parsedProgram?: CommandProgram,
-): AnalyzeResult | null {
-  if (depth >= MAX_RECURSION_DEPTH) {
+  if (depth >= LIMITS.recursionDepth.cap) {
     options.trace?.recordSegment({ type: 'error', message: REASON_RECURSION_LIMIT });
     return { reason: REASON_RECURSION_LIMIT, segment: command, intent: 'stop_and_explain' };
   }
@@ -216,7 +147,7 @@ type ConditionalAnalysisStates = {
 function analyzeProgram(
   program: CommandProgram,
   depth: number,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
   originalCwd: string | undefined,
   initialStates: readonly AnalysisState[],
 ): ProgramAnalysis {
@@ -357,13 +288,10 @@ function analyzeProgram(
         // Every call site re-analyzes the whole body, so a chain of functions that each call
         // the next several times fans out far past what the recursion depth cap bounds.
         if (functionBody) {
-          reserveDerivedCommandTokens(
-            options.derivedCommandWorkBudget,
-            countCommandProgramWords(functionBody),
-          );
+          options.budget.charge('derivedTokens', countCommandProgramWords(functionBody));
         }
         const functionAnalysis = functionBody
-          ? depth + 1 >= MAX_RECURSION_DEPTH
+          ? depth + 1 >= LIMITS.recursionDepth.cap
             ? recursionLimitAnalysis(node.displayText, options, [analyzedState])
             : analyzeProgram(functionBody, depth + 1, options, originalCwd, [analyzedState])
           : { result: null, states: [analyzedState] };
@@ -549,7 +477,7 @@ type NestedProgramAnalysisTarget = {
 function analyzeCommandNestedPrograms(
   commandView: CommandView,
   depth: number,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
   originalCwd: string | undefined,
   initialStates: readonly AnalysisState[],
 ): ProgramAnalysis {
@@ -560,7 +488,7 @@ function analyzeCommandNestedPrograms(
   if (commandView.dialect === 'powershell') {
     const evaluatedSource = getLiteralPowerShellEvaluationSource(commandView);
     if (evaluatedSource) {
-      if (depth + 1 >= MAX_RECURSION_DEPTH) {
+      if (depth + 1 >= LIMITS.recursionDepth.cap) {
         return recursionLimitAnalysis(evaluatedSource, options, initialStates);
       }
       const evaluatedProgram = parseCommand(evaluatedSource, 'powershell');
@@ -570,10 +498,7 @@ function analyzeCommandNestedPrograms(
       if (evaluatedProgram.status !== 'complete') {
         return analyzeNestedPrograms(programs, options, originalCwd, initialStates);
       }
-      reserveDerivedCommandTokens(
-        options.derivedCommandWorkBudget,
-        countCommandProgramWords(evaluatedProgram),
-      );
+      options.budget.charge('derivedTokens', countCommandProgramWords(evaluatedProgram));
       programs.push({ program: evaluatedProgram, depth: depth + 1 });
     }
   }
@@ -590,7 +515,7 @@ function getPowerShellScriptBlockAssignmentName(commandView: CommandView): strin
 
 function analyzeNestedPrograms(
   programs: readonly NestedProgramAnalysisTarget[],
-  options: ActiveInternalOptions,
+  options: InternalOptions,
   originalCwd: string | undefined,
   initialStates: readonly AnalysisState[],
 ): ProgramAnalysis {
@@ -655,7 +580,7 @@ function countCommandProgramWords(program: CommandProgram): number {
 
 function recursionLimitAnalysis(
   segment: string,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
   states: readonly AnalysisState[],
 ): ProgramAnalysis {
   options.trace?.recordSegment({ type: 'error', message: REASON_RECURSION_LIMIT });
@@ -672,7 +597,7 @@ function recursionLimitAnalysis(
 function analyzeCommandView(
   commandView: CommandView,
   depth: number,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
   originalCwd: string | undefined,
   state: AnalysisState,
   hasPipelineInput: boolean,
@@ -687,7 +612,13 @@ function analyzeCommandView(
       intent: 'stop_and_explain',
     };
   }
-  invalidateLiteralHeredocFiles(commandView, state, 'before-consumer', options.environment.paths);
+  invalidateLiteralHeredocFiles(
+    commandView,
+    state,
+    'before-consumer',
+    options.environment.paths,
+    options.budget,
+  );
   const segment = analyzedViewWords(commandView.dialect, commandView.words).map(analysisWordText);
   const segmentStr = commandView.displayText;
   const segmentEnvAssignments = getSegmentGitContextEnvAssignments(
@@ -774,7 +705,6 @@ function analyzeCommandView(
           : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
-        derivedCommandWorkBudget: options.derivedCommandWorkBudget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
         literalHeredocFiles: state.literalHeredocFiles,
@@ -815,7 +745,7 @@ function finalizeAnalyzedCommandView(
   state: AnalysisState,
   segmentEnvAssignments: ReadonlyMap<string, string> | undefined,
   literalShellInput: string | undefined,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
 ): AnalyzeResult | null {
   const heredocResult = analyzeUnsupportedHeredoc(
     commandView,
@@ -826,9 +756,21 @@ function finalizeAnalyzedCommandView(
   );
   if (heredocResult) return heredocResult;
 
-  invalidateLiteralHeredocFiles(commandView, state, 'after-consumer', options.environment.paths);
+  invalidateLiteralHeredocFiles(
+    commandView,
+    state,
+    'after-consumer',
+    options.environment.paths,
+    options.budget,
+  );
   state.literalHeredocFiles.clear();
-  trackLiteralHeredocFiles(commandView, heredocReason, state, options.environment.paths);
+  trackLiteralHeredocFiles(
+    commandView,
+    heredocReason,
+    state,
+    options.environment.paths,
+    options.budget,
+  );
   updateCwdAfterCommandView(
     commandView,
     state,
@@ -846,6 +788,7 @@ function invalidateLiteralHeredocFiles(
   state: AnalysisState,
   phase: 'before-consumer' | 'after-consumer',
   paths: PathResolver,
+  budget: Budget,
 ): void {
   for (const redirection of commandView.redirections) {
     const writesFile =
@@ -853,13 +796,15 @@ function invalidateLiteralHeredocFiles(
         ? isTruncatingFileRedirection(redirection)
         : FILE_NONTRUNCATING_WRITE_REDIRECTIONS.has(redirection.operator);
     if (!writesFile) continue;
-    invalidateLiteralHeredocFile(redirection.target, state, paths);
+    invalidateLiteralHeredocFile(redirection.target, state, paths, budget);
   }
 
   if (phase !== 'before-consumer' || !isBareCommandWord(commandView.words[0], 'tee')) return;
   const teeArguments = getTeeArguments(commandView.words.slice(1));
   if (!teeArguments) return;
-  for (const operand of teeArguments.operands) invalidateLiteralHeredocFile(operand, state, paths);
+  for (const operand of teeArguments.operands) {
+    invalidateLiteralHeredocFile(operand, state, paths, budget);
+  }
 }
 
 function isTruncatingFileRedirection(redirection: CommandRedirection): boolean {
@@ -876,10 +821,11 @@ function invalidateLiteralHeredocFile(
   target: CommandWord | undefined,
   state: AnalysisState,
   paths: PathResolver,
+  budget: Budget,
 ): void {
   const path =
     target?.provenance === 'literal'
-      ? resolveTrackedHeredocPath(target.text, state.effectiveCwd, paths)
+      ? resolveTrackedHeredocPath(target.text, state.effectiveCwd, paths, budget)
       : undefined;
   if (!path) return;
   state.literalHeredocFiles.delete(path);
@@ -890,6 +836,7 @@ function trackLiteralHeredocFiles(
   heredocReason: string | undefined,
   state: AnalysisState,
   paths: PathResolver,
+  budget: Budget,
 ): void {
   if (heredocReason) return;
   const heredoc = commandView.redirections.find(
@@ -898,13 +845,13 @@ function trackLiteralHeredocFiles(
   if (!heredoc || !isLiteralHeredoc(heredoc)) return;
 
   for (const target of getLiteralHeredocOutputTargets(commandView)) {
-    const path = resolveTrackedHeredocPath(target.text, state.effectiveCwd, paths);
+    const path = resolveTrackedHeredocPath(target.text, state.effectiveCwd, paths, budget);
     if (!path || !isPersistentHeredocFilePath(path)) continue;
     if (
       !state.literalHeredocFiles.has(path) &&
-      state.literalHeredocFiles.size >= MAX_TRACKED_HEREDOC_FILES
+      state.literalHeredocFiles.size >= LIMITS.trackedHeredocFiles.cap
     ) {
-      throw new DerivedCommandWorkLimitError();
+      throw new AnalysisLimit('trackedHeredocFiles');
     }
     state.literalHeredocFiles.set(path, heredoc.body);
   }
@@ -1071,7 +1018,7 @@ function analyzeUnsupportedHeredoc(
   reason: string | undefined,
   state: AnalysisState,
   envAssignments: ReadonlyMap<string, string>,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
 ): AnalyzeResult | null {
   if (!reason) return null;
   const heredocs = commandView.redirections.filter(
@@ -1106,7 +1053,7 @@ function analyzeUnsupportedHeredoc(
 function analyzeInterpreterHeredocMatch(
   commandView: CommandView,
   heredocs: readonly CommandRedirection[],
-  options: ActiveInternalOptions,
+  options: InternalOptions,
 ): DestructiveCommandRuleMatch | null | undefined {
   const heredoc = heredocs.length === 1 ? heredocs[0] : undefined;
   if (
@@ -1162,7 +1109,7 @@ function isInertShellHeredoc(
   heredocs: readonly CommandRedirection[],
   state: AnalysisState,
   envAssignments: ReadonlyMap<string, string>,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
 ): boolean {
   const heredoc = heredocs.length === 1 ? heredocs[0] : undefined;
   if (
@@ -1228,8 +1175,8 @@ function deduplicateAnalysisStates(states: readonly AnalysisState[]): AnalysisSt
     if (!uniqueStates.some((candidate) => analysisStatesEqual(candidate, state))) {
       uniqueStates.push(state);
     }
-    if (uniqueStates.length > MAX_CONTROL_FLOW_STATES) {
-      throw new DerivedCommandWorkLimitError();
+    if (uniqueStates.length > LIMITS.controlFlowStates.cap) {
+      throw new AnalysisLimit('controlFlowStates');
     }
   }
   return uniqueStates;
@@ -1295,12 +1242,13 @@ function getPowerShellRemoveItemOptions(
     allowTmpdirVar: options.allowTmpdirVar,
     protectedGitMetadata: options.protectedGitMetadata,
     policy: options.policy,
+    budget: options.budget,
   };
 }
 
 function analyzeUnparseableCommand(
   command: string,
-  options: ActiveInternalOptions,
+  options: InternalOptions,
 ): AnalyzeResult | null {
   const textMatch = filterDestructiveCommandMatch(
     dangerousInTextMatch(command, options.scanWork),

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { createTestEnvironment } from '@next/core/environment';
 import { evaluateCommandWithTrace as portedEvaluateWithTrace } from '@next/gate/evaluate-command';
 import { evaluateCommandWithTrace as shippedEvaluateWithTrace } from '@/engine/evaluate-command';
 import { policySnapshot, testModes } from '../../helpers/policy';
+import { SYNTHETIC_ENVIRONMENT as environment } from '../helpers/gate-differential';
 import { corpusCommands, FIXED_COMMANDS } from '../helpers/shell-inputs';
 
 /**
@@ -15,18 +15,6 @@ import { corpusCommands, FIXED_COMMANDS } from '../helpers/shell-inputs';
  * the command: no path exists, `realpath` answers null, and the port reads no filesystem at all
  * (the shipped gate still stats the same absent paths and gets the same answer).
  */
-
-const environment = createTestEnvironment({
-  env: new Map([
-    ['HOME', '/home/agent'],
-    ['PATH', '/usr/local/bin:/usr/bin:/bin'],
-    ['SHELL', '/bin/bash'],
-    ['TMPDIR', '/tmp'],
-    ['USER', 'agent'],
-  ]),
-  home: '/home/agent',
-  tmpdir: '/tmp',
-});
 
 const snapshot = policySnapshot();
 

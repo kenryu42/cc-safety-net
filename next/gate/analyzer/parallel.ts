@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path';
+import { type Budget, LIMITS } from '@next/core/budget';
 import { resolveChdirTarget } from '@next/core/paths/chdir';
 import { hasUnsafeTmpdirWordSplitting, isTmpdirValueTrusted } from '@next/core/paths/tmpdir';
 import { filterDestructiveCommandMatch } from '@next/core/policy/effective-rules';
@@ -28,12 +29,7 @@ import { getFindPrimaryArity, isFindExecPrimary } from './find';
 import { extractGitSubcommandAndRest } from './git/parse';
 import { GIT_RULE_SUBCOMMANDS } from './git/rules';
 import { extractInterpreterExecutableSources } from './interpreters';
-import {
-  PARALLEL_ANALYSIS_LIMITS,
-  type ParallelAnalysisBudget,
-  type ParallelAnalysisReservation,
-  reserveParallelAnalysis,
-} from './parallel-budget';
+import { type ParallelAnalysisReservation, reserveParallelAnalysis } from './parallel-budget';
 import { analyzeRmMatch } from './rm';
 import { hasRecursiveForceFlags } from './rm-flags';
 import {
@@ -103,11 +99,9 @@ const PARALLEL_APPENDED_SOURCE = '__CC_SAFETY_NET_PARALLEL_SOURCE__';
 const UTF8_ENCODER = new TextEncoder();
 // Each replacement has two fragment boundaries, each overcounted by two bytes when it forms a pair.
 const MAX_EXPANDED_BYTE_OVERCOUNT =
-  PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes +
-  4 * PARALLEL_ANALYSIS_LIMITS.maxPlaceholderReplacements;
+  LIMITS.parallelDerivedBytes.cap + 4 * LIMITS.parallelPlaceholderReplacements.cap;
 
 export interface ParallelAnalyzeContext extends NestedCommandAnalyzeContext {
-  budget: ParallelAnalysisBudget;
   analyzeNested: (
     command: string,
     overrides?: AnalyzeNestedOverrides,
@@ -605,7 +599,7 @@ function matchDynamicParallelPolicyRule(
   tokens: readonly string[],
   usesStdin: boolean,
   rules: readonly PolicyRule[],
-  budget: ParallelAnalysisBudget,
+  budget: Budget,
 ): DestructiveCommandRuleMatch | null {
   if (!usesStdin || rules.length === 0) return null;
   const relevantRules = rules.filter(
@@ -648,19 +642,15 @@ function dynamicCustomRuleWork(
     ? limitedMultiply(
         limitedAdd(
           rules.map((rule) => rule.block_args.length + (rule.subcommand ? 1 : 0)),
-          PARALLEL_ANALYSIS_LIMITS.maxChildAnalyses,
+          LIMITS.parallelChildAnalyses.cap,
         ),
         2 * Math.max(tokens.length, 1),
-        PARALLEL_ANALYSIS_LIMITS.maxChildAnalyses,
+        LIMITS.parallelChildAnalyses.cap,
       )
     : rules.length;
   return {
     childAnalyses: candidateCount,
-    derivedTokens: limitedMultiply(
-      candidateCount,
-      tokens.length,
-      PARALLEL_ANALYSIS_LIMITS.maxDerivedTokens,
-    ),
+    derivedTokens: limitedMultiply(candidateCount, tokens.length, LIMITS.parallelDerivedTokens.cap),
   };
 }
 
@@ -792,6 +782,7 @@ function analyzeParallelRmExpansion(
     analyzeRmMatch(textCommandWords(tokens), {
       environment: context.environment,
       cwd,
+      budget: context.budget,
       originalCwd: context.originalCwd,
       strict: context.strict,
       paranoid: context.paranoidRm,
@@ -843,28 +834,24 @@ function appendedTokenJobWork(
   tokens: readonly string[],
   jobs: readonly ParallelJob[],
 ): ParallelAnalysisReservation {
-  if (jobs.length > PARALLEL_ANALYSIS_LIMITS.maxChildAnalyses) {
+  if (jobs.length > LIMITS.parallelChildAnalyses.cap) {
     return { childAnalyses: jobs.length };
   }
   return {
     childAnalyses: jobs.length,
     derivedTokens: limitedAdd(
       jobs.map((job) => tokens.length + job.length),
-      PARALLEL_ANALYSIS_LIMITS.maxDerivedTokens,
+      LIMITS.parallelDerivedTokens.cap,
     ),
     derivedBytes: limitedAdd(
       [
-        limitedMultiply(
-          sumUtf8Bytes(tokens),
-          jobs.length,
-          PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes,
-        ),
+        limitedMultiply(sumUtf8Bytes(tokens), jobs.length, LIMITS.parallelDerivedBytes.cap),
         limitedAdd(
           jobs.map((job) => sumUtf8Bytes(job)),
-          PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes,
+          LIMITS.parallelDerivedBytes.cap,
         ),
       ],
-      PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes,
+      LIMITS.parallelDerivedBytes.cap,
     ),
   };
 }
@@ -881,15 +868,15 @@ function expandedTokenJobWork(
   jobs: readonly ParallelJob[],
   placeholderKind: PlaceholderKind,
 ): ParallelAnalysisReservation {
-  if (jobs.length > PARALLEL_ANALYSIS_LIMITS.maxChildAnalyses) {
+  if (jobs.length > LIMITS.parallelChildAnalyses.cap) {
     return { childAnalyses: jobs.length };
   }
   const derivedTokens = limitedMultiply(
     tokens.length,
     jobs.length,
-    PARALLEL_ANALYSIS_LIMITS.maxDerivedTokens,
+    LIMITS.parallelDerivedTokens.cap,
   );
-  if (derivedTokens > PARALLEL_ANALYSIS_LIMITS.maxDerivedTokens) {
+  if (derivedTokens > LIMITS.parallelDerivedTokens.cap) {
     return { childAnalyses: jobs.length, derivedTokens };
   }
   const stats = combineReplacementStats(
@@ -898,16 +885,16 @@ function expandedTokenJobWork(
   const placeholderReplacements = limitedMultiply(
     stats.occurrences,
     jobs.length,
-    PARALLEL_ANALYSIS_LIMITS.maxPlaceholderReplacements,
+    LIMITS.parallelPlaceholderReplacements.cap,
   );
-  if (placeholderReplacements > PARALLEL_ANALYSIS_LIMITS.maxPlaceholderReplacements) {
+  if (placeholderReplacements > LIMITS.parallelPlaceholderReplacements.cap) {
     return { childAnalyses: jobs.length, derivedTokens, placeholderReplacements };
   }
   if (expandedJobBytesExceedLimit(stats, jobs, placeholderReplacements)) {
     return {
       childAnalyses: jobs.length,
       derivedTokens,
-      derivedBytes: PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes + 1,
+      derivedBytes: LIMITS.parallelDerivedBytes.cap + 1,
       placeholderReplacements,
     };
   }
@@ -915,7 +902,7 @@ function expandedTokenJobWork(
     placeholderKind === 'generic' ? replaceParallelJobPlaceholder : replaceParallelRmJobPlaceholder;
   const derivedBytes = limitedAdd(
     jobs.map((job) => sumUtf8Bytes(tokens.map((token) => replace(token, job)))),
-    PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes,
+    LIMITS.parallelDerivedBytes.cap,
   );
   return {
     childAnalyses: jobs.length,
@@ -930,7 +917,7 @@ function expandedJobBytesExceedLimit(
   jobs: readonly ParallelJob[],
   placeholderReplacements: number,
 ): boolean {
-  const byteCeiling = PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes + 4 * placeholderReplacements;
+  const byteCeiling = LIMITS.parallelDerivedBytes.cap + 4 * placeholderReplacements;
   return (
     limitedAdd(
       [
@@ -960,9 +947,9 @@ function getReplacementStats(value: string, placeholderKind: PlaceholderKind): R
   let fixedBytes = 0;
   let lastIndex = 0;
   for (const match of matches) {
-    if (occurrences >= PARALLEL_ANALYSIS_LIMITS.maxPlaceholderReplacements) {
+    if (occurrences >= LIMITS.parallelPlaceholderReplacements.cap) {
       return {
-        occurrences: PARALLEL_ANALYSIS_LIMITS.maxPlaceholderReplacements + 1,
+        occurrences: LIMITS.parallelPlaceholderReplacements.cap + 1,
         fixedBytes: 0,
       };
     }
@@ -989,7 +976,7 @@ function combineReplacementStats(stats: readonly ReplacementStats[]): Replacemen
   return {
     occurrences: limitedAdd(
       stats.map((value) => value.occurrences),
-      PARALLEL_ANALYSIS_LIMITS.maxPlaceholderReplacements,
+      LIMITS.parallelPlaceholderReplacements.cap,
     ),
     fixedBytes: limitedAdd(
       stats.map((value) => value.fixedBytes),
@@ -998,10 +985,7 @@ function combineReplacementStats(stats: readonly ReplacementStats[]): Replacemen
   };
 }
 
-function sumUtf8Bytes(
-  values: readonly string[],
-  limit = PARALLEL_ANALYSIS_LIMITS.maxDerivedBytes,
-): number {
+function sumUtf8Bytes(values: readonly string[], limit = LIMITS.parallelDerivedBytes.cap): number {
   return limitedAdd(values.map(utf8ByteLength), limit);
 }
 
@@ -1312,7 +1296,7 @@ function expandParallelJobs(argumentGroups: readonly (readonly string[])[]): Par
     for (const job of jobs) {
       for (const arg of group) {
         expanded.push([...job, arg]);
-        if (expanded.length > PARALLEL_ANALYSIS_LIMITS.maxChildAnalyses) {
+        if (expanded.length > LIMITS.parallelChildAnalyses.cap) {
           return expanded;
         }
       }

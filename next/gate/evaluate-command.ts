@@ -1,7 +1,7 @@
 import type { Decision } from '@next/core/decision';
 import { projectSegmentWords } from '@next/core/shell/traversal';
 import type { AnalyzeInput } from '@next/gate/analysis';
-import { analyzeCommandWithProgram } from '@next/gate/analyzer';
+import { analyzeCommandWithProgram, analyzeOrCapBreach } from '@next/gate/analyzer';
 import type { SemanticFactStore } from '@next/gate/facts';
 import { createSemanticFactStore } from '@next/gate/guards/semantic-facts';
 import {
@@ -36,12 +36,19 @@ export function evaluateCommandWithTrace(
     input: command,
     segments: segments.map((words) => [...words]),
   });
-  const decision = analyzeCommandWithProgram(
+  // The analyzer's own caps read back as the denial it produces for them, so the skipped-segment
+  // logic and the terminal are built from the same decision the pipeline reports.
+  const decision = analyzeOrCapBreach(
+    () =>
+      analyzeCommandWithProgram(
+        command,
+        { ...options, analyzePartialProgram: true, trace },
+        program,
+        factStore,
+      ),
     command,
-    { ...options, analyzePartialProgram: true, trace },
-    program,
-    factStore,
-  );
+    trace,
+  ).decision;
   const index = trace.getNextSegmentIndex();
   if (decision && index > 0 && index < segments.length) {
     trace.recordSegment({ type: 'segment-skipped', index, reason: 'prior-segment-blocked' }, index);

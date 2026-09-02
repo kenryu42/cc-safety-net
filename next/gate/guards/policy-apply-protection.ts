@@ -1,4 +1,4 @@
-import { createBudget } from '@next/core/budget';
+import { type Budget, createBudget } from '@next/core/budget';
 import { normalizeProtectedPathCandidate } from '@next/core/paths/canonicalization';
 import { getBasename } from '@next/core/shell/tokens';
 import type { EnvironmentContext } from '@next/gate/analysis';
@@ -17,13 +17,13 @@ type PolicyApplyTarget = Readonly<{ target: string }>;
 export function findPolicyApplyInvocationInSemanticFacts(
   facts: SemanticFacts,
   environment: EnvironmentContext,
+  budget: Budget,
 ): PolicyApplyTarget | null {
   // Only command and unknown routes carry an input candidate, so a file path that
   // happens to read like this invocation never reaches the recognizer.
   const command = getCommandSyntaxFact(facts, 'input-candidate');
   if (!command) return null;
 
-  const budget = createBudget();
   const target = findProtectedPathMutationInCommand(
     command.shell,
     facts.invocation.context.executionCwd,
@@ -56,6 +56,7 @@ export function findPolicyApplyInvocationInCommand(
       ),
     ),
     environment,
+    createBudget(),
   );
 }
 

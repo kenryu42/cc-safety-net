@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createBudget } from '@next/core/budget';
 import {
   findPolicyConfigMutationTargetInSemanticFacts,
   findPolicyConfigMutationTargetInToolInput,
@@ -259,6 +260,7 @@ describe('policy config protection over prepared facts', () => {
             ),
           ),
           paired.next,
+          createBudget(),
         ),
         command,
       ).toStrictEqual(

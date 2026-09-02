@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createBudget } from '@next/core/budget';
 import {
   findPolicyApplyInvocationInCommand,
   findPolicyApplyInvocationInSemanticFacts,
@@ -55,6 +56,7 @@ function factsPair(toolName: string, input: unknown, route: ToolRoute, command: 
       findPolicyApplyInvocationInSemanticFacts(
         createSemanticFacts(createToolInvocation(toolName, input, route, context, command)),
         environments.next,
+        createBudget(),
       ),
     ),
     shipped: describeOutcome(() =>

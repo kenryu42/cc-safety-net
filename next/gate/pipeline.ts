@@ -1,4 +1,4 @@
-import { AnalysisLimit } from '@next/core/budget';
+import { type AnalysisErrorCode, AnalysisLimit, createBudget } from '@next/core/budget';
 import type { Decision } from '@next/core/decision';
 import type { ProtectedGitMetadata } from '@next/core/git/metadata';
 import { getCCSafetyNetEnvModes } from '@next/core/policy/env';
@@ -6,7 +6,7 @@ import { loadPolicySnapshot, type PolicySnapshotOptions } from '@next/core/polic
 import type { EffectiveSafetyLevel, PolicySnapshot } from '@next/core/policy/types';
 import { getCommandFromToolInput, ToolInputLimitError } from '@next/core/tool-input';
 import type { AnalyzeInput, EnvironmentContext } from '@next/gate/analysis';
-import { analyzeCommandWithProgram } from '@next/gate/analyzer';
+import { analyzeCommandWithProgram, analyzeOrCapBreach } from '@next/gate/analyzer';
 import {
   REASON_COMMAND_ANALYSIS_LIMIT,
   REASON_RECURSION_LIMIT,
@@ -38,6 +38,7 @@ import {
   findSensitiveTargetInSemanticFacts,
   REASON_SECRET_PROTECTION,
 } from '@next/gate/secret/secret-protection';
+import type { CommandTraceContext } from '@next/gate/trace';
 
 export type GuardStage = AuditFailureStage;
 
@@ -56,6 +57,11 @@ export type GuardEvaluation = {
    * diagnostic surfaces can relay all of it.
    */
   configFallback?: { reason: string };
+  /**
+   * The audit class of the analysis limit this denial reports, set only where the pipeline
+   * mapped an analyzer-cap breach to the denial the analyzer produces for it.
+   */
+  errorCode?: AnalysisErrorCode;
 };
 
 export type GuardDependencies = {
@@ -80,6 +86,8 @@ export type GuardOptions = {
   policyOptions?: Omit<PolicySnapshotOptions, 'cwd'>;
   dependencies?: Partial<GuardDependencies>;
   factParserDependencies?: Partial<FactParserDependencies>;
+  /** Passive recorder for `explain`; decisions never consult it. */
+  trace?: CommandTraceContext;
 };
 
 export class GuardEvaluationError extends Error {
@@ -139,6 +147,9 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
       },
     };
   }
+  // One Budget for the whole evaluation: every stage after the structural returns counts its
+  // path work on it, so the caps hold over the call rather than per guard.
+  const budget = createBudget();
   const protectedGitMetadata = callDependency('policy-protection', command, () =>
     dependencies.resolveGitMetadata(
       [invocation.context.executionCwd, invocation.context.configCwd],
@@ -146,7 +157,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     ),
   );
   const policyTarget = callDependency('policy-protection', command, () =>
-    dependencies.findPolicyMutation(facts, options.environment),
+    dependencies.findPolicyMutation(facts, options.environment, budget),
   );
   if (policyTarget) {
     const displayCommand = command ?? policyTarget.target;
@@ -162,7 +173,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   }
 
   const policyApplyTarget = callDependency('policy-protection', command, () =>
-    findPolicyApplyInvocationInSemanticFacts(facts, options.environment),
+    findPolicyApplyInvocationInSemanticFacts(facts, options.environment, budget),
   );
   if (policyApplyTarget) {
     const displayCommand = command ?? policyApplyTarget.target;
@@ -178,7 +189,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   }
 
   const gitMetadataTarget = callDependency('policy-protection', command, () =>
-    dependencies.findGitMetadataMutation(facts, protectedGitMetadata, options.environment),
+    dependencies.findGitMetadataMutation(facts, protectedGitMetadata, options.environment, budget),
   );
   if (gitMetadataTarget) {
     const displayCommand = command ?? gitMetadataTarget.target;
@@ -208,9 +219,13 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     policy.secretProtection.enabled === false
       ? null
       : callDependency('secret-protection', command, () =>
-          dependencies.findSensitiveTarget(facts, policy.secretProtection, options.environment, {
-            strict: isCommandInvocation(invocation) ? modes.strict : undefined,
-          }),
+          dependencies.findSensitiveTarget(
+            facts,
+            policy.secretProtection,
+            options.environment,
+            budget,
+            { strict: isCommandInvocation(invocation) ? modes.strict : undefined },
+          ),
         );
   if (secretTarget) {
     const displayCommand = command ?? secretTarget.target;
@@ -238,26 +253,44 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     };
   }
 
-  const decision = callDependency('command-analysis', command, () => {
-    return dependencies.analyzeCommand(
+  // A cap the analyzer owns is a documented limit the command crossed: it answers with the
+  // analyzer's own denial and carries the audit class. Everything else still fails closed.
+  const analysis = callDependency('command-analysis', command, () =>
+    analyzeOrCapBreach(
+      () =>
+        dependencies.analyzeCommand(
+          invocation.command as string,
+          {
+            cwd: invocation.context.executionCwd,
+            shell: invocation.route.shell,
+            policySnapshot: snapshot,
+            environment: options.environment,
+            protectedGitMetadata,
+            effectiveCapabilities: modes.capabilities,
+            strict: modes.strict,
+            paranoidRm: modes.paranoidRm,
+            paranoidInterpreters: modes.paranoidInterpreters,
+            worktreeMode: modes.worktreeMode,
+            budget,
+            // Only when a caller asked for one: the analysis options are otherwise the exact
+            // set the shipped pipeline hands the analyzer.
+            ...(options.trace ? { trace: options.trace } : {}),
+          },
+          getDeclaredCommandProgram(facts),
+          facts.store,
+        ),
       invocation.command as string,
-      {
-        cwd: invocation.context.executionCwd,
-        shell: invocation.route.shell,
-        policySnapshot: snapshot,
-        environment: options.environment,
-        protectedGitMetadata,
-        effectiveCapabilities: modes.capabilities,
-        strict: modes.strict,
-        paranoidRm: modes.paranoidRm,
-        paranoidInterpreters: modes.paranoidInterpreters,
-        worktreeMode: modes.worktreeMode,
-      },
-      getDeclaredCommandProgram(facts),
-      facts.store,
-    );
-  });
-  if (decision) return { stage: 'command-analysis', ...reported, decision };
+      options.trace,
+    ),
+  );
+  if (analysis.decision) {
+    return {
+      stage: 'command-analysis',
+      ...reported,
+      ...('errorCode' in analysis ? { errorCode: analysis.errorCode } : {}),
+      decision: analysis.decision,
+    };
+  }
   return { stage: 'command-analysis', ...reported, decision: { kind: 'allow' } };
 }
 

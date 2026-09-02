@@ -180,19 +180,34 @@ describe('evaluateGuard differential over the corpora', () => {
     });
     expect(rows.length).toBeGreaterThan(15);
     for (const row of rows) {
-      expectSameOutcome(
-        row.name,
-        invocation(
-          row.toolName,
-          row.input,
-          row.route,
-          row.cwd === 'repo' ? project : plain,
-          row.route.kind === 'command' && typeof row.input === 'object' && row.input !== null
-            ? ((row.input as { command?: string }).command ?? null)
-            : null,
-        ),
-        policySnapshot(row.level ? { safety: { level: row.level } } : {}),
+      const call = invocation(
+        row.toolName,
+        row.input,
+        row.route,
+        row.cwd === 'repo' ? project : plain,
+        row.route.kind === 'command' && typeof row.input === 'object' && row.input !== null
+          ? ((row.input as { command?: string }).command ?? null)
+          : null,
       );
+      const snapshot = policySnapshot(row.level ? { safety: { level: row.level } } : {});
+      if (!row.knownGap) {
+        expectSameOutcome(row.name, call, snapshot);
+        continue;
+      }
+      // The port closes this gap by design: the shared guard walk resolves the row's relative
+      // operand against the cd-tracked cwd, so the two implementations must NOT agree here.
+      const ported = portedOutcome(call, snapshot);
+      const shipped = shippedOutcome(call, snapshot);
+      expect(stageOf(ported), row.name).toBe(
+        row.expected.kind === 'block' ? row.expected.stage : undefined,
+      );
+      expect(
+        ported.kind === 'evaluation' && ported.evaluation.decision.kind === 'deny'
+          ? ported.evaluation.decision.ruleId
+          : undefined,
+        row.name,
+      ).toBe(row.expected.kind === 'block' ? row.expected.ruleId : undefined);
+      expect(ported).not.toStrictEqual(shipped);
     }
   });
 });
@@ -424,11 +439,14 @@ describe('a failing dependency fails closed the same way', () => {
 describe('the analyzer receives the same input from both pipelines', () => {
   test('one call, one set of analysis options', () => {
     const captured: Record<string, unknown> = {};
-    const capture = (side: string) => (command: string, options: { environment: unknown }) => {
-      const { environment: _processState, ...rest } = options;
-      captured[side] = { command, options: rest };
-      return null;
-    };
+    const budgets: Record<string, unknown> = {};
+    const capture =
+      (side: string) => (command: string, options: { environment: unknown; budget?: unknown }) => {
+        const { environment: _processState, budget, ...rest } = options;
+        captured[side] = { command, options: rest };
+        budgets[side] = budget;
+        return null;
+      };
     shippedEvaluateGuard(bash('rm -rf build', project), {
       dependencies: {
         loadPolicySnapshot: () => readySnapshot,
@@ -446,6 +464,14 @@ describe('the analyzer receives the same input from both pipelines', () => {
     expect(captured.ported).toMatchObject({
       command: 'rm -rf build',
       options: { cwd: project, shell: 'posix', strict: false, worktreeMode: false },
+    });
+    // The one field the shipped options cannot carry: the port hands the analyzer the Budget the
+    // evaluation created, so the analyzer counts on the same one the guards already charged.
+    expect(budgets.shipped).toBeUndefined();
+    expect(budgets.ported).toMatchObject({
+      counters: expect.any(Map),
+      resolvedPaths: expect.any(Map),
+      charge: expect.any(Function),
     });
   });
 });

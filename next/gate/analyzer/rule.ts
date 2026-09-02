@@ -1,3 +1,4 @@
+import type { Budget } from '@next/core/budget';
 import { hasUnsafeTmpdirWordSplitting, isTmpdirValueTrusted } from '@next/core/paths/tmpdir';
 import type { CommandAnalysisPolicy } from '@next/core/policy/types';
 import type { CommandProgram, CommandView, CommandWord } from '@next/core/shell/model';
@@ -8,11 +9,9 @@ import type {
   DestructiveCommandRuleMatch,
 } from '@next/gate/analysis';
 import type { NestedCommandAnalyzeContext } from './child-command';
-import type { DerivedCommandWorkBudget } from './derived-command-budget';
 import { analyzeFindMatch } from './find';
 import { analyzeGitMatch } from './git';
 import { analyzeParallel } from './parallel';
-import type { ParallelAnalysisBudget } from './parallel-budget';
 import { analyzeRmMatch } from './rm';
 import { analyzeXargs } from './xargs';
 
@@ -24,8 +23,7 @@ export type InternalOptions = AnalyzeInput & {
     overrides?: AnalyzeNestedOverrides,
   ) => Omit<AnalyzeResult, 'segment'> | null;
   commandView?: CommandView;
-  derivedCommandWorkBudget: DerivedCommandWorkBudget;
-  parallelBudget: ParallelAnalysisBudget;
+  budget: Budget;
   scanWork?: { units: number };
   hasPipelineInput?: boolean;
   literalShellInput?: string;
@@ -88,6 +86,7 @@ export const ANALYZER_RULES: readonly AnalyzerRule[] = [
         ),
         protectedGitMetadata: context.options.protectedGitMetadata,
         policy: context.options.policy,
+        budget: context.options.budget,
       }),
   },
   {
@@ -112,7 +111,7 @@ export const ANALYZER_RULES: readonly AnalyzerRule[] = [
           context.options.environment,
         ),
         protectedGitMetadata: context.options.protectedGitMetadata,
-        derivedCommandWorkBudget: context.options.derivedCommandWorkBudget,
+        budget: context.options.budget,
         envAssignments: context.envAssignments,
         policy: context.options.policy,
         analyzeTokens: context.analyzeChildTokens,
@@ -134,7 +133,6 @@ export const ANALYZER_RULES: readonly AnalyzerRule[] = [
     analyze: (context) =>
       analyzeParallel(context.words, {
         ...nestedCommandAnalyzeContext(context),
-        budget: context.options.parallelBudget,
         analyzeNested: (command, overrides) =>
           matchFromBlockResult(context.options.analyzeNested(command, overrides)),
       }),
@@ -151,7 +149,7 @@ function nestedCommandAnalyzeContext(context: AnalyzerRuleContext): NestedComman
     paranoidInterpreters: context.options.paranoidInterpreters,
     allowTmpdirVar: context.allowTmpdirVar,
     protectedGitMetadata: context.options.protectedGitMetadata,
-    derivedCommandWorkBudget: context.options.derivedCommandWorkBudget,
+    budget: context.options.budget,
     envAssignments: context.envAssignments,
     worktreeMode: context.options.worktreeMode,
     policy: context.options.policy,

@@ -1,5 +1,5 @@
 import { isAbsolute, relative } from 'node:path';
-import { type Budget, createBudget } from '@next/core/budget';
+import type { Budget } from '@next/core/budget';
 import { normalizeProtectedPathCandidate } from '@next/core/paths/canonicalization';
 import { getBasename } from '@next/core/shell/tokens';
 import { isReadOnlyTool } from '@next/core/tool-input';
@@ -24,8 +24,8 @@ export function findGitMetadataMutationTargetInSemanticFacts(
   facts: SemanticFacts,
   metadata: ProtectedGitMetadata | null,
   environment: EnvironmentContext,
+  budget: Budget,
 ): GitMetadataTarget | null {
-  const budget = createBudget();
   const cwd = facts.invocation.context.executionCwd;
   if (!metadata) return null;
 

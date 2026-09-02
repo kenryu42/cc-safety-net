@@ -127,7 +127,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - Effective-capability resolution (`env.ts`), effective destructive-rule state, the per-match filter and `resolveCommandAnalysisContext` live under `next/core/policy/`; Phase 3 imports them and `isInterpreterCommand` from there, and appends the remaining analyzer vocabulary to `next/core/rules/constants.ts` (Phase 2 added `COMMAND_PATTERN`, `MAX_REASON_LENGTH`, `SHELL_WRAPPERS`, `INTERPRETERS`, `PYTHON_INTERPRETER_PATTERN`, `AWK_INTERPRETERS`).
 - Carried: `src/policy/diff.ts` and the GUI read/write/preview/repair helpers (Phases 7 and 9); `getRulesConfigRuntimeErrorsForConfig`, the rule.json and starter-rulebook writers, `sources.ts`, the sync budget, and the legacy config validators (Phase 8); lock and legacy path helpers (Phases 7/8); Phase 4 calls `readRetentionDays(environment, options)` at prune time.
 
-### Phase 3 — Gate (XL) `[~]`
+### Phase 3 — Gate (XL) `[x]`
 
 - `next/gate/`: intake (input caps, route table, three containment modes), the decision pipeline
   with a single catch boundary, the guard walk (`cd` and simple-assignment tracking) shared by
@@ -154,6 +154,30 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   `gitMetadata(policyDir)` union if the pipeline stage did not land it; `BUILTIN_ANALYZED_COMMANDS`
   duplicated between core and gate. Intake keeps two `statSync`/`accessSync` reads as the host
   boundary, and `process.platform` stays ambient as in `src/`.
+- 3b landed (the design changes): the secret matcher walks with the scanner's exported
+  `applyShellState`, so its candidates carry the tracked cwd while the evidence stays the operand;
+  the walk tracks `cd` only (`cd -`, `pushd`/`popd`, subshell scoping and interpreter bodies are
+  pinned as limits in `tests/next/gate/secret-walk.test.ts`; a subshell `cd` is tracked as leaking,
+  as the scanner already does for the other three guards) and the metadata-only relaxation stays
+  standalone-only. The known-gap row runs plain against `next/`; the harvested, secret-module and
+  pipeline-corpus differentials classify the tracked-cwd divergence with one predicate
+  (`deniedByTrackedCwd`) and pin the accepted inputs exactly (one input, `cd ~ && cat .ssh/config`).
+- Budget: one `Budget` per `evaluateGuard`, threaded to the four guards, the secret matcher, the
+  analyzer and its derived children (spy-tested per path); analyzer caps throw `AnalysisLimit{kind}`
+  and `analyzeOrCapBreach` in `next/gate/analyzer/index.ts` maps the nine analyzer kinds to `src`'s
+  wording with `GuardEvaluation.errorCode` (path-canonicalization kinds still fail closed);
+  per-scope caps compare against `LIMITS` rather than charge; recursion depth stays a returned
+  denial; `derivedCommandShape` added; no harvested outcome changed by the shared budget.
+- Trace: `GuardOptions.trace` reaches the analyzer and the breach mapping; the guards record no
+  steps by design; `next/gate/evaluate-command.ts` stays the analyzer-level trace oracle for `src`
+  parity and is deleted at cutover with its differential tests; Phase 7 explain records `parse` and
+  `segment-skipped` itself and runs `evaluateGuard` with the real dialect.
+- Carried: subshell-scoped and `pushd`/`popd` tracking for the shared walk (a `src`-divergent
+  scanner change for all four guards); `errorCode` on failed-closed evaluations for Phase 4's
+  audit classification; the dispatch, peel and text-detector consolidations (no defect
+  demonstrated in 3b); the dead segment-scoped branch of the breach mapping (a verbatim carry of
+  `src`); ten `src` tests that fail only as root and one `next/` differential that needs an
+  explicit per-test timeout on slow runners.
 
 ### Phase 4 — Audit (S) `[ ]`
 

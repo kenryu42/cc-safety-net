@@ -130,7 +130,14 @@ export function extractMvOperandPaths(args: readonly string[]): {
     : { sources: operands.slice(0, -1), destination: operands.at(-1) ?? null };
 }
 
-function applyShellState(
+/**
+ * One segment's effect on the tracked shell state: an assignment-only segment extends the
+ * variables, a `cd` after wrapper stripping moves the cwd through `normalizeCwd`, and a bare `cd`
+ * or `cd -` leaves it where it was. Shared by the protected-path guards through
+ * `findProtectedPathMutationInCommand` and by the secret matcher's own walk, so a relative operand
+ * resolves against the same directory in both.
+ */
+export function applyShellState(
   segment: readonly string[],
   state: ProtectedPathShellState,
   environment: EnvironmentContext,

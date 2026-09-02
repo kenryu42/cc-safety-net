@@ -1,8 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { AnalysisLimit, type CountedKind, createBudget, LIMITS } from '@next/core/budget';
-import { DERIVED_COMMAND_WORK_LIMITS } from '@/analyzer/derived-command-budget';
+import {
+  DERIVED_COMMAND_WORK_LIMITS,
+  REASON_DERIVED_COMMAND_WORK_LIMIT,
+} from '@/analyzer/derived-command-budget';
 import { MAX_TRACKED_HEREDOC_FILES } from '@/analyzer/heredoc-files';
-import { PARALLEL_ANALYSIS_LIMITS } from '@/analyzer/parallel-budget';
+import {
+  PARALLEL_ANALYSIS_LIMITS,
+  REASON_PARALLEL_ANALYSIS_LIMIT,
+} from '@/analyzer/parallel-budget';
 import { PATH_CANONICALIZATION_LIMITS } from '@/analyzer/path-canonicalization';
 import {
   REASON_COMMAND_ANALYSIS_LIMIT,
@@ -74,6 +80,10 @@ describe('analysis budget', () => {
 
   test('carries a kind for the refusals without a numeric cap', () => {
     expect(new AnalysisLimit('structuralShellSyntax').message).toBe(REASON_COMMAND_ANALYSIS_LIMIT);
+    expect(new AnalysisLimit('derivedCommandShape').message).toBe(
+      REASON_DERIVED_COMMAND_WORK_LIMIT,
+    );
+    expect(new AnalysisLimit('derivedCommandShape').kind).toBe('derivedCommandShape');
     expect(new AnalysisLimit('toolInputShape').kind).toBe('toolInputShape');
     expect(new AnalysisLimit('toolInputShape').name).toBe('AnalysisLimit');
   });
@@ -104,15 +114,55 @@ describe('analysis budget', () => {
       TOOL_INPUT_LIMITS.maxAggregateStringBytes,
     );
 
-    // Design §4.8: two wordings plus recursion depth. Every kind counted inside the gate reports
-    // the command-analysis wording; the intake and tool-input kinds fail closed.
-    for (const [kind, limit] of Object.entries(LIMITS)) {
-      if (kind === 'recursionDepth' || limit.errorCode === 'tool-input-limit') continue;
-      expect(limit.reason).toBe(REASON_COMMAND_ANALYSIS_LIMIT);
+    // The wording each kind reports is the sentence the shipped gate produces for it: the two
+    // analyzer sentences for the caps the analyzer answers itself, the command-analysis sentence
+    // for the path and structural kinds, and the fail-closed sentence for the intake kinds.
+    const derivedKinds = [
+      'derivedTokens',
+      'trackedHeredocFiles',
+      'controlFlowStates',
+      'wrapperPeelIterations',
+      'derivedCommandShape',
+    ] as const;
+    const parallelKinds = [
+      'parallelChildAnalyses',
+      'parallelDerivedTokens',
+      'parallelDerivedBytes',
+      'parallelPlaceholderReplacements',
+    ] as const;
+    const commandAnalysisKinds = [
+      'realpathAttempts',
+      'processedCandidateBytes',
+      'pathEnvironmentExpansion',
+      'structuralShellSyntax',
+    ] as const;
+    for (const kind of derivedKinds) {
+      expect(LIMITS[kind].reason).toBe(REASON_DERIVED_COMMAND_WORK_LIMIT);
+    }
+    for (const kind of parallelKinds) {
+      expect(LIMITS[kind].reason).toBe(REASON_PARALLEL_ANALYSIS_LIMIT);
+    }
+    for (const kind of commandAnalysisKinds) {
+      expect(LIMITS[kind].reason).toBe(REASON_COMMAND_ANALYSIS_LIMIT);
     }
     expect(LIMITS.recursionDepth.reason).toBe(REASON_RECURSION_LIMIT);
     expect(LIMITS.toolInputShape.reason).toBe(REASON_SAFETY_NET_FAILED_CLOSED);
     expect(LIMITS.hookInputBytes.cap).toBe(8 * 1024 * 1024);
+
+    // The lists above are fixed, so a kind added to the table later could slip past the wording
+    // assertion unnoticed; together with the recursion denial and the intake kinds they account
+    // for every entry, and a new one lands in none of them.
+    expect(
+      [
+        ...derivedKinds,
+        ...parallelKinds,
+        ...commandAnalysisKinds,
+        'recursionDepth',
+        ...Object.entries(LIMITS)
+          .filter(([, limit]) => limit.errorCode === 'tool-input-limit')
+          .map(([kind]) => kind),
+      ].sort(),
+    ).toStrictEqual(Object.keys(LIMITS).sort());
   });
 
   test('maps every kind to a shipped audit error class', () => {

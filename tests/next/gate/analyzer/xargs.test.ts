@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { createBudget } from '@next/core/budget';
 import type { PolicyRule } from '@next/core/rules/types';
 import { textCommandWords } from '@next/gate/analyzer/command-words';
-import { createDerivedCommandWorkBudget } from '@next/gate/analyzer/derived-command-budget';
 import {
   analyzeXargs,
   extractXargsChildCommandWithInfo,
@@ -121,7 +121,7 @@ function runBothXargs(tokens: readonly string[], setting: XargsSetting) {
         analyzeXargs(textCommandWords(tokens), {
           ...shared,
           analyzeNested: recorder(nextLog),
-          derivedCommandWorkBudget: createDerivedCommandWorkBudget(),
+          budget: createBudget(),
           environment: paired.next,
         }),
       ),

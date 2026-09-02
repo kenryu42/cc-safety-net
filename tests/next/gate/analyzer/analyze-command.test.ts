@@ -5,9 +5,11 @@ import { join } from 'node:path';
 import { createTestEnvironment, processPathResolver as portedPaths } from '@next/core/environment';
 import { createPolicySnapshot as createPortedSnapshot } from '@next/core/policy/snapshot';
 import type { EffectiveSafetyCapabilities } from '@next/core/policy/types';
-import { analyzeCommand as portedAnalyzeCommand } from '@next/gate/analyzer';
-import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@next/gate/analyzer/derived-command-budget';
-import { REASON_RECURSION_LIMIT } from '@next/gate/analyzer/reasons';
+import { analyzeOrCapBreach, analyzeCommand as portedAnalyzeCommand } from '@next/gate/analyzer';
+import {
+  REASON_DERIVED_COMMAND_WORK_LIMIT,
+  REASON_RECURSION_LIMIT,
+} from '@next/gate/analyzer/reasons';
 import { analyzeCommand as shippedAnalyzeCommand } from '@/analyzer';
 import { resolveProtectedGitMetadata } from '@/guards/git-metadata-protection';
 import { processPathResolver as shippedPaths } from '@/ir/environment';
@@ -135,15 +137,23 @@ function shippedDecision(command: string, analysis: AnalysisMode) {
   });
 }
 
+/**
+ * The port throws the caps the shipped analyzer returns a denial for, and the pipeline maps them
+ * back; this differential compares decisions, so it maps them the same way and rethrows the rest.
+ */
 function portedDecision(command: string, analysis: AnalysisMode) {
-  return portedAnalyzeCommand(command, {
-    policySnapshot: portedSnapshot,
-    effectiveCapabilities: analysis.capabilities,
-    environment: portedEnvironment,
-    protectedGitMetadata: gitMetadata,
-    cwd: project,
-    ...analysis.options,
-  });
+  return analyzeOrCapBreach(
+    () =>
+      portedAnalyzeCommand(command, {
+        policySnapshot: portedSnapshot,
+        effectiveCapabilities: analysis.capabilities,
+        environment: portedEnvironment,
+        protectedGitMetadata: gitMetadata,
+        cwd: project,
+        ...analysis.options,
+      }),
+    command,
+  ).decision;
 }
 
 /** Compares one command, naming it in the failure so a diff points at the input. */

@@ -1,3 +1,4 @@
+import type { Budget } from '@next/core/budget';
 import { hasUnsafeTmpdirWordSplitting, isTmpdirValueTrusted } from '@next/core/paths/tmpdir';
 import {
   type DestructiveCommandRulePolicy,
@@ -18,7 +19,6 @@ import type {
 } from '@next/gate/analysis';
 import { analyzeAwkSystemCallMatch } from './awk';
 import { textCommandWords } from './command-words';
-import type { DerivedCommandWorkBudget } from './derived-command-budget';
 import { analyzeFindMatch } from './find';
 import { analyzeGitMatch } from './git';
 import {
@@ -42,7 +42,7 @@ export interface ChildCommandAnalysisContext {
   /** Process state nested analysis reads instead of touching env, home or the filesystem. */
   environment: EnvironmentContext;
   cwd: string | undefined;
-  derivedCommandWorkBudget?: DerivedCommandWorkBudget;
+  budget?: Budget;
   originalCwd: string | undefined;
   strict?: boolean;
   paranoidRm: boolean | undefined;
@@ -202,6 +202,7 @@ export function analyzeChildCommandMatch(
       analyzeRmMatch(textCommandWords(tokens), {
         environment: context.environment,
         cwd: context.cwd,
+        budget: context.budget,
         originalCwd: context.originalCwd,
         strict: context.strict,
         paranoid: context.paranoidRm,
@@ -229,17 +230,8 @@ export function analyzeChildCommandMatch(
     return (
       analyzeFindMatch(textCommandWords(tokens), {
         ...context,
-        derivedCommandWorkBudget: context.derivedCommandWorkBudget,
         analyzeTokens: (nestedTokens, cwd) =>
-          analyzeChildCommandMatch(
-            nestedTokens,
-            {
-              ...context,
-              cwd: cwd ?? undefined,
-              derivedCommandWorkBudget: context.derivedCommandWorkBudget,
-            },
-            options,
-          ),
+          analyzeChildCommandMatch(nestedTokens, { ...context, cwd: cwd ?? undefined }, options),
       }) ??
       checkPolicyRuleMatch(tokens, context.policy?.rules ?? []) ??
       getDynamicSourceReason(options, context)

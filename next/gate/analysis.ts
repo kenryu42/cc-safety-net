@@ -1,3 +1,4 @@
+import type { Budget } from '@next/core/budget';
 import type { BlockIntent } from '@next/core/decision';
 import type { Environment } from '@next/core/environment';
 import type { ProtectedGitMetadata } from '@next/core/git/metadata';
@@ -64,6 +65,8 @@ export type AnalyzeInput = AnalyzeOptions & {
   effectiveCapabilities: EffectiveSafetyCapabilities;
   environment: EnvironmentContext;
   protectedGitMetadata: ProtectedGitMetadata | null;
+  /** The gate's budget for this evaluation; the entry creates one only for callers outside the pipeline. */
+  budget?: Budget;
 };
 
 export interface AnalyzeNestedOverrides {

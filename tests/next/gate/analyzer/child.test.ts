@@ -128,6 +128,23 @@ function readableCandidate(candidate: {
   };
 }
 
+/**
+ * An outcome without the exception class, which the two implementations no longer share: the port
+ * throws the one `AnalysisLimit` for every cap it enforces where the shipped normalizer throws its
+ * own class. The port's class is pinned on the spot, so only the wording and the value are left to
+ * compare.
+ */
+function portedOutcome<T>(run: () => T, label: string) {
+  const outcome = describeOutcome(run);
+  if (!outcome.ok) expect(outcome.error.name, label).toBe('AnalysisLimit');
+  return outcome.ok ? outcome : { ok: outcome.ok, message: outcome.error.message };
+}
+
+function shippedOutcome<T>(run: () => T) {
+  const outcome = describeOutcome(run);
+  return outcome.ok ? outcome : { ok: outcome.ok, message: outcome.error.message };
+}
+
 describe('child command normalization', () => {
   test('yields the same candidates as the shipped normalizer', () => {
     for (const useEnv of [false, true]) {
@@ -135,20 +152,24 @@ describe('child command normalization', () => {
       for (const tokens of WRAPPED_COMMANDS) {
         const label = `${tokens.join(' ')} (env: ${useEnv})`;
         expect(
-          describeOutcome(() =>
-            [...normalizeChildCommands(tokens, context.next)].map(readableCandidate),
+          portedOutcome(
+            () => [...normalizeChildCommands(tokens, context.next)].map(readableCandidate),
+            label,
           ),
           label,
         ).toStrictEqual(
-          describeOutcome(() =>
+          shippedOutcome(() =>
             [...shippedNormalizeAll(tokens, context.shipped)].map(readableCandidate),
           ),
         );
         expect(
-          describeOutcome(() => readableCandidate(normalizeChildCommand(tokens, context.next))),
+          portedOutcome(
+            () => readableCandidate(normalizeChildCommand(tokens, context.next)),
+            label,
+          ),
           label,
         ).toStrictEqual(
-          describeOutcome(() => readableCandidate(shippedNormalizeOne(tokens, context.shipped))),
+          shippedOutcome(() => readableCandidate(shippedNormalizeOne(tokens, context.shipped))),
         );
       }
     }

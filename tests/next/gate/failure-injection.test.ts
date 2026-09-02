@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import { AnalysisLimit, LIMITS, type LimitKind } from '@next/core/budget';
 import { createProcessEnvironment } from '@next/core/environment';
 import { analyzeCommandWithProgram as portedAnalyzeCommand } from '@next/gate/analyzer';
-import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@next/gate/analyzer/derived-command-budget';
-import { REASON_PARALLEL_ANALYSIS_LIMIT } from '@next/gate/analyzer/parallel-budget';
-import { REASON_COMMAND_ANALYSIS_LIMIT, REASON_RECURSION_LIMIT } from '@next/gate/analyzer/reasons';
+import {
+  REASON_COMMAND_ANALYSIS_LIMIT,
+  REASON_DERIVED_COMMAND_WORK_LIMIT,
+  REASON_PARALLEL_ANALYSIS_LIMIT,
+  REASON_RECURSION_LIMIT,
+} from '@next/gate/analyzer/reasons';
 import { outputFailedClosed as portedOutputFailedClosed } from '@next/gate/intake';
 import {
   type GuardDependencies as PortedDependencies,
@@ -347,31 +350,31 @@ describe('every cap a command can still reach', () => {
         kind: 'wrapperPeelIterations',
         reported: null,
         table: 'structural-shell-syntax-limit',
-        wordingMatchesTable: false,
+        wordingMatchesTable: true,
       },
       {
         kind: 'trackedHeredocFiles',
         reported: null,
         table: 'structural-shell-syntax-limit',
-        wordingMatchesTable: false,
+        wordingMatchesTable: true,
       },
       {
         kind: 'controlFlowStates',
         reported: null,
         table: 'structural-shell-syntax-limit',
-        wordingMatchesTable: false,
+        wordingMatchesTable: true,
       },
       {
         kind: 'derivedTokens',
         reported: null,
         table: 'structural-shell-syntax-limit',
-        wordingMatchesTable: false,
+        wordingMatchesTable: true,
       },
       {
         kind: 'parallelChildAnalyses',
         reported: null,
         table: 'structural-shell-syntax-limit',
-        wordingMatchesTable: false,
+        wordingMatchesTable: true,
       },
       {
         kind: 'pathEnvironmentExpansion',

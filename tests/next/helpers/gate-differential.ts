@@ -2,13 +2,15 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Environment } from '@next/core/environment';
+import { createTestEnvironment, type Environment } from '@next/core/environment';
+import type { EffectivePolicy } from '@next/core/policy/types';
 import { createToolInvocation, type ToolInvocation, type ToolRoute } from '@next/gate/invocation';
 import {
   type GuardEvaluation,
   type GuardDependencies as PortedDependencies,
   evaluateGuard as portedEvaluateGuard,
 } from '@next/gate/pipeline';
+import { findSensitivePathTarget } from '@next/gate/secret/secret-protection';
 import {
   type GuardDependencies as ShippedDependencies,
   evaluateGuard as shippedEvaluateGuard,
@@ -21,6 +23,23 @@ import { writeTree } from './fixture-tree';
  * name, one invocation shape, and one comparable verdict — so they share them here instead of
  * spelling them out three times.
  */
+
+/**
+ * Process state for the trace differentials: a synthetic home over an empty filesystem, so a
+ * recording depends on nothing but the command — no path exists and `realpath` answers null, on
+ * the shipped side as on the ported one.
+ */
+export const SYNTHETIC_ENVIRONMENT = createTestEnvironment({
+  env: new Map([
+    ['HOME', '/home/agent'],
+    ['PATH', '/usr/local/bin:/usr/bin:/bin'],
+    ['SHELL', '/bin/bash'],
+    ['TMPDIR', '/tmp'],
+    ['USER', 'agent'],
+  ]),
+  home: '/home/agent',
+  tmpdir: '/tmp',
+});
 
 /** A plain workspace, a real repository and an empty home under one removable root. */
 export function createGateTree(prefix: string) {
@@ -122,4 +141,38 @@ export function portedVerdict(
   dependencies: Partial<PortedDependencies>,
 ): GateVerdict {
   return gateVerdict(() => portedEvaluateGuard(call, { environment, dependencies }));
+}
+
+/**
+ * Names the class of the port's one intended divergence from the shipped gate: a `secret.*` denial
+ * of a relative operand that is not sensitive against the execution cwd, in a command containing a
+ * `cd` word. The predicate is deliberately no tighter than that — it does not check that the `cd`
+ * is the one that moved the operand's cwd. What a divergence actually is stays pinned by the exact
+ * inputs harvested.test.ts and secret/secret-protection.test.ts list, and by the contract corpus's
+ * knownGap row that pipeline.test.ts checks by stage and ruleId, so a row this predicate would wave
+ * through still fails unless those pins name it.
+ */
+export function deniedByTrackedCwd(
+  command: string,
+  target: string,
+  ruleId: string | undefined,
+  cwd: string,
+  environment: Environment,
+  config?: EffectivePolicy['secretProtection'],
+): boolean {
+  return (
+    ruleId?.startsWith('secret.') === true &&
+    !/^(?:[/~$]|[A-Za-z]:[\\/]|file:)/i.test(target) &&
+    /(?:^|[\s;&|(){}`])cd(?=\s|$)/.test(command) &&
+    findSensitivePathTarget(
+      [target],
+      cwd,
+      environment,
+      // A resolved snapshot states its path lists as readonly; the matcher's own entry point
+      // takes the configuration shape, so the lists are copied rather than aliased.
+      config === undefined
+        ? undefined
+        : { ...config, denyPaths: [...config.denyPaths], allowPaths: [...config.allowPaths] },
+    ) === null
+  );
 }

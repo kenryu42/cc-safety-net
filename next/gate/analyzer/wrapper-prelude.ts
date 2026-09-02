@@ -1,6 +1,6 @@
 import { isAbsolute, parse as parsePath } from 'node:path';
+import { LIMITS } from '@next/core/budget';
 import { resolveChdirTarget } from '@next/core/paths/chdir';
-import { MAX_STRIP_ITERATIONS } from '@next/core/rules/constants';
 import type { CommandWord } from '@next/core/shell/model';
 import type { EnvironmentContext, PathResolver } from '@next/gate/analysis';
 import { analysisWordText, textCommandWords } from './command-words';
@@ -77,7 +77,7 @@ export function stripWrapperWords(
   const envSplitValues: string[] = [];
   let currentCwd = cwd;
 
-  for (let iteration = 0; iteration < MAX_STRIP_ITERATIONS; iteration++) {
+  for (let iteration = 0; iteration < LIMITS.wrapperPeelIterations.cap; iteration++) {
     const before = wordsText(result);
 
     const stripped = stripEnvAssignmentWords(result);

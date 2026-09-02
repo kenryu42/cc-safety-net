@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir as systemTempDir } from 'node:os';
 import { join } from 'node:path';
+import { type Budget, createBudget } from '@next/core/budget';
 import type { PolicyRule } from '@next/core/rules/types';
 import { textCommandWords } from '@next/gate/analyzer/command-words';
-import { createDerivedCommandWorkBudget } from '@next/gate/analyzer/derived-command-budget';
 import {
   analyzeParallel,
   extractParallelChildStart,
@@ -12,10 +12,7 @@ import {
   REASON_PARALLEL_SHELL,
   replaceParallelPlaceholder,
 } from '@next/gate/analyzer/parallel';
-import {
-  createParallelAnalysisBudget,
-  REASON_PARALLEL_ANALYSIS_LIMIT,
-} from '@next/gate/analyzer/parallel-budget';
+import { REASON_PARALLEL_ANALYSIS_LIMIT } from '@next/gate/analyzer/reasons';
 import { textCommandWords as shippedTextWords } from '@/analyzer/command-words';
 import { createDerivedCommandWorkBudget as shippedDerivedBudget } from '@/analyzer/derived-command-budget';
 import {
@@ -98,13 +95,23 @@ const ROWS: readonly ParallelRow[] = [
   { label: 'command-stream disabled', disabledRule: 'parallel.command-stream-dynamic' },
 ];
 
+/** The four parallel counters of the port's one budget, in the shape the shipped budget carries. */
+function parallelWork(budget: Budget) {
+  return {
+    childAnalyses: budget.counters.get('parallelChildAnalyses') ?? 0,
+    derivedTokens: budget.counters.get('parallelDerivedTokens') ?? 0,
+    derivedBytes: budget.counters.get('parallelDerivedBytes') ?? 0,
+    placeholderReplacements: budget.counters.get('parallelPlaceholderReplacements') ?? 0,
+  };
+}
+
 /**
- * One token list through both analyzers. Each side gets its own parallel budget, derived-command
- * budget and scan counter, so the reserved work and the scanned units are comparable afterwards.
+ * One token list through both analyzers. Each side gets its own budget and scan counter, so the
+ * reserved work and the scanned units are comparable afterwards.
  */
 function bothAnalyzers(tokens: readonly string[], row: ParallelRow) {
   const paired = pairedEnvironments({ HOME: home, ...row.env }, home);
-  const nextBudget = createParallelAnalysisBudget();
+  const nextBudget = createBudget();
   const shippedBudget = shippedParallelBudget();
   const nextScan = { units: 0 };
   const shippedScan = { units: 0 };
@@ -147,7 +154,6 @@ function bothAnalyzers(tokens: readonly string[], row: ParallelRow) {
           ...settings,
           environment: paired.next,
           budget: nextBudget,
-          derivedCommandWorkBudget: createDerivedCommandWorkBudget(),
           scanWork: nextScan,
           analyzeNested: answer(jobsSeenByNext),
         }),
@@ -342,7 +348,7 @@ describe('parallel analysis', () => {
         const label = `${row.label}: ${tokens.join(' ')}`;
         expect(pair.next.match, label).toStrictEqual(pair.shipped.match);
         expect(pair.next.jobs, label).toStrictEqual(pair.shipped.jobs);
-        expect(pair.next.budget, label).toStrictEqual(pair.shipped.budget);
+        expect(parallelWork(pair.next.budget), label).toStrictEqual(pair.shipped.budget);
         expect(pair.next.scan, label).toStrictEqual(pair.shipped.scan);
       }
     }
@@ -401,8 +407,11 @@ describe('parallel analysis', () => {
     const breach = bothAnalyzers(['parallel', 'echo', '{}', ':::', ...overCap], {
       label: 'breach',
     });
-    expect(breach.next.match).toStrictEqual(breach.shipped.match);
     expect(breach.next.match).toStrictEqual({
+      ok: false,
+      error: { name: 'AnalysisLimit', message: REASON_PARALLEL_ANALYSIS_LIMIT },
+    });
+    expect(breach.shipped.match).toStrictEqual({
       ok: false,
       error: { name: 'ParallelAnalysisLimitError', message: REASON_PARALLEL_ANALYSIS_LIMIT },
     });
@@ -411,8 +420,8 @@ describe('parallel analysis', () => {
       label: 'within',
     });
     expect(within.next.match).toStrictEqual({ ok: true, value: null });
-    expect(within.next.budget.childAnalyses).toBe(1000);
-    expect(within.next.budget).toStrictEqual(within.shipped.budget);
+    expect(within.next.budget.counters.get('parallelChildAnalyses')).toBe(1000);
+    expect(parallelWork(within.next.budget)).toStrictEqual(within.shipped.budget);
   });
 
   test('the reason strings are the shipped strings', () => {
@@ -428,7 +437,7 @@ describe('parallel analysis', () => {
         const pair = bothAnalyzers(tokens, { label: 'fuzz', rules: RULES, strict: true });
         expect(pair.next.match, source).toStrictEqual(pair.shipped.match);
         expect(pair.next.jobs, source).toStrictEqual(pair.shipped.jobs);
-        expect(pair.next.budget, source).toStrictEqual(pair.shipped.budget);
+        expect(parallelWork(pair.next.budget), source).toStrictEqual(pair.shipped.budget);
       }
     }
   });

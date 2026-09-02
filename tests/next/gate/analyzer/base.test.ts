@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createBudget } from '@next/core/budget';
 import { processPathResolver } from '@next/core/environment';
 import { parseCommand } from '@next/core/shell/parse';
 import { projectCommandViews } from '@next/core/shell/traversal';
@@ -12,10 +13,6 @@ import {
   textCommandWords,
 } from '@next/gate/analyzer/command-words';
 import { isDataOnlyQuotedAssignment } from '@next/gate/analyzer/deferred-assignment';
-import {
-  createDerivedCommandWorkBudget,
-  reserveDerivedCommandTokens,
-} from '@next/gate/analyzer/derived-command-budget';
 import { analyzeDeviceCommandMatch } from '@next/gate/analyzer/device';
 import {
   getGitEnvValue,
@@ -33,13 +30,8 @@ import {
 } from '@next/gate/analyzer/git/parse';
 import {
   isPersistentHeredocFilePath,
-  MAX_TRACKED_HEREDOC_FILES,
   resolveTrackedHeredocPath,
 } from '@next/gate/analyzer/heredoc-files';
-import {
-  createParallelAnalysisBudget,
-  reserveParallelAnalysis,
-} from '@next/gate/analyzer/parallel-budget';
 import { hasRecursiveForceFlags, hasRecursiveOption } from '@next/gate/analyzer/rm-flags';
 import {
   chargeNativeLinearPass,
@@ -63,10 +55,6 @@ import {
   textCommandWords as shippedTextCommandWords,
 } from '@/analyzer/command-words';
 import { isDataOnlyQuotedAssignment as shippedIsDataOnlyQuotedAssignment } from '@/analyzer/deferred-assignment';
-import {
-  createDerivedCommandWorkBudget as shippedCreateDerivedBudget,
-  reserveDerivedCommandTokens as shippedReserveDerivedTokens,
-} from '@/analyzer/derived-command-budget';
 import { analyzeDeviceCommandMatch as shippedAnalyzeDeviceCommandMatch } from '@/analyzer/device';
 import {
   getGitEnvValue as shippedGetGitEnvValue,
@@ -84,13 +72,8 @@ import {
 } from '@/analyzer/git/parse';
 import {
   isPersistentHeredocFilePath as shippedIsPersistentHeredocFilePath,
-  MAX_TRACKED_HEREDOC_FILES as shippedMaxTrackedHeredocFiles,
   resolveTrackedHeredocPath as shippedResolveTrackedHeredocPath,
 } from '@/analyzer/heredoc-files';
-import {
-  createParallelAnalysisBudget as shippedCreateParallelBudget,
-  reserveParallelAnalysis as shippedReserveParallel,
-} from '@/analyzer/parallel-budget';
 import {
   hasRecursiveForceFlags as shippedHasRecursiveForceFlags,
   hasRecursiveOption as shippedHasRecursiveOption,
@@ -116,15 +99,6 @@ import { projectCommandViews as shippedProjectCommandViews } from '@/parser/trav
 import { corpusCommands, fuzzShellSources } from '../../helpers/shell-inputs';
 
 /** The leaf analyzer modules that carry no dispatch of their own, each against its shipped twin. */
-
-function failure(call: () => void) {
-  try {
-    call();
-    return 'no throw';
-  } catch (error) {
-    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  }
-}
 
 function argvOf(line: string): string[] {
   return line.split(/\s+/).filter((word) => word.length > 0);
@@ -326,22 +300,21 @@ describe('heredoc files', () => {
   test('the tracked-path resolution agrees for absolute, relative and unknown cwd sources', () => {
     for (const source of ['dir/file', 'link/file', 'missing/deep/file', './dir', '../escape', '']) {
       for (const cwd of [root, join(root, 'dir'), null, undefined]) {
-        expect(resolveTrackedHeredocPath(source, cwd, processPathResolver)).toStrictEqual(
-          shippedResolveTrackedHeredocPath(source, cwd, shippedPathResolver),
-        );
+        expect(
+          resolveTrackedHeredocPath(source, cwd, processPathResolver, createBudget()),
+        ).toStrictEqual(shippedResolveTrackedHeredocPath(source, cwd, shippedPathResolver));
       }
       const absolute = join(root, source);
-      expect(resolveTrackedHeredocPath(absolute, null, processPathResolver)).toStrictEqual(
-        shippedResolveTrackedHeredocPath(absolute, null, shippedPathResolver),
-      );
+      expect(
+        resolveTrackedHeredocPath(absolute, null, processPathResolver, createBudget()),
+      ).toStrictEqual(shippedResolveTrackedHeredocPath(absolute, null, shippedPathResolver));
     }
   });
 
-  test('the persistence test and the tracking cap are the shipped ones', () => {
+  test('the persistence test is the shipped one', () => {
     for (const path of ['/dev', '/dev/null', '/devices/x', '/proc/1/fd/2', '/sys', '/tmp/out']) {
       expect(isPersistentHeredocFilePath(path)).toBe(shippedIsPersistentHeredocFilePath(path));
     }
-    expect(MAX_TRACKED_HEREDOC_FILES).toBe(shippedMaxTrackedHeredocFiles);
   });
 });
 
@@ -365,52 +338,6 @@ describe('device commands', () => {
       expect(analyzeDeviceCommandMatch(head, argv)).toStrictEqual(
         shippedAnalyzeDeviceCommandMatch(head, argv),
       );
-    }
-  });
-});
-
-describe('analyzer budgets', () => {
-  test('the derived-command budget breaches at the same reservation', () => {
-    for (const amount of [0, 1, 16_383, 16_384, 16_385, -1, 1.5, Number.NaN]) {
-      const budget = createDerivedCommandWorkBudget();
-      const shippedBudget = shippedCreateDerivedBudget();
-      expect(failure(() => reserveDerivedCommandTokens(budget, amount))).toBe(
-        failure(() => shippedReserveDerivedTokens(shippedBudget, amount)),
-      );
-      expect(budget).toStrictEqual(shippedBudget);
-    }
-  });
-
-  test('the derived-command budget breaches on the cumulative total', () => {
-    const budget = createDerivedCommandWorkBudget();
-    const shippedBudget = shippedCreateDerivedBudget();
-    for (const amount of [8_192, 8_192, 1]) {
-      expect(failure(() => reserveDerivedCommandTokens(budget, amount))).toBe(
-        failure(() => shippedReserveDerivedTokens(shippedBudget, amount)),
-      );
-    }
-    expect(budget).toStrictEqual(shippedBudget);
-    expect(budget.derivedTokens).toBe(16_384);
-  });
-
-  test('every parallel counter breaches at its own cap', () => {
-    const reservations = [
-      { childAnalyses: 1_024 },
-      { childAnalyses: 1_025 },
-      { derivedTokens: 16_385 },
-      { derivedBytes: 1024 * 1024 + 1 },
-      { placeholderReplacements: 16_385 },
-      { childAnalyses: 1, derivedTokens: 1, derivedBytes: 1, placeholderReplacements: 1 },
-      {},
-      { childAnalyses: -1 },
-    ];
-    for (const reservation of reservations) {
-      const budget = createParallelAnalysisBudget();
-      const shippedBudget = shippedCreateParallelBudget();
-      expect(failure(() => reserveParallelAnalysis(budget, reservation))).toBe(
-        failure(() => shippedReserveParallel(shippedBudget, reservation)),
-      );
-      expect(budget).toStrictEqual(shippedBudget);
     }
   });
 });

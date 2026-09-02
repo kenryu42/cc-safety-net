@@ -1,12 +1,8 @@
+import { AnalysisLimit, type Budget, LIMITS } from '@next/core/budget';
 import type { DestructiveCommandRulePolicy } from '@next/core/policy/effective-rules';
 import type { EffectivePolicy } from '@next/core/policy/types';
-import { MAX_STRIP_ITERATIONS } from '@next/core/rules/constants';
 import { getBasename } from '@next/core/shell/tokens';
 import type { EnvironmentContext, ProtectedGitMetadata } from '@next/gate/analysis';
-import {
-  type DerivedCommandWorkBudget,
-  DerivedCommandWorkLimitError,
-} from './derived-command-budget';
 import { isStandardCommandWrapper, unwrapTransparentWrapper } from './transparent-wrappers';
 import { reconstructEnvSplitWords, stripWrappersWithInfo } from './wrapper-prelude';
 
@@ -19,7 +15,7 @@ export interface ChildCommandContext {
 }
 
 export interface NestedCommandAnalyzeContext extends ChildCommandContext {
-  derivedCommandWorkBudget: DerivedCommandWorkBudget;
+  budget: Budget;
   originalCwd: string | undefined;
   strict?: boolean;
   paranoidRm: boolean | undefined;
@@ -46,7 +42,7 @@ export function normalizeChildCommand(
   context: ChildCommandContext,
 ): NormalizedChildCommand {
   const childCommand = normalizeChildCommands(tokens, context).next().value;
-  if (!childCommand) throw new DerivedCommandWorkLimitError();
+  if (!childCommand) throw new AnalysisLimit('derivedCommandShape');
   return childCommand;
 }
 
@@ -92,7 +88,7 @@ function* normalizeChildCommandCandidates(
     // the retained operands and normalize as the real child command. Values needing the
     // quote/expansion/comment language still have no channel for a match and fail closed.
     const spliced = reconstructEnvSplitWords(wrapperInfo.envSplitValues, childTokens);
-    if (!spliced) throw new DerivedCommandWorkLimitError();
+    if (!spliced) throw new AnalysisLimit('derivedCommandShape');
     reserveChildNormalization(budget);
     yield* normalizeChildCommandCandidates(
       spliced,
@@ -109,7 +105,7 @@ function* normalizeChildCommandCandidates(
   }
 
   if (isStandardCommandWrapper(childTokens[0] ?? '')) {
-    throw new DerivedCommandWorkLimitError();
+    throw new AnalysisLimit('wrapperPeelIterations');
   }
 
   const transparentWrapper = unwrapTransparentWrapper(childTokens, policy);
@@ -182,8 +178,8 @@ function normalizedChildCommand(
 }
 
 function reserveChildNormalization(budget: { iterations: number }): void {
-  if (budget.iterations >= MAX_STRIP_ITERATIONS) {
-    throw new DerivedCommandWorkLimitError();
+  if (budget.iterations >= LIMITS.wrapperPeelIterations.cap) {
+    throw new AnalysisLimit('wrapperPeelIterations');
   }
   budget.iterations++;
 }

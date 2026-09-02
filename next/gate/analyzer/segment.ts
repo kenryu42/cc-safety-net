@@ -1,4 +1,5 @@
 import { normalize } from 'node:path';
+import { AnalysisLimit, LIMITS } from '@next/core/budget';
 import { resolveChdirTarget } from '@next/core/paths/chdir';
 import { isTmpdirOverriddenToNonTemp } from '@next/core/paths/tmpdir';
 import {
@@ -7,12 +8,7 @@ import {
 } from '@next/core/policy/effective-rules';
 import { isInterpreterCommand } from '@next/core/policy/transparent-wrappers';
 import type { CommandAnalysisPolicy } from '@next/core/policy/types';
-import {
-  AWK_INTERPRETERS,
-  DISPLAY_COMMANDS,
-  MAX_STRIP_ITERATIONS,
-  SHELL_WRAPPERS,
-} from '@next/core/rules/constants';
+import { AWK_INTERPRETERS, DISPLAY_COMMANDS, SHELL_WRAPPERS } from '@next/core/rules/constants';
 import { checkPolicyRuleMatch } from '@next/core/rules/custom';
 import { destructiveCommandMatch } from '@next/core/rules/destructive';
 import type { CommandView, CommandWord } from '@next/core/shell/model';
@@ -28,10 +24,6 @@ import { analyzeAwkSystemCallMatch, extractAwkExecutableSources } from './awk';
 import { type NormalizedChildCommand, normalizeChildCommands } from './child-command';
 import { analysisWordText, analyzedViewWords, textCommandWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
-import {
-  DerivedCommandWorkLimitError,
-  reserveDerivedCommandTokens,
-} from './derived-command-budget';
 import { analyzeDynamicCommandStructure, hasDynamicExecutableSource } from './derived-input';
 import { analyzeDeviceCommandMatch } from './device';
 import { analyzeGitDetailed } from './git';
@@ -136,7 +128,7 @@ export function analyzeSegment(
     }
     const spliced = reconstructEnvSplitWords(envSplitValues, texts(prelude.words));
     if (spliced) {
-      reserveDerivedCommandTokens(options.derivedCommandWorkBudget, spliced.length);
+      options.budget.charge('derivedTokens', spliced.length);
       const splicedResult = options.analyzeNested(spliced.join(' '), {
         effectiveCwd: prelude.cwd === undefined ? options.effectiveCwd : prelude.cwd,
         envAssignments: new Map([
@@ -176,7 +168,7 @@ export function analyzeSegment(
   if (!head) return null;
 
   if (isStandardCommandWrapper(head)) {
-    throw new DerivedCommandWorkLimitError();
+    throw new AnalysisLimit('wrapperPeelIterations');
   }
 
   const normalizedHead = normalizeCommandToken(head);
@@ -631,11 +623,16 @@ function analyzeTrackedHeredocScript(
   failClosed = false,
 ): AnalyzeBlockResult | null {
   if (failClosed && /[$`*?[\]]/.test(source)) return dynamicShellSourceResult(trace);
-  const path = resolveTrackedHeredocPath(source, effectiveCwd, options.environment.paths);
+  const path = resolveTrackedHeredocPath(
+    source,
+    effectiveCwd,
+    options.environment.paths,
+    options.budget,
+  );
   const body = path ? options.literalHeredocFiles?.get(path) : undefined;
   if (body === undefined) return failClosed ? dynamicShellSourceResult(trace) : null;
 
-  reserveDerivedCommandTokens(options.derivedCommandWorkBudget, 1);
+  options.budget.charge('derivedTokens', 1);
   trace?.recordSegment({
     type: 'recurse',
     reason: 'heredoc-file',
@@ -681,8 +678,8 @@ function recordCommandAnalyzerTrace(
 }
 
 function reserveWrapperNormalization(budget: { iterations: number }): void {
-  if (budget.iterations >= MAX_STRIP_ITERATIONS) {
-    throw new DerivedCommandWorkLimitError();
+  if (budget.iterations >= LIMITS.wrapperPeelIterations.cap) {
+    throw new AnalysisLimit('wrapperPeelIterations');
   }
   budget.iterations++;
 }
@@ -742,10 +739,7 @@ function analyzeNormalizedEmbeddedCommand(
 
   const cmd = normalizeCommandToken(token);
   if (isShellWrapperCommand(token, cmd)) {
-    reserveDerivedCommandTokens(
-      context.options.derivedCommandWorkBudget,
-      context.words.length - index,
-    );
+    context.options.budget.charge('derivedTokens', context.words.length - index);
     const shellTokens = childCommand.tokens;
     if (isShellSyntaxCheck(shellTokens)) return null;
     const dashCArg = extractDashCArg(shellTokens);
@@ -766,18 +760,12 @@ function analyzeNormalizedEmbeddedCommand(
   const analyzer = findCommandAnalyzer(cmd);
   if (!analyzer || cmd === 'xargs' || cmd === 'parallel') {
     if (childCommand.wrappedByTransparent && context.options.policy.rules.length > 0) {
-      reserveDerivedCommandTokens(
-        context.options.derivedCommandWorkBudget,
-        context.words.length - index,
-      );
+      context.options.budget.charge('derivedTokens', context.words.length - index);
     }
     return matchEmbeddedCustomRule(context, childCommand);
   }
 
-  reserveDerivedCommandTokens(
-    context.options.derivedCommandWorkBudget,
-    context.words.length - index,
-  );
+  context.options.budget.charge('derivedTokens', context.words.length - index);
   const embeddedTokens = [cmd, ...childCommand.tokens.slice(1)];
   const embeddedContext: AnalyzerRuleContext = {
     ...context,
