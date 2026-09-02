@@ -112,7 +112,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   `normalizeProtectedFileCandidate`; the effective-rule filter (`filterDestructiveCommandMatch`,
   `resolveEffectiveDestructiveCommandRules`, `createCommandAnalysisPolicy`) belongs to Phase 2 or 3.
 
-### Phase 2 — Policy loader (M) `[ ]`
+### Phase 2 — Policy loader (M) `[x]`
 
 - `next/core/policy/`: defaults, user `policy.json` with section-wise salvage, project
   `policy.json` merge and weakening lines, both `rule.json` files (a malformed file drops its
@@ -123,6 +123,9 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - Validation: the fallback matrix in `docs/config-recovery.md` as a table test.
 - Acceptance: every degraded case yields the documented fallback and reason; one reader serves
   the gate, the CLI, the GUI, `policy check`, and audit retention.
+- Phase 2 landed: `next/core/policy/` is a verbatim port with differential tests; the hot path validates `policy.json`, `rule.json` and rulebooks with hand-written checkers in `validate.ts` that reproduce the zod diagnostics and their order, while `schema.ts` keeps the zod schemas for diagnostic surfaces only (architecture test: zod allowed in that one file, nothing else under `next/` imports it; a child-process probe proves the loader never loads zod). Named deviations: loader entries take the Environment first and a required `cwd` (no `process.cwd()` fallback); the default user home is `environment.home`; `policy.json` keeps its plain read while `rule.json` and rulebooks use the safe reader; `readRetentionDays` is a projection over the same salvaged read, with no snapshot field; `isInterpreterCommand` lives in `next/core/policy/transparent-wrappers.ts` with the four interpreter names as data.
+- Effective-capability resolution (`env.ts`), effective destructive-rule state, the per-match filter and `resolveCommandAnalysisContext` live under `next/core/policy/`; Phase 3 imports them and `isInterpreterCommand` from there, and appends the remaining analyzer vocabulary to `next/core/rules/constants.ts` (Phase 2 added `COMMAND_PATTERN`, `MAX_REASON_LENGTH`, `SHELL_WRAPPERS`, `INTERPRETERS`, `PYTHON_INTERPRETER_PATTERN`, `AWK_INTERPRETERS`).
+- Carried: `src/policy/diff.ts` and the GUI read/write/preview/repair helpers (Phases 7 and 9); `getRulesConfigRuntimeErrorsForConfig`, the rule.json and starter-rulebook writers, `sources.ts`, the sync budget, and the legacy config validators (Phase 8); lock and legacy path helpers (Phases 7/8); Phase 4 calls `readRetentionDays(environment, options)` at prune time.
 
 ### Phase 3 — Gate (XL) `[ ]`
 
