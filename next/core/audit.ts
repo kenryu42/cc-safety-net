@@ -1,5 +1,6 @@
-import type { BlockIntent } from '@next/core/decision';
-import type { EffectiveSafetyLevel } from '@next/core/policy/types';
+import type { AnalysisErrorCode } from './budget';
+import type { BlockIntent } from './decision';
+import type { EffectiveSafetyLevel } from './policy/types';
 
 /** Guard stages recorded for an unexpected evaluation failure. */
 export type AuditFailureStage =
@@ -10,12 +11,9 @@ export type AuditFailureStage =
   | 'command-validation'
   | 'command-analysis';
 
-/** Sanitized categories recorded for an unexpected evaluation failure. */
-export type AuditErrorCode =
-  | 'path-canonicalization-limit'
-  | 'tool-input-limit'
-  | 'structural-shell-syntax-limit'
-  | 'unexpected-error';
+/** Sanitized categories recorded for an unexpected evaluation failure: the limit
+ *  classes the budget already names, plus everything the catch boundary sees. */
+export type AuditErrorCode = AnalysisErrorCode | 'unexpected-error';
 
 type AuditLogDecision = 'allow' | 'deny';
 

@@ -179,12 +179,28 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   `src`); ten `src` tests that fail only as root and one `next/` differential that needs an
   explicit per-test timeout on slow runners.
 
-### Phase 4 — Audit (S) `[ ]`
+### Phase 4 — Audit (S) `[x]`
 
 - `next/audit/`: writer (layout, caps, redaction of the four fields, 0600/0700, prune at most
   once per UTC day using `retentionDays` from the resolved snapshot), reader with filters and
   suspect detection.
 - Acceptance: record goldens; concurrent appends; an unwritable directory never changes a decision.
+- Landed: `next/audit/{writer,retention,reader,display}.ts` are verbatim ports of
+  `src/engine/{audit,audit-retention,audit-scan,audit-display}.ts` behind the Environment seam:
+  every entry takes the `Environment` first, `CC_SAFETY_NET_AUDIT_HOME` and the `NODE_ENV` test
+  refusal read `environment.env`, the home is `environment.home` (no `homedir()`/`userInfo()`), the
+  `homeDir` option is gone while `now`/`createId` stay injectable, and prune reads its window through
+  `readRetentionDays(environment)`. The record types moved to `next/core/audit.ts`
+  (`AuditErrorCode = AnalysisErrorCode | 'unexpected-error'`) so gate and audit share them through
+  core; `tests/next/architecture.test.ts` enforces "audit imports only core; core and gate never
+  import audit" for both import spellings. Differentials pin byte-identical trees for a fixed clock
+  and id sequence, every cap (10,000/2,000/256/32,768, the 180-character encoded cwd, the
+  128-character session id), four concurrently spawned appenders, an unwritable location, and the
+  retention and reader sweeps over one fixture tree.
+- Carried: `src/integrations/audit.ts` (Phase 5 maps the runtime's `homeDir` option onto the
+  Environment; in `src/` an explicit `homeDir` bypassed `CC_SAFETY_NET_AUDIT_HOME` and the test
+  refusal, in `next/` the Environment decides); the logs CLI with `matchesLogsFlags` and
+  `--prune-legacy` (Phase 7); GUI activity (Phase 9); the `__PKG_VERSION__` define (Phase 10).
 
 ### Phase 5 — Entries and hosts (L) `[ ]`
 

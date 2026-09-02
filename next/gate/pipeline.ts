@@ -1,3 +1,4 @@
+import type { AuditFailureStage } from '@next/core/audit';
 import { type AnalysisErrorCode, AnalysisLimit, createBudget } from '@next/core/budget';
 import type { Decision } from '@next/core/decision';
 import type { ProtectedGitMetadata } from '@next/core/git/metadata';
@@ -13,7 +14,6 @@ import {
   REASON_SAFETY_NET_FAILED_CLOSED,
   REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
 } from '@next/gate/analyzer/reasons';
-import type { AuditFailureStage } from '@next/gate/audit';
 import type { SemanticFacts } from '@next/gate/facts';
 import {
   findGitMetadataMutationTargetInSemanticFacts,

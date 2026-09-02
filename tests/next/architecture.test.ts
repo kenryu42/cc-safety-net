@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 /**
  * The rebuild under `next/` is a second implementation of the same contract,
@@ -48,6 +48,16 @@ function isAllowed(specifier: string, file: string): boolean {
   return (THIRD_PARTY_ALLOWANCES[relative(NEXT_ROOT, file)] ?? []).includes(specifier);
 }
 
+/**
+ * The top-level directory under `next/` a specifier resolves to, so the layering rule reads the
+ * layer rather than the spelling: `../audit/writer` and `@next/audit/writer` are one violation.
+ */
+function layerOf(specifier: string, file: string) {
+  if (specifier.startsWith('@next/')) return specifier.split('/')[1];
+  if (!specifier.startsWith('.')) return undefined;
+  return relative(NEXT_ROOT, join(file, '..', specifier)).split(sep)[0];
+}
+
 function resolvesToSchemaModule(specifier: string, file: string): boolean {
   if (specifier === '@next/core/policy/schema') return true;
   if (!specifier.startsWith('.')) return false;
@@ -68,6 +78,27 @@ describe('next/ architecture', () => {
         .filter((specifier) => !isAllowed(specifier, file))
         .map((specifier) => `${relative(NEXT_ROOT, file)} imports ${specifier}`),
     );
+    expect(violations).toEqual([]);
+  });
+
+  test('audit sits under core, and neither core nor gate reaches back into it', () => {
+    const violations = files.flatMap((file) => {
+      const path = relative(NEXT_ROOT, file);
+      const specifiers = importSpecifiers(readFileSync(file, 'utf-8'));
+      const offending = path.startsWith(`audit${sep}`)
+        ? specifiers.filter(
+            (specifier) =>
+              !specifier.startsWith('node:') &&
+              layerOf(specifier, file) !== 'core' &&
+              layerOf(specifier, file) !== 'audit',
+          )
+        : specifiers.filter(
+            (specifier) =>
+              layerOf(specifier, file) === 'audit' &&
+              (path.startsWith(`core${sep}`) || path.startsWith(`gate${sep}`)),
+          );
+      return offending.map((specifier) => `${path} imports ${specifier}`);
+    });
     expect(violations).toEqual([]);
   });
 
@@ -100,5 +131,11 @@ describe('next/ architecture', () => {
     expect(resolvesToSchemaModule('./schema', snapshot)).toBeTrue();
     expect(resolvesToSchemaModule('@next/core/policy/schema', snapshot)).toBeTrue();
     expect(resolvesToSchemaModule('./validate', snapshot)).toBeFalse();
+
+    const pipeline = join(NEXT_ROOT, 'gate', 'pipeline.ts');
+    expect(layerOf('../audit/writer', pipeline)).toBe('audit');
+    expect(layerOf('@next/audit/writer', pipeline)).toBe('audit');
+    expect(layerOf('../core/redaction', join(NEXT_ROOT, 'audit', 'display.ts'))).toBe('core');
+    expect(layerOf('node:fs', pipeline)).toBeUndefined();
   });
 });
