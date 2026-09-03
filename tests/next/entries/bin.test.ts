@@ -1,0 +1,103 @@
+import { afterAll, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { clearAuditLogs, readAuditEntries } from '../helpers/hook-capture';
+import {
+  createHookFixture,
+  HOOK_HOSTS,
+  type HookHost,
+  type HookRow,
+  hostEnv,
+} from '../helpers/hook-hosts';
+
+/**
+ * The two bins over the same bytes. Each row is fed to `bun run src/cli/cc-safety-net.ts` and to
+ * `bun run next/entries/bin.ts` under one temp home, with a per-implementation audit home so both
+ * trees can be read back, and the document on stdout, the exit code, the stderr and the audit
+ * lines must agree. This is the whole hook path — argument to flag to adapter to gate to document
+ * — which the in-process differential cannot reach, because it calls the adapters directly.
+ */
+
+const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
+const SHIPPED = 'src/cli/cc-safety-net.ts';
+const PORTED = 'next/entries/bin.ts';
+const CLAUDE_DENIAL = 'a denied command';
+
+const fixture = createHookFixture('bin-');
+
+afterAll(() => {
+  fixture.remove();
+});
+
+function runEntry(entry: string, argv: readonly string[], row: HookRow) {
+  const auditHome = join(fixture.home, entry === SHIPPED ? 'audit-shipped' : 'audit-ported');
+  clearAuditLogs(auditHome);
+  const result = spawnSync('bun', ['run', entry, ...argv], {
+    cwd: REPO_ROOT,
+    input: row.stdin,
+    encoding: 'utf-8',
+    maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, ...hostEnv(fixture, auditHome), ...row.env },
+  });
+  return {
+    stdout: result.stdout,
+    exitCode: result.status,
+    // The optional debug line ends in each implementation's own limit message, which Phase 1
+    // rewrote; everything up to the stage label is what the line reports. Only that detail is
+    // dropped, so any further stderr line still has to match byte for byte.
+    stderr: result.stderr.replace(/(CC Safety Net debug: [^:\n]+: )[^\n]*/, '$1'),
+    audit: readAuditEntries(auditHome),
+  };
+}
+
+const denialRow = (HOOK_HOSTS.find((host) => host.id === 'claude-code') as HookHost)
+  .rows(fixture)
+  .find((row) => row.name === CLAUDE_DENIAL) as HookRow;
+
+for (const host of HOOK_HOSTS) {
+  describe(`hook ${host.flag}`, () => {
+    for (const row of host.rows(fixture)) {
+      test(row.name, () => {
+        const argv = ['hook', host.flag];
+        expect(runEntry(PORTED, argv, row)).toStrictEqual(runEntry(SHIPPED, argv, row));
+      }, 60_000);
+    }
+  });
+}
+
+describe('flag resolution', () => {
+  for (const argv of [['hook', '--claude-code'], ['--claude-code'], ['-cc']]) {
+    test(`\`${argv.join(' ')}\` runs the Claude Code hook`, () => {
+      expect(runEntry(PORTED, argv, denialRow)).toStrictEqual(runEntry(SHIPPED, argv, denialRow));
+    }, 60_000);
+  }
+
+  for (const argv of [['hook'], ['hook', '--cursor', '--kimi-code']]) {
+    test(`\`${argv.join(' ')}\` names no integration`, () => {
+      const ported = runEntry(PORTED, argv, denialRow);
+      const shipped = runEntry(SHIPPED, argv, denialRow);
+      // Only the first stderr line is shared: the shipped bin follows it with the hook help
+      // listing, which Phase 7 ports.
+      expect([ported.stdout, ported.exitCode, ported.stderr.split('\n')[0]]).toStrictEqual([
+        shipped.stdout,
+        shipped.exitCode,
+        shipped.stderr.split('\n')[0],
+      ]);
+      expect(ported.stdout).toBe('');
+      expect(ported.exitCode).toBe(1);
+    }, 60_000);
+  }
+});
+
+// Deviation H: every other verb is one stderr line and exit 1 until Phase 7 adds the dynamic
+// import of the CLI chunk, where the shipped bin prints help, a status report or a version.
+describe('every verb other than hook', () => {
+  for (const argv of [['status'], ['--help'], []]) {
+    test(`\`${argv.join(' ') || 'no command'}\` is refused on one line`, () => {
+      const ported = runEntry(PORTED, argv, denialRow);
+      expect(ported.stdout).toBe('');
+      expect(ported.exitCode).toBe(1);
+      expect(ported.stderr.trimEnd().split('\n')).toHaveLength(1);
+    }, 60_000);
+  }
+});

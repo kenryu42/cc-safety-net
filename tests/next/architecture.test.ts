@@ -17,7 +17,19 @@ const SCHEMA_MODULE = join(NEXT_ROOT, 'core', 'policy', 'schema.ts');
 
 const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
   'core/policy/schema.ts': ['zod'],
+  // The two hosts whose SDK types are the host's own parameter shapes: an `import type` is erased,
+  // so neither the cold-start closure nor a git checkout without `node_modules` ever sees them.
+  'hosts/opencode/plugin.ts': ['@opencode-ai/plugin'],
+  'entries/index.ts': ['@opencode-ai/plugin'],
+  'hosts/amp/tool-call.ts': ['@ampcode/plugin'],
+  'entries/amp.ts': ['@ampcode/plugin'],
 };
+
+/** The layers a host adapter may reach for; `entries` is above it, and `hosts` is its own. */
+const HOST_LAYERS = ['core', 'gate', 'audit', 'hosts'];
+const NETWORK_MODULES = ['node:http', 'node:https', 'node:net', 'http', 'https', 'net'];
+/** The hook path never spawns. Phase 6 adds `hosts/amp/run.ts`, the Amp install transport. */
+const CHILD_PROCESS_ALLOWANCES: readonly string[] = [];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
@@ -63,6 +75,52 @@ function resolvesToSchemaModule(specifier: string, file: string): boolean {
   if (!specifier.startsWith('.')) return false;
   const resolved = join(file, '..', specifier);
   return resolved === SCHEMA_MODULE || `${resolved}.ts` === SCHEMA_MODULE;
+}
+
+/** The specifiers a file imports as types only, which are erased before anything runs. */
+const TYPE_ONLY_IMPORT = /(?:^|\n)\s*(import\b[^'"]*?)\bfrom\s*['"]([^'"]+)['"]/g;
+
+function typeOnlyImports(source: string): string[] {
+  return [...source.matchAll(TYPE_ONLY_IMPORT)].flatMap((match) =>
+    match[2] !== undefined && match[1]?.startsWith('import type') ? [match[2]] : [],
+  );
+}
+
+/**
+ * The host tier: an adapter reaches down into the gate, core and audit and never back up into an
+ * entry, and no file the hook path loads opens a socket or spawns a process — the two capabilities
+ * a gate that runs on every tool call has no use for.
+ */
+function layeringViolations(file: string, source: string): string[] {
+  const path = relative(NEXT_ROOT, file);
+  const layer = path.split(sep)[0];
+  const specifiers = importSpecifiers(source);
+  const allowedThirdParty = THIRD_PARTY_ALLOWANCES[path] ?? [];
+  const offending = specifiers.filter((specifier) => {
+    if (layer === 'hosts' || layer === 'entries') {
+      if (NETWORK_MODULES.includes(specifier)) return true;
+      if (specifier === 'node:child_process') return !CHILD_PROCESS_ALLOWANCES.includes(path);
+    }
+    if (layer === 'hosts') {
+      if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
+      return !HOST_LAYERS.includes(layerOf(specifier, file) ?? '');
+    }
+    if (layer === 'core' || layer === 'gate' || layer === 'audit') {
+      return layerOf(specifier, file) === 'hosts' || layerOf(specifier, file) === 'entries';
+    }
+    return false;
+  });
+  return [
+    ...offending.map((specifier) => `${path} imports ${specifier}`),
+    ...allowedThirdParty
+      .filter(
+        (specifier) =>
+          (layer === 'hosts' || layer === 'entries') &&
+          specifiers.includes(specifier) &&
+          !typeOnlyImports(source).includes(specifier),
+      )
+      .map((specifier) => `${path} imports ${specifier} as a value`),
+  ];
 }
 
 describe('next/ architecture', () => {
@@ -113,6 +171,12 @@ describe('next/ architecture', () => {
     expect(violations).toEqual([]);
   });
 
+  test('hosts import gate, core and audit; entries import anything below; nothing reaches up', () => {
+    expect(files.flatMap((file) => layeringViolations(file, readFileSync(file, 'utf-8')))).toEqual(
+      [],
+    );
+  });
+
   test('the rule is falsifiable', () => {
     const file = join(NEXT_ROOT, 'core', 'example.ts');
     const offending =
@@ -137,5 +201,28 @@ describe('next/ architecture', () => {
     expect(layerOf('@next/audit/writer', pipeline)).toBe('audit');
     expect(layerOf('../core/redaction', join(NEXT_ROOT, 'audit', 'display.ts'))).toBe('core');
     expect(layerOf('node:fs', pipeline)).toBeUndefined();
+
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'hosts', 'example', 'hook.ts'),
+        "import { main } from '@next/entries/bin';\nimport { request } from 'node:http';\nimport { spawn } from 'node:child_process';\n",
+      ),
+    ).toEqual([
+      'hosts/example/hook.ts imports @next/entries/bin',
+      'hosts/example/hook.ts imports node:http',
+      'hosts/example/hook.ts imports node:child_process',
+    ]);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'core', 'example.ts'),
+        "import { writeGuardAudit } from '@next/hosts/audit';\n",
+      ),
+    ).toEqual(['core/example.ts imports @next/hosts/audit']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'hosts', 'opencode', 'plugin.ts'),
+        "import { Plugin } from '@opencode-ai/plugin';\n",
+      ),
+    ).toEqual(['hosts/opencode/plugin.ts imports @opencode-ai/plugin as a value']);
   });
 });

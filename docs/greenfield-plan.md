@@ -202,7 +202,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   refusal, in `next/` the Environment decides); the logs CLI with `matchesLogsFlags` and
   `--prune-legacy` (Phase 7); GUI activity (Phase 9); the `__PKG_VERSION__` define (Phase 10).
 
-### Phase 5 — Entries and hosts (L) `[ ]`
+### Phase 5 — Entries and hosts (L) `[x]`
 
 - `next/entries/`: the bin resolves the `hook` verb before importing anything else through one
   dynamic import of a second chunk; the pinned path `dist/bin/cc-safety-net.js` is preserved.
@@ -214,6 +214,17 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - Acceptance: adapter contract tests (payload to envelope, decision to document bytes, throw to
   host-format deny, unsupported event to silence); a cold-start budget test on the hook path;
   git-checkout mode runs without `node_modules`; the verify skill's hook recipes pass.
+- Phase 5 landed: `next/hosts/` (runner, audit projection, runtime, agent detection, eight stdin adapters for nine hosts, OpenClaw/OpenCode/Pi/Amp handlers, catalog and the cc-safety-net template as data) and `next/entries/` (bin with the hook verb and legacy top-level flags, hook table, args, library API, OpenCode/Pi/Amp export entries) are verbatim ports behind the Environment seam: one `createProcessEnvironment()` per call, environment-first audit and runtime signatures with the `homeDir` option gone (OpenCode's `homeDir` maps onto `environment.home`, so `CC_SAFETY_NET_AUDIT_HOME` and the test refusal now win over it), `AnalysisLimit` classified through `LIMITS[kind].errorCode`, adapter callbacks receiving the Environment last with `process.cwd()` read at the call site.
+- Adopted: every stdin adapter and the OpenClaw/Pi/Amp handlers convert any thrown value into the host's own failed-closed deny (stderr `CC Safety Net error:` line, exit 0, no audit); OpenCode's deny form is already a throw. Type-only imports of `@opencode-ai/plugin` and `@ampcode/plugin` are allowed per file by the architecture test, which also enforces hosts -> gate/core/audit, no upward imports, and no http/https/net/child_process under hosts or entries.
+- Validation: one shared per-host payload table drives the in-process adapter differential and the process-level bin differential (stdout bytes, exit code, audit lines minus ts/id); fake-host differentials for the four in-process entries and the library API; cold-start and git-checkout import-closure tests on `next/entries/bin.ts`.
+- Carried: `amp/run.ts` with its install/native and system-info helpers and the OpenClaw export entry (Phase 6); the hook help listing, every other verb and the dynamic CLI chunk (Phase 7); `GuardEvaluation.errorCode` in the audit for returned analyzer-cap denials (parity with `src` kept); knip entries for `next/entries`, the jscpd scope for `next/`, the verify-skill hook run and the `dist/bin` wiring (Phase 10).
+- Verified: the verify skill's hook-protection recipes (deny with `Rule: git.reset-hard`, allow with
+  empty stdout and exit 0, the two audit entries, isolation of the real home) pass against
+  `next/entries/bin.ts` under an isolated home, and the same destructive payload through every
+  stdin flag yields bytes and exit codes identical to `src`. Full-suite coverage sits at 98.90%
+  (threshold 90%); `next/entries/args.ts` is ported whole for Phase 7 and only `parseCommandArgs`
+  is exercised so far.
+
 
 ### Phase 6 — Installers and detectors (L) `[ ]`
 
