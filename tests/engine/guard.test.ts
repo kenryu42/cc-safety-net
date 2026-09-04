@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import { PathCanonicalizationLimitError } from '@/analyzer/path-canonicalization';
 import { REASON_RECURSION_LIMIT } from '@/analyzer/reasons';
 import {
@@ -14,7 +14,7 @@ import { REASON_POLICY_APPLY_PROTECTION } from '@/guards/policy-apply-protection
 import { StructuralShellSyntaxLimitError } from '@/guards/semantic-facts';
 import { parseCommand } from '@/parser/command';
 import { getUserPolicyPath } from '@/policy/store';
-import { withTempDir } from '../helpers';
+import { quoteShellPath, toShellPath, withTempDir } from '../helpers';
 import { policySnapshot, testModes } from '../helpers/policy';
 
 const SNAPSHOT = policySnapshot();
@@ -412,16 +412,18 @@ describe('guard evaluation', () => {
     await withTempDir('cc-safety-net-guard-policy-mutation-', (cwd) => {
       const policyPath = getUserPolicyPath();
       const policyDirectory = dirname(policyPath);
+      const shellPolicyPath = toShellPath(policyPath);
+      const shellPolicyDirectory = toShellPath(policyDirectory);
       for (const command of [
-        `printf '{}' > "${policyPath}"`,
-        `tee "${policyPath}"`,
-        `rm "${policyPath}"`,
-        `mv "${policyDirectory}" /tmp/disabled-safety-net`,
-        `mv -t /tmp "${policyPath}"`,
-        `rm -rf "${policyDirectory}"`,
-        `rm -rf "${dirname(policyDirectory)}"`,
-        `POLICY="${policyPath}"; printf '{}' > "$POLICY"`,
-        `cd "${policyDirectory}" && printf '{}' > policy.json`,
+        `printf '{}' > "${shellPolicyPath}"`,
+        `tee "${shellPolicyPath}"`,
+        `rm "${shellPolicyPath}"`,
+        `mv "${shellPolicyDirectory}" /tmp/disabled-safety-net`,
+        `mv -t /tmp "${shellPolicyPath}"`,
+        `rm -rf "${shellPolicyDirectory}"`,
+        `rm -rf "${toShellPath(dirname(policyDirectory))}"`,
+        `POLICY="${shellPolicyPath}"; printf '{}' > "$POLICY"`,
+        `cd "${shellPolicyDirectory}" && printf '{}' > policy.json`,
       ]) {
         expect(evaluateGuard(commandInvocation(cwd, command)), command).toMatchObject({
           stage: 'policy-protection',
@@ -533,23 +535,79 @@ describe('guard evaluation', () => {
     });
   });
 
+  test.skipIf(process.platform !== 'win32')(
+    '[windows] applies mode-aware secret protection to unknown command candidates',
+    async () => {
+      await withTempDir('cc-safety-net-guard-unknown-metadata-', (cwd) => {
+        const sensitivePath = join(cwd, '.env');
+        const metadataCommands = [`ls ${sensitivePath}`, `stat ${sensitivePath}`];
+
+        metadataCommands.forEach((command) => {
+          expect(evaluateGuard(unknownInvocation(cwd, command))).toEqual({
+            stage: 'non-command',
+            level: 'standard',
+            decision: { kind: 'allow' },
+          });
+          (['strict', 'paranoid'] as const).forEach((level) => {
+            expect(
+              evaluateGuard(unknownInvocation(cwd, command), {
+                dependencies: { getModes: () => testModes(level) },
+              }),
+            ).toMatchObject({
+              stage: 'secret-protection',
+              level,
+              decision: { kind: 'deny', ruleId: 'secret.basename.env' },
+            });
+          });
+        });
+
+        [`cat ${sensitivePath}`, `find "TOKEN" ${sensitivePath}`].forEach((command) => {
+          expect(evaluateGuard(unknownInvocation(cwd, command))).toMatchObject({
+            stage: 'secret-protection',
+            decision: { kind: 'deny', ruleId: 'secret.basename.env' },
+          });
+        });
+
+        const policyPath = getUserPolicyPath();
+        const policyCommand = `rm ${policyPath}`;
+        expect(evaluateGuard(unknownInvocation(cwd, policyCommand))).toEqual(
+          expectedPolicyBlock(policyCommand, policyPath),
+        );
+      });
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')(
+    'keeps non-Windows unknown-route metadata fallback conservative',
+    async () => {
+      await withTempDir('cc-safety-net-guard-unknown-posix-metadata-', (cwd) => {
+        expect(evaluateGuard(unknownInvocation(cwd, `ls ${join(cwd, '.env')}`))).toMatchObject({
+          stage: 'secret-protection',
+          level: 'standard',
+          decision: { kind: 'deny', ruleId: 'secret.basename.env' },
+        });
+      });
+    },
+  );
+
   test('keeps deny paths and built-in secrets protected inside a destructive allow path', async () => {
     await withTempDir('cc-safety-net-guard-allow-path-secret-', (cwd) => {
       // A destructive allow path only relaxes the analyzer; it must never widen
       // what the secret guard, which runs first, is willing to expose.
+      const allowPath = join(cwd, 'x');
       const guardDependencies = {
         loadPolicySnapshot: () =>
           policySnapshot({
-            destructiveCommandAllowPaths: ['/x'],
-            secretProtection: { enabled: true, denyPaths: ['/x/private'] },
+            destructiveCommandAllowPaths: [allowPath],
+            secretProtection: { enabled: true, denyPaths: [join(allowPath, 'private')] },
           }),
         getModes: strictModes,
       };
 
       for (const [command, ruleId] of [
-        ['rm -rf /x/private', 'secret.deny-path'],
-        ['rm -rf /x/private/sub', 'secret.deny-path'],
-        ['rm -rf /x/.env', 'secret.basename.env'],
+        [`rm -rf ${quoteShellPath(join(allowPath, 'private'))}`, 'secret.deny-path'],
+        [`rm -rf ${quoteShellPath(join(allowPath, 'private', 'sub'))}`, 'secret.deny-path'],
+        [`rm -rf ${quoteShellPath(join(allowPath, '.env'))}`, 'secret.basename.env'],
       ] as const) {
         expect(
           evaluateGuard(commandInvocation(cwd, command), { dependencies: guardDependencies }),
@@ -558,9 +616,10 @@ describe('guard evaluation', () => {
       }
 
       expect(
-        evaluateGuard(commandInvocation(cwd, 'rm -rf /x/other'), {
-          dependencies: guardDependencies,
-        }),
+        evaluateGuard(
+          commandInvocation(cwd, `rm -rf ${quoteShellPath(join(allowPath, 'other'))}`),
+          { dependencies: guardDependencies },
+        ),
       ).toEqual({ stage: 'command-analysis', level: 'strict', decision: { kind: 'allow' } });
     });
   });
@@ -652,6 +711,7 @@ describe('guard evaluation', () => {
 
   test('analyzes commands normally while a fallback config is enforced', async () => {
     await withTempDir('cc-safety-net-guard-recovery-', (cwd) => {
+      const root = toShellPath(parse(getUserPolicyPath()).root);
       const options = {
         dependencies: {
           loadPolicySnapshot: () => policySnapshot({ configFallbackReason: 'missing lockfile' }),
@@ -669,8 +729,10 @@ describe('guard evaluation', () => {
         decision: { kind: 'allow' },
       });
       expect(
-        evaluateGuard(commandInvocation(cwd, 'npx -y cc-safety-net rule sync && rm -rf /'), options)
-          .decision,
+        evaluateGuard(
+          commandInvocation(cwd, `npx -y cc-safety-net rule sync && rm -rf ${root}`),
+          options,
+        ).decision,
       ).toMatchObject({
         kind: 'deny',
         reason:
@@ -863,7 +925,7 @@ describe('guard evaluation', () => {
 
   test('treats here-data values as data rather than policy mutation targets', async () => {
     await withTempDir('cc-safety-net-guard-policy-here-data-', (cwd) => {
-      const target = getUserPolicyPath();
+      const target = toShellPath(getUserPolicyPath());
       const command = `rm <<< ${target}`;
 
       expect(evaluateGuard(commandInvocation(cwd, command))).toEqual({
@@ -876,7 +938,7 @@ describe('guard evaluation', () => {
 
   test('leaves boundaries after missing here-data targets for later policy evaluation', async () => {
     await withTempDir('cc-safety-net-guard-missing-here-policy-', (cwd) => {
-      const target = getUserPolicyPath();
+      const target = toShellPath(getUserPolicyPath());
       const commands = [
         `cat <<< ; rm ${target}`,
         `cat << ; rm ${target}`,

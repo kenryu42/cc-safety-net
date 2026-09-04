@@ -1,14 +1,28 @@
 import { expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { withHostWorkspace } from './harness';
+import { isAbsolute, join } from 'node:path';
+import { runNode, withHostWorkspace, withWorkspace } from './harness';
 
 // The harness watches the real home, so this proof runs in a subprocess whose
 // HOME points at a throwaway directory: the inner tests dirty that fake host
 // state and throw, and the outer tests assert the isolation checks still
 // reported the writes instead of being skipped by an earlier failure.
 const SELFTEST = process.env.CC_SAFETY_NET_HARNESS_SELFTEST;
+
+test.if(SELFTEST === undefined)('runNode uses an absolute Node.js executable', async () => {
+  await withWorkspace(async ({ cwd, home }) => {
+    const result = await runNode(
+      ['--eval', "process.stdout.write(process.versions.bun ? 'bun' : 'node')"],
+      '',
+      cwd,
+      home,
+    );
+
+    expect(isAbsolute(result.command[0] ?? '')).toBe(true);
+    expect(result.stdout).toBe('node');
+  });
+});
 
 test.if(SELFTEST === '1')('selftest: callback dirties watched state and throws', async () => {
   await withHostWorkspace(async () => {

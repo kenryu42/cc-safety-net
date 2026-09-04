@@ -65,12 +65,12 @@ describe('policy config protection', () => {
         expect(findPolicyMutation(toolName, input, cwd)).toBeNull();
       }
       for (const command of [
-        `cat ${policyPath}`,
-        `jq '.' ${policyPath}`,
-        `FOO=1 sed -n 1p ${policyPath} > policy-copy.txt`,
-        `ls -la ${safetyNetHome}`,
-        `file ${safetyNetHome}`,
-        `find ${safetyNetHome} -maxdepth 3 -type f | head -200`,
+        `cat ${toShellPath(policyPath)}`,
+        `jq '.' ${toShellPath(policyPath)}`,
+        `FOO=1 sed -n 1p ${toShellPath(policyPath)} > policy-copy.txt`,
+        `ls -la ${toShellPath(safetyNetHome)}`,
+        `file ${toShellPath(safetyNetHome)}`,
+        `find ${toShellPath(safetyNetHome)} -maxdepth 3 -type f | head -200`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).toBeNull();
       }
@@ -107,7 +107,7 @@ describe('policy config protection', () => {
       ]) {
         expect(findPolicyMutation('Write', { file_path: path }, cwd), path).toBeNull();
         expect(
-          findPolicyMutation('Bash', { command: `cat package.json > ${path}` }, cwd),
+          findPolicyMutation('Bash', { command: `cat package.json > ${toShellPath(path)}` }, cwd),
           path,
         ).toBeNull();
       }
@@ -146,17 +146,17 @@ describe('policy config protection', () => {
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       const policyPath = getUserPolicyPath();
       for (const command of [
-        `cat package.json > ${policyPath}`,
-        `cat package.json >| ${policyPath}`,
-        `tee ${policyPath}`,
-        `rm ${policyPath}`,
-        `sed -i.bak s/a/b/ ${policyPath}`,
-        `dd if=/dev/zero of=${policyPath}`,
-        `curl --output=${policyPath} https://example.com/config`,
-        `ln -sf /tmp/replacement.json ${policyPath}`,
-        `jq '.' ${policyPath} > ${policyPath}`,
-        `jq '.' ${policyPath} | tee ${policyPath}`,
-        `jq '.' ${policyPath} | sponge ${policyPath}`,
+        `cat package.json > ${toShellPath(policyPath)}`,
+        `cat package.json >| ${toShellPath(policyPath)}`,
+        `tee ${toShellPath(policyPath)}`,
+        `rm ${toShellPath(policyPath)}`,
+        `sed -i.bak s/a/b/ ${toShellPath(policyPath)}`,
+        `dd if=/dev/zero of=${toShellPath(policyPath)}`,
+        `curl --output=${toShellPath(policyPath)} https://example.com/config`,
+        `ln -sf /tmp/replacement.json ${toShellPath(policyPath)}`,
+        `jq '.' ${toShellPath(policyPath)} > ${toShellPath(policyPath)}`,
+        `jq '.' ${toShellPath(policyPath)} | tee ${toShellPath(policyPath)}`,
+        `jq '.' ${toShellPath(policyPath)} | sponge ${toShellPath(policyPath)}`,
         `cat package.json > $CC_SAFETY_NET_HOME/policy.json`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd)?.target, command).toContain(
@@ -191,18 +191,18 @@ describe('policy config protection', () => {
     const safetyNetHome = join(home, '.cc-safety-net');
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       for (const command of [
-        `rm -r ${safetyNetHome}`,
-        `rm -rf ${safetyNetHome}`,
-        `rm -R ${home}`,
-        `rm --recursive ${parse(safetyNetHome).root}`,
-        `cd ${home} && rm -rf .cc-safety-net`,
+        `rm -r ${toShellPath(safetyNetHome)}`,
+        `rm -rf ${toShellPath(safetyNetHome)}`,
+        `rm -R ${toShellPath(home)}`,
+        `rm --recursive ${toShellPath(parse(safetyNetHome).root)}`,
+        `cd ${toShellPath(home)} && rm -rf .cc-safety-net`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).not.toBeNull();
       }
       for (const command of [
-        `rm -rf ${join(safetyNetHome, 'rules')}`,
-        `rm ${safetyNetHome}`,
-        `rm -rf "${safetyNetHome.slice(0, -1)}?"`,
+        `rm -rf ${toShellPath(join(safetyNetHome, 'rules'))}`,
+        `rm ${toShellPath(safetyNetHome)}`,
+        `rm -rf "${toShellPath(safetyNetHome.slice(0, -1))}?"`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).toBeNull();
       }
@@ -229,13 +229,13 @@ describe('policy config protection', () => {
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       const policyPath = getUserPolicyPath();
       for (const command of [
-        `env -S 'rm ${policyPath}' true`,
-        `env -S 'rm -r ${safetyNetHome}' true`,
-        `env -S 'rm ${policyPath}' cat`,
-        `env -S 'LC_ALL=C rm -r ${safetyNetHome}' true`,
-        `find ${safetyNetHome} -exec env -S 'rm -rf' {} \\;`,
-        `env -S 'rm "${policyPath}"' true`,
-        `env -S 'rm -r "${safetyNetHome}"' true`,
+        `env -S 'rm ${toShellPath(policyPath)}' true`,
+        `env -S 'rm -r ${toShellPath(safetyNetHome)}' true`,
+        `env -S 'rm ${toShellPath(policyPath)}' cat`,
+        `env -S 'LC_ALL=C rm -r ${toShellPath(safetyNetHome)}' true`,
+        `find ${toShellPath(safetyNetHome)} -exec env -S 'rm -rf' {} \\;`,
+        `env -S 'rm "${toShellPath(policyPath)}"' true`,
+        `env -S 'rm -r "${toShellPath(safetyNetHome)}"' true`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).not.toBeNull();
       }
@@ -245,8 +245,10 @@ describe('policy config protection', () => {
   test('blocks a quoted policy path with spaces inside an env -S split value', () => {
     withEnv({ CC_SAFETY_NET_HOME: join(cwd, 'home with space', '.cc-safety-net') }, () => {
       const policyPath = getUserPolicyPath();
-      const command = `env -S 'rm "${policyPath}"' true`;
-      expect(findPolicyMutation('Bash', { command }, cwd)?.target, command).toBe(policyPath);
+      const command = `env -S 'rm "${toShellPath(policyPath)}"' true`;
+      expect(findPolicyMutation('Bash', { command }, cwd)?.target, command).toBe(
+        toShellPath(policyPath),
+      );
     });
   });
 
@@ -254,21 +256,23 @@ describe('policy config protection', () => {
     const safetyNetHome = join(cwd, 'shared-policy');
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       for (const command of [
-        `rm -rf ${safetyNetHome}`,
-        `( rm -rf ${safetyNetHome} )`,
-        `{ rm -rf ${safetyNetHome}; }`,
-        `cleanup() { rm -rf ${safetyNetHome}; }; cleanup`,
-        `cleanup() { rm -rf ${safetyNetHome}; }; X=1 cleanup`,
-        `function cleanup { rm -rf ${safetyNetHome}; }; cleanup`,
-        `function cleanup() { rm -rf ${safetyNetHome}; }; cleanup`,
+        `rm -rf ${toShellPath(safetyNetHome)}`,
+        `( rm -rf ${toShellPath(safetyNetHome)} )`,
+        `{ rm -rf ${toShellPath(safetyNetHome)}; }`,
+        `cleanup() { rm -rf ${toShellPath(safetyNetHome)}; }; cleanup`,
+        `cleanup() { rm -rf ${toShellPath(safetyNetHome)}; }; X=1 cleanup`,
+        `function cleanup { rm -rf ${toShellPath(safetyNetHome)}; }; cleanup`,
+        `function cleanup() { rm -rf ${toShellPath(safetyNetHome)}; }; cleanup`,
       ]) {
-        expect(findPolicyMutation('Bash', { command }, cwd)?.target, command).toBe(safetyNetHome);
+        expect(findPolicyMutation('Bash', { command }, cwd)?.target, command).toBe(
+          toShellPath(safetyNetHome),
+        );
       }
 
       for (const command of [
-        `cleanup() { rm -rf ${safetyNetHome}; }`,
-        `function cleanup { rm -rf ${safetyNetHome}; }`,
-        `function cleanup() { rm -rf ${safetyNetHome}; }`,
+        `cleanup() { rm -rf ${toShellPath(safetyNetHome)}; }`,
+        `function cleanup { rm -rf ${toShellPath(safetyNetHome)}; }`,
+        `function cleanup() { rm -rf ${toShellPath(safetyNetHome)}; }`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).toBeNull();
       }
@@ -280,19 +284,19 @@ describe('policy config protection', () => {
     mkdirSync(project);
     const projectDir = dirname(getProjectPolicyPath(project));
     for (const command of [
-      `rm -rf ${projectDir}`,
-      `{ rm -rf ${projectDir}; }`,
-      `( rm -rf ${projectDir} )`,
-      `true; { rm -rf ${projectDir}; }`,
-      `{ { rm -rf ${projectDir}; }; }`,
-      `{ cd ${project} && rm -rf .cc-safety-net; }`,
+      `rm -rf ${toShellPath(projectDir)}`,
+      `{ rm -rf ${toShellPath(projectDir)}; }`,
+      `( rm -rf ${toShellPath(projectDir)} )`,
+      `true; { rm -rf ${toShellPath(projectDir)}; }`,
+      `{ { rm -rf ${toShellPath(projectDir)}; }; }`,
+      `{ cd ${toShellPath(project)} && rm -rf .cc-safety-net; }`,
     ]) {
       expect(findPolicyMutation('Bash', { command }, project), command).not.toBeNull();
     }
     for (const command of [
-      `{ rm -rf ${join(project, 'node_modules')}; }`,
-      `( ls ${projectDir} )`,
-      `{ echo done; } > ${join(project, 'out.txt')}`,
+      `{ rm -rf ${toShellPath(join(project, 'node_modules'))}; }`,
+      `( ls ${toShellPath(projectDir)} )`,
+      `{ echo done; } > ${toShellPath(join(project, 'out.txt'))}`,
     ]) {
       expect(findPolicyMutation('Bash', { command }, project), command).toBeNull();
     }
@@ -304,21 +308,21 @@ describe('policy config protection', () => {
       const home = dirname(safetyNetHome);
       const policyPath = getUserPolicyPath();
       for (const command of [
-        `find ${policyPath} -delete`,
-        `find ${safetyNetHome} -delete`,
-        `find ${home} -type f -delete`,
-        `find ${safetyNetHome} -exec rm -f {} +`,
-        `find ${home} -execdir rm -f {} +`,
-        `find . -maxdepth 0 -exec rm -f ${policyPath} \\;`,
-        `find ${policyPath} -exec mv {} /tmp \\;`,
+        `find ${toShellPath(policyPath)} -delete`,
+        `find ${toShellPath(safetyNetHome)} -delete`,
+        `find ${toShellPath(home)} -type f -delete`,
+        `find ${toShellPath(safetyNetHome)} -exec rm -f {} +`,
+        `find ${toShellPath(home)} -execdir rm -f {} +`,
+        `find . -maxdepth 0 -exec rm -f ${toShellPath(policyPath)} \\;`,
+        `find ${toShellPath(policyPath)} -exec mv {} /tmp \\;`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd)?.target, command).toBeTruthy();
       }
       for (const command of [
-        `cat ${policyPath}`,
-        `find ${safetyNetHome} -type f -print`,
-        `find ${join(safetyNetHome, 'sibling.json')} -delete`,
-        `find ${safetyNetHome} -maxdepth 0 -exec rm -f /tmp/unrelated-cache \\;`,
+        `cat ${toShellPath(policyPath)}`,
+        `find ${toShellPath(safetyNetHome)} -type f -print`,
+        `find ${toShellPath(join(safetyNetHome, 'sibling.json'))} -delete`,
+        `find ${toShellPath(safetyNetHome)} -maxdepth 0 -exec rm -f /tmp/unrelated-cache \\;`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).toBeNull();
       }
@@ -331,17 +335,17 @@ describe('policy config protection', () => {
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       const policyPath = getUserPolicyPath();
       for (const command of [
-        `mv ${policyPath} /tmp/policy-copy.json`,
-        `mv ${safetyNetHome} /tmp/disabled-safety-net`,
-        `mv ${home} /tmp/disabled-home`,
-        `mv -t /tmp ${safetyNetHome}`,
-        `mv --target-directory=/tmp ${home}`,
+        `mv ${toShellPath(policyPath)} /tmp/policy-copy.json`,
+        `mv ${toShellPath(safetyNetHome)} /tmp/disabled-safety-net`,
+        `mv ${toShellPath(home)} /tmp/disabled-home`,
+        `mv -t /tmp ${toShellPath(safetyNetHome)}`,
+        `mv --target-directory=/tmp ${toShellPath(home)}`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).not.toBeNull();
       }
       for (const command of [
-        `mv ${join(safetyNetHome, 'rules')} /tmp/rules`,
-        `mv /tmp/rules ${safetyNetHome}`,
+        `mv ${toShellPath(join(safetyNetHome, 'rules'))} /tmp/rules`,
+        `mv /tmp/rules ${toShellPath(safetyNetHome)}`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).toBeNull();
       }
@@ -352,8 +356,8 @@ describe('policy config protection', () => {
     const safetyNetHome = join(cwd, 'home', '.cc-safety-net');
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       for (const command of [
-        `cp /tmp/policy.json ${safetyNetHome}`,
-        `cd ${safetyNetHome} && curl -O https://example.com/policy.json`,
+        `cp /tmp/policy.json ${toShellPath(safetyNetHome)}`,
+        `cd ${toShellPath(safetyNetHome)} && curl -O https://example.com/policy.json`,
         `python -c 'import os; open(os.environ["CC_SAFETY_NET_HOME"] + "/policy.json", "w")'`,
         `awk 'BEGIN { print "{}" > ENVIRON["CC_SAFETY_NET_HOME"] "/policy.json" }'`,
       ]) {
@@ -369,16 +373,26 @@ describe('policy config protection', () => {
       expect(
         findPolicyMutation(
           'Bash',
-          { command: `/opt/reviewer --prompt 'Only ${policyPath} is protected by policy.'` },
+          {
+            command: `/opt/reviewer --prompt 'Only ${toShellPath(policyPath)} is protected by policy.'`,
+          },
           cwd,
         ),
       ).toBeNull();
       expect(
-        findPolicyMutation('Bash', { command: `rm "${safetyNetHome}/polic?.json"` }, cwd),
+        findPolicyMutation(
+          'Bash',
+          { command: `rm "${toShellPath(safetyNetHome)}/polic?.json"` },
+          cwd,
+        ),
       ).toBeNull();
       if (process.platform !== 'win32') {
         expect(
-          findPolicyMutation('Bash', { command: `rm ${safetyNetHome}/POLICY.JSON` }, cwd),
+          findPolicyMutation(
+            'Bash',
+            { command: `rm ${toShellPath(safetyNetHome)}/POLICY.JSON` },
+            cwd,
+          ),
         ).toBeNull();
       }
     });
@@ -387,24 +401,30 @@ describe('policy config protection', () => {
   test('malformed shell fails closed only for a directly extractable policy path', () => {
     const policyPath = getUserPolicyPath();
     expect(findPolicyMutation('Bash', { command: 'rm -rf / ${' }, cwd)).toBeNull();
-    expect(findPolicyMutation('Bash', { command: `rm ${policyPath} "` }, cwd)?.target).toContain(
-      'policy.json',
-    );
+    expect(
+      findPolicyMutation('Bash', { command: `rm ${toShellPath(policyPath)} "` }, cwd)?.target,
+    ).toContain('policy.json');
   });
 
   test('reads a quoted heredoc body as literal data but still blocks header-line writes', () => {
     const safetyNetHome = join(cwd, 'home', '.cc-safety-net');
     withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
       const policyPath = getUserPolicyPath();
+      const shellPolicyPath = toShellPath(policyPath);
       expect(
-        findPolicyMutation('Bash', { command: `cat <<'EOF'\nit's about ${policyPath}\nEOF` }, cwd),
+        findPolicyMutation(
+          'Bash',
+          { command: `cat <<'EOF'\nit's about ${shellPolicyPath}\nEOF` },
+          cwd,
+        ),
       ).toBeNull();
       expect(
-        findPolicyMutation('Bash', { command: `cat <<'EOF' > ${policyPath}\nbody\nEOF` }, cwd)
+        findPolicyMutation('Bash', { command: `cat <<'EOF' > ${shellPolicyPath}\nbody\nEOF` }, cwd)
           ?.target,
       ).toContain('policy.json');
       expect(
-        findPolicyMutation('Bash', { command: `bash <<'EOF'\nrm ${policyPath}\nEOF` }, cwd)?.target,
+        findPolicyMutation('Bash', { command: `bash <<'EOF'\nrm ${shellPolicyPath}\nEOF` }, cwd)
+          ?.target,
       ).toContain('policy.json');
     });
   });
@@ -489,9 +509,9 @@ describe('policy config protection', () => {
       symlinkSync(policyPath, join(cwd, 'innocent'));
 
       expect(findPolicyMutation('Bash', { command: 'tee innocent' }, cwd)?.target).toBe('innocent');
-      expect(findPolicyMutation('Bash', { command: `rm ${policyPath}` }, cwd)?.target).toBe(
-        policyPath,
-      );
+      expect(
+        findPolicyMutation('Bash', { command: `rm ${toShellPath(policyPath)}` }, cwd)?.target,
+      ).toBe(toShellPath(policyPath));
     });
   });
 
@@ -516,17 +536,17 @@ describe('policy config protection', () => {
       const projectPolicy = getProjectPolicyPath(project);
       const projectDir = dirname(projectPolicy);
       for (const command of [
-        `cat package.json > ${projectPolicy}`,
+        `cat package.json > ${toShellPath(projectPolicy)}`,
         'cat package.json > .cc-safety-net/policy.json',
-        `tee ${projectPolicy}`,
-        `sed -i.bak s/a/b/ ${projectPolicy}`,
-        `rm -rf ${projectDir}`,
+        `tee ${toShellPath(projectPolicy)}`,
+        `sed -i.bak s/a/b/ ${toShellPath(projectPolicy)}`,
+        `rm -rf ${toShellPath(projectDir)}`,
         'cd .cc-safety-net && rm -rf ../.cc-safety-net',
-        `mv ${projectPolicy} /tmp/policy-copy.json`,
-        `mv ${projectDir} /tmp/disabled-safety-net`,
-        `find ${projectPolicy} -delete`,
-        `find ${projectDir} -type f -delete`,
-        `rm ${projectPolicy} "`,
+        `mv ${toShellPath(projectPolicy)} /tmp/policy-copy.json`,
+        `mv ${toShellPath(projectDir)} /tmp/disabled-safety-net`,
+        `find ${toShellPath(projectPolicy)} -delete`,
+        `find ${toShellPath(projectDir)} -type f -delete`,
+        `rm ${toShellPath(projectPolicy)} "`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, project), command).not.toBeNull();
       }
@@ -550,10 +570,10 @@ describe('policy config protection', () => {
       const project = join(cwd, 'project');
       mkdirSync(project);
       for (const command of [
-        `rm -rf ${project}`,
+        `rm -rf ${toShellPath(project)}`,
         'rm -rf .',
         'find . -delete',
-        `mv ${project} /tmp`,
+        `mv ${toShellPath(project)} /tmp`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, project), command).toBeNull();
       }
@@ -566,8 +586,8 @@ describe('policy config protection', () => {
       expect(findPolicyMutation('Read', { file_path: projectPolicy }, cwd)).toBeNull();
       for (const command of [
         'cat .cc-safety-net/policy.json',
-        `jq '.' ${projectPolicy}`,
-        `ls -la ${dirname(projectPolicy)}`,
+        `jq '.' ${toShellPath(projectPolicy)}`,
+        `ls -la ${toShellPath(dirname(projectPolicy))}`,
       ]) {
         expect(findPolicyMutation('Bash', { command }, cwd), command).toBeNull();
       }

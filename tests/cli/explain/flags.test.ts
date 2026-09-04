@@ -35,11 +35,11 @@ describe('parseExplainFlags', () => {
   });
 
   test('parses --cwd and command args', () => {
-    const flags = parseExplainFlags(['--cwd', '/tmp', 'rm', '-rf', './foo']);
+    const flags = parseExplainFlags(['--cwd', process.cwd(), 'rm', '-rf', './foo']);
     expect(flags).not.toBeNull();
     if (!flags) return;
     expect(flags.json).toBe(false);
-    expect(flags.cwd).toBe('/tmp');
+    expect(flags.cwd).toBe(process.cwd());
     expect(flags.command).toBe('rm -rf ./foo');
   });
 

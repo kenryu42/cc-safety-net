@@ -26,13 +26,15 @@ describe('directory picker availability', () => {
     expect(isDirectoryPickerAvailable('win32', {})).toBe(true);
   });
 
-  test('accepts either dialog binary on Linux', () => {
+  // Windows cannot execute the extensionless Unix stubs used to model Linux dialog binaries.
+  test.skipIf(process.platform === 'win32')('accepts either dialog binary on Linux', () => {
     expect(isDirectoryPickerAvailable('linux', { PATH: withZenity, DISPLAY: ':0' })).toBe(true);
     expect(isDirectoryPickerAvailable('linux', { PATH: withKdialog, DISPLAY: ':0' })).toBe(true);
     expect(isDirectoryPickerAvailable('linux', { PATH: empty, DISPLAY: ':0' })).toBe(false);
   });
 
-  test('counts Wayland as a display', () => {
+  // Windows cannot execute the extensionless Unix stub used to model a Linux dialog binary.
+  test.skipIf(process.platform === 'win32')('counts Wayland as a display', () => {
     expect(
       isDirectoryPickerAvailable('linux', { PATH: withZenity, WAYLAND_DISPLAY: 'wayland-0' }),
     ).toBe(true);
@@ -46,7 +48,8 @@ describe('directory picker availability', () => {
 
   // A stale install can leave a plain file where the binary was: advertising it
   // would offer a picker that can never start.
-  test('rejects a dialog file that is not executable', () => {
+  // Windows has no Unix executable mode bits, so it cannot exercise this Linux capability check.
+  test.skipIf(process.platform === 'win32')('rejects a dialog file that is not executable', () => {
     const nonExecutable = mkdtempSync(join(tmpdir(), 'cc-picker-'));
     stubs.push(nonExecutable);
     writeFileSync(join(nonExecutable, 'zenity'), '');
@@ -97,22 +100,34 @@ afterAll(() => {
 });
 
 describe('choosing a directory', () => {
-  test('strips the trailing separator an AppleScript POSIX path carries', async () => {
-    expect(await chooseDirectory('linux', stubDialog(`${withZenity}/`))).toEqual({
-      path: withZenity,
-    });
-  });
+  // Windows cannot execute the POSIX shell dialog stub used by these Linux picker tests.
+  test.skipIf(process.platform === 'win32')(
+    'strips the trailing separator an AppleScript POSIX path carries',
+    async () => {
+      expect(await chooseDirectory('linux', stubDialog(`${withZenity}/`))).toEqual({
+        path: withZenity,
+      });
+    },
+  );
 
-  test('reads no output as a cancel rather than a failure', async () => {
-    expect(await chooseDirectory('linux', stubDialog(''))).toEqual({ cancelled: true });
-  });
+  // Windows cannot execute the POSIX shell dialog stub used by this Linux picker test.
+  test.skipIf(process.platform === 'win32')(
+    'reads no output as a cancel rather than a failure',
+    async () => {
+      expect(await chooseDirectory('linux', stubDialog(''))).toEqual({ cancelled: true });
+    },
+  );
 
   // Windows shell dialogs can return a virtual folder such as "This PC", which
   // would otherwise reach the prompt as a path the agent cannot write to.
-  test('rejects a selection that is not a directory on disk', async () => {
-    const result = await chooseDirectory('linux', stubDialog('/nonexistent/virtual folder'));
-    expect(result).toEqual({ error: 'That selection is not a folder on disk' });
-  });
+  // Windows cannot execute the POSIX shell dialog stub used by this Linux picker test.
+  test.skipIf(process.platform === 'win32')(
+    'rejects a selection that is not a directory on disk',
+    async () => {
+      const result = await chooseDirectory('linux', stubDialog('/nonexistent/virtual folder'));
+      expect(result).toEqual({ error: 'That selection is not a folder on disk' });
+    },
+  );
 
   test('reports when no dialog binary is present', async () => {
     expect(await chooseDirectory('linux', { PATH: empty })).toEqual({

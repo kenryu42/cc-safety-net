@@ -17,19 +17,21 @@
  * under `bun run test:e2e:live`; do not cite this file for it.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { HERMES_AGENT_PLUGIN_NAME } from '@/integrations/hermes-agent/artifact';
 import { getHermesAgentPluginDir } from '@/integrations/hermes-agent/install';
 import { OPENCLAW_PLUGIN_ENTRY_FILE, OPENCLAW_PLUGIN_ID } from '@/integrations/openclaw/artifact';
 import { buildOpenClawBundle, buildRuntimeBundles } from '../../scripts/build-runtime';
 import { OPENCLAW_HOST_SCRIPT } from '../../scripts/integration-host-scripts';
+import { writeFakeCommands } from '../integrations/install/install-test-helpers';
 import {
   buildE2EArtifacts,
   describeHermesGates,
   expectAllowedAction,
   expectSingleAudit,
   type GateResult,
+  NODE_EXECUTABLE,
   parseJsonOutput,
   readHermesDirective,
   runBuiltHost,
@@ -52,14 +54,13 @@ let hermesStubBinDir = '';
  * protection it is meant to prove. Its bytes are fixed and it is written once — macOS scans each
  * newly written executable on its first exec — with the log path arriving by environment.
  */
-function writeHermesStub(binDir: string) {
-  mkdirSync(binDir, { recursive: true });
-  writeFileSync(
-    join(binDir, 'hermes'),
-    '#!/usr/bin/env sh\nprintf \'%s\\n\' "$*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"\n',
-  );
-  chmodSync(join(binDir, 'hermes'), 0o755);
-  return binDir;
+function writeHermesStub(home: string) {
+  return writeFakeCommands(home, {
+    hermes: `appendFileSync(
+  process.env.CC_SAFETY_NET_TEST_COMMAND_LOG ?? '',
+  commandLine + '\\n',
+);`,
+  });
 }
 
 beforeAll(async () => {
@@ -148,7 +149,7 @@ const hermesPluginGate = {
     // The stub wins the lookup whether or not the machine has Hermes, so the gate installs the
     // same way everywhere. An enable that never ran would leave Hermes ignoring the plugin.
     const hermesCommandLog = join(home, 'hermes-cli.log');
-    await runCommand(['node', cliPath, 'install', '--hermes-agent'], '', cwd, home, {
+    await runCommand([NODE_EXECUTABLE, cliPath, 'install', '--hermes-agent'], '', cwd, home, {
       env: {
         PATH: `${hermesStubBinDir}${delimiter}${process.env.PATH ?? ''}`,
         CC_SAFETY_NET_TEST_COMMAND_LOG: hermesCommandLog,
@@ -159,13 +160,13 @@ const hermesPluginGate = {
     );
 
     const modulesDir = writeHermesModules(home);
-    const binDir = join(home, 'bin');
-    mkdirSync(binDir, { recursive: true });
-    writeFileSync(
-      join(binDir, 'npx'),
-      `#!/usr/bin/env sh\nexec node ${cliPath} hook --hermes-agent\n`,
-    );
-    chmodSync(join(binDir, 'npx'), 0o755);
+    const binDir = writeFakeCommands(home, {
+      npx: `const child = Bun.spawn(
+  [${JSON.stringify(NODE_EXECUTABLE)}, ${JSON.stringify(cliPath)}, 'hook', '--hermes-agent'],
+  { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' },
+);
+process.exit(await child.exited);`,
+    });
 
     const { stdout } = await runCommand(
       [

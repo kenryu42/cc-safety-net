@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   appendFileSync,
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { runPolicyCommand } from '@/cli/policy';
 import { REASON_POLICY_CONFIG_PROTECTION } from '@/guards/policy-protection';
 import {
@@ -31,6 +30,7 @@ import { getPackageVersion } from '@/integrations/system-info';
 import { getUserPolicyPath, loadPolicyConfig } from '@/policy/store';
 import { captureConsoleOutput, mockVersionFetcher, withEnv, writeJsonlFixture } from '../helpers';
 import { syncInitialGitRulebook } from '../helpers/rulebook';
+import { writeFakeCommands } from '../integrations/install/install-test-helpers';
 
 interface PolicyApiResponse {
   exists: boolean;
@@ -2667,93 +2667,86 @@ describe('policy GUI server', () => {
 
   test('userHasStarredRepo checks gh auth before starred state and maps exits', async () => {
     const localTempDir = mkdtempSync(join(process.cwd(), '.tmp-star-check-'));
-    const binDir = join(localTempDir, 'bin');
-    const ghPath = join(binDir, 'gh');
+    const binDir = writeFakeCommands(localTempDir, {
+      gh: `appendFileSync(process.env.STAR_LOG ?? '', args.join('\\n') + '\\n');
+if (args[0] === 'auth' && args[1] === 'status') {
+  process.exit(Number(process.env.AUTH_EXIT));
+}
+process.exit(Number(process.env.STAR_EXIT));`,
+    });
     const starLog = join(localTempDir, 'star-check-argv.txt');
-    mkdirSync(binDir);
-    writeFileSync(
-      ghPath,
-      [
-        '#!/bin/sh',
-        'printf "%s\\n" "$@" >> "$STAR_LOG"',
-        'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then exit "$AUTH_EXIT"; fi',
-        'exit "$STAR_EXIT"',
-        '',
-      ].join('\n'),
-      'utf-8',
-    );
-    chmodSync(ghPath, 0o755);
 
-    const originalStarLog = process.env.STAR_LOG;
-    const originalAuthExit = process.env.AUTH_EXIT;
-    const originalStarExit = process.env.STAR_EXIT;
-    process.env.STAR_LOG = starLog;
     try {
-      process.env.AUTH_EXIT = '0';
-      process.env.STAR_EXIT = '0';
-      expect(await userHasStarredRepo(ghPath)).toBe(true);
-      expect(readFileSync(starLog, 'utf-8')).toBe(
-        'auth\nstatus\napi\n/user/starred/kenryu42/cc-safety-net\n',
+      await withEnv(
+        {
+          PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
+          STAR_LOG: starLog,
+          AUTH_EXIT: '0',
+          STAR_EXIT: '0',
+        },
+        async () => {
+          expect(await userHasStarredRepo()).toBe(true);
+          expect(readFileSync(starLog, 'utf-8')).toBe(
+            'auth\nstatus\napi\n/user/starred/kenryu42/cc-safety-net\n',
+          );
+
+          writeFileSync(starLog, '', 'utf-8');
+          process.env.STAR_EXIT = '1';
+          expect(await userHasStarredRepo()).toBe(false);
+          expect(readFileSync(starLog, 'utf-8')).toBe(
+            'auth\nstatus\napi\n/user/starred/kenryu42/cc-safety-net\n',
+          );
+
+          writeFileSync(starLog, '', 'utf-8');
+          process.env.AUTH_EXIT = '1';
+          process.env.STAR_EXIT = '0';
+          expect(await userHasStarredRepo()).toBeNull();
+          expect(readFileSync(starLog, 'utf-8')).toBe('auth\nstatus\n');
+
+          expect(await userHasStarredRepo(join(localTempDir, 'missing-gh'))).toBeNull();
+        },
       );
-
-      writeFileSync(starLog, '', 'utf-8');
-      process.env.STAR_EXIT = '1';
-      expect(await userHasStarredRepo(ghPath)).toBe(false);
-      expect(readFileSync(starLog, 'utf-8')).toBe(
-        'auth\nstatus\napi\n/user/starred/kenryu42/cc-safety-net\n',
-      );
-
-      writeFileSync(starLog, '', 'utf-8');
-      process.env.AUTH_EXIT = '1';
-      process.env.STAR_EXIT = '0';
-      expect(await userHasStarredRepo(ghPath)).toBeNull();
-      expect(readFileSync(starLog, 'utf-8')).toBe('auth\nstatus\n');
-
-      expect(await userHasStarredRepo(join(localTempDir, 'missing-gh'))).toBeNull();
     } finally {
-      restoreEnv('STAR_LOG', originalStarLog);
-      restoreEnv('AUTH_EXIT', originalAuthExit);
-      restoreEnv('STAR_EXIT', originalStarExit);
       rmSync(localTempDir, { recursive: true, force: true });
     }
   });
 
   test('star helpers return fallback states on timeout', async () => {
     const localTempDir = mkdtempSync(join(process.cwd(), '.tmp-star-timeout-'));
-    const ghPath = join(localTempDir, 'gh');
-    writeFileSync(ghPath, '#!/bin/sh\n/bin/sleep 1\n', 'utf-8');
-    chmodSync(ghPath, 0o755);
+    const binDir = writeFakeCommands(localTempDir, {
+      gh: 'await new Promise((resolve) => setTimeout(resolve, 1_000));',
+    });
 
     try {
-      expect(await starRepo(ghPath, 10)).toEqual({ ok: false });
-      expect(await userHasStarredRepo(ghPath, 10)).toBeNull();
+      await withEnv({ PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}` }, async () => {
+        expect(await starRepo('gh', 10)).toEqual({ ok: false });
+        expect(await userHasStarredRepo('gh', 10)).toBeNull();
+      });
     } finally {
-      rmSync(localTempDir, { recursive: true, force: true });
+      // Windows may keep the generated .cmd body's files locked briefly after its wrapper dies.
+      rmSync(localTempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
   test('starRepo uses gh CLI with fixed argv', async () => {
     const localTempDir = mkdtempSync(join(process.cwd(), '.tmp-star-'));
-    const binDir = join(localTempDir, 'bin');
-    const ghPath = join(binDir, 'gh');
+    const binDir = writeFakeCommands(localTempDir, {
+      gh: `appendFileSync(process.env.STAR_LOG ?? '', args.join('\\n') + '\\n');
+await new Promise((resolve) => setTimeout(resolve, 100));`,
+    });
     const starLog = join(localTempDir, 'star-argv.txt');
-    mkdirSync(binDir);
-    writeFileSync(
-      ghPath,
-      '#!/bin/sh\nprintf "%s\\n" "$@" > "$STAR_LOG"\n/bin/sleep 0.1\nexit 0\n',
-      'utf-8',
-    );
-    chmodSync(ghPath, 0o755);
 
-    const originalStarLog = process.env.STAR_LOG;
-    process.env.STAR_LOG = starLog;
     try {
-      expect(await starRepo(ghPath)).toEqual({ ok: true });
-      expect(readFileSync(starLog, 'utf-8')).toBe(
-        'api\n-X\nPUT\n/user/starred/kenryu42/cc-safety-net\n',
+      await withEnv(
+        { PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`, STAR_LOG: starLog },
+        async () => {
+          expect(await starRepo()).toEqual({ ok: true });
+          expect(readFileSync(starLog, 'utf-8')).toBe(
+            'api\n-X\nPUT\n/user/starred/kenryu42/cc-safety-net\n',
+          );
+        },
       );
     } finally {
-      restoreEnv('STAR_LOG', originalStarLog);
       rmSync(localTempDir, { recursive: true, force: true });
     }
   });

@@ -114,6 +114,7 @@ export function evaluateGuard(
   const facts = callDependency('policy-protection', command, () =>
     createSemanticFacts(invocation, options.factParserDependencies),
   );
+  const inputCandidate = getCommandSyntaxFact(facts, 'input-candidate');
   const declaredCommand = getCommandSyntaxFact(facts, 'declared-command');
   if (
     isCommandInvocation(invocation) &&
@@ -130,7 +131,7 @@ export function evaluateGuard(
       },
     };
   }
-  if (getCommandSyntaxFact(facts, 'input-candidate')?.program.status === 'limited') {
+  if (inputCandidate?.program.status === 'limited') {
     return {
       stage: 'command-validation',
       decision: {
@@ -211,7 +212,10 @@ export function evaluateGuard(
       ? null
       : callDependency('secret-protection', command, () =>
           dependencies.findSensitiveTarget(facts, policy.secretProtection, {
-            strict: isCommandInvocation(invocation) ? modes.strict : undefined,
+            strict:
+              isCommandInvocation(invocation) || inputCandidate?.program.dialect === 'powershell'
+                ? modes.strict
+                : undefined,
           }),
         );
   if (secretTarget) {

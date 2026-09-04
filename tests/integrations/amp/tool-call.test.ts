@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAmpToolCallHandler, handleAmpToolCall } from '@/integrations/amp/tool-call';
 import { getUserPolicyPath } from '@/policy/store';
-import { readAuditLogEntriesForSession, readLatestAuditLogEntry, withEnv } from '../../helpers';
+import {
+  readAuditLogEntriesForSession,
+  readLatestAuditLogEntry,
+  toShellPath,
+  withEnv,
+} from '../../helpers';
 import { type AnalyzeCall, captureAnalyzeCalls } from '../../helpers/analyze-capture';
 
 type FakeShellCommand = { command: string; dir?: string } | null;
@@ -297,7 +302,7 @@ describe('Amp tool.call event', () => {
       try {
         withEnv({ HOME: join(dir, 'home') }, () => {
           const result = handleAmpToolCall(
-            shellEvent(`rm -rf ${join(realpathSync(dir), '.git')}`, outside),
+            shellEvent(`rm -rf ${toShellPath(join(realpathSync(dir), '.git'))}`, outside),
             ampApi(dir),
           );
 

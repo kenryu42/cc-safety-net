@@ -7,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, parse, relative } from 'node:path';
 import { analyzeCommand } from '@/analyzer';
 import { loadPolicySnapshot } from '@/policy/snapshot';
 import {
@@ -54,7 +54,7 @@ function treeState(root: string) {
     for (const name of readdirSync(path)) {
       const child = join(path, name);
       const stat = statSync(child);
-      entries[relative(root, child)] = {
+      entries[relative(root, child).replaceAll('\\', '/')] = {
         ...(stat.isFile() ? { content: readFileSync(child, 'utf-8') } : {}),
         mode: stat.mode,
         mtimeMs: stat.mtimeMs,
@@ -193,7 +193,7 @@ describe('policy snapshots', () => {
           destructive_command_protection: {
             enabled: 'yes',
             overrides: { 'git.reset-hard': 'allow' },
-            allow_paths: ['/'],
+            allow_paths: [parse(cwd).root],
           },
           secret_protection: { enabled: 'yes', overrides: { 'secret.ext.pem': 'allow' } },
         }),

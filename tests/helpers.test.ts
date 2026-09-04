@@ -1,12 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import {
+  quoteShellPath,
   withLinkedWorktreeFixture,
   withReadonlyLinkedWorktreeFixture,
   withTempDir,
 } from './helpers.ts';
 
 describe('test helpers', () => {
+  test('quotes native paths as one POSIX shell word', () => {
+    expect(quoteShellPath("C:\\Users\\O'Neil\\My Project")).toBe(
+      "'C:/Users/O'\\''Neil/My Project'",
+    );
+  });
+
   test('withTempDir waits for async callbacks before cleanup', async () => {
     let tempDir = '';
 

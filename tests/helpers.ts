@@ -1,5 +1,6 @@
 import { afterAll, expect, spyOn } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -156,6 +157,22 @@ export function writeNestedAuditLogFixture(
   writeJsonlFixture(join(monthDir, `${date}-${entry.sessionId}.jsonl`), [entry]);
 }
 
+export function mockReadFileError(filePath: string) {
+  const readFileSync = fs.readFileSync;
+  return spyOn(fs, 'readFileSync').mockImplementation(((path, options) => {
+    if (path === filePath) throw new Error('EACCES: permission denied');
+    return readFileSync(path, options);
+  }) as typeof fs.readFileSync);
+}
+
+export function mockReaddirError(dirPath: string) {
+  const readdirSync = fs.readdirSync;
+  return spyOn(fs, 'readdirSync').mockImplementation((path, options) => {
+    if (path === dirPath) throw new Error('EACCES: permission denied');
+    return Reflect.apply(readdirSync, fs, [path, options]);
+  });
+}
+
 function setEnvValue(key: string, value: string | undefined): void {
   if (value === undefined) {
     delete process.env[key];
@@ -188,6 +205,24 @@ export function withEnv<T>(env: Record<string, string | undefined>, fn: () => T)
     restore();
     throw error;
   }
+}
+
+export function createSpawnEnv(overrides: Record<string, string>) {
+  const overriddenNames = new Set(
+    Object.keys(overrides).map((name) =>
+      process.platform === 'win32' ? name.toLowerCase() : name,
+    ),
+  );
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] =>
+          entry[1] !== undefined &&
+          !overriddenNames.has(process.platform === 'win32' ? entry[0].toLowerCase() : entry[0]),
+      ),
+    ),
+    ...overrides,
+  };
 }
 
 export async function captureConsoleOutput<T>(
@@ -362,6 +397,11 @@ export const mockVersionFetcher: VersionFetcher = async (args: string[]) => {
  */
 export function toShellPath(p: string): string {
   return p.replace(/\\/g, '/');
+}
+
+/** Convert a native path to one safely quoted POSIX shell word. */
+export function quoteShellPath(p: string): string {
+  return `'${toShellPath(p).replaceAll("'", `'\\''`)}'`;
 }
 
 export interface LinkedWorktreeFixture {

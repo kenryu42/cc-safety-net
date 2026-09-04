@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { join } from 'node:path';
 import { buildRuntimeBundles } from '../../scripts/build-runtime';
 import { OPENCODE_HOST_SCRIPT, PI_HOST_SCRIPT } from '../../scripts/integration-host-scripts';
-import { readAuditLogEntriesForSession } from '../helpers';
+import { quoteShellPath, readAuditLogEntriesForSession } from '../helpers';
 import {
   buildE2EArtifacts,
   expectAllowedAction,
@@ -288,23 +288,25 @@ describe('built CLI protection contract', () => {
     });
   });
 
-  // Text that cannot name a local file must not be read as one: a regex operand
-  // survives shell quoting with its backslash intact, and a remote URL addresses
-  // another host entirely.
-  test.each([
-    [
-      'a regex operand of an unmodelled search tool',
-      'regex-operand',
-      'git grep -n "process\\.env" -- .',
-    ],
-    [
-      'a remote URL naming an env template',
-      'remote-url',
-      'curl -sL https://raw.githubusercontent.com/o/r/main/.env.test',
-    ],
-  ] as const)('Coding CLI allows %s and records only the allow decision', async (_name, slug, command) => {
+  // This fixture proves POSIX quoting preserves a regex backslash, which is not a Windows-shell
+  // capability. PowerShell quoting is covered by its own parser and integration tests.
+  test.skipIf(process.platform === 'win32')(
+    'Coding CLI allows a regex operand of an unmodelled search tool and records only the allow decision',
+    async () => {
+      const command = 'git grep -n "process\\.env" -- .';
+      await withWorkspace(async ({ cwd, home }) => {
+        const sessionId = 'claude-allows-regex-operand';
+        await expectAllowedAction(cwd, home, sessionId, (action) =>
+          runCodingCliTool('Bash', { command }, cwd, home, sessionId, action),
+        );
+      });
+    },
+  );
+
+  test('Coding CLI allows a remote URL naming an env template and records only the allow decision', async () => {
+    const command = 'curl -sL https://raw.githubusercontent.com/o/r/main/.env.test';
     await withWorkspace(async ({ cwd, home }) => {
-      const sessionId = `claude-allows-${slug}`;
+      const sessionId = 'claude-allows-remote-url';
       await expectAllowedAction(cwd, home, sessionId, (action) =>
         runCodingCliTool('Bash', { command }, cwd, home, sessionId, action),
       );
@@ -504,7 +506,12 @@ describe('built CLI protection contract', () => {
       expect(
         await runGated(
           adapters[0],
-          adapters[0].commandInput(`ls -la ${safetyNetHome}`, cwd, home, inspectSession),
+          adapters[0].commandInput(
+            `ls -la ${quoteShellPath(safetyNetHome)}`,
+            cwd,
+            home,
+            inspectSession,
+          ),
           cwd,
           home,
           () => reads.push(readdirSync(safetyNetHome).join(',')),
@@ -826,7 +833,7 @@ function policyMutation(
 ) {
   if (kind === 'write') return ['Write', { file_path: policyPath, content: '{}' }] as const;
   if (kind === 'redirect') {
-    return ['Bash', { command: `printf mutated > ${policyPath}` }] as const;
+    return ['Bash', { command: `printf mutated > ${quoteShellPath(policyPath)}` }] as const;
   }
   if (kind === 'env') {
     return ['Bash', { command: 'printf mutated > $CC_SAFETY_NET_HOME/policy.json' }] as const;

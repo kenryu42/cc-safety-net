@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { runInstallCommand } from '@/cli/install';
@@ -43,7 +43,7 @@ async function installOverSettings(
   settings: string,
 ) {
   const homeDir = makeTempHome(name);
-  const path = makeFakeBin(homeDir, { [binary]: 'exit 0' });
+  const path = makeFakeBin(homeDir, { [binary]: '' });
   const settingsPath = join(homeDir, settingsRelativePath);
   mkdirSync(dirname(settingsPath), { recursive: true });
   writeFileSync(settingsPath, settings);
@@ -65,7 +65,7 @@ async function probeInstallChoices(
   setup(homeDir);
   const path = makeFakeBin(
     homeDir,
-    Object.fromEntries(PROBED_CLIS.map((command) => [command, fixtures[command] ?? 'exit 0'])),
+    Object.fromEntries(PROBED_CLIS.map((command) => [command, fixtures[command] ?? ''])),
   );
   const choices: InstallTargetChoice[] = [];
 
@@ -255,7 +255,7 @@ describe('flagged install loading state', () => {
   // the spinner delay timer, an ordering no injected sleep can pin down.
   test('prints the install message after a flagged install runs', async () => {
     const homeDir = makeTempHome('safety-net-install-spinner');
-    const path = makeFakeBin(homeDir, { pi: 'exit 0' });
+    const path = makeFakeBin(homeDir, { pi: '' });
     const { chunks, output } = createLolcatOutput();
 
     const exitCode = await withEnv({ HOME: homeDir, PATH: path }, () =>
@@ -312,32 +312,27 @@ describe('interactive uninstall detection', () => {
  */
 function makeAmpFakeBin(homeDir: string, seedCheckout: boolean) {
   return makeFakeBin(homeDir, {
-    amp: [
-      'case "$1 $2" in',
-      `  "plugins repositories") printf '%s\\n' '[{"scope":"user","exists":true,"viewerCanWrite":true,"cloneRef":"tester/-/plugins"}]' ;;`,
-      seedCheckout
-        ? `  "clone user-plugins") mkdir -p "$3/cc-safety-net"; printf '%s\\n' '${AMP_MANAGED_HEADER}' > "$3/cc-safety-net/index.ts" ;;`
-        : '  "clone user-plugins") : ;;',
-      'esac',
-    ].join('\n'),
-    git: [
-      'printf \'%s\\n\' "$*" >> "$HOME/git.log"',
-      'case "$1 $2" in',
-      // An empty porcelain status means "nothing staged", which skips the commit and push.
-      '  "status --porcelain") printf \'%s\\n\' "M  cc-safety-net/index.ts" ;;',
-      'esac',
-    ].join('\n'),
+    amp: `if (args[0] === 'plugins' && args[1] === 'repositories') {
+  console.log('[{"scope":"user","exists":true,"viewerCanWrite":true,"cloneRef":"tester/-/plugins"}]');
+}
+if (args[0] === 'clone' && args[1] === 'user-plugins' && ${seedCheckout}) {
+  const pluginDir = join(args[2] ?? '', 'cc-safety-net');
+  mkdirSync(pluginDir, { recursive: true });
+  writeFileSync(join(pluginDir, 'index.ts'), ${JSON.stringify(AMP_MANAGED_HEADER)} + '\\n');
+}`,
+    git: `appendFileSync(join(process.env.HOME ?? '', 'git.log'), commandLine + '\\n');
+// An empty porcelain status means "nothing staged", which skips the commit and push.
+if (commandLine === 'status --porcelain') console.log('M  cc-safety-net/index.ts');`,
   });
 }
 
 /**
- * A PATH holding nothing but a `bun` symlink, so the CLI under test starts while no real `amp`
- * can ever be resolved — the missing-CLI path must not reach the account's hosted repository.
+ * An empty PATH, so no real `amp` can be resolved and the missing-CLI path cannot reach the
+ * account's hosted repository. The CLI under test starts through the current Bun executable.
  */
-function makeBunOnlyPath(homeDir: string) {
+function makeEmptyPath(homeDir: string) {
   const binDir = join(homeDir, 'runtime-bin');
   mkdirSync(binDir, { recursive: true });
-  symlinkSync(process.execPath, join(binDir, 'bun'));
   return binDir;
 }
 
@@ -378,7 +373,7 @@ describe('Amp personal-scope install command', () => {
 
     const result = await runCli(['install', '--amp'], '', {
       HOME: homeDir,
-      PATH: makeBunOnlyPath(homeDir),
+      PATH: makeEmptyPath(homeDir),
     });
 
     expect(result.exitCode).toBe(1);

@@ -344,6 +344,30 @@ describe('semantic facts', () => {
     expect(facts.commands[0]?.usages).toEqual(['input-candidate', 'declared-command']);
   });
 
+  test('preserves Windows paths in unknown-tool command fallback', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    if (!platform) throw new Error('Expected process.platform descriptor');
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+
+    try {
+      const source = 'rm C:\\Users\\alice\\.cc-safety-net\\policy.json';
+      const facts = createSemanticFacts({
+        toolName: 'custom_runner',
+        input: { command: source },
+        route: { kind: 'unknown' },
+        context: { configCwd: 'C:\\project', executionCwd: 'C:\\project' },
+      });
+
+      expect(facts.commands[0]?.program.dialect).toBe('powershell');
+      expect(facts.commands[0]?.shell.entries).toContainEqual({
+        kind: 'word',
+        text: 'C:\\Users\\alice\\.cc-safety-net\\policy.json',
+      });
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
+
   test('keeps nested command substitutions in the parsed program', () => {
     const facts = createSemanticFacts({
       toolName: 'bash',

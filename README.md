@@ -161,7 +161,7 @@ The skill is the operating manual for CC Safety Net. Ask it anything about the t
 /cc-safety-net is secret protection active in Codex?
 ```
 
-The command ships with the Claude Code plugin and is built into the OpenCode and Pi integrations. The skill loads only when you invoke it, so it takes no context-window space until you type the command. The agent cannot trigger it on its own.
+The command ships with the Claude Code and Codex plugins and is built into the OpenCode and Pi integrations. The skill loads only when you invoke it, so it takes no context-window space until you type the command. The agent cannot trigger it on its own.
 
 ## Library API
 

@@ -1,7 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -317,12 +316,9 @@ describe('pruneExpiredAuditLogs legacy layout', () => {
       );
       // A concurrent writer can only append between the metadata reads that
       // bracket the file read, so the read itself is the hook point.
-      const realReadFileSync = fs.readFileSync;
-      const spy = spyOn(fs, 'readFileSync').mockImplementation(((
-        path: Parameters<typeof fs.readFileSync>[0],
-        options: Parameters<typeof fs.readFileSync>[1],
-      ) => {
-        const content = realReadFileSync(path, options);
+      const readFileSync = fs.readFileSync;
+      const spy = spyOn(fs, 'readFileSync').mockImplementation(((path, options) => {
+        const content = readFileSync(path, options);
         if (path === legacy) utimesSync(legacy, NOW, NOW);
         return content;
       }) as typeof fs.readFileSync);
@@ -408,8 +404,11 @@ describe('pruneExpiredAuditLogs failure handling', () => {
   test('records the attempt and writes the audit entry when deletion fails', () => {
     withLogsDir((logsDir, homeDir) => {
       const expired = writeDatedLog(logsDir, EXPIRED_DAY);
-      const monthDir = join(logsDir, '-project-a', '2026-04');
-      chmodSync(monthDir, 0o500);
+      const realUnlinkSync = fs.unlinkSync;
+      const spy = spyOn(fs, 'unlinkSync').mockImplementation(((path: string) => {
+        if (path === expired) throw new Error('EACCES: permission denied');
+        realUnlinkSync(path);
+      }) as typeof fs.unlinkSync);
 
       try {
         expect(() =>
@@ -428,11 +427,10 @@ describe('pruneExpiredAuditLogs failure handling', () => {
         ).toBe(true);
 
         // The failed attempt still counts, so the same UTC day does not retry.
-        chmodSync(monthDir, 0o700);
         pruneExpiredAuditLogs(logsDir, now);
         expect(existsSync(expired)).toBe(true);
       } finally {
-        chmodSync(monthDir, 0o700);
+        spy.mockRestore();
       }
     });
   });

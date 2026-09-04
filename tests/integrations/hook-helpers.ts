@@ -14,6 +14,7 @@ import { runHermesAgentHook } from '@/integrations/hermes-agent/hook';
 import type { InstallTargetChoice } from '@/integrations/install/choices';
 import type { InstallAction } from '@/integrations/install/targets';
 import { runKimiCodeHook } from '@/integrations/kimi-code/hook';
+import { createSpawnEnv } from '../helpers';
 
 /**
  * Shared test helpers for CLI hook integration tests.
@@ -369,27 +370,20 @@ export async function runCli(
   cwd = TEST_HOOK_CWD,
 ): Promise<HookResult> {
   const home = env?.HOME ?? join(cwd, 'home');
-  const baseEnv: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) {
-      baseEnv[key] = value;
-    }
-  }
-
-  const mergedEnv: Record<string, string> = {
-    ...baseEnv,
-    HOME: home,
-    CC_SAFETY_NET_AUDIT_HOME: env?.CC_SAFETY_NET_AUDIT_HOME ?? home,
-    ...(env ?? {}),
-  };
-
-  const proc = Bun.spawn(['bun', join(process.cwd(), 'src/cli/cc-safety-net.ts'), ...args], {
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: mergedEnv,
-    cwd,
-  });
+  const proc = Bun.spawn(
+    [process.execPath, join(process.cwd(), 'src/cli/cc-safety-net.ts'), ...args],
+    {
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: createSpawnEnv({
+        HOME: home,
+        CC_SAFETY_NET_AUDIT_HOME: env?.CC_SAFETY_NET_AUDIT_HOME ?? home,
+        ...(env ?? {}),
+      }),
+      cwd,
+    },
+  );
   proc.stdin.write(input);
   proc.stdin.end();
   const stdoutPromise = new Response(proc.stdout).text();

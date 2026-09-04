@@ -7,15 +7,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import {
-  chmodSync,
-  cpSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import {
   buildOpenClawArtifactHeader,
@@ -33,6 +25,7 @@ import {
 import { getPackageVersion } from '@/integrations/system-info';
 import { withEnv, withTempDir } from '../../helpers';
 import { runCli } from '../hook-helpers';
+import { writeFakeCommands } from '../install/install-test-helpers';
 
 const ENTRY_FILE = 'index.js';
 const MANIFEST_FILE = 'openclaw.plugin.json';
@@ -106,20 +99,16 @@ function enableOpenClawPlugin(homeDir: string, plugins: Record<string, unknown> 
  * `plugins inspect` with the JSON the test pins in the environment.
  */
 function makeFakeOpenClawBin(homeDir: string) {
-  const binDir = join(homeDir, 'bin');
-  mkdirSync(binDir, { recursive: true });
-  const path = join(binDir, 'openclaw');
-  writeFileSync(
-    path,
-    `#!/usr/bin/env sh
-printf '%s\\n' "$*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$2" = "inspect" ]; then
-  printf '%s' "$CC_SAFETY_NET_TEST_INSPECT_STDERR" >&2
-  printf '%s' "$CC_SAFETY_NET_TEST_INSPECT_JSON"
-fi
-`,
-  );
-  chmodSync(path, 0o755);
+  const binDir = writeFakeCommands(homeDir, {
+    openclaw: `appendFileSync(
+  process.env.CC_SAFETY_NET_TEST_COMMAND_LOG ?? '',
+  commandLine + '\\n',
+);
+if (args[1] === 'inspect') {
+  process.stderr.write(process.env.CC_SAFETY_NET_TEST_INSPECT_STDERR ?? '');
+  process.stdout.write(process.env.CC_SAFETY_NET_TEST_INSPECT_JSON ?? '');
+}`,
+  });
   return {
     path: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
     logPath: join(homeDir, 'cmd.log'),

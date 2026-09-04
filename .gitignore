@@ -20,6 +20,8 @@
 artifacts
 .cc-safetynet-rules
 .cc-safety-net
+.amp/github-issue-events/
+.amp/github-issues-webhook.json
 coverage
 .codex
 .playwright

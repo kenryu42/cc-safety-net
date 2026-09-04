@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
 import { resolveCwdAfterCommandView } from '@/analyzer/segment';
 import { parseCommand } from '@/parser/command';
 import { projectCommandViews } from '@/parser/traversal';
@@ -12,11 +13,13 @@ function powerShellCommand(source: string) {
 
 describe('command working-directory tracking', () => {
   test('tracks PowerShell location commands only while the resulting directory stays known', () => {
-    for (const command of ['Set-Location /tmp', '& Set-Location /tmp']) {
+    const cwd = tmpdir();
+    const target = `'${cwd.replaceAll("'", "''")}'`;
+    for (const command of [`Set-Location ${target}`, `& Set-Location ${target}`]) {
       expect(
-        resolveCwdAfterCommandView(powerShellCommand(command), '/tmp', TEST_ENVIRONMENT),
+        resolveCwdAfterCommandView(powerShellCommand(command), cwd, TEST_ENVIRONMENT),
         command,
-      ).toBe('/tmp');
+      ).toBe(cwd);
     }
 
     for (const command of [
@@ -24,34 +27,30 @@ describe('command working-directory tracking', () => {
       'Set-Location Registry::HKLM',
       'Pop-Location',
       'Set-Location -Unknown value',
-      'Set-Location -- /tmp',
-      'Microsoft.PowerShell.Management\\Set-Location /tmp',
-      'Set-Location FileSystem::/tmp',
-      'Set-Location -LiteralPath:/tmp -Verbose -ErrorAction Stop',
+      `Set-Location -- ${target}`,
+      `Microsoft.PowerShell.Management\\Set-Location ${target}`,
+      `Set-Location FileSystem::${target}`,
+      `Set-Location -LiteralPath:${target} -Verbose -ErrorAction Stop`,
       'Set-Location -StackName work',
     ]) {
       expect(
-        resolveCwdAfterCommandView(powerShellCommand(command), '/tmp', TEST_ENVIRONMENT),
+        resolveCwdAfterCommandView(powerShellCommand(command), cwd, TEST_ENVIRONMENT),
         command,
       ).toBeNull();
     }
   });
 
   test('uses literal pipeline input only when no explicit PowerShell path is present', () => {
+    const cwd = tmpdir();
     expect(
-      resolveCwdAfterCommandView(
-        powerShellCommand('Set-Location'),
-        '/tmp',
-        TEST_ENVIRONMENT,
-        '/tmp',
-      ),
-    ).toBe('/tmp');
+      resolveCwdAfterCommandView(powerShellCommand('Set-Location'), cwd, TEST_ENVIRONMENT, cwd),
+    ).toBe(cwd);
     expect(
       resolveCwdAfterCommandView(
         powerShellCommand('Set-Location /other'),
-        '/tmp',
+        cwd,
         TEST_ENVIRONMENT,
-        '/tmp',
+        cwd,
       ),
     ).toBeNull();
   });

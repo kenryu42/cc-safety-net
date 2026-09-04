@@ -22,7 +22,10 @@ describe('package verification environment', () => {
       expect(env.CC_SAFETY_NET_HOME).toBe(join(directory, '.cc-safety-net'));
       expect(env.CC_SAFETY_NET_AUDIT_HOME).toBe(join(directory, 'audit-home'));
       expect(env.CC_SAFETY_NET_AUDIT_HOME).not.toBe(process.env.CC_SAFETY_NET_AUDIT_HOME);
-      expect(env.PATH).toBe(process.env.PATH);
+      const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path');
+      expect(pathKey).toBeDefined();
+      if (!pathKey) throw new Error('Expected the process environment to contain PATH');
+      expect(env[pathKey]).toBe(process.env[pathKey]);
     });
   });
 });

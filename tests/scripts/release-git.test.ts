@@ -41,6 +41,7 @@ function getRepositorySeed() {
   git(source, 'init', '-b', 'main');
   writeFileSync(join(source, 'file.txt'), 'base\n');
   mkdirSync(join(source, '.claude-plugin'));
+  mkdirSync(join(source, '.codex-plugin'));
   writeFileSync(
     join(source, 'package.json'),
     JSON.stringify({ name: 'cc-safety-net-release-test', version: '1.0.0' }),
@@ -49,8 +50,17 @@ function getRepositorySeed() {
     join(source, '.claude-plugin', 'plugin.json'),
     JSON.stringify({ version: '1.0.0' }),
   );
+  writeFileSync(join(source, '.codex-plugin', 'plugin.json'), JSON.stringify({ version: '1.0.0' }));
   writeFileSync(join(source, 'kimi.plugin.json'), JSON.stringify({ version: '1.0.0' }));
-  git(source, 'add', 'file.txt', 'package.json', '.claude-plugin/plugin.json', 'kimi.plugin.json');
+  git(
+    source,
+    'add',
+    'file.txt',
+    'package.json',
+    '.claude-plugin/plugin.json',
+    '.codex-plugin/plugin.json',
+    'kimi.plugin.json',
+  );
   git(source, 'commit', '-m', 'base');
   git(root, 'clone', '--bare', '--local', source, bare);
   repositorySeed = { root, bare };
@@ -94,10 +104,15 @@ function createReleaseRepository(root: string) {
 function prepareVersion(repo: string, version: string) {
   const pkg = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'));
   const plugin = JSON.parse(readFileSync(join(repo, '.claude-plugin', 'plugin.json'), 'utf8'));
+  const codexPlugin = JSON.parse(readFileSync(join(repo, '.codex-plugin', 'plugin.json'), 'utf8'));
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ ...pkg, version }));
   writeFileSync(
     join(repo, '.claude-plugin', 'plugin.json'),
     JSON.stringify({ ...plugin, version }),
+  );
+  writeFileSync(
+    join(repo, '.codex-plugin', 'plugin.json'),
+    JSON.stringify({ ...codexPlugin, version }),
   );
   writeFileSync(
     join(repo, 'kimi.plugin.json'),
@@ -283,6 +298,26 @@ describe('release git transaction', () => {
 
         rmSync(join(repo, 'kimi.plugin.json'));
         await expect(runTransaction(repo, '2.0.0')).rejects.toThrow('kimi.plugin.json');
+        expectRemoteUnchanged(root, remote, before);
+      });
+    });
+  });
+
+  test('the production CLI rejects a missing or mismatched Codex manifest', async () => {
+    await withTempDir('cc-safety-net-release-', async (root) => {
+      await withPreparedRelease(root, async ({ remote, repo, before }) => {
+        writeFileSync(
+          join(repo, '.codex-plugin', 'plugin.json'),
+          JSON.stringify({ version: '1.0.0' }),
+        );
+        await expect(runTransactionCli(repo, '2.0.0')).rejects.toThrow(
+          'Prepared manifests must all contain 2.0.0',
+        );
+
+        rmSync(join(repo, '.codex-plugin', 'plugin.json'));
+        await expect(runTransactionCli(repo, '2.0.0')).rejects.toThrow(
+          join('.codex-plugin', 'plugin.json'),
+        );
         expectRemoteUnchanged(root, remote, before);
       });
     });

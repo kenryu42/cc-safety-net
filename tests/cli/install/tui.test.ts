@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { runInstallCommand } from '@/cli/install';
@@ -16,6 +16,7 @@ import {
 } from '@/integrations/install/targets';
 import { captureConsoleOutput, withEnv, withTempDir } from '../../helpers';
 import { createInstallPromptStreams, startInstallPrompt } from '../../integrations/hook-helpers';
+import { writeFakeCommands } from '../../integrations/install/install-test-helpers';
 
 function makeChoice(target: InstallTarget, label: string, available: boolean) {
   return { target, flag: `--${target}`, label, available };
@@ -30,9 +31,8 @@ function expectAvailableTargets(
   ]);
 }
 
-function writeFakeInstallProbeBinaries(binDir: string) {
-  mkdirSync(binDir);
-  [
+function writeFakeInstallProbeBinaries(homeDir: string) {
+  const commands = [
     'codex',
     'claude',
     'agy',
@@ -46,16 +46,21 @@ function writeFakeInstallProbeBinaries(binDir: string) {
     'pi',
     'cursor',
     'amp',
-  ].forEach((command) => {
-    const installed = command === 'codex' || command === 'gemini';
-    symlinkSync(installed ? '/usr/bin/true' : '/usr/bin/false', join(binDir, command));
-  });
+  ];
+  return writeFakeCommands(
+    homeDir,
+    Object.fromEntries(
+      commands.map((command) => [
+        command,
+        `process.exit(${command === 'codex' || command === 'gemini' ? 0 : 1});`,
+      ]),
+    ),
+  );
 }
 
 async function withFakeInstallProbePath<T>(prefix: string, fn: () => T | Promise<T>) {
   await withTempDir(prefix, async (dir) => {
-    const binDir = join(dir, 'bin');
-    writeFakeInstallProbeBinaries(binDir);
+    const binDir = writeFakeInstallProbeBinaries(dir);
 
     return withEnv({ PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}` }, fn);
   });
@@ -68,7 +73,7 @@ type CapturedChoice = {
 };
 
 async function spawnInstallEval<T>(script: string, env: Record<string, string | undefined>) {
-  const proc = Bun.spawn(['bun', '--eval', script], {
+  const proc = Bun.spawn([process.execPath, '--eval', script], {
     cwd: process.cwd(),
     env: { ...process.env, ...env },
     stderr: 'pipe',
@@ -139,20 +144,17 @@ async function runInstallDispatchProbe(
 
 /** Records the exact argv every runtime CLI receives during a bare `install`. */
 async function recordBareInstallProbeArgv(homeDir: string): Promise<string> {
-  const binDir = join(homeDir, 'bin');
   const logPath = join(homeDir, 'argv.log');
-  mkdirSync(binDir);
-  for (const command of ['amp', 'agy', 'claude', 'codex', 'copilot', 'gemini', 'pi']) {
-    const commandPath = join(binDir, command);
-    writeFileSync(
-      commandPath,
-      `#!/usr/bin/env sh
-printf '%s %s\\n' '${command}' "$*" >> '${logPath}'
-printf '1.0.0\\n'
-`,
-    );
-    chmodSync(commandPath, 0o755);
-  }
+  const binDir = writeFakeCommands(
+    homeDir,
+    Object.fromEntries(
+      ['amp', 'agy', 'claude', 'codex', 'copilot', 'gemini', 'pi'].map((command) => [
+        command,
+        `appendFileSync(${JSON.stringify(logPath)}, ${JSON.stringify(command)} + ' ' + commandLine + '\\n');
+process.stdout.write('1.0.0\\n');`,
+      ]),
+    ),
+  );
 
   // console.log and the output stream are part of the command protocol, so
   // they are captured and asserted rather than discarded: a probe run that

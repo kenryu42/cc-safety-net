@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import { createPiToolCallHandler, handlePiToolCall } from '@/integrations/pi/tool-call';
 import { getUserPolicyPath } from '@/policy/store';
 import { writeDefaultRulesConfig } from '@/rules/policy';
-import { readAuditLogEntriesForSession, readLatestAuditLogEntry, withEnv } from '../../helpers';
+import {
+  readAuditLogEntriesForSession,
+  readLatestAuditLogEntry,
+  toShellPath,
+  withEnv,
+} from '../../helpers';
 import { type AnalyzeCall, captureAnalyzeCalls } from '../../helpers/analyze-capture';
 import {
   initialGitRule,
@@ -156,15 +161,15 @@ describe('Pi tool_call event', () => {
           'This path contains the protected policy config and you must not modify or delete it.',
         );
         const result = handlePiToolCall(
-          bashToolCall(`cat package.json > ${policyPath}`),
+          bashToolCall(`cat package.json > ${toShellPath(policyPath)}`),
           piContext(dir),
         );
 
         expect(result?.reason).toContain(
           'This path contains the protected policy config and you must not modify or delete it.',
         );
-        expect(result?.reason).toContain(`Command: cat package.json > ${policyPath}`);
-        expect(result?.reason).toContain(`Segment: ${policyPath}`);
+        expect(result?.reason).toContain(`Command: cat package.json > ${toShellPath(policyPath)}`);
+        expect(result?.reason).toContain(`Segment: ${toShellPath(policyPath)}`);
         expect(result?.reason).not.toContain(
           'ask the user for explicit permission and have them run the command manually',
         );
@@ -183,7 +188,9 @@ describe('Pi tool_call event', () => {
         expect(
           handlePiToolCall(toolCall('Read', { file_path: policyPath }), piContext(dir)),
         ).toBeUndefined();
-        expect(handlePiToolCall(bashToolCall(`cat ${policyPath}`), piContext(dir))).toBeUndefined();
+        expect(
+          handlePiToolCall(bashToolCall(`cat ${toShellPath(policyPath)}`), piContext(dir)),
+        ).toBeUndefined();
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -382,9 +389,10 @@ describe('Pi tool_call event', () => {
     const dir = mkdtempSync(join(tmpdir(), 'safety-net-pi-secret-policy-'));
     try {
       const handler = createHandlerWithSecretProtectionDisabled(dir);
+      const root = toShellPath(parse(dir).root);
 
       expect(handler(bashToolCall('cat .env'), piContext(dir))).toBeUndefined();
-      expect(handler(bashToolCall('rm -rf /'), piContext(dir))?.reason).toContain(
+      expect(handler(bashToolCall(`rm -rf ${root}`), piContext(dir))?.reason).toContain(
         'This path contains the protected policy config and you must not modify or delete it.',
       );
     } finally {
@@ -449,7 +457,7 @@ describe('Pi tool_call event', () => {
             segment: '.env',
             reason: 'Access to a sensitive path is not allowed.',
             ruleId: 'secret.basename.env',
-            cwd: dir,
+            cwd: realpathSync(dir),
           }),
         );
       });
@@ -713,13 +721,16 @@ describe('Pi tool_call event', () => {
     const dir = mkdtempSync(join(tmpdir(), 'safety-net-pi-rule-sync-'));
     try {
       writeDefaultRulesConfig(join(dir, '.cc-safety-net/rules/rule.json'), ['project-rules']);
+      const root = toShellPath(parse(dir).root);
 
       expect(
         handlePiToolCall(bashToolCall('npx -y cc-safety-net rule sync'), piContext(dir)),
       ).toBeUndefined();
       expect(
-        handlePiToolCall(bashToolCall('npx -y cc-safety-net rule sync && rm -rf /'), piContext(dir))
-          ?.reason,
+        handlePiToolCall(
+          bashToolCall(`npx -y cc-safety-net rule sync && rm -rf ${root}`),
+          piContext(dir),
+        )?.reason,
       ).toContain(
         'This path contains the protected policy config and you must not modify or delete it.',
       );

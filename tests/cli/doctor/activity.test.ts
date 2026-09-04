@@ -3,12 +3,18 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getActivitySummary } from '@/cli/doctor/activity';
 import { writeAuditLog } from '@/engine/audit';
-import { withEnv, writeJsonlFixture, writeNestedAuditLogFixture } from '../../helpers';
+import {
+  mockReaddirError,
+  mockReadFileError,
+  withEnv,
+  writeJsonlFixture,
+  writeNestedAuditLogFixture,
+} from '../../helpers';
 
 function createLogsDir(): string {
   const logsDir = join(tmpdir(), `doctor-logs-${Date.now()}`);
@@ -70,7 +76,7 @@ describe('getActivitySummary', () => {
       })}\n`,
     );
     writeFileSync(join(logsDir, 'malformed.jsonl'), '{"broken\n');
-    chmodSync(unreadable, 0o000);
+    const spy = mockReadFileError(unreadable);
 
     try {
       const activity = getActivitySummary(7, logsDir);
@@ -78,7 +84,7 @@ describe('getActivitySummary', () => {
       expect(activity.totalBlocked).toBe(0);
       expect(activity.unreadable).toBe(2);
     } finally {
-      chmodSync(unreadable, 0o600);
+      spy.mockRestore();
       rmSync(logsDir, { recursive: true, force: true });
     }
   });
@@ -173,14 +179,17 @@ describe('getActivitySummary', () => {
       writeJsonlFixture(join(unreadableDir, 'hidden.jsonl'), [
         { ts: new Date().toISOString(), command: 'hidden', reason: 'Blocked' },
       ]);
-      chmodSync(unreadableDir, 0o000);
+      const spy = mockReaddirError(unreadableDir);
 
-      const activity = getActivitySummary(7, logsDir);
+      try {
+        const activity = getActivitySummary(7, logsDir);
 
-      expect(activity.totalBlocked).toBe(1);
-      expect(activity.recentEntries[0]?.command).toBe('visible');
+        expect(activity.totalBlocked).toBe(1);
+        expect(activity.recentEntries[0]?.command).toBe('visible');
+      } finally {
+        spy.mockRestore();
+      }
     } finally {
-      chmodSync(unreadableDir, 0o700);
       rmSync(logsDir, { recursive: true, force: true });
     }
   });

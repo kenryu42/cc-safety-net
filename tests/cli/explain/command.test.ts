@@ -29,6 +29,7 @@ import {
 } from '../../helpers/policy';
 import {
   getTraceSteps,
+  quoteShellPath,
   toShellPath,
   withEnv,
   withLinkedWorktreeFixture,
@@ -1355,7 +1356,7 @@ describe('explainCommand pre-analysis protection stages', () => {
   });
 
   test('hard-stops policy config mutation before command analysis', () => {
-    const result = explainCommand(`rm "${getUserPolicyPath()}"`);
+    const result = explainCommand(`rm "${toShellPath(getUserPolicyPath())}"`);
     expect(result.result).toBe('blocked');
     expect(result.reason).toBe(REASON_POLICY_CONFIG_PROTECTION);
     expect(result.ruleId).toBe('policy-protection');
@@ -1376,10 +1377,11 @@ describe('explainCommand pre-analysis protection stages', () => {
     await withTempDir('cc-safety-net-explain-policy-function-', (cwd) => {
       const safetyNetHome = join(cwd, 'shared-policy');
       withEnv({ CC_SAFETY_NET_HOME: safetyNetHome }, () => {
+        const shellSafetyNetHome = quoteShellPath(safetyNetHome);
         for (const strict of [false, true]) {
           for (const command of [
-            `{ rm -rf ${safetyNetHome}; }`,
-            `cleanup() { rm -rf ${safetyNetHome}; }; cleanup`,
+            `{ rm -rf ${shellSafetyNetHome}; }`,
+            `cleanup() { rm -rf ${shellSafetyNetHome}; }; cleanup`,
           ]) {
             const result = explainCommand(command, { cwd, strict });
             expect(result.result, command).toBe('blocked');
@@ -1387,7 +1389,7 @@ describe('explainCommand pre-analysis protection stages', () => {
           }
         }
 
-        expect(explainCommand(`cleanup() { rm -rf ${safetyNetHome}; }`, { cwd }).result).toBe(
+        expect(explainCommand(`cleanup() { rm -rf ${shellSafetyNetHome}; }`, { cwd }).result).toBe(
           'allowed',
         );
       });

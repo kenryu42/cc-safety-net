@@ -17,7 +17,7 @@ describe('clearNpxSafetyNetCache', () => {
       const safetyNetEntry = writeNpxEntry(join(homeDir, '.npm'), 'hashA', 'cc-safety-net');
       const otherEntry = writeNpxEntry(join(homeDir, '.npm'), 'hashB', 'other-pkg');
 
-      withEnv({ npm_config_cache: undefined }, () => clearNpxSafetyNetCache(homeDir));
+      withEnv({ npm_config_cache: undefined }, () => clearNpxSafetyNetCache(homeDir, 'linux'));
 
       expect(existsSync(safetyNetEntry)).toBe(false);
       expect(existsSync(otherEntry)).toBe(true);
@@ -28,7 +28,7 @@ describe('clearNpxSafetyNetCache', () => {
     await withTempDir('safety-net-npx-cache-empty-', async (homeDir) => {
       const safetyNetEntry = writeNpxEntry(join(homeDir, '.npm'), 'hashA', 'cc-safety-net');
 
-      withEnv({ npm_config_cache: '' }, () => clearNpxSafetyNetCache(homeDir));
+      withEnv({ npm_config_cache: '' }, () => clearNpxSafetyNetCache(homeDir, 'linux'));
 
       expect(existsSync(safetyNetEntry)).toBe(false);
     });

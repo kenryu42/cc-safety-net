@@ -11,6 +11,7 @@ import {
   makeLoggedFakeCommandHome,
   writeClaudePluginRecords,
   writeFakeCommands,
+  writeLoggedFakeCommand,
 } from '../../integrations/install/install-test-helpers';
 import { createLolcatOutput, stripAnsi } from '../lolcat-test-helpers';
 
@@ -49,7 +50,7 @@ function normalizedCommandLog(logPath: string): string[] {
     .trim()
     .split('\n')
     .filter(Boolean)
-    .map((entry) => entry.replace(/^.*\/bin\//, ''));
+    .map((entry) => entry.replace(/^.*[\\/]bin[\\/]/, ''));
 }
 
 async function expectUpdateFindsNothing(homeDir: string, cwd?: string) {
@@ -93,6 +94,7 @@ function runUpdate(options: {
           {
             HOME: options.homeDir,
             PATH: options.path,
+            npm_config_cache: join(options.homeDir, '.npm'),
             // TMPDIR is the posix name os.tmpdir() reads, TEMP/TMP the win32 ones.
             TMPDIR: tmpDir,
             TEMP: tmpDir,
@@ -281,14 +283,12 @@ describe('update command', () => {
 
   test('migrates a legacy-only Codex integration', async () => {
     const fake = makeFakeBinHome('safety-net-update-legacy-codex', ['codex']);
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'codex'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled\n'
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'codex',
+      `if (commandLine === 'plugin list') {
+  console.log('safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled');
+}`,
     );
 
     await expectCodexLegacyMigration(fake);
@@ -300,14 +300,12 @@ fi
       join(fake.homeDir, '.copilot', 'installed-plugins', '_direct', 'copilot-safety-net'),
       { recursive: true },
     );
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'copilot'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'Installed plugins:\n  copilot-safety-net (v1.0.0)\n'
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'copilot',
+      `if (commandLine === 'plugin list') {
+  console.log(${JSON.stringify('Installed plugins:\n  copilot-safety-net (v1.0.0)')});
+}`,
     );
 
     try {
@@ -334,17 +332,15 @@ fi
     mkdirSync(join(fake.homeDir, '.copilot', 'installed-plugins', 'cc-marketplace', 'safety-net'), {
       recursive: true,
     });
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'copilot'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'Installed plugins:\n  • safety-net@cc-marketplace (v1.0.6)\n'
-fi
-if [ "$*" = "plugin marketplace list" ]; then
-  printf 'Registered marketplaces:\n  • cc-marketplace (GitHub: kenryu42/cc-marketplace)\n'
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'copilot',
+      `if (commandLine === 'plugin list') {
+  console.log(${JSON.stringify('Installed plugins:\n  • safety-net@cc-marketplace (v1.0.6)')});
+}
+if (commandLine === 'plugin marketplace list') {
+  console.log(${JSON.stringify('Registered marketplaces:\n  • cc-marketplace (GitHub: kenryu42/cc-marketplace)')});
+}`,
     );
 
     try {
@@ -373,15 +369,13 @@ fi
       ['cc-safety-net@cc-marketplace', 'safety-net@cc-marketplace'],
       { enableByDefault: true },
     );
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'claude'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin uninstall safety-net@cc-marketplace" ]; then
-  echo "Plugin \\"safety-net@cc-marketplace\\" not found in installed plugins" >&2
-  exit 1
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'claude',
+      `if (commandLine === 'plugin uninstall safety-net@cc-marketplace') {
+  console.error('Plugin "safety-net@cc-marketplace" not found in installed plugins');
+  process.exit(1);
+}`,
     );
 
     try {
@@ -403,18 +397,17 @@ fi
 
   test('detects a Codex integration whose plugin list is slower than the version probe timeout', async () => {
     const fake = makeFakeBinHome('safety-net-update-slow-codex', ['codex']);
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'codex'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  if [ ! -f "$HOME/.codex-slept" ]; then
-    touch "$HOME/.codex-slept"
-    sleep 6
-  fi
-  printf 'safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled\n'
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'codex',
+      `if (commandLine === 'plugin list') {
+  const sleptPath = join(process.env.HOME ?? '', '.codex-slept');
+  if (!existsSync(sleptPath)) {
+    writeFileSync(sleptPath, '');
+    await Bun.sleep(6000);
+  }
+  console.log('safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled');
+}`,
     );
 
     await expectCodexLegacyMigration(fake);
@@ -476,19 +469,17 @@ fi
     const binDir = writeFakeCommands(homeDir, {
       // Personal-scope plugin line, repositories preflight, and a clone that leaves the
       // throwaway checkout empty. No network and no real Amp repository is involved.
-      amp: [
-        'case "$1 $2" in',
-        '  "plugins list") printf \'\\342\\234\\223 cc-safety-net (User Plugins) active\\n\' ;;',
-        '  "plugins repositories") printf \'[{"scope":"user","exists":true,"viewerCanWrite":true,"cloneRef":"tester/-/plugins"}]\\n\' ;;',
-        'esac',
-      ].join('\n'),
+      amp: `if (args[0] === 'plugins' && args[1] === 'list') {
+  console.log('✓ cc-safety-net (User Plugins) active');
+}
+if (args[0] === 'plugins' && args[1] === 'repositories') {
+  console.log('[{"scope":"user","exists":true,"viewerCanWrite":true,"cloneRef":"tester/-/plugins"}]');
+}`,
       // Only `git status --porcelain` needs a real answer: the modified directory-plugin entry
       // means the artifact is staged, so `commitAndPush` proceeds to commit and push.
-      git: [
-        'case "$1 $2" in',
-        '  "status --porcelain") printf \'%s\\n\' "M  cc-safety-net/index.ts" ;;',
-        'esac',
-      ].join('\n'),
+      git: `if (commandLine === 'status --porcelain') {
+  console.log('M  cc-safety-net/index.ts');
+}`,
     });
 
     try {
@@ -515,23 +506,17 @@ fi
     writeClaudePluginRecords(fake.homeDir, ['cc-safety-net@cc-marketplace'], {
       enableByDefault: true,
     });
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'claude'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin marketplace update cc-marketplace" ]; then
-  exit 42
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'claude',
+      `if (commandLine === 'plugin marketplace update cc-marketplace') process.exit(42);`,
     );
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'codex'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'cc-safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled\n'
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'codex',
+      `if (commandLine === 'plugin list') {
+  console.log('cc-safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled');
+}`,
     );
 
     try {
@@ -555,34 +540,27 @@ fi
     });
     // Claude Code runs before Codex in canonical order, and here it only finishes once Codex
     // signals that it started, so this passes only when the two targets run concurrently.
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'claude'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin marketplace update cc-marketplace" ]; then
-  i=0
-  while [ $i -lt 50 ]; do
-    if [ -f "$HOME/.codex-running" ]; then
-      exit 0
-    fi
-    sleep 0.1
-    i=$((i + 1))
-  done
-  exit 42
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'claude',
+      `if (commandLine === 'plugin marketplace update cc-marketplace') {
+  const runningPath = join(process.env.HOME ?? '', '.codex-running');
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (existsSync(runningPath)) process.exit(0);
+    await Bun.sleep(100);
+  }
+  process.exit(42);
+}`,
     );
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'codex'),
-      `#!/usr/bin/env sh
-printf '%s\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'cc-safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled\n'
-fi
-if [ "$*" = "plugin marketplace upgrade cc-marketplace" ]; then
-  touch "$HOME/.codex-running"
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'codex',
+      `if (commandLine === 'plugin list') {
+  console.log('cc-safety-net@cc-marketplace https://github.com/kenryu42/cc-safety-net.git installed, enabled');
+}
+if (commandLine === 'plugin marketplace upgrade cc-marketplace') {
+  writeFileSync(join(process.env.HOME ?? '', '.codex-running'), '');
+}`,
     );
 
     try {

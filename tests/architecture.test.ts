@@ -4,6 +4,10 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 const SOURCE_ROOT = join(process.cwd(), 'src');
 
+function sourceRelative(path: string) {
+  return relative(SOURCE_ROOT, path).replaceAll('\\', '/');
+}
+
 function sourceFiles(dir = SOURCE_ROOT): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -19,7 +23,7 @@ function imports(path: string): string[] {
 }
 
 function layer(path: string): string {
-  return relative(SOURCE_ROOT, path).split('/')[0] ?? '';
+  return sourceRelative(path).split('/')[0] ?? '';
 }
 
 function importedLayer(specifier: string): string | null {
@@ -42,7 +46,7 @@ describe('source architecture', () => {
             target !== null &&
             ['integrations', 'cli', 'gui'].includes(target)) ||
           (owner === 'integrations' && (target === 'cli' || target === 'gui'));
-        return invalid ? [`${relative(SOURCE_ROOT, path)} -> ${specifier}`] : [];
+        return invalid ? [`${sourceRelative(path)} -> ${specifier}`] : [];
       });
     });
     expect(violations).toEqual([]);
@@ -52,12 +56,8 @@ describe('source architecture', () => {
     // api.ts is the public library entry; it evaluates without the runtime
     // wrapper on purpose so a library check never writes audit data.
     const violations = sourceFiles()
-      .filter(
-        (path) => !['integrations/runtime.ts', 'api.ts'].includes(relative(SOURCE_ROOT, path)),
-      )
-      .flatMap((path) =>
-        imports(path).includes('@/engine/guard') ? [relative(SOURCE_ROOT, path)] : [],
-      );
+      .filter((path) => !['integrations/runtime.ts', 'api.ts'].includes(sourceRelative(path)))
+      .flatMap((path) => (imports(path).includes('@/engine/guard') ? [sourceRelative(path)] : []));
     expect(violations).toEqual([]);
   });
 
@@ -74,7 +74,7 @@ describe('source architecture', () => {
     const violations = sourceFiles()
       .filter((path) => ['cli', 'gui'].includes(layer(path)))
       .flatMap((path) => {
-        const file = relative(SOURCE_ROOT, path);
+        const file = sourceRelative(path);
         return imports(path)
           .filter((specifier) => specifier.startsWith('@/'))
           .filter(
@@ -97,7 +97,7 @@ describe('source architecture', () => {
       sourceFiles(join(SOURCE_ROOT, owner)).flatMap((path) =>
         imports(path)
           .filter((specifier) => !/^(?:node:|@\/|\.)/.test(specifier))
-          .map((specifier) => `${relative(SOURCE_ROOT, path)} -> ${specifier}`),
+          .map((specifier) => `${sourceRelative(path)} -> ${specifier}`),
       ),
     );
     expect(violations).toEqual([]);
@@ -106,7 +106,7 @@ describe('source architecture', () => {
   test('contains no source import cycles', () => {
     const files = sourceFiles();
     const byModule = new Map(
-      files.map((path) => [relative(SOURCE_ROOT, path).replace(/\.ts$/, ''), path]),
+      files.map((path) => [sourceRelative(path).replace(/\.ts$/, ''), path]),
     );
     const edges = new Map(
       files.map((path) => [
@@ -115,7 +115,7 @@ describe('source architecture', () => {
           const unresolvedModule = specifier.startsWith('@/')
             ? specifier.slice(2)
             : specifier.startsWith('.')
-              ? relative(SOURCE_ROOT, resolve(dirname(path), specifier))
+              ? sourceRelative(resolve(dirname(path), specifier))
               : null;
           if (unresolvedModule === null) return [];
           const module = unresolvedModule.replace(/\.(?:js|ts)$/, '');
@@ -130,11 +130,7 @@ describe('source architecture', () => {
       const cycleAt = active.indexOf(path);
       if (cycleAt !== -1) {
         cycles.add(
-          active
-            .slice(cycleAt)
-            .map((item) => relative(SOURCE_ROOT, item))
-            .concat(relative(SOURCE_ROOT, path))
-            .join(' -> '),
+          active.slice(cycleAt).map(sourceRelative).concat(sourceRelative(path)).join(' -> '),
         );
         return;
       }

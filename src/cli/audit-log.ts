@@ -1,5 +1,5 @@
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parseCommandArgs, reportCommandArgErrors } from '@/cli/args';
 import { renderTerminalText } from '@/cli/utils/terminal';
 import {
@@ -344,7 +344,8 @@ function matchesSession(item: SourcedAuditLogEntry, logsDir: string, session: st
 
 function matchesProject(cwd: string | null | undefined, project: string): boolean {
   if (!cwd) return false;
-  return cwd === project || cwd.startsWith(`${project}/`);
+  const nested = relative(project, cwd);
+  return nested !== '..' && !nested.startsWith(`..${sep}`) && !isAbsolute(nested);
 }
 
 function formatLogEntry(entry: AuditLogEntry, timeZone?: string): string {

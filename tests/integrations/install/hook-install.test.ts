@@ -14,6 +14,7 @@ import {
   makeLoggedFakeCommandHome,
   writeAntigravityConfig,
   writeClaudePluginRecords,
+  writeLoggedFakeCommand,
 } from './install-test-helpers';
 
 const CURSOR_CANONICAL_ENTRY = {
@@ -110,7 +111,7 @@ function readCommandLog(logPath: string): string[] {
 }
 
 function normalizedCommandLog(logPath: string): string[] {
-  return readCommandLog(logPath).map((entry) => entry.replace(/^.*\/bin\//, ''));
+  return readCommandLog(logPath).map((entry) => entry.replace(/^.*[\\/]bin[\\/]/, ''));
 }
 
 function runNativeCli(
@@ -129,6 +130,7 @@ function runNativeCli(
       {
         HOME: fake.homeDir,
         PATH: fake.path,
+        npm_config_cache: join(fake.homeDir, '.npm'),
         CC_SAFETY_NET_TEST_COMMAND_LOG: fake.logPath,
       },
       () => runInstallCommand(action, [targetFlag], { output: output as NodeJS.WriteStream }),
@@ -151,14 +153,10 @@ function codexPluginListOptions(pluginList: string, options: NativeActionOptions
     isolatedBin: true,
     ...options,
     setup: (fake: ReturnType<typeof makeFakeBinHome>) => {
-      writeFileSync(
-        join(fake.homeDir, 'bin', 'codex'),
-        `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf '%s\\n' '${pluginList}'
-fi
-`,
+      writeLoggedFakeCommand(
+        fake.homeDir,
+        'codex',
+        `if (commandLine === 'plugin list') console.log(${JSON.stringify(pluginList)});`,
       );
     },
   };
@@ -548,14 +546,12 @@ describe('install command', () => {
       {
         isolatedBin: true,
         setup: (fake) => {
-          writeFileSync(
-            join(fake.homeDir, 'bin', 'copilot'),
-            `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'Installed plugins:\\n  copilot-safety-net (v1.0.0)\\n'
-fi
-`,
+          writeLoggedFakeCommand(
+            fake.homeDir,
+            'copilot',
+            `if (commandLine === 'plugin list') {
+  console.log(${JSON.stringify('Installed plugins:\n  copilot-safety-net (v1.0.0)')});
+}`,
           );
         },
       },
@@ -577,17 +573,15 @@ fi
       {
         isolatedBin: true,
         setup: (fake) => {
-          writeFileSync(
-            join(fake.homeDir, 'bin', 'copilot'),
-            `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'Installed plugins:\\n  • safety-net@cc-marketplace (v1.0.6)\\n'
-fi
-if [ "$*" = "plugin marketplace list" ]; then
-  printf 'Registered marketplaces:\\n  • cc-marketplace (GitHub: kenryu42/cc-marketplace)\\n'
-fi
-`,
+          writeLoggedFakeCommand(
+            fake.homeDir,
+            'copilot',
+            `if (commandLine === 'plugin list') {
+  console.log(${JSON.stringify('Installed plugins:\n  • safety-net@cc-marketplace (v1.0.6)')});
+}
+if (commandLine === 'plugin marketplace list') {
+  console.log(${JSON.stringify('Registered marketplaces:\n  • cc-marketplace (GitHub: kenryu42/cc-marketplace)')});
+}`,
           );
         },
       },
@@ -608,14 +602,14 @@ fi
       {
         isolatedBin: true,
         setup: (fake) => {
-          writeFileSync(
-            join(fake.homeDir, 'bin', 'copilot'),
-            `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'Installed plugins:\\n  cc-safety-net@cc-marketplace (v1.0.0)\\n  copilot-safety-net (v1.0.0)\\n'
-fi
-`,
+          writeLoggedFakeCommand(
+            fake.homeDir,
+            'copilot',
+            `if (commandLine === 'plugin list') {
+  console.log(${JSON.stringify(
+    'Installed plugins:\n  cc-safety-net@cc-marketplace (v1.0.0)\n  copilot-safety-net (v1.0.0)',
+  )});
+}`,
           );
         },
       },
@@ -624,15 +618,13 @@ fi
 
   test('legacy uninstall failure does not fail the install', async () => {
     const fake = makeFakeBinHome('safety-net-legacy-uninstall-fail', ['claude']);
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'claude'),
-      `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin uninstall safety-net@cc-marketplace" ]; then
-  echo "uninstall failed" >&2
-  exit 42
-fi
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'claude',
+      `if (commandLine === 'plugin uninstall safety-net@cc-marketplace') {
+  console.error('uninstall failed');
+  process.exit(42);
+}`,
     );
     writeClaudePluginRecords(fake.homeDir, ['safety-net@cc-marketplace'], {
       enabled: { 'safety-net@cc-marketplace': true },
@@ -711,14 +703,12 @@ fi
       {
         isolatedBin: true,
         setup: (fake) => {
-          writeFileSync(
-            join(fake.homeDir, 'bin', 'copilot'),
-            `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin marketplace list" ]; then
-  printf 'Registered marketplaces:\\n  • cc-marketplace (GitHub: kenryu42/cc-marketplace)\\n'
-fi
-`,
+          writeLoggedFakeCommand(
+            fake.homeDir,
+            'copilot',
+            `if (commandLine === 'plugin marketplace list') {
+  console.log(${JSON.stringify('Registered marketplaces:\n  • cc-marketplace (GitHub: kenryu42/cc-marketplace)')});
+}`,
           );
         },
       },
@@ -738,14 +728,12 @@ fi
       {
         isolatedBin: true,
         setup: (fake) => {
-          writeFileSync(
-            join(fake.homeDir, 'bin', 'copilot'),
-            `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  printf 'Installed plugins:\\n  • cc-safety-net@cc-marketplace (v1.0.6)\\n'
-fi
-`,
+          writeLoggedFakeCommand(
+            fake.homeDir,
+            'copilot',
+            `if (commandLine === 'plugin list') {
+  console.log(${JSON.stringify('Installed plugins:\n  • cc-safety-net@cc-marketplace (v1.0.6)')});
+}`,
           );
         },
       },
@@ -884,14 +872,13 @@ fi
           // `opencode plugin` reifies the package into the cache, and the install now refuses to
           // report success without it, so the fake has to leave the same layout behind.
           const packageDir = join(cachePath, 'node_modules', 'cc-safety-net');
-          writeFileSync(
-            join(fake.homeDir, 'bin', 'opencode'),
-            `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-mkdir -p '${packageDir}'
-printf '%s' '{"main":"index.js"}' > '${packageDir}/package.json'
-printf '%s' 'export const CCSafetyNetPlugin = () => {};' > '${packageDir}/index.js'
-`,
+          writeLoggedFakeCommand(
+            fake.homeDir,
+            'opencode',
+            `const packageDir = ${JSON.stringify(packageDir)};
+mkdirSync(packageDir, { recursive: true });
+writeFileSync(join(packageDir, 'package.json'), '{"main":"index.js"}');
+writeFileSync(join(packageDir, 'index.js'), 'export const CCSafetyNetPlugin = () => {};');`,
           );
         },
         assert: (fake) => {
@@ -923,17 +910,13 @@ printf '%s' 'export const CCSafetyNetPlugin = () => {};' > '${packageDir}/index.
 
   test('native installer fails fast and reports command output', async () => {
     const fake = makeFakeBinHome('safety-net-native-install-fail', ['codex']);
-    writeFileSync(
-      join(fake.homeDir, 'bin', 'codex'),
-      `#!/usr/bin/env sh
-printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ "$*" = "plugin list" ]; then
-  exit 0
-fi
-echo "native stdout"
-echo "native stderr" >&2
-exit 42
-`,
+    writeLoggedFakeCommand(
+      fake.homeDir,
+      'codex',
+      `if (commandLine === 'plugin list') process.exit(0);
+console.log('native stdout');
+console.error('native stderr');
+process.exit(42);`,
     );
 
     try {
@@ -957,7 +940,10 @@ exit 42
     const npxCacheEntry = writeNpxCacheEntry(homeDir, 'hashA', 'cc-safety-net');
 
     try {
-      const result = await runCli(['install', '--agy-cli'], '', { HOME: homeDir });
+      const result = await runCli(['install', '--agy-cli'], '', {
+        HOME: homeDir,
+        npm_config_cache: join(homeDir, '.npm'),
+      });
       const configPath = getAntigravityHooksPath(homeDir);
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
 
@@ -1084,7 +1070,10 @@ exit 42
     const npxCacheEntry = writeNpxCacheEntry(homeDir, 'hashA', 'cc-safety-net');
 
     try {
-      const result = await runCli(['install', '--kimi-code'], '', { HOME: homeDir });
+      const result = await runCli(['install', '--kimi-code'], '', {
+        HOME: homeDir,
+        npm_config_cache: join(homeDir, '.npm'),
+      });
       const configPath = join(homeDir, '.kimi-code', 'config.toml');
 
       expect(result.exitCode).toBe(0);
@@ -1777,7 +1766,10 @@ describe('Cursor install', () => {
     const otherCacheEntry = writeNpxCacheEntry(homeDir, 'hashB', 'other-pkg');
 
     try {
-      const result = await runCli(['install', '--cursor'], '', { HOME: homeDir });
+      const result = await runCli(['install', '--cursor'], '', {
+        HOME: homeDir,
+        npm_config_cache: join(homeDir, '.npm'),
+      });
       const configPath = getCursorHooksPath(homeDir);
 
       expect(result.exitCode).toBe(0);

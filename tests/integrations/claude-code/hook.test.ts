@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { listAuditLogFiles } from '@/engine/audit-scan';
 import { writeDefaultRulesConfig, writeStarterRulebook } from '@/rules/policy';
-import { readAuditLogEntriesForSession, readLatestAuditLogEntry } from '../../helpers';
+import { readAuditLogEntriesForSession, readLatestAuditLogEntry, toShellPath } from '../../helpers';
 import {
   claudeCodeBashInput,
   expectNoHookOutput,
@@ -428,7 +428,7 @@ period, so default to 0 instead of hiding the Weekly block at fresh-period start
 
         await expectNoHookOutput(
           context.runClaudeCodeHook,
-          context.claudeCodeBashInput(`cat ${policyPath}`),
+          context.claudeCodeBashInput(`cat ${toShellPath(policyPath)}`),
         );
       });
     });
@@ -454,11 +454,12 @@ period, so default to 0 instead of hiding the Weekly block at fresh-period start
     test('denies bash writes and ambiguous commands touching user policy file', async () => {
       await withHookTestContext(async (context) => {
         const policyPath = join(context.home, '.cc-safety-net', 'policy.json');
+        const shellPolicyPath = toShellPath(policyPath);
         for (const command of [
-          `cat package.json > ${policyPath}`,
-          `tee ${policyPath}`,
-          `rm ${policyPath}`,
-          `node script.js ${policyPath}`,
+          `cat package.json > ${shellPolicyPath}`,
+          `tee ${shellPolicyPath}`,
+          `rm ${shellPolicyPath}`,
+          `node script.js ${shellPolicyPath}`,
         ]) {
           const result = await context.runClaudeCodeHook(context.claudeCodeBashInput(command));
 

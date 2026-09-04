@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, toNamespacedPath } from 'node:path';
+import { dirname, join, parse, toNamespacedPath } from 'node:path';
 import { textCommandWords } from '@/analyzer/command-words';
 import {
   type AnalyzeRmOptions,
@@ -346,8 +346,11 @@ describe('rm -rf allow paths', () => {
     expect(
       runGuard('rm -rf ~/projects', undefined, { destructiveCommandAllowPaths: ['~'] }),
     ).toContain('rm -rf');
+    const root = parse(homedir()).root;
     expect(
-      runGuard('rm -rf /some/path', undefined, { destructiveCommandAllowPaths: ['/'] }),
+      runGuard(`rm -rf ${toShellPath(join(root, 'some', 'path'))}`, undefined, {
+        destructiveCommandAllowPaths: [root],
+      }),
     ).toContain('rm -rf');
   });
 

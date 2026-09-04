@@ -1,7 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -15,7 +14,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeAuditLog } from '@/engine/audit';
 import type { AuditLogEntry } from '@/ir/audit';
-import { withEnv, writeJsonlFixture, writeNestedAuditLogFixture } from '../../helpers';
+import {
+  mockReaddirError,
+  withEnv,
+  writeJsonlFixture,
+  writeNestedAuditLogFixture,
+} from '../../helpers';
 import { writeDeniedLogFixture } from '../../helpers/denied-log-fixture';
 import { captureLogsCommand } from '../../helpers/logs';
 
@@ -230,15 +234,18 @@ describe('runLogsCommand', () => {
       writeDeniedLogFixture(join(logsDir, 'readable.jsonl'), 'visible blocked');
       mkdirSync(unreadableDir);
       writeDeniedLogFixture(join(unreadableDir, 'hidden.jsonl'), 'hidden blocked');
-      chmodSync(unreadableDir, 0o000);
+      const spy = mockReaddirError(unreadableDir);
 
-      const result = await captureLogsCommand([], logsDir);
+      try {
+        const result = await captureLogsCommand([], logsDir);
 
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('visible blocked');
-      expect(result.stdout).not.toContain('hidden blocked');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('visible blocked');
+        expect(result.stdout).not.toContain('hidden blocked');
+      } finally {
+        spy.mockRestore();
+      }
     } finally {
-      chmodSync(unreadableDir, 0o700);
       rmSync(root, { recursive: true, force: true });
     }
   });

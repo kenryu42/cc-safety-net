@@ -171,30 +171,34 @@ describe('doctor report verification ownership', () => {
     });
   });
 
-  test('an unsafe protected directory fails the run for JSON and human output', async () => {
-    await withTempDir('doctor-report-', async (cwd) => {
-      const host = mockHealthyDoctorHost(cwd);
+  // Windows has no Unix mode-bit ownership check for this posture finding.
+  test.skipIf(process.platform === 'win32')(
+    'an unsafe protected directory fails the run for JSON and human output',
+    async () => {
+      await withTempDir('doctor-report-', async (cwd) => {
+        const host = mockHealthyDoctorHost(cwd);
 
-      try {
-        mkdirSync(join(cwd, 'safety-net'));
-        chmodSync(join(cwd, 'safety-net'), 0o777);
-        const run = await runDoctorBothModes(cwd, host);
+        try {
+          mkdirSync(join(cwd, 'safety-net'));
+          chmodSync(join(cwd, 'safety-net'), 0o777);
+          const run = await runDoctorBothModes(cwd, host);
 
-        expect(run.report.findings).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              checkId: 'posture.policy-directory-unsafe',
-              severity: 'error',
-            }),
-          ]),
-        );
-        expect(run.jsonExit).toBe(1);
-        expect(run.humanExit).toBe(1);
-      } finally {
-        host.restore();
-      }
-    });
-  });
+          expect(run.report.findings).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                checkId: 'posture.policy-directory-unsafe',
+                severity: 'error',
+              }),
+            ]),
+          );
+          expect(run.jsonExit).toBe(1);
+          expect(run.humanExit).toBe(1);
+        } finally {
+          host.restore();
+        }
+      });
+    },
+  );
 
   // The project scope is honored as written, so what it relaxes is reported and
   // never turned into a finding: findings own the exit code, and a team policy

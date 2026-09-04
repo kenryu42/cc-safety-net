@@ -81,7 +81,12 @@ export function createSemanticFacts(
       };
       return facts;
     }
-    const dialect = invocation.route.kind === 'command' ? invocation.route.shell : 'posix';
+    const dialect =
+      invocation.route.kind === 'command'
+        ? invocation.route.shell
+        : process.platform === 'win32'
+          ? 'powershell'
+          : 'posix';
     const program = store.getCommandProgram(candidate.source, dialect);
     facts.push({
       usages: [candidate.usage],

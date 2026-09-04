@@ -25,7 +25,7 @@ import {
   SECRET_PROTECTION_RULE_IDS,
   SECRET_PROTECTION_RULE_METADATA,
 } from '@/rules/secret-protection-rules';
-import { toShellPath, withEnv } from '../helpers.ts';
+import { quoteShellPath, toShellPath, withEnv } from '../helpers.ts';
 
 const COMMAND_TOOL_NAMES = new Set([
   'bash',
@@ -204,7 +204,7 @@ describe('secret protection path matching', () => {
     expect(findSensitivePathTarget(['protected-sibling/child.txt'], cwd, config)).toBeNull();
   });
 
-  test('blocks descendants of configured home and filesystem root paths', () => {
+  test('blocks descendants of home-expanded and absolute configured paths', () => {
     const home = mkdtempSync(join(tmpdir(), 'secret-protection-deny-home-'));
     try {
       withEnv({ HOME: home }, () => {
@@ -218,7 +218,7 @@ describe('secret protection path matching', () => {
       expect(
         findSensitivePathTarget([join(tmpdir(), 'ordinary.txt')], home, {
           disabledRules: [],
-          denyPaths: ['/'],
+          denyPaths: [tmpdir()],
         })?.ruleId,
       ).toBe('secret.deny-path');
     } finally {
@@ -316,7 +316,9 @@ describe('secret protection path matching', () => {
         expect(
           findSensitiveTargetInToolInput('Read', { file_path: aliasPath }, cwd),
         ).not.toBeNull();
-        expect(findSensitiveTargetInCommand(`cat ${aliasPath}`, cwd)).not.toBeNull();
+        expect(
+          findSensitiveTargetInCommand(`cat ${quoteShellPath(aliasPath)}`, cwd),
+        ).not.toBeNull();
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -903,10 +905,16 @@ for runtime in /Users/kenryu/.nvm/versions/node/v26.0.0/bin/node /Users/kenryu/.
 
     withEnv({ HOME: home }, () => {
       expect(
-        findSensitiveTargetInCommand(`echo ${join(home, '.ssh', 'id_rsa')} | xargs cat`, cwd),
+        findSensitiveTargetInCommand(
+          `echo ${quoteShellPath(join(home, '.ssh', 'id_rsa'))} | xargs cat`,
+          cwd,
+        ),
       ).not.toBeNull();
       expect(
-        findSensitiveTargetInCommand(`printf %s ${join(home, '.ssh', 'id_rsa')} | xargs cat`, cwd),
+        findSensitiveTargetInCommand(
+          `printf %s ${quoteShellPath(join(home, '.ssh', 'id_rsa'))} | xargs cat`,
+          cwd,
+        ),
       ).not.toBeNull();
     });
   });
@@ -2499,28 +2507,36 @@ describe('secret protection POSIX backslash handling', () => {
   // arguments that survive shell quoting therefore reach the scanner with the
   // backslash intact, and normalizing it to `/` turned `process\.env` into
   // `process/.env`, whose basename is `.env`.
-  test('does not treat a POSIX backslash as a path separator', () => {
-    const cwd = join(tmpdir(), 'secret-protection-project');
+  // Windows uses backslash as its native path separator, so these two cases
+  // intentionally exercise a host capability that does not exist there.
+  test.skipIf(process.platform === 'win32')(
+    'does not treat a POSIX backslash as a path separator',
+    () => {
+      const cwd = join(tmpdir(), 'secret-protection-project');
 
-    for (const target of ['process\\.env', 'fix\\.env', 'x\\.npmrc', 'a\\.netrc']) {
-      expect(findSensitivePathTarget([target], cwd), target).toBeNull();
-    }
-  });
+      for (const target of ['process\\.env', 'fix\\.env', 'x\\.npmrc', 'a\\.netrc']) {
+        expect(findSensitivePathTarget([target], cwd), target).toBeNull();
+      }
+    },
+  );
 
-  test('leaves regex arguments to unmodelled search tools alone', () => {
-    const cwd = join(tmpdir(), 'secret-protection-project');
+  test.skipIf(process.platform === 'win32')(
+    'leaves regex arguments to unmodelled search tools alone',
+    () => {
+      const cwd = join(tmpdir(), 'secret-protection-project');
 
-    for (const command of [
-      'git grep -n "process\\.env" -- .',
-      'git log --grep "fix\\.env"',
-      'git grep -n "\\.npmrc"',
-    ]) {
-      expect(
-        findSensitiveTargetInCommand(command, cwd, undefined, { strict: false }),
-        command,
-      ).toBeNull();
-    }
-  });
+      for (const command of [
+        'git grep -n "process\\.env" -- .',
+        'git log --grep "fix\\.env"',
+        'git grep -n "\\.npmrc"',
+      ]) {
+        expect(
+          findSensitiveTargetInCommand(command, cwd, undefined, { strict: false }),
+          command,
+        ).toBeNull();
+      }
+    },
+  );
 
   // Shell-level escapes are removed by the parser before matching, so dropping
   // the normalization must not reopen `cat \.env`.
@@ -2776,9 +2792,12 @@ describe('secret protection home rules survive a symlinked credential directory'
       withEnv({ HOME: home }, () => {
         expect(findSensitivePathTarget([join(home, '.ssh', 'config')], home)).not.toBeNull();
         expect(
-          findSensitiveTargetInCommand(`cat ${join(home, '.ssh', 'config')}`, home, undefined, {
-            strict: false,
-          }),
+          findSensitiveTargetInCommand(
+            `cat ${quoteShellPath(join(home, '.ssh', 'config'))}`,
+            home,
+            undefined,
+            { strict: false },
+          ),
         ).not.toBeNull();
       });
     } finally {
@@ -3213,10 +3232,10 @@ describe('secret protection PowerShell path expressions', () => {
       'Get-Content $HOME',
       // `$config` is not a path root the analyzer resolves, so nothing is
       // claimed about what it expands to.
-      String.raw`Get-Content $config\.ssh\id_rsa`,
+      String.raw`Get-Content $config\notes.txt`,
       // Single quotes suppress expansion in PowerShell, so this reads a file
       // whose name is the literal text.
-      String.raw`gc '$HOME\.ssh\id_rsa'`,
+      String.raw`gc '$HOME\notes.txt'`,
       'Write-Output "backup id_rsa docs"',
       String.raw`echo "Get-Content $HOME\.ssh\id_rsa"`,
       'cat file.txt',
@@ -3227,4 +3246,18 @@ describe('secret protection PowerShell path expressions', () => {
       expect(findSensitiveTargetInToolInput('bash', { command }, cwd), command).toBeNull();
     }
   });
+
+  // On Windows, backslash is a native separator and these operands therefore
+  // expose the protected id_rsa basename even though their prefixes stay inert.
+  test.skipIf(process.platform === 'win32')(
+    'leaves credential-shaped unresolved and literal PowerShell operands alone on POSIX hosts',
+    () => {
+      for (const command of [
+        String.raw`Get-Content $config\.ssh\id_rsa`,
+        String.raw`gc '$HOME\.ssh\id_rsa'`,
+      ]) {
+        expect(findSensitiveTargetInToolInput('bash', { command }, cwd), command).toBeNull();
+      }
+    },
+  );
 });

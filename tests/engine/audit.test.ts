@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import {
   encodeCwdForLogDirname,
   getAuditLogHomeDir,
@@ -757,7 +757,7 @@ describe('writeAuditLog', () => {
     const entries = readLogEntries(sessionId);
     expect(entries.length).toBe(1);
     expect(entries[0]?.cwd).toBeNull();
-    expect(getOnlyLogFile()).toContain(`${join('logs', 'no-cwd')}/`);
+    expect(getOnlyLogFile()).toContain(`${join('logs', 'no-cwd')}${sep}`);
   });
 
   test.each([

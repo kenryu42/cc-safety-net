@@ -6,7 +6,12 @@ import { evaluateGuard } from '@/engine/guard';
 import type { ToolInvocation } from '@/ir/invocation';
 import { getUserPolicyPath } from '@/policy/store';
 import { analyzeTestCommand, policySnapshot, type TestPolicyInput } from '../helpers/policy.ts';
-import { createLinkedWorktreeFixture, createSubmoduleLikeGitFileFixture } from '../helpers.ts';
+import {
+  createLinkedWorktreeFixture,
+  createSubmoduleLikeGitFileFixture,
+  quoteShellPath,
+  toShellPath,
+} from '../helpers.ts';
 
 function createRepositoryFixture(repositoryName = 'repository') {
   const root = mkdtempSync(join(tmpdir(), 'ccsn-git-metadata-'));
@@ -105,7 +110,7 @@ describe('Git metadata command protection', () => {
     const fixture = createRepositoryFixture();
     try {
       expect(
-        commandRule(`rm -rf ${fixture.root}`, fixture.repository, {
+        commandRule(`rm -rf ${quoteShellPath(fixture.root)}`, fixture.repository, {
           destructiveCommandAllowPaths: [fixture.root],
         }),
       ).toBe('rm.git-metadata');
@@ -119,15 +124,18 @@ describe('Git metadata command protection', () => {
     try {
       const directories = linkedGitDirectories(fixture.linkedWorktree);
       expect(commandRule('rm .git', fixture.linkedWorktree)).toBe('rm.git-metadata');
-      expect(commandRule(`rm -rf ${directories.gitDir}`, fixture.linkedWorktree)).toBe(
-        'rm.git-metadata',
-      );
-      expect(commandRule(`rm -rf ${directories.commonDir}`, fixture.linkedWorktree)).toBe(
-        'rm.git-metadata',
-      );
-      expect(commandRule(`rm -rf ${dirname(directories.gitDir)}/*`, fixture.linkedWorktree)).toBe(
-        'rm.git-metadata',
-      );
+      expect(
+        commandRule(`rm -rf ${quoteShellPath(directories.gitDir)}`, fixture.linkedWorktree),
+      ).toBe('rm.git-metadata');
+      expect(
+        commandRule(`rm -rf ${quoteShellPath(directories.commonDir)}`, fixture.linkedWorktree),
+      ).toBe('rm.git-metadata');
+      expect(
+        commandRule(
+          `rm -rf ${quoteShellPath(dirname(directories.gitDir))}/*`,
+          fixture.linkedWorktree,
+        ),
+      ).toBe('rm.git-metadata');
       expect(
         guard('Bash', { command: '> .git' }, fixture.linkedWorktree, {
           kind: 'command',
@@ -150,8 +158,10 @@ describe('Git metadata command protection', () => {
       symlinkSync(target, join(repository, '.git'));
       expect(commandRule('rm -rf .git', repository)).toBe('rm.git-metadata');
       expect(commandRule('rm -rf .git/hooks', repository)).toBe('rm.git-metadata');
-      expect(commandRule(`rm -rf ${repository}`, repository)).toBe('rm.git-metadata');
-      expect(commandRule(`rm -rf ${root}`, repository)).toBe('rm.git-metadata');
+      expect(commandRule(`rm -rf ${quoteShellPath(repository)}`, repository)).toBe(
+        'rm.git-metadata',
+      );
+      expect(commandRule(`rm -rf ${quoteShellPath(root)}`, repository)).toBe('rm.git-metadata');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -163,7 +173,7 @@ describe('Git metadata command protection', () => {
       const repository = join(root, '..repo');
       mkdirSync(join(repository, '.git', 'hooks'), { recursive: true });
       writeFileSync(join(repository, '.git', 'HEAD'), 'ref: refs/heads/main\n');
-      expect(commandRule(`rm -rf ${root}`, repository)).toBe('rm.git-metadata');
+      expect(commandRule(`rm -rf ${quoteShellPath(root)}`, repository)).toBe('rm.git-metadata');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -179,8 +189,12 @@ describe('Git metadata command protection', () => {
       writeFileSync(join(external, 'pre-commit'), '#!/bin/sh\n');
       symlinkSync(external, join(repository, '.git', 'hooks'));
       expect(commandRule('rm -rf .git/hooks', repository)).toBe('rm.git-metadata');
-      expect(commandRule(`rm ${join(external, 'pre-commit')}`, repository)).toBe('rm.git-metadata');
-      expect(commandRule(`rm -rf ${join(root, 'srv')}`, repository)).toBe('rm.git-metadata');
+      expect(commandRule(`rm ${quoteShellPath(join(external, 'pre-commit'))}`, repository)).toBe(
+        'rm.git-metadata',
+      );
+      expect(commandRule(`rm -rf ${quoteShellPath(join(root, 'srv'))}`, repository)).toBe(
+        'rm.git-metadata',
+      );
       expect(
         guard('Write', { path: '.git/hooks/new-hook' }, repository, { kind: 'path' }).decision,
       ).toMatchObject({ kind: 'deny', intent: 'hard_stop' });
@@ -195,7 +209,10 @@ describe('Git metadata command protection', () => {
       expect(commandRule('rm .git', fixture.cwd)).toBe('rm.git-metadata');
       expect(commandRule('rm .*', fixture.cwd)).toBe('rm.git-metadata');
       expect(
-        commandRule(`rm -rf ${join(fixture.rootDir, '.git', 'modules', 'submodule')}`, fixture.cwd),
+        commandRule(
+          `rm -rf ${quoteShellPath(join(fixture.rootDir, '.git', 'modules', 'submodule'))}`,
+          fixture.cwd,
+        ),
       ).toBe('rm.git-metadata');
       writeFileSync(join(fixture.cwd, '.git'), 'gitdir: ../missing\n');
       expect(commandRule('rm .git', fixture.cwd)).toBe('rm.git-metadata');
@@ -304,12 +321,13 @@ describe('Git metadata guard protection', () => {
   test('blocks a Git metadata move hidden in an env -S split string', () => {
     const fixture = createRepositoryFixture();
     try {
+      const moved = toShellPath(join(fixture.root, 'moved'));
       const commands = [
-        `env -S 'mv .git ${join(fixture.root, 'moved')}' true`,
-        `env -S 'LC_ALL=C mv' .git ${join(fixture.root, 'moved')}`,
-        `env -S 'LC_ALL=C mv .git ${join(fixture.root, 'moved')}' true`,
-        `env -S 'mv ".git" ${join(fixture.root, 'moved')}' true`,
-        `env -S '"mv" .git ${join(fixture.root, 'moved')}' true`,
+        `env -S 'mv .git "${moved}"' true`,
+        `env -S 'LC_ALL=C mv' .git ${quoteShellPath(join(fixture.root, 'moved'))}`,
+        `env -S 'LC_ALL=C mv .git "${moved}"' true`,
+        `env -S 'mv ".git" "${moved}"' true`,
+        `env -S '"mv" .git "${moved}"' true`,
       ];
       expect(
         commands.map(
@@ -327,7 +345,7 @@ describe('Git metadata guard protection', () => {
   test('blocks a quoted Git metadata move on a space-containing path inside an env -S split value', () => {
     const fixture = createRepositoryFixture('My Repo');
     try {
-      const command = `env -S 'mv "${join(fixture.repository, '.git')}" "${join(fixture.root, 'moved')}"' true`;
+      const command = `env -S 'mv "${toShellPath(join(fixture.repository, '.git'))}" "${toShellPath(join(fixture.root, 'moved'))}"' true`;
       expect(
         guard('Bash', { command }, fixture.repository, { kind: 'command', shell: 'posix' })
           .decision,
@@ -425,8 +443,8 @@ describe('Git metadata guard protection', () => {
           guard('Write', { path: policyPath }, cwd, { kind: 'path' }, snapshot).decision,
         ).toMatchObject({ kind: 'deny', intent: 'hard_stop' });
         for (const command of [
-          `find ${policyDirectory} -delete`,
-          `find ${policyParent} -type f -delete`,
+          `find ${quoteShellPath(policyDirectory)} -delete`,
+          `find ${quoteShellPath(policyParent)} -type f -delete`,
         ]) {
           expect(
             guard('Bash', { command }, cwd, { kind: 'command', shell: 'posix' }, snapshot).decision,
@@ -441,8 +459,8 @@ describe('Git metadata guard protection', () => {
 
       const disabled = policySnapshot({ destructiveCommandProtectionEnabled: false });
       for (const command of [
-        `cat ${policyPath}`,
-        `find ${join(policyDirectory, 'sibling.json')} -delete`,
+        `cat ${quoteShellPath(policyPath)}`,
+        `find ${quoteShellPath(join(policyDirectory, 'sibling.json'))} -delete`,
       ]) {
         expect(
           guard('Bash', { command }, cwd, { kind: 'command', shell: 'posix' }, disabled).decision,

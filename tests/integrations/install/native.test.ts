@@ -25,13 +25,12 @@ describe('runNativeCommand failures', () => {
   });
 
   test('reports the exit code, stdout and stderr on a nonzero exit', async () => {
-    const command = ['sh', '-c', 'echo out; echo err >&2; exit 3'] as const;
+    const script = 'console.log("out"); console.error("err"); process.exit(3)';
+    const command = [process.execPath, '-e', script] as const;
 
     const message = await capturedFailureMessage(runNativeCommand(command));
 
-    expect(message).toBe(
-      'Failed to run sh -c echo out; echo err >&2; exit 3 (exit 3).\nout\n\nerr',
-    );
+    expect(message).toBe(`Failed to run ${process.execPath} -e ${script} (exit 3).\nout\n\nerr`);
   });
 
   test('kills a stalled command at the timeout and reports it as a failure', async () => {
@@ -76,12 +75,13 @@ describe('runNativeCommand on Windows', () => {
 describe('runNativeCommands sequencing', () => {
   test('aborts at the first failing command and propagates its error', async () => {
     const dir = makeTempHome('safety-net-native-commands');
+    const write = (path: string) => `require('node:fs').writeFileSync(${JSON.stringify(path)}, '')`;
 
     await expect(
       runNativeCommands([
-        ['sh', '-c', `touch ${join(dir, 'first')}`],
-        ['sh', '-c', 'exit 4'],
-        ['sh', '-c', `touch ${join(dir, 'third')}`],
+        [process.execPath, '-e', write(join(dir, 'first'))],
+        [process.execPath, '-e', 'process.exit(4)'],
+        [process.execPath, '-e', write(join(dir, 'third'))],
       ]),
     ).rejects.toThrow(/exit 4/);
 

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listAuditLogFiles, readAuditLogEntries } from '@/engine/audit-scan';
+import { mockReaddirError } from '../helpers';
 
 describe('listAuditLogFiles', () => {
   test('returns legacy and nested jsonl files', () => {
@@ -34,13 +35,16 @@ describe('listAuditLogFiles', () => {
       writeFileSync(join(dir, 'readable', '2026-07', 'b.jsonl'), '{}\n');
       mkdirSync(unreadableDir);
       writeFileSync(join(unreadableDir, 'hidden.jsonl'), '{}\n');
-      chmodSync(unreadableDir, 0o000);
+      const spy = mockReaddirError(unreadableDir);
 
-      expect(listAuditLogFiles(dir).sort()).toEqual(
-        [join(dir, 'a.jsonl'), join(dir, 'readable', '2026-07', 'b.jsonl')].sort(),
-      );
+      try {
+        expect(listAuditLogFiles(dir).sort()).toEqual(
+          [join(dir, 'a.jsonl'), join(dir, 'readable', '2026-07', 'b.jsonl')].sort(),
+        );
+      } finally {
+        spy.mockRestore();
+      }
     } finally {
-      chmodSync(unreadableDir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
   });

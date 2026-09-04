@@ -14,7 +14,13 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { redactSecrets } from '@/engine/audit';
 import { listAuditLogFiles } from '@/engine/audit-scan';
-import { readAuditLogEntriesForSession } from '../helpers';
+import { createSpawnEnv, readAuditLogEntriesForSession } from '../helpers';
+
+export const NODE_EXECUTABLE = (() => {
+  const executable = Bun.which('node');
+  if (executable) return executable;
+  throw new Error('Node.js is required to run the packaged E2E artifacts');
+})();
 
 export type SafetyLevel = 'standard' | 'strict' | 'paranoid';
 
@@ -122,7 +128,7 @@ export async function runCommand(
     stdout: 'pipe',
     stderr: 'pipe',
     cwd,
-    env: { ...isolatedEnv(home, options.level), ...options.env },
+    env: isolatedEnv(home, options.level, options.env),
   });
   proc.stdin.write(typeof input === 'string' ? input : JSON.stringify(input));
   proc.stdin.end();
@@ -145,7 +151,7 @@ export function runNode(
   home: string,
   level?: SafetyLevel,
 ) {
-  return runCommand(['node', ...args], input, cwd, home, { level });
+  return runCommand([NODE_EXECUTABLE, ...args], input, cwd, home, { level });
 }
 
 export async function runBuiltHost(
@@ -197,6 +203,7 @@ const WATCHED_REAL_PATHS = [
 export function withHostWorkspace<T>(run: (context: { cwd: string; home: string }) => Promise<T>) {
   return withWorkspace(async (context) => {
     const before = snapshotRealHostState();
+    const beforeAudits = snapshotRealAuditState();
     // The checks run in finally so a test that dirties real host state and
     // then throws still reports the real-machine write, not just its own
     // failure. They are nested for the same reason: a snapshot mismatch must
@@ -208,13 +215,16 @@ export function withHostWorkspace<T>(run: (context: { cwd: string; home: string 
         expect(snapshotRealHostState()).toBe(before);
       }
     } finally {
-      expect(
-        listAuditLogFiles(join(REAL_HOME, '.cc-safety-net', 'logs')).filter((file) =>
-          basename(file).includes(SESSION_PREFIX),
-        ),
-      ).toEqual([]);
+      expect(snapshotRealAuditState()).toEqual(beforeAudits);
     }
   });
+}
+
+function snapshotRealAuditState() {
+  return listAuditLogFiles(join(REAL_HOME, '.cc-safety-net', 'logs'))
+    .filter((file) => basename(file).includes(SESSION_PREFIX))
+    .map((file) => `${file}:${statSync(file).size}`)
+    .sort();
 }
 
 export function snapshotRealHostState() {
@@ -296,13 +306,8 @@ export function describeHermesGates(
   }
 }
 
-export function isolatedEnv(home: string, level?: SafetyLevel) {
-  return {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ),
+export function isolatedEnv(home: string, level?: SafetyLevel, env: Record<string, string> = {}) {
+  return createSpawnEnv({
     HOME: home,
     USERPROFILE: home,
     // Hermes reads HERMES_HOME before the platform default, so a developer who exports it would
@@ -319,5 +324,6 @@ export function isolatedEnv(home: string, level?: SafetyLevel) {
     CC_SAFETY_NET_PARANOID_RM: '',
     CC_SAFETY_NET_PARANOID_INTERPRETERS: '',
     CC_SAFETY_NET_WORKTREE: '',
-  };
+    ...env,
+  });
 }

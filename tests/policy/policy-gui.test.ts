@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse } from 'node:path';
 import { getCCSafetyNetEnvModes } from '@/policy/env';
 import {
   DEFAULT_GUI_POLICY,
@@ -188,6 +188,7 @@ describe('policy GUI helpers', () => {
   });
 
   test('repair preserves valid fields from parseable invalid policy', () => {
+    const scratchPath = join(parse(tempDir).root, 'opt', 'scratch');
     mkdirSync(safetyNetHome, { recursive: true });
     writeFileSync(
       join(safetyNetHome, 'policy.json'),
@@ -212,7 +213,7 @@ describe('policy GUI helpers', () => {
             'git.unknown': 'off',
             'git.clean-force': 'allow',
           },
-          allow_paths: ['~', 'relative/path', '/opt/scratch', 42],
+          allow_paths: ['~', 'relative/path', scratchPath, 42],
         },
         secret_protection: {
           enabled: false,
@@ -220,7 +221,7 @@ describe('policy GUI helpers', () => {
             'secret.ext.pem': 'off',
             'secret.unknown': 'off',
           },
-          deny_paths: ['private/token.txt', '', 42, '~', '/'],
+          deny_paths: ['private/token.txt', '', 42, '~', parse(tempDir).root],
           allow_paths: ['**/.env.test', '~/projects/fixtures', '', 42, '~', '**'],
         },
         extra: true,
@@ -246,7 +247,7 @@ describe('policy GUI helpers', () => {
       destructive_command_protection: {
         enabled: true,
         overrides: { 'git.reset-hard': 'off', 'shell.dynamic-executable': 'on' },
-        allow_paths: ['/opt/scratch'],
+        allow_paths: [scratchPath],
       },
       secret_protection: {
         enabled: false,

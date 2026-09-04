@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import * as z from 'zod';
 import {
   getRulesConfigDiagnostics,
@@ -14,6 +14,7 @@ import { readRulesConfig, validateRulesConfig } from '@/rules/policy/config-file
 import { withTempDir } from '../helpers';
 
 const SOURCE_LIMIT_ERROR = "Rule config exceeds CC Safety Net's safe source limit.";
+const HOST_ROOT = parse(homedir()).root;
 
 function expectOnlyAuthoritativeSourceLimit(input: unknown): void {
   const result = getRulesConfigSchema().safeParse(input);
@@ -185,7 +186,9 @@ describe('configuration schemas', () => {
       destructive_command_protection: { allow_paths },
     });
 
-    expect(getUserPolicyDiagnostics(allowPolicy(['~/sandbox', '/opt/scratch']))).toEqual([]);
+    expect(
+      getUserPolicyDiagnostics(allowPolicy(['~/sandbox', join(HOST_ROOT, 'opt', 'scratch')])),
+    ).toEqual([]);
     expect(getUserPolicyDiagnostics(allowPolicy('~/sandbox'))).toEqual([
       'destructive_command_protection.allow_paths must be an array of paths',
     ]);
@@ -201,7 +204,7 @@ describe('configuration schemas', () => {
       'destructive_command_protection.allow_paths[0] cannot be the home directory',
       'destructive_command_protection.allow_paths[1] cannot be the home directory',
     ]);
-    expect(getUserPolicyDiagnostics(allowPolicy(['/', dirname(homedir())]))).toEqual([
+    expect(getUserPolicyDiagnostics(allowPolicy([HOST_ROOT, dirname(homedir())]))).toEqual([
       'destructive_command_protection.allow_paths[0] cannot contain the home directory',
       'destructive_command_protection.allow_paths[1] cannot contain the home directory',
     ]);
@@ -215,7 +218,7 @@ describe('configuration schemas', () => {
       destructive_command_protection: { allow_paths },
     });
 
-    expect(getUserPolicySchema().safeParse(allowPolicy(['/'])).success).toBeFalse();
+    expect(getUserPolicySchema().safeParse(allowPolicy([HOST_ROOT])).success).toBeFalse();
     expect(getUserPolicySchema().safeParse(allowPolicy([homedir()])).success).toBeFalse();
   });
 
@@ -229,7 +232,12 @@ describe('configuration schemas', () => {
 
     expect(
       getUserPolicyDiagnostics(
-        denyPolicy(['protected', 'server.pem', '~/documents/private', '/opt/secrets']),
+        denyPolicy([
+          'protected',
+          'server.pem',
+          '~/documents/private',
+          join(HOST_ROOT, 'opt', 'secrets'),
+        ]),
       ),
     ).toEqual([]);
     expect(getUserPolicyDiagnostics(denyPolicy('protected'))).toEqual([
@@ -245,7 +253,9 @@ describe('configuration schemas', () => {
       `secret_protection.deny_paths[2] ${blocksEverything}`,
       `secret_protection.deny_paths[3] ${blocksEverything}`,
     ]);
-    expect(getUserPolicyDiagnostics(denyPolicy(['/', dirname(homedir()), '$HOME/..']))).toEqual([
+    expect(
+      getUserPolicyDiagnostics(denyPolicy([HOST_ROOT, dirname(homedir()), '$HOME/..'])),
+    ).toEqual([
       `secret_protection.deny_paths[0] ${blocksEverything}`,
       `secret_protection.deny_paths[1] ${blocksEverything}`,
       `secret_protection.deny_paths[2] ${blocksEverything}`,
@@ -381,7 +391,7 @@ describe('configuration schemas', () => {
       { overrides: { unknown: 'off' } },
       { deny_paths: [' '] },
       { deny_paths: ['~'] },
-      { deny_paths: ['/', 'private/token'] },
+      { deny_paths: [HOST_ROOT, 'private/token'] },
       { deny_paths: ['$HOME'] },
     ];
     const destructiveFields = [
@@ -392,7 +402,7 @@ describe('configuration schemas', () => {
       { overrides: { 'git.ssh-env': 'maybe' } },
       { allow_paths: '~/sandbox' },
       { allow_paths: [42] },
-      { allow_paths: ['/'] },
+      { allow_paths: [HOST_ROOT] },
       { allow_paths: [homedir()] },
     ];
     for (const version of [1, 2, undefined]) {
@@ -428,7 +438,9 @@ test('validates secret protection allow paths', () => {
   const noGlobs = 'cannot contain glob characters (* or ?); list the exact file or directory';
 
   expect(
-    getUserPolicyDiagnostics(allowPolicy(['.env.test', '~/projects/vulcan', '/opt/fixtures'])),
+    getUserPolicyDiagnostics(
+      allowPolicy(['.env.test', '~/projects/vulcan', join(HOST_ROOT, 'opt', 'fixtures')]),
+    ),
   ).toEqual([]);
   expect(
     getUserPolicyDiagnostics(allowPolicy(['**/.env.test', 'apps/*/.env.test', '.env.v?'])),
@@ -450,7 +462,7 @@ test('validates secret protection allow paths', () => {
     `secret_protection.allow_paths[2] ${disablesEverything}`,
     `secret_protection.allow_paths[3] ${disablesEverything}`,
   ]);
-  expect(getUserPolicyDiagnostics(allowPolicy(['/', dirname(homedir()), '**']))).toEqual([
+  expect(getUserPolicyDiagnostics(allowPolicy([HOST_ROOT, dirname(homedir()), '**']))).toEqual([
     `secret_protection.allow_paths[0] ${disablesEverything}`,
     `secret_protection.allow_paths[1] ${disablesEverything}`,
     `secret_protection.allow_paths[2] ${noGlobs}`,

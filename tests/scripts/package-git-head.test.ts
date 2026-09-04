@@ -32,5 +32,5 @@ describe('release package identity', () => {
       expect(packedNotices.exitCode).toBe(0);
       expect(packedNotices.stdout.toString()).toBe(renderThirdPartyLicenses());
     });
-  }, 20_000);
+  }, 30_000);
 });

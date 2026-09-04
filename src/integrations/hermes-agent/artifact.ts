@@ -119,6 +119,10 @@ def _pre_tool_call(tool_name="", args=None, session_id="", task_id="", **_):
     )
 
     try:
+        if os.name == "nt":
+            launch_options = {}
+        else:
+            launch_options = {"start_new_session": True}
         process = subprocess.Popen(
             [executable] + ANALYZER[1:],
             stdin=subprocess.PIPE,
@@ -135,8 +139,9 @@ def _pre_tool_call(tool_name="", args=None, session_id="", task_id="", **_):
             # still the real Hermes working directory, which the analysis needs.
             cwd=os.path.expanduser("~"),
             # Own process group so the timeout below can kill the whole tree: npx's descendants
-            # outlive a kill aimed at npx alone and keep holding the pipes captured here.
-            start_new_session=True,
+            # outlive a kill aimed at npx alone and keep holding the pipes captured here. Windows
+            # uses taskkill's process-tree traversal instead because sessions are POSIX-only.
+            **launch_options,
         )
     except OSError as error:
         return _block("analysis could not start (%s)." % error)
@@ -145,12 +150,31 @@ def _pre_tool_call(tool_name="", args=None, session_id="", task_id="", **_):
         stdout, _ = process.communicate(payload, timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except OSError:
+            if os.name == "nt":
+                system_root = os.environ.get("SystemRoot")
+                if not system_root:
+                    raise OSError("SystemRoot is unavailable")
+                subprocess.run(
+                    [
+                        os.path.join(system_root, "System32", "taskkill.exe"),
+                        "/PID",
+                        str(process.pid),
+                        "/T",
+                        "/F",
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=1,
+                    check=False,
+                )
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, subprocess.SubprocessError):
             pass
         try:
-            process.communicate(timeout=TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
+            process.communicate(timeout=1)
+        except (OSError, subprocess.SubprocessError):
             pass
         return _block("analysis timed out after %ss." % TIMEOUT_SECONDS)
 

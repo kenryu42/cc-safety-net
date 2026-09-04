@@ -1,0 +1,29 @@
+{
+  "name": "cc-safety-net",
+  "version": "2.3.3",
+  "description": "Block destructive commands and secret access",
+  "author": {
+    "name": "J Liew",
+    "email": "jliew@420024lab.com",
+    "url": "https://ccsafetynet.com"
+  },
+  "homepage": "https://ccsafetynet.com",
+  "repository": "https://github.com/kenryu42/cc-safety-net",
+  "license": "MIT",
+  "keywords": ["codex", "safety", "security", "hook", "destructive-command"],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
+  "interface": {
+    "displayName": "CC Safety Net",
+    "shortDescription": "Block destructive commands and secret access",
+    "longDescription": "Protect Codex from destructive commands and secret access before tools run.",
+    "developerName": "J Liew",
+    "category": "Security",
+    "capabilities": ["Read"],
+    "websiteURL": "https://ccsafetynet.com",
+    "defaultPrompt": ["Explain the last CC Safety Net decision."],
+    "brandColor": "#0F172A",
+    "composerIcon": "./src/gui/frontend/favicon.svg",
+    "logo": "./src/gui/frontend/favicon.svg"
+  }
+}

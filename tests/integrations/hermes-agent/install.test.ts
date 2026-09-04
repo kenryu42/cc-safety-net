@@ -7,7 +7,6 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -16,6 +15,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import {
   buildHermesAgentPluginFiles,
@@ -29,8 +29,9 @@ import {
   uninstallHermesAgent,
 } from '@/integrations/hermes-agent/install';
 import { getPackageVersion } from '@/integrations/system-info';
-import { withEnv } from '../../helpers';
+import { createSpawnEnv, withEnv } from '../../helpers';
 import { makeTempHome, runCli } from '../hook-helpers';
+import { writeFakeCommands } from '../install/install-test-helpers';
 
 const MODULE_FILE = '__init__.py';
 const MANIFEST_FILE = 'plugin.yaml';
@@ -93,19 +94,16 @@ function symlinkPluginDir(homeDir: string) {
 }
 
 function makeFakeHermesBin(homeDir: string) {
-  const binDir = join(homeDir, 'bin');
-  mkdirSync(binDir, { recursive: true });
-  const path = join(binDir, 'hermes');
-  writeFileSync(
-    path,
-    `#!/usr/bin/env sh
-printf '%s\\n' "$*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-if [ -n "$CC_SAFETY_NET_TEST_WATCH_PATH" ] && [ -e "$CC_SAFETY_NET_TEST_WATCH_PATH" ]; then
-  printf 'watched-exists\\n' >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"
-fi
-`,
-  );
-  chmodSync(path, 0o755);
+  const binDir = writeFakeCommands(homeDir, {
+    hermes: `appendFileSync(
+  process.env.CC_SAFETY_NET_TEST_COMMAND_LOG ?? '',
+  commandLine + '\\n',
+);
+const watchPath = process.env.CC_SAFETY_NET_TEST_WATCH_PATH;
+if (watchPath && existsSync(watchPath)) {
+  appendFileSync(process.env.CC_SAFETY_NET_TEST_COMMAND_LOG ?? '', 'watched-exists\\n');
+}`,
+  });
   return {
     path: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
     logPath: join(homeDir, 'cmd.log'),
@@ -131,9 +129,10 @@ async function runHermesCli(
   };
 }
 
-function hasPython3() {
-  return Bun.spawnSync(['python3', '--version']).exitCode === 0;
-}
+const pythonBin = ['python3', 'python']
+  .map((name) => Bun.which(name))
+  .filter((path): path is string => path !== null)
+  .find((path) => Bun.spawnSync([path, '--version']).exitCode === 0);
 
 /** The `task_id` the host passes; Hermes keys its cwd record by it when the contextvar is unset. */
 const HERMES_TASK_ID = 'task-1';
@@ -145,6 +144,34 @@ spec = importlib.util.spec_from_file_location("ccsn", sys.argv[4])
 plugin = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(plugin)
 plugin.TIMEOUT_SECONDS = 1
+if mode == "start-fail":
+    def fail_start(*_, **__):
+        raise OSError("synthetic start failure")
+    plugin.subprocess.Popen = fail_start
+if mode == "cleanup-fail":
+    class TimedOutProcess:
+        pid = 1
+        def communicate(self, *_, **kwargs):
+            raise plugin.subprocess.TimeoutExpired("npx", kwargs.get("timeout"))
+    def fail_cleanup(*_, **__):
+        raise OSError("synthetic cleanup failure")
+    plugin.subprocess.Popen = lambda *_, **__: TimedOutProcess()
+    if os.name == "nt":
+        plugin.subprocess.run = fail_cleanup
+    else:
+        plugin.os.killpg = fail_cleanup
+if mode == "native-hang":
+    plugin.ANALYZER = [sys.executable, "-c", """
+import os
+import subprocess
+import sys
+import time
+
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
+with open(os.environ["CC_SAFETY_NET_TEST_GRANDCHILD_PID"], "w", encoding="utf-8") as pid_file:
+    pid_file.write(str(child.pid))
+time.sleep(20)
+"""]
 registered = {}
 class Ctx:
     def register_hook(self, name, callback):
@@ -193,28 +220,28 @@ def get_session_cwd(session_key):
  * Both now arrive by environment, so every case after the first reuses the already-scanned file.
  */
 let analyzerStubBinDir = '';
+let analyzerStubHome = '';
 
 function writeAnalyzerStub() {
-  const binDir = makeTempHome('safety-net-hermes-npx');
-  writeFileSync(
-    join(binDir, 'npx'),
-    `#!/usr/bin/env sh
-pwd > "$CC_SAFETY_NET_TEST_SPAWN_CWD"
-cat > "$CC_SAFETY_NET_TEST_PAYLOAD"
-case "$CC_SAFETY_NET_TEST_MODE" in
-  block) printf '%s' '{"action":"block","message":"nope"}';;
-  garbage) printf '%s' 'not json';;
-  binary) printf '\\377\\376';;
-  fail) exit 3;;
-  # The realistic hang: npx exits but leaves a descendant holding the captured pipes.
-  hang) sleep 20 & printf '%s' "$!" > "$CC_SAFETY_NET_TEST_GRANDCHILD_PID";;
-  allow-shaped) printf '%s' '{"action":"allow"}';;
-  *) : ;;
-esac
-`,
+  analyzerStubHome = makeTempHome('safety-net-hermes-npx');
+  return writeFakeCommands(analyzerStubHome, {
+    npx: `writeFileSync(process.env.CC_SAFETY_NET_TEST_SPAWN_CWD ?? '', process.cwd());
+writeFileSync(process.env.CC_SAFETY_NET_TEST_PAYLOAD ?? '', await Bun.stdin.text());
+const mode = process.env.CC_SAFETY_NET_TEST_MODE;
+if (mode === 'block') process.stdout.write('{"action":"block","message":"nope"}');
+if (mode === 'garbage') process.stdout.write('not json');
+if (mode === 'binary') process.stdout.write(Buffer.from([255, 254]));
+if (mode === 'fail') process.exit(3);
+if (mode === 'hang') {
+  const child = Bun.spawn(
+    [process.execPath, '-e', 'setTimeout(() => {}, 20_000)'],
+    { stdout: 'inherit', stderr: 'inherit' },
   );
-  chmodSync(join(binDir, 'npx'), 0o755);
-  return binDir;
+  child.unref();
+  writeFileSync(process.env.CC_SAFETY_NET_TEST_GRANDCHILD_PID ?? '', String(child.pid));
+}
+if (mode === 'allow-shaped') process.stdout.write('{"action":"allow"}');`,
+  });
 }
 
 /**
@@ -244,28 +271,20 @@ function runPluginCallback(
     const grandchildPidPath = join(dir, 'grandchild.pid');
 
     // `missing` runs with an empty PATH, so Python itself is launched by absolute path.
+    const env = createSpawnEnv({
+      PATH: mode === 'missing' ? '' : `${analyzerStubBinDir}${delimiter}${process.env.PATH}`,
+      PYTHONPATH: dir,
+      CC_SAFETY_NET_TEST_MODE: mode,
+      CC_SAFETY_NET_TEST_PAYLOAD: payloadPath,
+      CC_SAFETY_NET_TEST_SPAWN_CWD: spawnCwdPath,
+      CC_SAFETY_NET_TEST_GRANDCHILD_PID: grandchildPidPath,
+      ...extraEnv,
+    });
     const spawned = Bun.spawnSync(
-      [
-        Bun.which('python3') ?? 'python3',
-        '-c',
-        PYTHON_HOST,
-        mode,
-        tool,
-        JSON.stringify(args),
-        modulePath,
-      ],
+      [pythonBin ?? 'python3', '-c', PYTHON_HOST, mode, tool, JSON.stringify(args), modulePath],
       {
         cwd: dir,
-        env: {
-          ...process.env,
-          PATH: mode === 'missing' ? '' : `${analyzerStubBinDir}${delimiter}${process.env.PATH}`,
-          PYTHONPATH: dir,
-          CC_SAFETY_NET_TEST_MODE: mode,
-          CC_SAFETY_NET_TEST_PAYLOAD: payloadPath,
-          CC_SAFETY_NET_TEST_SPAWN_CWD: spawnCwdPath,
-          CC_SAFETY_NET_TEST_GRANDCHILD_PID: grandchildPidPath,
-          ...extraEnv,
-        },
+        env,
       },
     );
     expect(spawned.stderr.toString()).toBe('');
@@ -327,6 +346,15 @@ describe('Hermes Agent plugin artifact', () => {
     expect(source).toContain('"cc-safety-net", "hook", "--hermes-agent"');
   });
 
+  test('module uses platform-specific analyzer launch and process-tree cleanup', () => {
+    const source =
+      buildHermesAgentPluginFiles(getPackageVersion()).find((file) => file.name === MODULE_FILE)
+        ?.content ?? '';
+
+    expect(source).toContain('{"start_new_session": True}');
+    expect(source).toContain('os.path.join(system_root, "System32", "taskkill.exe")');
+  });
+
   // Decoding with the process locale raises UnicodeDecodeError on undecodable analyzer output,
   // and Hermes turns a raising callback into an allowed tool call.
   test('decodes the analyzer output with a decoder that cannot raise', () => {
@@ -341,13 +369,13 @@ describe('Hermes Agent plugin artifact', () => {
   // Exercises the generated Python through Hermes' own contract: register(ctx) ->
   // ctx.register_hook('pre_tool_call', cb), then cb(tool_name=, args=, session_id=).
   // A stub stands in for the adapter so each transport outcome can be forced.
-  describe.skipIf(!hasPython3())('module behaviour under Hermes', () => {
+  describe.skipIf(pythonBin === undefined)('module behaviour under Hermes', () => {
     beforeAll(() => {
       analyzerStubBinDir = writeAnalyzerStub();
     });
 
     afterAll(() => {
-      rmSync(analyzerStubBinDir, { recursive: true, force: true });
+      rmSync(analyzerStubHome, { recursive: true, force: true });
     });
 
     test.each([
@@ -360,6 +388,11 @@ describe('Hermes Agent plugin artifact', () => {
       ['fail', 'CC Safety Net failed closed: analysis exited with status 3.'],
       ['allow-shaped', 'CC Safety Net failed closed: analysis returned an unexpected directive.'],
       ['missing', 'CC Safety Net failed closed: npx was not found on PATH.'],
+      [
+        'start-fail',
+        'CC Safety Net failed closed: analysis could not start (synthetic start failure).',
+      ],
+      ['cleanup-fail', 'CC Safety Net failed closed: analysis timed out after 1s.'],
     ] as const)('%s', (mode, expected) => {
       const run = runPluginCallback(mode, 'terminal', { command: 'rm -rf /' });
       expect(run.result).toEqual(
@@ -421,22 +454,39 @@ describe('Hermes Agent plugin artifact', () => {
       expect(run.payload).toBeUndefined();
     });
 
-    // A descendant holding the captured pipes survives a kill aimed at the direct child alone, so
-    // a hung `npx` tree outlives every timed-out call. The elapsed bound is what keeps the drain
-    // that follows the group kill from becoming an indefinite wait on that same descendant.
-    test('kills the whole analyzer process tree when the analysis times out', () => {
-      const run = runPluginCallback('hang', 'terminal', { command: 'ls' });
+    // This stub exercises POSIX process groups and inherited pipe handles. Windows process-tree
+    // cleanup uses taskkill and is exercised by the native subprocess case immediately below.
+    test.skipIf(process.platform === 'win32')(
+      'kills the whole analyzer process tree when the analysis times out',
+      () => {
+        const run = runPluginCallback('hang', 'terminal', { command: 'ls' });
 
-      expect(run.result).toEqual({
-        action: 'block',
-        message: 'CC Safety Net failed closed: analysis timed out after 1s.',
-      });
-      expect(run.elapsedSeconds).toBeLessThan(2);
-      // `isRunning` reads an absent pid as "not running", so pin that the descendant was spawned:
-      // without this the kill assertion below passes even when no process tree was ever created.
-      expect(run.grandchildPid).toBeGreaterThan(0);
-      expect(isRunning(run.grandchildPid)).toBe(false);
-    });
+        expect(run.result).toEqual({
+          action: 'block',
+          message: 'CC Safety Net failed closed: analysis timed out after 1s.',
+        });
+        expect(run.elapsedSeconds).toBeLessThan(2);
+        // `isRunning` reads an absent pid as "not running", so pin that the descendant was spawned:
+        // without this the kill assertion below passes even when no process tree was ever created.
+        expect(run.grandchildPid).toBeGreaterThan(0);
+        expect(isRunning(run.grandchildPid)).toBe(false);
+      },
+    );
+
+    test.skipIf(process.platform !== 'win32')(
+      '[windows] kills the native analyzer process tree and returns a timeout block',
+      () => {
+        const run = runPluginCallback('native-hang', 'terminal', { command: 'ls' });
+
+        expect(run.result).toEqual({
+          action: 'block',
+          message: 'CC Safety Net failed closed: analysis timed out after 1s.',
+        });
+        expect(run.elapsedSeconds).toBeLessThan(3);
+        expect(run.grandchildPid).toBeGreaterThan(0);
+        expect(isRunning(run.grandchildPid)).toBe(false);
+      },
+    );
 
     // Hermes' own first-command behaviour: no record yet, so the command runs in the process cwd.
     // A repository-local node_modules/.bin/cc-safety-net would otherwise win the `npx` lookup
@@ -452,7 +502,7 @@ describe('Hermes Agent plugin artifact', () => {
         session_id: 'sess-1',
         cwd: run.cwd,
       });
-      expect(run.spawnCwd).toBe(process.env.HOME);
+      expect(run.spawnCwd).toBe(homedir());
       expect(run.spawnCwd).not.toBe(run.cwd);
       expect(run.payload?.cwd).toBe(run.cwd);
     });

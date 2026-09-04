@@ -5,6 +5,7 @@ import {
   runtimeHookIntegrationMetadata,
 } from '@/integrations/catalog';
 import { runClaudeCodeHook } from '@/integrations/claude-code/hook';
+import { runCodexHook } from '@/integrations/codex/hook';
 import { runCopilotCliHook } from '@/integrations/copilot-cli/hook';
 import { runCursorHook } from '@/integrations/cursor/hook';
 import { runGeminiCLIHook } from '@/integrations/gemini-cli/hook';
@@ -25,6 +26,7 @@ export type HookIntegration = {
 const hookRunners = {
   'antigravity-cli': runAntigravityCliHook,
   'claude-code': runClaudeCodeHook,
+  codex: runCodexHook,
   'copilot-cli': runCopilotCliHook,
   cursor: runCursorHook,
   'gemini-cli': runGeminiCLIHook,

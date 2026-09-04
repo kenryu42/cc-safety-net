@@ -9,6 +9,7 @@ interface ReleaseStateInput {
   requestedVersion: string;
   packageVersion: string;
   pluginVersion: string;
+  codexVersion: string;
   kimiVersion: string;
   headCommit: string;
   tagCommit: string | null;
@@ -17,7 +18,11 @@ interface ReleaseStateInput {
 
 export function classifyReleaseState(input: ReleaseStateInput) {
   assertReleaseVersion(input.requestedVersion);
-  if (input.packageVersion !== input.pluginVersion || input.packageVersion !== input.kimiVersion) {
+  if (
+    input.packageVersion !== input.pluginVersion ||
+    input.packageVersion !== input.codexVersion ||
+    input.packageVersion !== input.kimiVersion
+  ) {
     throw new Error('Release manifest version files disagree');
   }
   if (!input.tagCommit) {

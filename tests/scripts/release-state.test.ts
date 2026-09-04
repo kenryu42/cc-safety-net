@@ -15,6 +15,7 @@ describe('release state', () => {
         requestedVersion: '2.0.0',
         packageVersion: '1.0.6',
         pluginVersion: '1.0.6',
+        codexVersion: '1.0.6',
         kimiVersion: '1.0.6',
         headCommit: 'base',
         tagCommit: null,
@@ -29,6 +30,7 @@ describe('release state', () => {
         requestedVersion: '2.0.0',
         packageVersion: '2.0.0',
         pluginVersion: '2.0.0',
+        codexVersion: '2.0.0',
         kimiVersion: '2.0.0',
         headCommit: 'release',
         tagCommit: 'release',
@@ -38,37 +40,39 @@ describe('release state', () => {
   });
 
   test('rejects mismatched versions and mutable tag targets', () => {
+    const matchingRelease = {
+      requestedVersion: '2.0.0',
+      packageVersion: '2.0.0',
+      pluginVersion: '2.0.0',
+      codexVersion: '2.0.0',
+      kimiVersion: '2.0.0',
+      headCommit: 'release',
+      tagCommit: 'release',
+      npmCommit: null,
+    };
     expect(() =>
       classifyReleaseState({
-        requestedVersion: '2.0.0',
-        packageVersion: '2.0.0',
+        ...matchingRelease,
         pluginVersion: '1.9.0',
         kimiVersion: '1.9.0',
-        headCommit: 'release',
-        tagCommit: 'release',
-        npmCommit: null,
       }),
     ).toThrow('version files disagree');
     expect(() =>
       classifyReleaseState({
-        requestedVersion: '2.0.0',
-        packageVersion: '2.0.0',
-        pluginVersion: '2.0.0',
+        ...matchingRelease,
         kimiVersion: '1.9.0',
-        headCommit: 'release',
-        tagCommit: 'release',
-        npmCommit: null,
       }),
     ).toThrow('version files disagree');
     expect(() =>
       classifyReleaseState({
-        requestedVersion: '2.0.0',
-        packageVersion: '2.0.0',
-        pluginVersion: '2.0.0',
-        kimiVersion: '2.0.0',
+        ...matchingRelease,
+        codexVersion: '1.9.0',
+      }),
+    ).toThrow('version files disagree');
+    expect(() =>
+      classifyReleaseState({
+        ...matchingRelease,
         headCommit: 'other',
-        tagCommit: 'release',
-        npmCommit: null,
       }),
     ).toThrow('immutable tag');
   });
@@ -79,6 +83,7 @@ describe('release state', () => {
         requestedVersion: '2.0.0',
         packageVersion: '1.0.6',
         pluginVersion: '1.0.6',
+        codexVersion: '1.0.6',
         kimiVersion: '1.0.6',
         headCommit: 'base',
         tagCommit: null,
@@ -93,6 +98,7 @@ describe('release state', () => {
         requestedVersion: '2.0.0',
         packageVersion: '2.0.0',
         pluginVersion: '2.0.0',
+        codexVersion: '2.0.0',
         kimiVersion: '2.0.0',
         headCommit: 'release',
         tagCommit: null,
@@ -107,6 +113,7 @@ describe('release state', () => {
         requestedVersion: '2.0.0',
         packageVersion: '2.0.0',
         pluginVersion: '2.0.0',
+        codexVersion: '2.0.0',
         kimiVersion: '2.0.0',
         headCommit: 'release',
         tagCommit: 'release',
@@ -121,6 +128,7 @@ describe('release state', () => {
         requestedVersion: '2.0.0',
         packageVersion: '2.0.0',
         pluginVersion: '2.0.0',
+        codexVersion: '2.0.0',
         kimiVersion: '2.0.0',
         headCommit: 'release',
         tagCommit: 'release',

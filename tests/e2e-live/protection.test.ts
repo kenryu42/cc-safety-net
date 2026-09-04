@@ -62,7 +62,7 @@ const liveAgents = [
     setup: (home: string) => {
       const codexHome = join(home, '.codex');
       mkdirSync(codexHome, { recursive: true });
-      writeFileSync(join(codexHome, 'hooks.json'), JSON.stringify(hookConfig()));
+      writeFileSync(join(codexHome, 'hooks.json'), JSON.stringify(hookConfig('--codex')));
       cpSync(codexAuthSource, join(codexHome, 'auth.json'));
     },
     run: (prompt: string, cwd: string, home: string) =>
@@ -284,13 +284,13 @@ function claudeVersion() {
   return execFileSync(claudeBinary ?? 'claude', ['--version'], { encoding: 'utf8' }).trim();
 }
 
-function hookConfig() {
+function hookConfig(integrationFlag = '--coding-cli') {
   return {
     hooks: {
       PreToolUse: [
         {
           matcher: '*',
-          hooks: [{ type: 'command', command: `node "${cliPath}" hook --coding-cli` }],
+          hooks: [{ type: 'command', command: `node "${cliPath}" hook ${integrationFlag}` }],
         },
       ],
     },

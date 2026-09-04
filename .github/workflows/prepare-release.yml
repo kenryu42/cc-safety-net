@@ -95,7 +95,7 @@ jobs:
           bun run verify:repository-plugin
           bun run verify:package
           bun run scripts/release-transaction.ts --version "$VERSION" --expected-base "$BASE" --dry-run
-          tar -czf "$RUNNER_TEMP/prepared-release.tgz" package.json .claude-plugin/plugin.json kimi.plugin.json assets/cc-safety-net.schema.json dist
+          tar -czf "$RUNNER_TEMP/prepared-release.tgz" package.json .claude-plugin/plugin.json .codex-plugin/plugin.json kimi.plugin.json assets/cc-safety-net.schema.json dist
           cd "$RUNNER_TEMP"
           sha256sum prepared-release.tgz > prepared-release.tgz.sha256
       - name: Prove dry-run left Git history unchanged

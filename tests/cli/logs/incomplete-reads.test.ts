@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getActivityFeed } from '@/gui/activity';
-import { writeJsonlFixture } from '../../helpers';
+import { mockReadFileError, writeJsonlFixture } from '../../helpers';
 import { writeDeniedLogFixture } from '../../helpers/denied-log-fixture';
 import { captureLogsCommand } from '../../helpers/logs';
 
@@ -22,11 +22,11 @@ async function withUnreadableFixture<T>(fn: (logsDir: string) => T | Promise<T>)
       reason: 'blocked',
     },
   ]);
-  chmodSync(unreadable, 0o000);
+  const spy = mockReadFileError(unreadable);
   try {
     return await fn(logsDir);
   } finally {
-    chmodSync(unreadable, 0o600);
+    spy.mockRestore();
     rmSync(root, { recursive: true, force: true });
   }
 }

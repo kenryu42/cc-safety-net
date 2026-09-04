@@ -47,6 +47,7 @@ describe('integration metadata', () => {
     expect(runtimeHookIntegrationMetadata.map((integration) => integration.id)).toEqual([
       'antigravity-cli',
       'claude-code',
+      'codex',
       'cursor',
       'gemini-cli',
       'copilot-cli',
@@ -57,6 +58,7 @@ describe('integration metadata', () => {
     expect(runtimeHookIntegrationMetadata.map((integration) => integration.flags)).toEqual([
       ['-ac', '--agy-cli'],
       ['-cc', '--coding-cli'],
+      ['-cx', '--codex'],
       ['-cu', '--cursor'],
       ['-gc', '--gemini-cli'],
       ['-cp', '--copilot-cli'],
@@ -73,12 +75,14 @@ describe('integration metadata', () => {
       [],
       [],
       [],
+      [],
     ]);
     expect(
       runtimeHookIntegrationMetadata.map((integration) => integration.legacyTopLevelFlags),
     ).toEqual([
       [],
       ['-cc', '--claude-code'],
+      [],
       [],
       ['-gc', '--gemini-cli'],
       ['-cp', '--copilot-cli'],
@@ -92,6 +96,7 @@ describe('integration metadata', () => {
     expect(runtimeHookIntegrationMetadata.map((integration) => integration.displayName)).toEqual([
       'Antigravity CLI',
       'Coding CLI',
+      'Codex',
       'Cursor',
       'Gemini CLI',
       'GitHub Copilot CLI',

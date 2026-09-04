@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { join, parse, sep } from 'node:path';
 import { analyzeCommandWithProgram } from '@/analyzer';
 import {
   isTmpdirOverriddenToNonTemp as isTmpdirOverriddenWithEnvironment,
@@ -8,21 +8,32 @@ import {
   isTrustedTempRootPath,
 } from '@/analyzer/tmpdir';
 import type { EnvironmentContext } from '@/ir/analysis';
+import { toShellPath } from '../helpers';
 import { TEST_ENVIRONMENT } from '../helpers/environment';
 import { policySnapshot, testModes } from '../helpers/policy';
 
 const isTmpdirOverriddenToNonTemp = (envAssignments: ReadonlyMap<string, string>) =>
   isTmpdirOverriddenWithEnvironment(envAssignments, TEST_ENVIRONMENT);
 
+const STUB_ROOT = parse(tmpdir()).root;
+const STUB_TMPDIR = join(STUB_ROOT, 'tmp');
+const STUB_WORKDIR = join(STUB_ROOT, 'work');
+
 /**
  * A filesystem that exists only in this test: the listed symlinks over the temp roots
  * and the working directory the analyzer case below runs in.
  */
 function stubEnvironment(symlinks: Record<string, string>): EnvironmentContext {
-  const present = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp', '/work'];
+  const present = [
+    STUB_TMPDIR,
+    join(STUB_ROOT, 'var', 'tmp'),
+    join(STUB_ROOT, 'private', 'tmp'),
+    join(STUB_ROOT, 'private', 'var', 'tmp'),
+    STUB_WORKDIR,
+  ];
   return {
     ...TEST_ENVIRONMENT,
-    tmpdir: '/tmp',
+    tmpdir: STUB_TMPDIR,
     paths: {
       entryKind: (path) =>
         path in symlinks ? 'symlink' : present.includes(path) ? 'present' : 'missing',
@@ -90,13 +101,18 @@ describe('isTmpdirOverriddenToNonTemp', () => {
   });
 
   test('resolves symlinks through the injected path resolver, not the real filesystem', () => {
-    const environment = stubEnvironment({ '/tmp/escape': '/root/escape' });
+    const escaped = join(STUB_TMPDIR, 'escape');
+    const outside = join(STUB_ROOT, 'root', 'escape');
+    const environment = stubEnvironment({ [escaped]: outside });
 
+    expect(isTmpdirOverriddenWithEnvironment(new Map([['TMPDIR', escaped]]), environment)).toBe(
+      true,
+    );
     expect(
-      isTmpdirOverriddenWithEnvironment(new Map([['TMPDIR', '/tmp/escape']]), environment),
-    ).toBe(true);
-    expect(
-      isTmpdirOverriddenWithEnvironment(new Map([['TMPDIR', '/tmp/plain']]), environment),
+      isTmpdirOverriddenWithEnvironment(
+        new Map([['TMPDIR', join(STUB_TMPDIR, 'plain')]]),
+        environment,
+      ),
     ).toBe(false);
   });
 
@@ -160,17 +176,23 @@ describe('isTmpdirOverriddenToNonTemp', () => {
 describe('analysis over an injected filesystem', () => {
   test('classifies a temp target from the injected resolver, not the real filesystem', () => {
     const analyze = (environment: EnvironmentContext) =>
-      analyzeCommandWithProgram('rm -rf /tmp/escape', {
-        cwd: '/work',
+      analyzeCommandWithProgram(`rm -rf ${toShellPath(join(STUB_TMPDIR, 'escape'))}`, {
+        cwd: STUB_WORKDIR,
         policySnapshot: policySnapshot(),
         environment,
         effectiveCapabilities: testModes().capabilities,
         protectedGitMetadata: null,
       });
 
-    // The real filesystem has no /tmp/escape, so the target stays a trusted temp path.
-    expect(analyze(TEST_ENVIRONMENT)).toBeNull();
-    expect(analyze(stubEnvironment({ '/tmp/escape': '/root/escape' }))).toMatchObject({
+    // Without the synthetic symlink, the target stays within the injected temp root.
+    expect(analyze(stubEnvironment({}))).toBeNull();
+    expect(
+      analyze(
+        stubEnvironment({
+          [join(STUB_TMPDIR, 'escape')]: join(STUB_ROOT, 'root', 'escape'),
+        }),
+      ),
+    ).toMatchObject({
       kind: 'deny',
       ruleId: 'rm.recursive-force-outside-cwd',
     });

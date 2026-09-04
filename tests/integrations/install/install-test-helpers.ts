@@ -41,11 +41,43 @@ export function writeFakeCommands(homeDir: string, bodies: Readonly<Record<strin
   const binDir = join(homeDir, 'bin');
   mkdirSync(binDir, { recursive: true });
   Object.entries(bodies).forEach(([command, body]) => {
-    const path = join(binDir, command);
-    writeFileSync(path, `#!/usr/bin/env sh\n${body}\n`);
-    chmodSync(path, 0o755);
+    const commandPath = join(binDir, command);
+    const bodyPath = `${commandPath}.ts`;
+    writeFileSync(
+      bodyPath,
+      `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const args = process.argv.slice(2);
+const commandLine = args.join(' ');
+const commandPath = join(import.meta.dir, ${JSON.stringify(command)});
+
+${body}
+`,
+    );
+    writeFileSync(
+      commandPath,
+      `#!/bin/sh
+exec '${process.execPath.replaceAll("'", "'\"'\"'")}' '${bodyPath.replaceAll("'", "'\"'\"'")}' "$@"
+`,
+    );
+    chmodSync(commandPath, 0o755);
+    writeFileSync(
+      `${commandPath}.cmd`,
+      `@echo off\r\n"${process.execPath}" "%~dp0${command}.ts" %*\r\n`,
+    );
   });
   return binDir;
+}
+
+export function writeLoggedFakeCommand(homeDir: string, command: string, body = '') {
+  return writeFakeCommands(homeDir, {
+    [command]: `appendFileSync(
+  process.env.CC_SAFETY_NET_TEST_COMMAND_LOG ?? '',
+  commandPath + ' ' + commandLine + '\\n',
+);
+${body}`,
+  });
 }
 
 export function writeLoggedFakeCommands(homeDir: string, commands: readonly string[]) {
@@ -54,7 +86,10 @@ export function writeLoggedFakeCommands(homeDir: string, commands: readonly stri
     Object.fromEntries(
       commands.map((command) => [
         command,
-        `printf '%s\\n' "$0 $*" >> "$CC_SAFETY_NET_TEST_COMMAND_LOG"`,
+        `appendFileSync(
+  process.env.CC_SAFETY_NET_TEST_COMMAND_LOG ?? '',
+  commandPath + ' ' + commandLine + '\\n',
+);`,
       ]),
     ),
   );
