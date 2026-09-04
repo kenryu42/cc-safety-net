@@ -45,14 +45,15 @@ timeout on the one Git subprocess.
   the pre-commit hook does not rebuild `dist/` from an unchanged `src/` under a different bun
   version. The knip and biome jobs still run; a contributor on bun 1.4.0 needs no override.
   Pushes from a root container use `LEFTHOOK_EXCLUDE=check`, because the pre-push job runs
-  `bun run check` and the ten root-only failures below would reject the push; the check is run
+  `bun run check` and the root-only failures below would reject the push; the check is run
   explicitly before every commit instead.
-- In a container that runs as root, ten pre-existing tests fail on `main` and on this branch
-  alike: eight inject failures with `chmod` (root ignores permissions) and pass as an unprivileged
-  user; the GUI oversized-POST 413 test and the Hermes process-tree kill test are sensitive to the
+- In a container that runs as root, two pre-existing tests fail on `main` and on this branch
+  alike: the GUI oversized-POST 413 test and the Hermes process-tree kill test are sensitive to the
   bun version or the sandbox (the container ships bun 1.3.11; the project pins 1.4.0). CI on a
-  non-root runner with bun 1.4.0 is the gate for those. Everything else in `bun run check`,
-  including the 90% coverage floor, must pass locally.
+  non-root runner with bun 1.4.0 is the gate for those. Before the `main` v2.3.3 merge eight more
+  tests failed as root because they injected failures with `chmod`, which root ignores; `main`
+  reworked those and they now pass. Everything else in `bun run check`, including the 90%
+  coverage floor, must pass locally.
 
 ## Phases
 
