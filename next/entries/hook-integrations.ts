@@ -1,6 +1,7 @@
 import { runAntigravityCliHook } from '@next/hosts/antigravity-cli/hook';
 import { type RuntimeHookIntegrationId, runtimeHookIntegrationMetadata } from '@next/hosts/catalog';
 import { runClaudeCodeHook } from '@next/hosts/claude-code/hook';
+import { runCodexHook } from '@next/hosts/codex/hook';
 import { runCopilotCliHook } from '@next/hosts/copilot-cli/hook';
 import { runCursorHook } from '@next/hosts/cursor/hook';
 import { runGeminiCLIHook } from '@next/hosts/gemini-cli/hook';
@@ -22,6 +23,7 @@ export type HookIntegration = {
 const hookRunners = {
   'antigravity-cli': runAntigravityCliHook,
   'claude-code': runClaudeCodeHook,
+  codex: runCodexHook,
   'copilot-cli': runCopilotCliHook,
   cursor: runCursorHook,
   'gemini-cli': runGeminiCLIHook,

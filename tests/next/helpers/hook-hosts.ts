@@ -6,6 +6,7 @@ import { createProcessEnvironment } from '@next/core/environment';
 import { getUserPolicyPath } from '@next/core/policy/paths';
 import { runAntigravityCliHook as portedAntigravityCliHook } from '@next/hosts/antigravity-cli/hook';
 import { runClaudeCodeHook as portedClaudeCodeHook } from '@next/hosts/claude-code/hook';
+import { runCodexHook as portedCodexHook } from '@next/hosts/codex/hook';
 import { runCopilotCliHook as portedCopilotCliHook } from '@next/hosts/copilot-cli/hook';
 import { runCursorHook as portedCursorHook } from '@next/hosts/cursor/hook';
 import { runGeminiCLIHook as portedGeminiCLIHook } from '@next/hosts/gemini-cli/hook';
@@ -14,6 +15,7 @@ import { runHermesAgentHook as portedHermesAgentHook } from '@next/hosts/hermes-
 import { runKimiCodeHook as portedKimiCodeHook } from '@next/hosts/kimi-code/hook';
 import { runAntigravityCliHook as shippedAntigravityCliHook } from '@/integrations/antigravity-cli/hook';
 import { runClaudeCodeHook as shippedClaudeCodeHook } from '@/integrations/claude-code/hook';
+import { runCodexHook as shippedCodexHook } from '@/integrations/codex/hook';
 import { runCopilotCliHook as shippedCopilotCliHook } from '@/integrations/copilot-cli/hook';
 import { runCursorHook as shippedCursorHook } from '@/integrations/cursor/hook';
 import { runGeminiCLIHook as shippedGeminiCLIHook } from '@/integrations/gemini-cli/hook';
@@ -257,6 +259,17 @@ const HOST_SPECS: readonly HostSpec[] = [
         env: { CLAUDECODE: '1' },
       },
     ],
+  },
+  {
+    // The Claude-shaped document again, without the transcript attribution Claude Code adds and
+    // with `Bash` routed as `auto`, so the common rows carry the whole host.
+    id: 'codex',
+    flag: '--codex',
+    shipped: shippedCodexHook,
+    ported: portedCodexHook,
+    commandTool: 'Bash',
+    unsupportedEvent: 'PostToolUse',
+    build: claudeShaped('PreToolUse'),
   },
   {
     id: 'kimi-code',

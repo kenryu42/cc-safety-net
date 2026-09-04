@@ -216,6 +216,14 @@ const PAYLOADS = [
     input: { command: 'cat ~/.ssh/config' },
     denies: 'secret.home.ssh',
   },
+  {
+    // The other half of an unknown route: the path-like fields, which the secret guard reads
+    // alongside the command candidate. Both gates deny it at standard and at strict.
+    name: 'an unrouted tool names a private key in its path field',
+    toolName: 'MysteryTool',
+    input: { file_path: join(home, '.ssh', 'id_rsa') },
+    denies: 'secret.home.ssh',
+  },
 ] as const;
 
 describe('hand-built host payloads', () => {

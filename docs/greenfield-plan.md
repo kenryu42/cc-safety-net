@@ -224,6 +224,16 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   stdin flag yields bytes and exit codes identical to `src`. Full-suite coverage sits at 98.90%
   (threshold 90%); `next/entries/args.ts` is ported whole for Phase 7 and only `parseCommandArgs`
   is exercised so far.
+- Merged from `main` (v2.3.3) after Phase 5: the native Codex hook (`--codex`, `-cx`; the
+  Claude-shaped payload, `Bash` → auto, no transcript attribution) lives in
+  `next/hosts/codex/hook.ts` over the shared `next/hosts/hook/pre-tool-use.ts` that Claude Code
+  now also uses; the catalog's runtime rows, the hook table, the per-host differentials and the
+  verify recipes carry it. The Windows guard fixes (PowerShell default dialect for unrouted tools,
+  strict secret matching for PowerShell candidates, metadata-only `ls`/`stat` for unrouted
+  PowerShell) are mirrored verbatim into `next/gate`; their win32-only branches are unreachable in
+  the Linux differentials and rest on the normalized-diff self-check. `main` also replaced the
+  chmod-based unreadable fixtures with spies, so `bun run check` as root now fails only the GUI
+  413 and Hermes process-kill tests.
 
 
 ### Phase 6 — Installers and detectors (L) `[ ]`
@@ -234,6 +244,10 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   the embedded policy; precise uninstall.
 - Acceptance: fake host configs produce the exact artifacts, detect finds them, uninstall restores
   byte-identical files (JSON comment loss asserted); install is idempotent.
+- From `main` v2.3.3: the Codex native plugin (`.codex-plugin/plugin.json`, `hooks/codex.json`
+  running `node "${PLUGIN_ROOT}/dist/bin/cc-safety-net.js" hook --codex`, so the pinned bin path
+  now has a third consumer) and the Hermes shim's Windows process-tree kill are part of the port
+  source.
 
 ### Phase 7 — CLI diagnostics (M) `[ ]`
 
@@ -242,6 +256,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   `logs`, `rule verify` and `rule doc`, `policy check` and `policy apply` with the TTY gate.
 - Acceptance: explain goldens; doctor JSON goldens; exit codes 0 and 1 only; every surface is a
   projection of one policy resolution; the verify skill's explain, diagnostics, and logs recipes pass.
+- From `main` v2.3.3: `logs --project` matches with `relative`/`sep` rather than a `/` prefix.
 
 ### Phase 8 — Rulebook manager (M) `[ ]`
 
@@ -269,6 +284,11 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   host layer.
 - Acceptance: tarball at or under 560,000 bytes; the git-checkout plugin works without
   `node_modules`; CI green.
+- From `main` v2.3.3: the release scripts validate the Codex manifest and hook file
+  (`verify-repository-plugin.ts`, `release-state.ts`, `prepare-release-files.ts`), and CI runs
+  `check:ci` on Windows and macOS, so `tests/next` must be portable before cutover: spawn through
+  `process.execPath`, build child environments with `createSpawnEnv`, quote native paths in POSIX
+  fixtures, and avoid `/`-joined path assertions.
 
 ### Phase 11 — Performance validation and cutover (S+M) `[ ]`
 

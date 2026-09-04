@@ -392,7 +392,6 @@ export function findSensitiveTargetInSemanticFacts(
 }
 
 function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentContext): boolean {
-  if (facts.invocation.route.kind !== 'command') return false;
   const syntax =
     getCommandSyntaxFact(facts, 'input-candidate') ??
     getCommandSyntaxFact(facts, 'declared-command');
@@ -412,6 +411,9 @@ function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentCon
   if (stripped.length === 0) return false;
   const command = basename(stripped[0] ?? '').toLowerCase();
   const args = stripped.slice(1);
+  if (facts.invocation.route.kind === 'unknown') {
+    return syntax.program.dialect === 'powershell' && (command === 'ls' || command === 'stat');
+  }
   if (command === 'ls' || command === 'stat') return true;
   if (command === 'test') return args.length === 2 && (args[0] === '-e' || args[0] === '-f');
   if (command !== 'find') return false;

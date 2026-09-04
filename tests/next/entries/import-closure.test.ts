@@ -4,7 +4,7 @@ import { dirname, join, relative } from 'node:path';
 
 /**
  * Two budgets on the hook entry, both read off its transitive static import closure. Cold start:
- * the modules a hook call cannot avoid loading are the gate, the audit writer and the eight stdin
+ * the modules a hook call cannot avoid loading are the gate, the audit writer and the nine stdin
  * adapters, and nothing else the CLI carries — an installer, a detector, doctor, the GUI, the
  * rulebook manager, the zod policy schema or an in-process entry pulled in by a stray import is a
  * regression the hook path pays for on every tool call. Git-checkout mode: the same closure names
@@ -84,6 +84,7 @@ describe('the hook entry closure', () => {
         'entries/hook-integrations.ts',
         'hosts/antigravity-cli/hook.ts',
         'hosts/claude-code/hook.ts',
+        'hosts/codex/hook.ts',
         'hosts/copilot-cli/hook.ts',
         'hosts/cursor/hook.ts',
         'hosts/gemini-cli/hook.ts',

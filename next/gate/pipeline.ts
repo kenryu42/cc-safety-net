@@ -120,6 +120,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   const facts = callDependency('policy-protection', command, () =>
     createSemanticFacts(invocation, options.factParserDependencies),
   );
+  const inputCandidate = getCommandSyntaxFact(facts, 'input-candidate');
   const declaredCommand = getCommandSyntaxFact(facts, 'declared-command');
   if (
     isCommandInvocation(invocation) &&
@@ -136,7 +137,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
       },
     };
   }
-  if (getCommandSyntaxFact(facts, 'input-candidate')?.program.status === 'limited') {
+  if (inputCandidate?.program.status === 'limited') {
     return {
       stage: 'command-validation',
       decision: {
@@ -224,7 +225,12 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
             policy.secretProtection,
             options.environment,
             budget,
-            { strict: isCommandInvocation(invocation) ? modes.strict : undefined },
+            {
+              strict:
+                isCommandInvocation(invocation) || inputCandidate?.program.dialect === 'powershell'
+                  ? modes.strict
+                  : undefined,
+            },
           ),
         );
   if (secretTarget) {

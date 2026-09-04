@@ -42,6 +42,8 @@ const HOOK_ARGS: readonly (readonly string[])[] = [
   ['-cc'],
   ['--agy-cli'],
   ['-ac'],
+  ['--codex'],
+  ['-cx'],
   ['--cursor'],
   ['--gemini-cli'],
   ['--copilot-cli'],

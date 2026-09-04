@@ -63,6 +63,12 @@ const catalog = [
     id: 'codex',
     displayName: 'Codex',
     doctorOrder: 4,
+    runtime: {
+      order: 3,
+      flags: ['-cx', '--codex'],
+      description: 'Run as a Codex PreToolUse hook',
+      legacyTopLevelFlags: [],
+    },
     install: {
       order: 4,
       flag: '--codex',
@@ -75,7 +81,7 @@ const catalog = [
     displayName: 'GitHub Copilot CLI',
     doctorOrder: 7,
     runtime: {
-      order: 5,
+      order: 6,
       flags: ['-cp', '--copilot-cli'],
       description: 'Run as GitHub Copilot CLI PreToolUse hook',
       legacyTopLevelFlags: ['-cp', '--copilot-cli'],
@@ -92,7 +98,7 @@ const catalog = [
     displayName: 'Gemini CLI',
     doctorOrder: 6,
     runtime: {
-      order: 4,
+      order: 5,
       flags: ['-gc', '--gemini-cli'],
       description: 'Run as Gemini CLI BeforeTool hook',
       legacyTopLevelFlags: ['-gc', '--gemini-cli'],
@@ -109,7 +115,7 @@ const catalog = [
     displayName: 'Grok Build',
     doctorOrder: 8,
     runtime: {
-      order: 6,
+      order: 7,
       flags: ['-gb', '--grok-build'],
       description: 'Run as Grok Build PreToolUse hook',
       legacyTopLevelFlags: [],
@@ -126,7 +132,7 @@ const catalog = [
     displayName: 'Hermes Agent',
     doctorOrder: 9,
     runtime: {
-      order: 7,
+      order: 8,
       flags: ['-ha', '--hermes-agent'],
       description: 'Run as Hermes Agent pre_tool_call hook',
       legacyTopLevelFlags: [],
@@ -143,7 +149,7 @@ const catalog = [
     displayName: 'Kimi Code',
     doctorOrder: 10,
     runtime: {
-      order: 8,
+      order: 9,
       flags: ['-kc', '--kimi-code'],
       description: 'Run as Kimi Code PreToolUse hook',
       legacyTopLevelFlags: [],
@@ -193,7 +199,7 @@ const catalog = [
     displayName: 'Cursor',
     doctorOrder: 5,
     runtime: {
-      order: 3,
+      order: 4,
       flags: ['-cu', '--cursor'],
       description: 'Run as Cursor preToolUse hook',
       legacyTopLevelFlags: [],

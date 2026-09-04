@@ -31,6 +31,11 @@ const DENY_DOCUMENT_KEYS: Record<string, readonly string[]> = {
     'hookSpecificOutput.permissionDecision',
     'hookSpecificOutput.permissionDecisionReason',
   ],
+  codex: [
+    'hookSpecificOutput.hookEventName',
+    'hookSpecificOutput.permissionDecision',
+    'hookSpecificOutput.permissionDecisionReason',
+  ],
   'kimi-code': [
     'hookSpecificOutput.hookEventName',
     'hookSpecificOutput.permissionDecision',
