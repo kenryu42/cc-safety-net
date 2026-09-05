@@ -66,7 +66,14 @@ for (const host of HOOK_HOSTS) {
 }
 
 describe('flag resolution', () => {
-  for (const argv of [['hook', '--claude-code'], ['--claude-code'], ['-cc']]) {
+  // `Hook` is here because the shipped bin looks its verb up case-insensitively, so a
+  // case-variant spelling still runs the integration rather than reporting a missing flag.
+  for (const argv of [
+    ['hook', '--claude-code'],
+    ['Hook', '--claude-code'],
+    ['--claude-code'],
+    ['-cc'],
+  ]) {
     test(`\`${argv.join(' ')}\` runs the Claude Code hook`, () => {
       expect(runEntry(PORTED, argv, denialRow)).toStrictEqual(runEntry(SHIPPED, argv, denialRow));
     }, 60_000);
@@ -75,29 +82,9 @@ describe('flag resolution', () => {
   for (const argv of [['hook'], ['hook', '--cursor', '--kimi-code']]) {
     test(`\`${argv.join(' ')}\` names no integration`, () => {
       const ported = runEntry(PORTED, argv, denialRow);
-      const shipped = runEntry(SHIPPED, argv, denialRow);
-      // Only the first stderr line is shared: the shipped bin follows it with the hook help
-      // listing, which Phase 7 ports.
-      expect([ported.stdout, ported.exitCode, ported.stderr.split('\n')[0]]).toStrictEqual([
-        shipped.stdout,
-        shipped.exitCode,
-        shipped.stderr.split('\n')[0],
-      ]);
+      expect(ported).toStrictEqual(runEntry(SHIPPED, argv, denialRow));
       expect(ported.stdout).toBe('');
       expect(ported.exitCode).toBe(1);
-    }, 60_000);
-  }
-});
-
-// Deviation H: every other verb is one stderr line and exit 1 until Phase 7 adds the dynamic
-// import of the CLI chunk, where the shipped bin prints help, a status report or a version.
-describe('every verb other than hook', () => {
-  for (const argv of [['status'], ['--help'], []]) {
-    test(`\`${argv.join(' ') || 'no command'}\` is refused on one line`, () => {
-      const ported = runEntry(PORTED, argv, denialRow);
-      expect(ported.stdout).toBe('');
-      expect(ported.exitCode).toBe(1);
-      expect(ported.stderr.trimEnd().split('\n')).toHaveLength(1);
     }, 60_000);
   }
 });

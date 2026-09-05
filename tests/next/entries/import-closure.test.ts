@@ -15,10 +15,18 @@ const NEXT_ROOT = join(import.meta.dir, '..', '..', '..', 'next');
 const HOOK_ENTRY = join(NEXT_ROOT, 'entries', 'bin.ts');
 
 const STATIC_SPECIFIER = /(?:^|[\n;])\s*(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]/g;
+const DYNAMIC_SPECIFIER = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
 /** Every module the file names at load time; a dynamic `import()` is a chunk, not a static cost. */
 function staticSpecifiers(source: string): string[] {
   return [...source.matchAll(STATIC_SPECIFIER)].flatMap((match) =>
+    match[1] === undefined ? [] : [match[1]],
+  );
+}
+
+/** The chunks the file splits off, which load only when the branch that names them runs. */
+function dynamicSpecifiers(source: string): string[] {
+  return [...source.matchAll(DYNAMIC_SPECIFIER)].flatMap((match) =>
     match[1] === undefined ? [] : [match[1]],
   );
 }
@@ -68,9 +76,13 @@ const IN_PROCESS_ENTRIES = [
 ];
 
 const offTheHookPath = (file: string) =>
-  OFF_THE_HOOK_PATH.test(file) ||
-  IN_PROCESS_ENTRIES.some((prefix) => file.startsWith(prefix)) ||
-  file === 'entries/api.ts';
+  // `cli/args.ts` is the exception under `cli/`: the hook verb parses its own flags with the
+  // shared parser, so the whole CLI's argument parser — and nothing else it carries — is on the
+  // hook path.
+  file !== 'cli/args.ts' &&
+  (OFF_THE_HOOK_PATH.test(file) ||
+    IN_PROCESS_ENTRIES.some((prefix) => file.startsWith(prefix)) ||
+    file === 'entries/api.ts');
 
 const offTheCheckout = (specifier: string) => !specifier.startsWith('node:') && specifier !== 'bun';
 
@@ -95,6 +107,10 @@ describe('the hook entry closure', () => {
       ].filter((file) => !closure.files.has(file)),
     ).toEqual([]);
     expect([...closure.files].filter(offTheHookPath)).toEqual([]);
+  });
+
+  test('the bin reaches the CLI through exactly one dynamic import', () => {
+    expect(dynamicSpecifiers(readFileSync(HOOK_ENTRY, 'utf-8'))).toEqual(['@next/cli/main']);
   });
 
   test('git-checkout mode: the closure names no package', () => {
@@ -122,5 +138,13 @@ describe('the hook entry closure', () => {
     expect(
       specifiers.filter((_, index) => resolved[index] === undefined).filter(offTheCheckout),
     ).toEqual(['zod']);
+
+    expect(offTheHookPath('cli/args.ts')).toBeFalse();
+    expect(offTheHookPath('cli/main.ts')).toBeTrue();
+    expect(
+      dynamicSpecifiers(
+        "const cli = await import('@next/cli/main');\nconst gui = await import('@next/cli/gui');\n",
+      ),
+    ).toEqual(['@next/cli/main', '@next/cli/gui']);
   });
 });

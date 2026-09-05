@@ -14,6 +14,9 @@ import { join, relative, sep } from 'node:path';
 
 const NEXT_ROOT = join(import.meta.dir, '..', '..', 'next');
 const SCHEMA_MODULE = join(NEXT_ROOT, 'core', 'policy', 'schema.ts');
+/** The legacy `.safety-net.json` validator: a diagnostic-only module the hook path never loads,
+ *  and the one place besides the schema itself that the schema library is reached from. */
+const LEGACY_CONFIG_VALIDATOR = join(NEXT_ROOT, 'core', 'policy', 'config-file.ts');
 
 const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
   'core/policy/schema.ts': ['zod'],
@@ -41,8 +44,6 @@ const CHILD_PROCESS_ALLOWANCES: readonly string[] = [
 
 /** The layers a CLI command may reach for; `entries` is above it, and `cli` is its own. */
 const CLI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'cli'];
-/** The arg parser sits in entries until Phase 7 relocates it with the dynamic CLI chunk. */
-const CLI_ENTRY_ALLOWANCE = '@next/entries/args';
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
@@ -110,7 +111,7 @@ function layeringViolations(file: string, source: string): string[] {
   const specifiers = importSpecifiers(source);
   const allowedThirdParty = THIRD_PARTY_ALLOWANCES[path] ?? [];
   const offending = specifiers.filter((specifier) => {
-    if (layer === 'hosts' || layer === 'entries') {
+    if (layer === 'hosts' || layer === 'entries' || layer === 'cli') {
       if (NETWORK_MODULES.includes(specifier)) return true;
       if (specifier === 'node:child_process') return !CHILD_PROCESS_ALLOWANCES.includes(path);
     }
@@ -119,15 +120,11 @@ function layeringViolations(file: string, source: string): string[] {
       return !HOST_LAYERS.includes(layerOf(specifier, file) ?? '');
     }
     if (layer === 'cli') {
-      if (
-        specifier.startsWith('node:') ||
-        allowedThirdParty.includes(specifier) ||
-        specifier === CLI_ENTRY_ALLOWANCE
-      )
-        return false;
+      if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
       return !CLI_LAYERS.includes(layerOf(specifier, file) ?? '');
     }
     if (layer === 'core' || layer === 'gate' || layer === 'audit') {
+      if (layer === 'core' && layerOf(specifier, file) === 'gate') return true;
       return (
         layerOf(specifier, file) === 'hosts' ||
         layerOf(specifier, file) === 'entries' ||
@@ -186,9 +183,9 @@ describe('next/ architecture', () => {
     expect(violations).toEqual([]);
   });
 
-  test('the schema validator is imported by no other module under next/', () => {
+  test('the schema validator is imported by no module under next/ but the legacy config validator', () => {
     const violations = files
-      .filter((file) => file !== SCHEMA_MODULE)
+      .filter((file) => file !== SCHEMA_MODULE && file !== LEGACY_CONFIG_VALIDATOR)
       .flatMap((file) =>
         importSpecifiers(readFileSync(file, 'utf-8'))
           .filter((specifier) => resolvesToSchemaModule(specifier, file))
@@ -218,6 +215,8 @@ describe('next/ architecture', () => {
     const snapshot = join(NEXT_ROOT, 'core', 'policy', 'snapshot.ts');
     expect(isAllowed('zod', SCHEMA_MODULE)).toBeTrue();
     expect(isAllowed('zod', snapshot)).toBeFalse();
+    // The legacy validator reaches the schema module, never the package behind it.
+    expect(isAllowed('zod', LEGACY_CONFIG_VALIDATOR)).toBeFalse();
     expect(resolvesToSchemaModule('./schema', snapshot)).toBeTrue();
     expect(resolvesToSchemaModule('@next/core/policy/schema', snapshot)).toBeTrue();
     expect(resolvesToSchemaModule('./validate', snapshot)).toBeFalse();
@@ -243,7 +242,16 @@ describe('next/ architecture', () => {
         join(NEXT_ROOT, 'cli', 'example.ts'),
         "import { main } from '@next/entries/bin';\nimport { parseCommandArgs } from '@next/entries/args';\n",
       ),
-    ).toEqual(['cli/example.ts imports @next/entries/bin']);
+    ).toEqual([
+      'cli/example.ts imports @next/entries/bin',
+      'cli/example.ts imports @next/entries/args',
+    ]);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'cli', 'example.ts'),
+        "import { spawn } from 'node:child_process';\nimport { request } from 'node:http';\n",
+      ),
+    ).toEqual(['cli/example.ts imports node:child_process', 'cli/example.ts imports node:http']);
     expect(
       layeringViolations(
         join(NEXT_ROOT, 'core', 'example.ts'),
@@ -256,6 +264,13 @@ describe('next/ architecture', () => {
         "import { colorize } from '@next/cli/utils/colors';\n",
       ),
     ).toEqual(['core/example.ts imports @next/cli/utils/colors']);
+    const gateHelper = "import { analysisWordText } from '@next/gate/analyzer/command-words';\n";
+    expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), gateHelper)).toEqual([
+      'core/example.ts imports @next/gate/analyzer/command-words',
+    ]);
+    expect(layeringViolations(join(NEXT_ROOT, 'gate', 'rulebook-fixtures.ts'), gateHelper)).toEqual(
+      [],
+    );
     expect(
       layeringViolations(
         join(NEXT_ROOT, 'hosts', 'install', 'native.ts'),

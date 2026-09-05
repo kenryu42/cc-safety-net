@@ -1,5 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { Environment } from '@next/core/environment';
+import {
+  bindDelegatedPolicyFilesystemTarget,
+  writePolicyFileAtomic,
+} from '@next/core/io/safe-read';
 import { DESTRUCTIVE_COMMAND_RULE_ID_SET } from '@next/core/rules/destructive';
 import {
   SECRET_DEFAULT_OFF_RULE_ID_SET,
@@ -12,7 +17,12 @@ import {
 } from './allow-paths';
 import { clampAuditRetentionDays, DEFAULT_AUDIT_RETENTION_DAYS } from './audit-retention-days';
 import { mergeProjectPolicy, type ProjectPolicyProjection } from './merge';
-import { getProjectPolicyPath, getUserPolicyPath, type RulesPolicyOptions } from './paths';
+import {
+  getProjectPolicyPath,
+  getUserPolicyPath,
+  type RulesPolicyOptions,
+  type UserScopeOptions,
+} from './paths';
 import { SAFETY_OVERRIDE_KEYS } from './safety-level';
 import type {
   DestructiveCommandRuleOverride,
@@ -277,6 +287,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // references into the shared DEFAULT_GUI_POLICY.
 function createDefaultGuiPolicy(): GuiPolicy {
   return structuredClone(DEFAULT_GUI_POLICY);
+}
+
+export interface GuiPolicyWriteResult {
+  path: string;
+  policy: GuiPolicy;
+  errors: string[];
+}
+
+// The write goes straight through the atomic writer rather than `config-file.ts`'s
+// `writeJsonAtomic`: that module loads the schema library, and the hook path imports this one.
+export function writeUserPolicyFromGui(
+  environment: Environment,
+  policy: unknown,
+  options: UserScopeOptions = {},
+): GuiPolicyWriteResult {
+  const path = getUserPolicyPath(environment, options);
+  const errors = getUserPolicyDiagnostics(policy, environment.home);
+  const normalizedPolicy =
+    errors.length > 0 ? createDefaultGuiPolicy() : normalizeGuiPolicy(policy, environment.home);
+  if (errors.length > 0) {
+    return { path, policy: normalizedPolicy, errors };
+  }
+
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writePolicyFileAtomic(
+    bindDelegatedPolicyFilesystemTarget(path),
+    `${JSON.stringify(normalizedPolicy, null, 2)}\n`,
+    0o600,
+  );
+  chmodSync(path, 0o600);
+  return { path, policy: normalizedPolicy, errors: [] };
 }
 
 /**

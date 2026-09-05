@@ -2,7 +2,15 @@
  * Type definitions for the doctor command.
  */
 
+import type {
+  ConfigStateInfo,
+  DestructiveCommandRuleOverride,
+  EffectiveSafetyCapabilities,
+  EffectiveSafetyLevel,
+  PolicyScopes,
+} from '@next/core/policy/types';
 import type { IntegrationId } from '@next/hosts/catalog';
+import type { SelfTestSummary } from '@next/hosts/self-test';
 
 /** Hook platform identifiers */
 export type HookPlatform = IntegrationId;
@@ -54,4 +62,127 @@ export interface SystemInfo {
   bunVersion: string | null;
   /** Platform (e.g., "darwin arm64") */
   platform: string;
+}
+
+/** Config source info */
+export interface ConfigSourceInfo {
+  path: string;
+  exists: boolean;
+  valid: boolean;
+  ruleCount: number;
+  errors?: string[];
+}
+
+/** Effective rule with source tracking */
+export interface EffectiveRule {
+  source: 'user' | 'project';
+  name: string;
+  command: string;
+  subcommand?: string;
+  blockArgs: string[];
+  reason: string;
+}
+
+/** Shadowed rule info */
+export interface ShadowedRule {
+  name: string;
+  shadowedBy: 'project';
+}
+
+/** Environment variable info */
+export interface EnvVarInfo {
+  name: string;
+  value: string | undefined;
+  isSet: boolean;
+  legacyName?: string;
+  legacyValue?: string;
+  legacyIsSet?: boolean;
+  description: string;
+  defaultBehavior: string;
+}
+
+interface EffectiveSafetyInfo {
+  selectedPreset: 'standard' | 'strict' | 'paranoid';
+  level: EffectiveSafetyLevel;
+  capabilities: EffectiveSafetyCapabilities;
+  ruleOverrides: Readonly<Record<string, DestructiveCommandRuleOverride>>;
+  weakenedRuleOverrides: string[];
+  /** Set only when a project policy file was read: which scope supplied the
+   *  preset, and what the project scope relaxed. */
+  policyScopes?: PolicyScopes;
+  ruleCounts: {
+    stored: number;
+    effective: number;
+  };
+}
+
+export type DoctorFindingSeverity = 'info' | 'warning' | 'error';
+
+export interface DoctorFinding {
+  checkId: string;
+  severity: DoctorFindingSeverity;
+  title: string;
+  detail: string;
+  fixHint?: string;
+  integration?: string;
+  path?: string;
+}
+
+export type ProtectedDirectoryKind = 'policy' | 'config' | 'audit';
+
+export type ProtectedDirectoryIssue = 'ownership' | 'permissions' | 'symlink' | 'not-directory';
+
+export interface ProtectedDirectoryPosture {
+  kind: ProtectedDirectoryKind;
+  path?: string;
+  status: 'safe' | 'unsafe' | 'unknown' | 'not-applicable';
+  issues: ProtectedDirectoryIssue[];
+}
+
+export interface DoctorPosture {
+  directories: ProtectedDirectoryPosture[];
+}
+
+/** Audit activity summary */
+export interface ActivitySummary {
+  totalBlocked: number;
+  sessionCount: number;
+  recentEntries: Array<{
+    timestamp: string;
+    command: string;
+    reason: string;
+    relativeTime: string;
+  }>;
+  oldestEntry?: string;
+  newestEntry?: string;
+  /** Audit sources this summary had to drop: unreadable files, malformed records. */
+  unreadable: number;
+}
+
+/** Full doctor report */
+export interface DoctorReport {
+  hooks: HookStatus[];
+  engineSelfTest: SelfTestSummary;
+  userConfig: ConfigSourceInfo;
+  projectConfig: ConfigSourceInfo;
+  /** Whether the runtime enforces the configured policy or a fallback. */
+  configState: ConfigStateInfo;
+  effectiveRules: EffectiveRule[];
+  shadowedRules: ShadowedRule[];
+  environment: EnvVarInfo[];
+  effectiveSafety: EffectiveSafetyInfo;
+  /** Lock and cache files a version 2 install left behind, present only when some exist. */
+  v2Leftovers?: readonly string[];
+  posture: DoctorPosture;
+  findings: DoctorFinding[];
+  activity: ActivitySummary;
+  update: UpdateInfo;
+  system: SystemInfo;
+}
+
+/** Doctor command options */
+export interface DoctorOptions {
+  json?: boolean;
+  cwd?: string;
+  skipUpdateCheck?: boolean;
 }

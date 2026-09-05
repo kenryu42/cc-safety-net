@@ -297,7 +297,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   from a JSONC config leaves `[ "other-plugin"]`; `uninstall --hermes-agent` leaves the emptied
   plugins directory behind. Fix on `main` first, then re-port.
 
-### Phase 7 — CLI diagnostics (M) `[ ]`
+### Phase 7 — CLI diagnostics (M) `[x]`
 
 - `status`, `doctor` with stable finding ids and `--json`, `statusline` glyphs including the
   Claude settings probe, `explain` through the pipeline with a trace sink and the real dialect,
@@ -309,6 +309,61 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   dynamic CLI chunk, move `parseCommandArgs` from `next/entries/args.ts` to `next/cli/args.ts`,
   retire the architecture test's `cli -> entries/args` allowance and extend its child-process and
   network bans to the `cli` layer.
+- Phase 7 landed: `next/cli/` (`main.ts` exporting `runCli`, `args.ts` moved from `entries`,
+  `help.ts`, every command definition, `status.ts`, `statusline.ts`, `doctor/*`, `explain/*`,
+  `audit-log.ts`, `policy/index.ts`, `rule/{verify,doc,sync-migrate}.ts`, `utils/terminal.ts`),
+  `next/gate/{explain,rulebook-fixtures}.ts`, `next/hosts/{self-test,doctor-types}.ts` and
+  `next/core/policy/{config-file,diff}.ts` plus `writeUserPolicyFromGui` in the store, as verbatim
+  ports behind the Environment seam (`createProcessEnvironment()` once per command handler).
+  `next/entries/bin.ts` keeps the hook verb and the legacy top-level hook flags on static imports
+  behind the same help/version scan `src` runs, and reaches everything else through exactly one
+  `import('@next/cli/main')`; the closure test allows `cli/args.ts` inside the hook closure and
+  pins that single dynamic specifier. The `rule` and `gui` handlers print one stderr line naming
+  the command as unavailable and exit 1 until Phases 8 and 9; their help output is `src`'s.
+- Adopted: the hook command definition renders its option list from the hosts catalog (cli may not
+  import entries); `explainCommand(command, options, environment)` runs the whole guard sequence
+  through `evaluateGuard` with the recording trace sink and the real dialect, records `parse` and
+  `segment-skipped` itself, synthesizes `src`'s pre-analysis rule-check shape for protection
+  denials, throws the structural limit for parser-limited programs and runs the activation
+  candidate through a second `evaluateGuard` with the secret guard off; `config-file.ts` collects
+  the rule-config and legacy validators and the runtime-error helper (the one zod consumer outside
+  the schema, listed in the architecture test) with a private copy of `getUnknownOverrideErrors`;
+  the store writes user policy through safe-read directly; `findRuleV2Leftovers` computes its scope
+  paths inline; `rulebook-fixtures.ts` lives under `next/gate/` because it needs two analyzer word
+  helpers, and the architecture test now rejects any core file importing the gate. Known gaps the
+  explain differential lists rather than compares: inputs whose command position auto-detects
+  PowerShell, and standard-mode partial programs (`src` explain analyzes them where the hook and
+  the pipeline answer raw-text; design 8.4).
+- Validation: a process-level harness (`tests/next/helpers/cli-differential.ts`) spawns both bins
+  under an isolated home with an empty fake `PATH` and compares stdout, stderr and exit bytes,
+  folding only the temp root and the repository root; rows cover help for every verb, version,
+  unknown command and option, status (ready, degraded, strict, worktree, weakened project),
+  statusline (JSON, non-JSON, plugin disabled, paranoid and rule-override glyphs, the legacy
+  spelling), doctor human and `--json` (fresh, Cursor configured, invalid configs, v2 leftovers,
+  unsafe posture, audit entries), explain human and `--json` for eighteen commands plus flag,
+  limit and usage rows, logs over a seeded tree with every flag and usage error, policy check and
+  apply, and the install/update/uninstall dispatch (the `update` row is a parse failure because the
+  flow probes the registry before detection). Eighteen explain pairs and seven doctor reports are
+  pinned under `tests/next/fixtures/cli/` from the shipped side so they keep guarding after
+  cutover; `rule verify` and `rule doc` run in-process on both sides. Command strings are analyzer
+  input, never executed; no test reaches the real home, a host CLI, npm or the network.
+- Verified: `bun run check` passes lint, typecheck, knip and the duplication scan (0 clones); the
+  suite runs 7,280 tests with only the two root-only failures, `tests/next` alone 2,015; coverage
+  97.61% lines against the 90% floor. The verify skill's explain, diagnostics and logs recipes pass
+  against `next/entries/bin.ts` under an isolated home (`--version` prints `dev`; blocked, allowed
+  and JSON traces; status ready at level standard; doctor healthy with only
+  `integration.none-configured`; one deny row, two with `--all`, the JSON array), and every one
+  of those outputs, help, the unknown-command path and the doctor report with its timings dropped,
+  is byte-identical to the shipped bin; nothing leaked into the real home.
+- Carried: the rule dispatcher and every rule subcommand except verify and doc, the rest of
+  sync-migrate, migrate and update-notice, exporting `getUnknownOverrideErrors` with
+  `getUnknownOverrideErrorsForConfig` and deleting `config-file.ts`'s private copy, `validateConfig`'s
+  first consumer, and the `rule --help` row that reaches the stub today (Phase 8); the gui command
+  (Phase 9); knip entries for `next/cli` and the `/** @internal */` tag on `getConfigSource`, the
+  two-chunk dist build and the packaged CLI journeys, doctor goldens that are Linux-shaped, and
+  the rows only a non-root run can pin (the plural "sources could not be read" branch of logs and a
+  failing `--prune-legacy`) (Phase 10); deleting `next/gate/evaluate-command.ts` with its
+  differential tests (Phase 11).
 
 ### Phase 8 — Rulebook manager (M) `[ ]`
 
@@ -318,6 +373,11 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   evaluated through the pipeline.
 - Acceptance: a fake server exercises every limit; nothing is written on failure; a post-change
   reload equals the gate's view.
+- From Phase 7: `next/cli/main.ts` dispatches `rule` to a stub; wire the dispatcher over
+  `next/cli/rule/{verify,doc}.ts`, port the rest of `sync-migrate.ts`, `migrate` and `update-notice`
+  verbatim, export `getUnknownOverrideErrors` from the scope-policy module with
+  `getUnknownOverrideErrorsForConfig` and delete the private copy in `next/core/policy/config-file.ts`,
+  give `validateConfig` its consumer, and add the `rule --help` differential row.
 
 ### Phase 9 — GUI (M, optional) `[ ]`
 
@@ -344,6 +404,11 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - From Phase 6: `tests/helpers.ts` creates its linked-worktree seed under the real `tmpdir()` once
   per process and never removes it, so every full run leaves one more `safety-net-worktree-seed-*`
   directory behind; root it under `CC_SAFETY_NET_TEST_TMPDIR` or remove it on exit.
+- From Phase 7: knip needs entries for `next/cli` (and `getConfigSource` in `next/gate/explain.ts`
+  carries `/** @internal */` for its test-only export); the dist build must emit the bin chunk and
+  the CLI chunk with the dynamic specifier intact; the doctor JSON goldens under
+  `tests/next/fixtures/cli/doctor/` embed Linux-shaped system info and must be normalized or
+  parameterized before CI runs them on Windows and macOS.
 
 ### Phase 11 — Performance validation and cutover (S+M) `[ ]`
 

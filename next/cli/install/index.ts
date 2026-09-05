@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseCommandArgs } from '@next/cli/args';
 import { checkForUpdates } from '@next/cli/doctor/updates';
 import { printInstallBanner } from '@next/cli/install/banner';
 import {
@@ -13,7 +14,6 @@ import { colors } from '@next/cli/utils/colors';
 import { createProcessEnvironment, type Environment } from '@next/core/environment';
 import { atomicWriteFile } from '@next/core/io/atomic-write';
 import { stripJsonComments } from '@next/core/io/jsonc';
-import { parseCommandArgs } from '@next/entries/args';
 import { installAmp, uninstallAmp } from '@next/hosts/amp/install';
 import {
   installAntigravityCli,

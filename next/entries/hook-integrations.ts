@@ -1,3 +1,4 @@
+import { parseCommandArgs } from '@next/cli/args';
 import { runAntigravityCliHook } from '@next/hosts/antigravity-cli/hook';
 import { type RuntimeHookIntegrationId, runtimeHookIntegrationMetadata } from '@next/hosts/catalog';
 import { runClaudeCodeHook } from '@next/hosts/claude-code/hook';
@@ -8,7 +9,6 @@ import { runGeminiCLIHook } from '@next/hosts/gemini-cli/hook';
 import { runGrokBuildHook } from '@next/hosts/grok-build/hook';
 import { runHermesAgentHook } from '@next/hosts/hermes-agent/hook';
 import { runKimiCodeHook } from '@next/hosts/kimi-code/hook';
-import { parseCommandArgs } from './args';
 
 export type HookIntegration = {
   id: RuntimeHookIntegrationId;
