@@ -9,7 +9,7 @@ export const BLOCK_INTENTS = Object.freeze([
 export type BlockIntent = (typeof BLOCK_INTENTS)[number];
 
 /** The command the decision was made on, and the segment that decided it when narrower. */
-export type DecisionEvidence = { kind: 'command'; command: string; segment?: string };
+type DecisionEvidence = { kind: 'command'; command: string; segment?: string };
 
 export type Decision =
   | { kind: 'allow' }

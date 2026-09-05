@@ -124,11 +124,11 @@ const LOCK_ENTRY = {
   display_ref: 'v2.0',
 };
 const STALE_ENTRY = { ...LOCK_ENTRY, digest: sha256Digest('{"rulebook_version":1}\n') };
-const CANNOT_MIGRATE =
-  'Cannot migrate: the rules config in <root>/project/.cc-safety-net is missing or unreadable while v2 leftovers remain. Restore rule.json, then re-run rule sync.';
+const CANNOT_MIGRATE = `Cannot migrate: the rules config in ${join('<root>', PROJECT_SCOPE)} is missing or unreadable while v2 leftovers remain. Restore rule.json, then re-run rule sync.`;
 
 const cachedAt = (scope: string, dir: string) => `${scope}/cache/rulebooks/${dir}/rulebook.json`;
-const removedUnder = (scope: string) => `Removed the v2 lock and cache under <root>/${scope}.`;
+const removedUnder = (scope: string) =>
+  `Removed the v2 lock and cache under ${join('<root>', scope)}.`;
 
 type Tree = { path: string; content?: string }[];
 
@@ -159,7 +159,7 @@ const migrationRows: {
     files: { [`${PROJECT_SCOPE}/rules/rule.json`]: rulesConfig([]) },
     code: 0,
     lines: [
-      'No v2 lock or cache leftovers found in <root>/project/.cc-safety-net; nothing to migrate.',
+      `No v2 lock or cache leftovers found in ${join('<root>', PROJECT_SCOPE)}; nothing to migrate.`,
     ],
     check: (tree) => expect(holdsAny(tree, 'rules/x')).toBeFalse(),
   },

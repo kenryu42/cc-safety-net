@@ -430,7 +430,15 @@ let linkedWorktreeSeed: { rootDir: string; repository: string } | undefined;
 function getLinkedWorktreeSeed(): string {
   if (linkedWorktreeSeed) return linkedWorktreeSeed.repository;
 
-  const rootDir = mkdtempSync(join(tmpdir(), 'safety-net-worktree-seed-'));
+  const rootDir = mkdtempSync(
+    join(process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(), 'safety-net-worktree-seed-'),
+  );
+  // Bun's test runner never emits `exit`, so the seed is dropped by the scope that built it and
+  // rebuilt by the next one that asks for it, rather than surviving the run in the temp root.
+  afterAll(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+    linkedWorktreeSeed = undefined;
+  });
   const repository = join(rootDir, 'repository');
   mkdirSync(repository);
   runGit(['init'], repository);

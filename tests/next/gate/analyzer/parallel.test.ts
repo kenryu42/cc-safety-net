@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir as systemTempDir } from 'node:os';
 import { join } from 'node:path';
-import { type Budget, createBudget } from '@next/core/budget';
+import { type Budget, createBudget, REASON_PARALLEL_ANALYSIS_LIMIT } from '@next/core/budget';
 import type { PolicyRule } from '@next/core/rules/types';
 import { textCommandWords } from '@next/gate/analyzer/command-words';
 import {
@@ -12,7 +12,6 @@ import {
   REASON_PARALLEL_SHELL,
   replaceParallelPlaceholder,
 } from '@next/gate/analyzer/parallel';
-import { REASON_PARALLEL_ANALYSIS_LIMIT } from '@next/gate/analyzer/reasons';
 import { textCommandWords as shippedTextWords } from '@/analyzer/command-words';
 import { createDerivedCommandWorkBudget as shippedDerivedBudget } from '@/analyzer/derived-command-budget';
 import {

@@ -32,6 +32,7 @@ const hookRunners = {
   'kimi-code': runKimiCodeHook,
 } satisfies Record<RuntimeHookIntegrationId, () => Promise<void>>;
 
+/** @internal */
 export const hookIntegrations: readonly HookIntegration[] = runtimeHookIntegrationMetadata.map(
   (integration) => ({
     ...integration,

@@ -2,14 +2,12 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir as systemTempRoot } from 'node:os';
 import { join } from 'node:path';
+import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@next/core/budget';
 import { createTestEnvironment, processPathResolver as portedPaths } from '@next/core/environment';
 import { createPolicySnapshot as createPortedSnapshot } from '@next/core/policy/snapshot';
 import type { EffectiveSafetyCapabilities } from '@next/core/policy/types';
 import { analyzeOrCapBreach, analyzeCommand as portedAnalyzeCommand } from '@next/gate/analyzer';
-import {
-  REASON_DERIVED_COMMAND_WORK_LIMIT,
-  REASON_RECURSION_LIMIT,
-} from '@next/gate/analyzer/reasons';
+import { REASON_RECURSION_LIMIT } from '@next/gate/analyzer/reasons';
 import { analyzeCommand as shippedAnalyzeCommand } from '@/analyzer';
 import { resolveProtectedGitMetadata } from '@/guards/git-metadata-protection';
 import { processPathResolver as shippedPaths } from '@/ir/environment';

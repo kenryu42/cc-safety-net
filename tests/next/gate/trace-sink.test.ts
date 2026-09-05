@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@next/core/budget';
 import { getCCSafetyNetEnvModes } from '@next/core/policy/env';
 import { parseCommand } from '@next/core/shell/parse';
 import { projectSegmentWords } from '@next/core/shell/traversal';
-import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@next/gate/analyzer/reasons';
 import { evaluateCommandWithTrace } from '@next/gate/evaluate-command';
 import { evaluateGuard, type GuardEvaluation } from '@next/gate/pipeline';
 import {

@@ -26,7 +26,8 @@ export type Environment = Readonly<{
   worktreeFacts: (cwd: string) => WorktreeFacts | null;
 }>;
 
-/** The real filesystem behind a PathResolver. */
+/** The real filesystem behind a PathResolver.
+ *  @internal */
 export const processPathResolver: PathResolver = {
   realpath: (path) => {
     try {
@@ -65,12 +66,14 @@ export function createProcessEnvironment(): Environment {
   });
 }
 
-/** What the in-memory filesystem holds at a path: a file, a directory, or a symlink to one. */
+/** What the in-memory filesystem holds at a path: a file, a directory, or a symlink to one.
+ *  @internal */
 export type FakeEntry = 'present' | 'directory' | { symlink: string };
 
 /**
  * An environment over an in-memory filesystem for tests: only the listed paths exist, a symlink
  * resolves through its target, and the git facts read the real filesystem unless overridden.
+ * @internal
  */
 export function createTestEnvironment(
   overrides: Partial<Environment> & { entries?: ReadonlyMap<string, FakeEntry> } = {},

@@ -8,6 +8,7 @@ import { redactSecrets } from './redaction';
  * 200 characters, a config warning when the policy load degraded, and one footer per intent.
  */
 
+/** @internal */
 export interface FormatBlockedMessageInput {
   reason: string;
   ruleId?: string;
@@ -33,6 +34,7 @@ const FOOTERS: Record<BlockIntent, string> = {
     'Do not brute-force variants. Simplify or restructure the command so it can be analyzed, or report the block to the user.',
 };
 
+/** @internal */
 export function formatBlockedMessage(input: FormatBlockedMessageInput): string {
   const maxLen = input.maxLen ?? 200;
   const redact = input.redact ?? ((text: string) => text);

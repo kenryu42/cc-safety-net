@@ -11,7 +11,9 @@
  * `bun test tests/next/gui/page.test.ts tests/next/core/policy/store.test.ts` (either file order):
  * without the calls below it fails with
  * `error: Cannot find module '@next/core/environment' from '<repo>/tests/next/core/policy/store.test.ts'`.
- * Phase 10 freezes the bundle into `dist`, which should retire this.
+ * Phase 10 moved the freeze inside the build, but the two test files that build the ported layout
+ * still import the assets module in-process through the layout's loader, so the helper stays until
+ * the cutover leaves the frozen page as the only importer.
  *
  * Call this from whatever helper pulls in `@next/gui/assets`, after the import.
  */

@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { createSpawnEnv } from '../../helpers';
 import { clearAuditLogs, readAuditEntries } from '../helpers/hook-capture';
 import {
   createHookFixture,
@@ -11,11 +12,13 @@ import {
 } from '../helpers/hook-hosts';
 
 /**
- * The two bins over the same bytes. Each row is fed to `bun run src/cli/cc-safety-net.ts` and to
- * `bun run next/entries/bin.ts` under one temp home, with a per-implementation audit home so both
- * trees can be read back, and the document on stdout, the exit code, the stderr and the audit
- * lines must agree. This is the whole hook path — argument to flag to adapter to gate to document
- * — which the in-process differential cannot reach, because it calls the adapters directly.
+ * The two bins over the same bytes. Each row is fed to `src/cli/cc-safety-net.ts` and to
+ * `next/entries/bin.ts` through the bun running the suite — `process.execPath`, so the run does
+ * not depend on a `bun` on `PATH` — under one temp home, with a per-implementation audit home so
+ * both trees can be read back, and the document on stdout, the exit code, the stderr and the
+ * audit lines must agree. This is the whole hook path — argument to flag to adapter to gate to
+ * document — which the in-process differential cannot reach, because it calls the adapters
+ * directly.
  */
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
@@ -32,12 +35,19 @@ afterAll(() => {
 function runEntry(entry: string, argv: readonly string[], row: HookRow) {
   const auditHome = join(fixture.home, entry === SHIPPED ? 'audit-shipped' : 'audit-ported');
   clearAuditLogs(auditHome);
-  const result = spawnSync('bun', ['run', entry, ...argv], {
+  // A row may unset a variable, and node stringifies an `undefined` value to the literal
+  // `'undefined'`, so those entries leave the map before it is merged over the parent's.
+  const defined = Object.fromEntries(
+    Object.entries({ ...hostEnv(fixture, auditHome), ...row.env }).flatMap(([name, value]) =>
+      value === undefined ? [] : [[name, value] as const],
+    ),
+  );
+  const result = spawnSync(process.execPath, ['run', entry, ...argv], {
     cwd: REPO_ROOT,
     input: row.stdin,
     encoding: 'utf-8',
     maxBuffer: 32 * 1024 * 1024,
-    env: { ...process.env, ...hostEnv(fixture, auditHome), ...row.env },
+    env: createSpawnEnv(defined),
   });
   return {
     stdout: result.stdout,

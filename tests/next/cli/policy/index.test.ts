@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream';
 import { runPolicyCommand as portedPolicyCommand } from '@next/cli/policy/index';
 import { runPolicyCommand as shippedPolicyCommand } from '@/cli/policy';
 import { expectSameCli, runCliDifferential, seedFiles } from '../../helpers/cli-differential';
-import { json, USER_POLICY } from '../../helpers/cli-fixtures';
+import { json, PROJECT_POLICY, USER_POLICY } from '../../helpers/cli-fixtures';
 import { createFakeOutput } from '../../helpers/fake-tty';
 import { snapshotTree, writeTree } from '../../helpers/fixture-tree';
 import {
@@ -46,7 +46,7 @@ describe('policy check', () => {
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toBe(
       [
-        'Scope: project (<root>/project/.cc-safety-net/policy.json)',
+        `Scope: project (${join('<root>', PROJECT_POLICY)})`,
         'Proposal: prop.json',
         'Effective policy (user + project merged):',
         'Changes (1):',
@@ -62,7 +62,7 @@ describe('policy check', () => {
       [PROPOSAL_FILE]: STRICT_PROPOSAL,
     });
     expect(outcome.exitCode).toBe(0);
-    expect(outcome.stdout).toContain('Scope: user (<root>/home/.cc-safety-net/policy.json)');
+    expect(outcome.stdout).toContain(`Scope: user (${join('<root>', USER_POLICY)})`);
     expect(outcome.stdout).toContain('  safety.level: standard -> strict');
   }, 60_000);
 
@@ -220,10 +220,8 @@ describe('policy apply at a terminal', () => {
   test('a typed yes writes only the fields the proposal set', async () => {
     const outcome = await applyBothWays([], (input) => input.write('y\n'));
     expect(outcome.code).toBe(0);
-    expect(outcome.prompt).toBe(
-      'Apply this policy to <root>/project/.cc-safety-net/policy.json? [y/N] ',
-    );
-    expect(outcome.written).toContain('Policy applied: <root>/project/.cc-safety-net/policy.json');
+    expect(outcome.prompt).toBe(`Apply this policy to ${join('<root>', PROJECT_POLICY)}? [y/N] `);
+    expect(outcome.written).toContain(`Policy applied: ${join('<root>', PROJECT_POLICY)}`);
     const applied = outcome.tree.find(
       (entry) => entry.path === 'project/.cc-safety-net/policy.json',
     );

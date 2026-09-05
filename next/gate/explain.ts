@@ -39,7 +39,7 @@ import {
 } from './trace';
 
 /** Trace data for explain command */
-export interface ExplainTrace {
+interface ExplainTrace {
   steps: TraceStep[];
   segments: { index: number; steps: TraceStep[] }[];
 }

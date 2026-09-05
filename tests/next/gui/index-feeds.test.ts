@@ -208,8 +208,8 @@ describe('the GUI activity feed over HTTP', () => {
     const week = feedOf(row.responses[0]?.body);
     const fortnight = feedOf(row.responses[1]?.body);
 
-    expect(week.logsDir).toBe('<root>/home/logs');
-    expect(week.homeDir).toBe('<root>/home');
+    expect(week.logsDir).toBe(join('<root>', 'home/logs'));
+    expect(week.homeDir).toBe(join('<root>', 'home'));
     expect(week.entries.map((entry) => entry.ts)).toStrictEqual(
       [...week.entries.map((entry) => entry.ts)].sort().reverse(),
     );
@@ -255,7 +255,7 @@ describe('the GUI rulebook listing', () => {
     const body = await readRules({});
 
     expect(body).toStrictEqual({
-      projectPath: '<root>/project',
+      projectPath: join('<root>', 'project'),
       canPickDirectory: expect.any(Boolean),
       rulebooks: [],
       errors: [],

@@ -18,9 +18,9 @@ import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
  */
 
 const DIR = '.openclaw/extensions/cc-safety-net';
-const DIR_PATH = `<home>/${DIR}`;
+const DIR_PATH = join('<home>', DIR);
 const CONFIG = '.openclaw/openclaw.json';
-const CONFIG_PATH = `<home>/${CONFIG}`;
+const CONFIG_PATH = join('<home>', CONFIG);
 const ENABLE_HINT = 'run `openclaw plugins enable cc-safety-net`';
 const OUTDATED = 'Installed OpenClaw plugin is outdated; run install --openclaw to update';
 
@@ -74,9 +74,9 @@ describe('reading the installed OpenClaw plugin', () => {
     expect(
       await detection(
         { ...installedAt(dir, 'dev'), 'elsewhere/openclaw.json': ENABLING[CONFIG] },
-        { OPENCLAW_CONFIG_PATH: '<home>/elsewhere/openclaw.json' },
+        { OPENCLAW_CONFIG_PATH: join('<home>', 'elsewhere/openclaw.json') },
       ),
-    ).toEqual(configured(`<home>/${dir}`));
+    ).toEqual(configured(join('<home>', dir)));
   });
 
   test.each([
@@ -90,26 +90,28 @@ describe('reading the installed OpenClaw plugin', () => {
       'an install whose manifest is gone',
       { [`${DIR}/index.js`]: INSTALLED[`${DIR}/index.js`] } as TreeSpec,
       [
-        `openclaw.plugin.json is missing from ${DIR_PATH}/openclaw.plugin.json; run install --openclaw`,
-        `package.json is missing from ${DIR_PATH}/package.json; run install --openclaw`,
+        `openclaw.plugin.json is missing from ${join(DIR_PATH, 'openclaw.plugin.json')}; run install --openclaw`,
+        `package.json is missing from ${join(DIR_PATH, 'package.json')}; run install --openclaw`,
       ],
     ],
     [
       'a manifest claiming another plugin',
       { ...INSTALLED, [`${DIR}/openclaw.plugin.json`]: '{"id":"other"}' } as TreeSpec,
       [
-        `${DIR_PATH}/openclaw.plugin.json is not a valid cc-safety-net manifest; run install --openclaw`,
+        `${join(DIR_PATH, 'openclaw.plugin.json')} is not a valid cc-safety-net manifest; run install --openclaw`,
       ],
     ],
     [
       'a package manifest that points OpenClaw nowhere',
       { ...INSTALLED, [`${DIR}/package.json`]: '{"name":"cc-safety-net"}' } as TreeSpec,
-      [`${DIR_PATH}/package.json does not point OpenClaw at index.js; run install --openclaw`],
+      [
+        `${join(DIR_PATH, 'package.json')} does not point OpenClaw at index.js; run install --openclaw`,
+      ],
     ],
     [
       'an entry file without our header',
       { ...INSTALLED, [`${DIR}/index.js`]: 'export default {};\n' } as TreeSpec,
-      [`Unmanaged index.js occupies ${DIR_PATH}/index.js; move or remove it`],
+      [`Unmanaged index.js occupies ${join(DIR_PATH, 'index.js')}; move or remove it`],
     ],
   ])('refuses to call %s an install', async (_case, seed, errors) => {
     expect(await detection({ ...seed, ...ENABLING })).toEqual({
@@ -196,7 +198,7 @@ describe('comparing an install against the packaged copy', () => {
         'packaged/openclaw.plugin.json': '{\n  "id": "cc-safety-net",\n  "version": "dev"\n}\n',
       }),
     ).toEqual([
-      'Modified openclaw.plugin.json occupies <root>/installed/openclaw.plugin.json; run install --openclaw to restore it',
+      `Modified openclaw.plugin.json occupies ${join('<root>', 'installed/openclaw.plugin.json')}; run install --openclaw to restore it`,
     ]);
   });
 

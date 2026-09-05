@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import {
   type CliRow,
   expectSameCli,
@@ -8,6 +9,7 @@ import {
 import {
   json,
   PLUGIN_SETTINGS,
+  PROJECT_POLICY,
   RULE_SWITCHED_OFF,
   USER_POLICY,
   WEAKENED_BY_PROJECT,
@@ -73,7 +75,7 @@ describe('status', () => {
     const shipped = await runStatus({
       seed: (side) => seedFiles(side, WEAKENED_BY_PROJECT),
     });
-    expect(shipped.stdout).toContain('  Project      <root>/project/.cc-safety-net/policy.json\n');
+    expect(shipped.stdout).toContain(`  Project      ${join('<root>', PROJECT_POLICY)}\n`);
     expect(shipped.stdout).toContain('  Project policy');
   }, 60_000);
 

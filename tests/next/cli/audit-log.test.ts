@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import * as nodeFs from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { encodeCwdForLogDirname, getAuditLogsDir } from '@next/audit/writer';
+import { runLogsCommand as portedRunLogsCommand } from '@next/cli/audit-log';
 import type { AuditLogEntry } from '@next/core/audit';
+import { runLogsCommand as shippedRunLogsCommand } from '@/cli/audit-log';
 import {
   type CliOutcome,
   type CliRow,
@@ -12,7 +15,14 @@ import {
   seedFiles,
 } from '../helpers/cli-differential';
 import { json, USER_POLICY } from '../helpers/cli-fixtures';
-import { environmentFor, removeTempRoots } from '../helpers/temp-home';
+import { captureConsole } from '../helpers/console-capture';
+import {
+  createTempRoot,
+  environmentFor,
+  isolationEnv,
+  removeTempRoots,
+  withProcessEnv,
+} from '../helpers/temp-home';
 
 /**
  * `logs` reads the audit tree the guard writes, so each row seeds that tree once and asks the
@@ -38,6 +48,8 @@ const ABSENT_ID = 'ffffffffffffffff';
 
 /** Never opened: only the value the legacy entries record and `logs` prints back. */
 const LEGACY_CWD = '/home/agent/legacy';
+const LEGACY_FILE = 'legacy-sess.jsonl';
+const UNLINK_REFUSAL = 'EPERM: operation not permitted, unlink';
 
 type Fixture = Record<string, unknown>;
 
@@ -132,11 +144,17 @@ function auditFixture(clock: number, project: string) {
 const asJsonl = (entries: readonly Fixture[]) =>
   entries.map((entry) => `${JSON.stringify(entry)}\n`).join('');
 
+/** Where the side's own audit tree lives; the writer derives every path below it from this. */
+function logsDirOf(side: CliSide): string {
+  const logsDir = getAuditLogsDir(environmentFor(side.home, side.env));
+  if (!logsDir) throw new Error('the isolated environment resolved no audit logs directory');
+  return logsDir;
+}
+
 /** Writes the fixture under the side's own audit root, with one unparseable line. */
 function seedLogs(clock: number) {
   return (side: CliSide) => {
-    const logsDir = getAuditLogsDir(environmentFor(side.home, side.env));
-    if (!logsDir) throw new Error('the isolated environment resolved no audit logs directory');
+    const logsDir = logsDirOf(side);
     const entries = auditFixture(clock, side.project);
     const stamp = new Date(clock).toISOString();
     const nested = join(
@@ -147,7 +165,7 @@ function seedLogs(clock: number) {
     );
     mkdirSync(dirname(nested), { recursive: true });
     writeFileSync(nested, asJsonl(entries.nested));
-    writeFileSync(join(logsDir, 'legacy-sess.jsonl'), `${asJsonl(entries.legacy)}not json\n`);
+    writeFileSync(join(logsDir, LEGACY_FILE), `${asJsonl(entries.legacy)}not json\n`);
     writeFileSync(join(logsDir, 'README.md'), 'audit logs live here\n');
   };
 }
@@ -193,6 +211,36 @@ describe('logs selection', () => {
     expect(outcome.stderr).toBe(SKIP_WARNING);
   }, 60_000);
 
+  test('two unreadable sources pluralize the warning', async () => {
+    const clock = Date.now();
+    const outcome = await runLogs([], {
+      seed: (side) => {
+        seedLogs(clock)(side);
+        writeFileSync(join(logsDirOf(side), 'second-sess.jsonl'), 'not json\n');
+      },
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(rows(outcome.stdout)).toHaveLength(6);
+    expect(outcome.stderr).toBe(
+      'warning: 2 audit log sources could not be read; these results are incomplete\n',
+    );
+  }, 60_000);
+
+  test('a regular file where the logs directory is expected is one unreadable source, not an empty history', async () => {
+    const outcome = await runLogs([], {
+      seed: (side) => {
+        const logsDir = logsDirOf(side);
+        mkdirSync(dirname(logsDir), { recursive: true });
+        // A directory that is not there is an empty history; one that cannot be listed is a
+        // source the answer is missing, which is what the warning is for.
+        writeFileSync(logsDir, '');
+      },
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe('No audit log entries found.\n');
+    expect(outcome.stderr).toBe(SKIP_WARNING);
+  }, 60_000);
+
   test('--all admits the allowed entry the default window hides', async () => {
     const outcome = await runSeededLogs(['--all']);
     expect(rows(outcome.stdout)).toHaveLength(7);
@@ -231,7 +279,7 @@ describe('logs selection', () => {
   test('--project admits the directory it names and nothing beside it', async () => {
     const here = await runSeededLogs(['--project', '.']);
     expect(rows(here.stdout)).toHaveLength(1);
-    expect(here.stdout).toContain('<root>/project');
+    expect(here.stdout).toContain(join('<root>', 'project'));
     const elsewhere = await runSeededLogs(['--project', LEGACY_CWD]);
     expect(rows(elsewhere.stdout)).toHaveLength(4);
   }, 60_000);
@@ -272,7 +320,7 @@ describe('logs --id', () => {
     expect(outcome.stdout).toContain(`id:        ${RESET_HARD_ID}`);
     expect(outcome.stdout).toContain('rule:      git.reset-hard');
     expect(outcome.stdout).toContain('command:   git reset --hard && echo done');
-    expect(outcome.stdout).toContain('cwd:       <root>/project');
+    expect(outcome.stdout).toContain(`cwd:       ${join('<root>', 'project')}`);
   }, 60_000);
 
   test('an id nothing recorded is reported as retained history having none', async () => {
@@ -346,6 +394,61 @@ describe('logs --prune-legacy', () => {
     expect(outcome.exitCode).toBe(1);
     expect(outcome.stderr).toBe('--dry-run requires --prune-legacy\n');
   }, 60_000);
+});
+
+/**
+ * The one failure `--prune-legacy` reports is an unlink the filesystem refuses. This suite runs
+ * as root, which ignores the directory permissions that would produce one, so the refusal is
+ * spied at the `unlinkSync` both implementations call — a model that holds for a normal user too.
+ * Both are driven in process, because the spy cannot reach a child.
+ */
+describe('logs --prune-legacy failure', () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  const seedLegacy = (label: string) => {
+    const home = join(createTempRoot(`logs-prune-${label}-`), 'home');
+    const logsDir = join(home, 'logs');
+    mkdirSync(logsDir, { recursive: true });
+    writeFileSync(
+      join(logsDir, LEGACY_FILE),
+      asJsonl(auditFixture(Date.now(), LEGACY_CWD).legacy.slice(0, 2)),
+    );
+    return { home, logsDir };
+  };
+
+  async function pruneLegacy(args: string[]) {
+    spyOn(nodeFs, 'unlinkSync').mockImplementation(() => {
+      throw new Error(UNLINK_REFUSAL);
+    });
+    const shippedSide = seedLegacy('shipped');
+    const portedSide = seedLegacy('ported');
+    const shipped = await withProcessEnv(isolationEnv(shippedSide.home), () =>
+      captureConsole(() => shippedRunLogsCommand(args, { logsDir: shippedSide.logsDir })),
+    );
+    const ported = await captureConsole(() =>
+      portedRunLogsCommand(environmentFor(portedSide.home, isolationEnv(portedSide.home)), args, {
+        logsDir: portedSide.logsDir,
+      }),
+    );
+    expect(ported).toStrictEqual(shipped);
+    return { ...shipped, file: join(shippedSide.logsDir, LEGACY_FILE) };
+  }
+
+  test('a legacy file the filesystem refuses to unlink is reported and kept', async () => {
+    const outcome = await pruneLegacy(['--prune-legacy']);
+    expect(outcome.returned).toBe(1);
+    expect(outcome.error).toEqual([`Could not remove ${LEGACY_FILE}: ${UNLINK_REFUSAL}`]);
+    expect(outcome.log[0]).toStartWith('Removed 0 legacy audit log files');
+    expect(existsSync(outcome.file)).toBeTrue();
+  });
+
+  test('--json reports the refusal as a failed file rather than a removed one', async () => {
+    const outcome = await pruneLegacy(['--prune-legacy', '--json']);
+    expect(outcome.returned).toBe(1);
+    expect(JSON.parse(outcome.log[0] ?? '')).toMatchObject({ removedFiles: 0, failedFiles: 1 });
+  });
 });
 
 describe('logs window', () => {

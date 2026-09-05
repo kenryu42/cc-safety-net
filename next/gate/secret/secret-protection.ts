@@ -495,6 +495,26 @@ function extractCommandPathTargets(
   let state: ProtectedPathShellState = { cwd, variables: new Map() };
   let segment: string[] = [];
   let pipeProducer: string[] | null = null;
+  // Reads the bindings above at call time: a completed segment contributes its own operands, plus
+  // the paths the segment upstream of a pipe carries into it.
+  const flushSegment = () => {
+    targets.push(
+      ...extractSegmentPathTargets(segment, store, options, environment, state.cwd, budget),
+    );
+    if (pipeProducer !== null) {
+      targets.push(
+        ...extractPipeCarrierPathTargets(
+          pipeProducer,
+          segment,
+          store,
+          options,
+          environment,
+          state.cwd,
+          budget,
+        ),
+      );
+    }
+  };
 
   for (const entry of syntax.entries) {
     if (entry.kind === 'operator') {
@@ -503,22 +523,7 @@ function extractCommandPathTargets(
         pipeProducer = null;
         continue;
       }
-      targets.push(
-        ...extractSegmentPathTargets(segment, store, options, environment, state.cwd, budget),
-      );
-      if (pipeProducer !== null) {
-        targets.push(
-          ...extractPipeCarrierPathTargets(
-            pipeProducer,
-            segment,
-            store,
-            options,
-            environment,
-            state.cwd,
-            budget,
-          ),
-        );
-      }
+      flushSegment();
       state = applyShellState(segment, state, environment, budget, normalizeProtectedPathCandidate);
       pipeProducer = PIPE_OPERATORS.has(entry.operator) ? segment : null;
       segment = [];
@@ -544,24 +549,7 @@ function extractCommandPathTargets(
     );
   }
 
-  if (segment.length > 0) {
-    targets.push(
-      ...extractSegmentPathTargets(segment, store, options, environment, state.cwd, budget),
-    );
-    if (pipeProducer !== null) {
-      targets.push(
-        ...extractPipeCarrierPathTargets(
-          pipeProducer,
-          segment,
-          store,
-          options,
-          environment,
-          state.cwd,
-          budget,
-        ),
-      );
-    }
-  }
+  if (segment.length > 0) flushSegment();
 
   return targets;
 }

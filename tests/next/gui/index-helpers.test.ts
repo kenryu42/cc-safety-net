@@ -210,7 +210,7 @@ describe('the GUI installer wrapper', () => {
     )) as { ok: boolean; output: string };
 
     expect(result.ok).toBeFalse();
-    expect(result.output).toContain('<home>/.cursor');
+    expect(result.output).toContain(join('<home>', '.cursor'));
   });
 
   test('serializes overlapping runs so neither captures the other output', async () => {
@@ -228,8 +228,10 @@ describe('the GUI installer wrapper', () => {
 
     // The install ran first and the uninstall undid it, which only holds if the queue kept them
     // in order rather than letting the second capture start inside the first.
-    expect(result.first.output).toBe(`Installed Cursor hook in <home>/${CURSOR_HOOKS}`);
-    expect(result.second.output).toBe(`Uninstalled Cursor hook from <home>/${CURSOR_HOOKS}`);
+    expect(result.first.output).toBe(`Installed Cursor hook in ${join('<home>', CURSOR_HOOKS)}`);
+    expect(result.second.output).toBe(
+      `Uninstalled Cursor hook from ${join('<home>', CURSOR_HOOKS)}`,
+    );
     expect(hooksFile(result.tree)).not.toContain('cc-safety-net');
   });
 

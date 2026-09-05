@@ -1,14 +1,8 @@
 import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import type { BunPlugin } from 'bun';
 import pkg from '../package.json';
-import { AMP_PLUGIN_ENTRY, buildAmpArtifactHeader } from '../src/integrations/amp/artifact';
-import {
-  buildOpenClawArtifactHeader,
-  buildOpenClawPluginManifests,
-  OPENCLAW_PLUGIN_ENTRY_FILE,
-  OPENCLAW_PLUGIN_ID,
-} from '../src/integrations/openclaw/artifact';
+import { type Layout, SHIPPED_LAYOUT } from './build-layout';
 import { guiAssetsPlugin } from './gui-assets';
 
 // zod modules the bundled copies replace with a stub. Every one of them is
@@ -47,14 +41,17 @@ const ZOD_MODULE_STUBS: readonly [RegExp, string][] = [
 // failed with `Could not resolve: "@/rules/constants"` (~1 in 3 under load) while the
 // same build always succeeds in a standalone process. Resolving the alias explicitly
 // removes the only environmental dependency that can produce that error.
-const srcAlias: BunPlugin = {
-  name: 'src-alias',
+const aliasPlugin = (layout: Layout): BunPlugin => ({
+  name: 'alias',
   setup(build) {
-    build.onResolve({ filter: /^@\// }, (args) => ({
-      path: Bun.resolveSync(`./src/${args.path.slice(2)}`, join(import.meta.dir, '..')),
+    build.onResolve({ filter: layout.alias.filter }, (args) => ({
+      path: Bun.resolveSync(
+        args.path.replace(layout.alias.filter, `./${layout.alias.root}/`),
+        join(import.meta.dir, '..'),
+      ),
     }));
   },
-};
+});
 
 const zodModuleStubs: BunPlugin = {
   name: 'zod-module-stubs',
@@ -110,14 +107,16 @@ const vendorZod: BunPlugin = {
   },
 };
 
-export async function buildRuntimeBundles(outdir: string) {
+// Shared chunks are always emitted at `<outdir>/chunks/`, so a moved entry imports them
+// through the path from its new directory to that one.
+const chunkSpecifier = (path: string) => {
+  const specifier = posix.relative(posix.dirname(path), 'chunks');
+  return `${specifier.startsWith('.') ? specifier : `./${specifier}`}/`;
+};
+
+export async function buildRuntimeBundles(outdir: string, layout: Layout = SHIPPED_LAYOUT) {
   const result = await Bun.build({
-    entrypoints: [
-      'src/index.ts',
-      'src/api.ts',
-      'src/cli/cc-safety-net.ts',
-      'src/integrations/pi/index.ts',
-    ],
+    entrypoints: layout.entrypoints.runtime,
     outdir,
     target: 'node',
     splitting: true,
@@ -129,30 +128,36 @@ export async function buildRuntimeBundles(outdir: string) {
     define: {
       __PKG_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [srcAlias, guiAssetsPlugin, vendorZod],
+    plugins: [
+      aliasPlugin(layout),
+      await guiAssetsPlugin(layout),
+      ...(layout.lazyZod ? [vendorZod] : [zodModuleStubs]),
+    ],
   });
   if (!result.success) return result;
   // Bun names a split entry's output directory after its source directory, so
   // the CLI and Pi entries land under cli/ and integrations/pi/. Their published
   // locations are fixed by package.json `bin`, package.json `pi.extensions`, and
-  // hooks/hooks.json, so both are moved back. The Pi entry also loses one
-  // directory level, which invalidates its relative shared-chunk specifiers; the
-  // CLI entry keeps its depth, so that rewrite is a no-op for it.
+  // hooks/hooks.json, so both are moved back. A move that changes an entry's
+  // depth invalidates its relative shared-chunk specifiers; the rewrite is
+  // anchored on the opening quote so `./chunks/` never matches inside
+  // `../chunks/`, and it is a no-op for an entry that keeps its depth.
   await Promise.all(
     (
       [
-        ['cli/cc-safety-net.js', 'bin/cc-safety-net.js'],
-        ['integrations/pi/index.js', 'pi/index.js'],
+        [layout.emitted.bin, 'bin/cc-safety-net.js'],
+        [layout.emitted.pi, 'pi/index.js'],
       ] as const
     ).map(async ([from, to]) => {
       const emitted = Bun.file(join(outdir, from));
       await Bun.write(
         join(outdir, to),
-        (await emitted.text()).replaceAll('../../chunks/', '../chunks/'),
+        (await emitted.text()).replaceAll(`"${chunkSpecifier(from)}`, `"${chunkSpecifier(to)}`),
       );
       await emitted.delete();
     }),
   );
+  if (!layout.lazyZod) return result;
   // The ESM entry, not index.cjs: zod's CJS tree uses `.cjs` filenames the stub
   // filters do not match. `.cjs` so Node loads the output as CommonJS despite the
   // package's "type": "module".
@@ -177,23 +182,24 @@ export async function buildRuntimeBundles(outdir: string) {
  * entry and exceeds Linux's per-entry limit. Every runtime dependency remains bundled so the
  * directory still contains one self-contained file.
  */
-export async function buildAmpBundle(outdir: string) {
+export async function buildAmpBundle(outdir: string, layout: Layout = SHIPPED_LAYOUT) {
   const result = await Bun.build({
-    entrypoints: ['src/integrations/amp/index.ts'],
+    entrypoints: [layout.entrypoints.amp],
     target: 'bun',
     splitting: false,
     minify: true,
     define: {
       __PKG_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [srcAlias, inlineZod, zodModuleStubs],
+    plugins: [aliasPlugin(layout), ...(layout.lazyZod ? [inlineZod] : []), zodModuleStubs],
   });
   if (!result.success) return result;
   const artifact = result.outputs[0];
   if (!artifact) throw new Error('Amp bundle produced no output');
-  const destination = join(outdir, 'amp', AMP_PLUGIN_ENTRY);
+  const amp = (await layout.loadArtifacts()).amp;
+  const destination = join(outdir, 'amp', amp.AMP_PLUGIN_ENTRY);
   mkdirSync(dirname(destination), { recursive: true });
-  await Bun.write(destination, buildAmpArtifactHeader(pkg.version) + (await artifact.text()));
+  await Bun.write(destination, amp.buildAmpArtifactHeader(pkg.version) + (await artifact.text()));
   return result;
 }
 
@@ -202,30 +208,31 @@ export async function buildAmpBundle(outdir: string) {
  * and package metadata OpenClaw reads before it loads plugin code. Everything is inlined so a
  * local directory install, which gets no node_modules, still resolves at runtime.
  */
-export async function buildOpenClawBundle(outdir: string) {
+export async function buildOpenClawBundle(outdir: string, layout: Layout = SHIPPED_LAYOUT) {
   const result = await Bun.build({
-    entrypoints: ['src/integrations/openclaw/index.ts'],
+    entrypoints: [layout.entrypoints.openclaw],
     target: 'node',
     splitting: false,
     minify: true,
     define: {
       __PKG_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [srcAlias, inlineZod, zodModuleStubs],
+    plugins: [aliasPlugin(layout), ...(layout.lazyZod ? [inlineZod] : []), zodModuleStubs],
   });
   if (!result.success) return result;
   const artifact = result.outputs[0];
   if (!artifact) throw new Error('OpenClaw bundle produced no output');
-  const directory = join(outdir, 'openclaw', OPENCLAW_PLUGIN_ID);
+  const openClaw = (await layout.loadArtifacts()).openclaw;
+  const directory = join(outdir, 'openclaw', openClaw.OPENCLAW_PLUGIN_ID);
   mkdirSync(directory, { recursive: true });
   await Bun.write(
-    join(directory, OPENCLAW_PLUGIN_ENTRY_FILE),
-    buildOpenClawArtifactHeader(pkg.version) + (await artifact.text()),
+    join(directory, openClaw.OPENCLAW_PLUGIN_ENTRY_FILE),
+    openClaw.buildOpenClawArtifactHeader(pkg.version) + (await artifact.text()),
   );
   await Promise.all(
-    buildOpenClawPluginManifests(pkg.version).map((file) =>
-      Bun.write(join(directory, file.name), file.content),
-    ),
+    openClaw
+      .buildOpenClawPluginManifests(pkg.version)
+      .map((file) => Bun.write(join(directory, file.name), file.content)),
   );
   return result;
 }

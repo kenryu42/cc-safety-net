@@ -26,6 +26,7 @@ const ANALYZER_CAP_KINDS = new Set<LimitKind>([
   'parallelPlaceholderReplacements',
 ]);
 
+/** @internal */
 export function analyzeCommand(command: string, options: AnalyzeInput) {
   return analyzeCommandWithProgram(command, options);
 }

@@ -1,7 +1,6 @@
 import type { Environment } from '@next/core/environment';
-import { resolveStandardHookContext } from '@next/gate/intake';
 import type { ToolRoute } from '@next/gate/invocation';
-import { runConfiguredHookAdapter } from '@next/hosts/hook/common';
+import { getStandardHookContext, runConfiguredHookAdapter } from '@next/hosts/hook/common';
 import { PRE_TOOL_USE_HOOK_EVENT } from '@next/hosts/hook/constants';
 
 export type PreToolUseHookInput = {
@@ -49,15 +48,7 @@ export async function runPreToolUseHook(options: {
       input: input.tool_input,
       route: options.getToolRoute(toolName),
     }),
-    getContext: (input, toolInput, toolName, outputDeny, environment) =>
-      resolveStandardHookContext(
-        input.cwd,
-        toolInput,
-        toolName,
-        outputDeny,
-        environment.paths,
-        process.cwd(),
-      ),
+    getContext: getStandardHookContext,
     getSessionId: (input) => input.session_id,
   });
 }

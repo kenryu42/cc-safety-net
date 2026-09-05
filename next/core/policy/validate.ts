@@ -64,7 +64,15 @@ const USER_POLICY_FIELDS = [
 ];
 
 export function getUserPolicyDiagnostics(value: unknown, home: string): string[] {
-  return formatIssues(sortIssues(userPolicyIssues(value, home), USER_POLICY_FIELDS), ' ', ' ');
+  return formatIssues(
+    sortIssues(
+      userPolicyIssues(value, home),
+      USER_POLICY_FIELDS,
+      (issue) => issue.kind === 'custom',
+    ),
+    ' ',
+    ' ',
+  );
 }
 
 export function getRulesConfigValidation(config: unknown): {
@@ -73,7 +81,11 @@ export function getRulesConfigValidation(config: unknown): {
 } {
   const issues = rulesConfigIssues(config);
   return {
-    errors: formatIssues(sortIssues(issues, RULES_CONFIG_FIELDS), ': ', ' '),
+    errors: formatIssues(
+      sortIssues(issues, RULES_CONFIG_FIELDS, (issue) => issue.kind === 'custom'),
+      ': ',
+      ' ',
+    ),
     sources: collectValidSources(config, issues),
   };
 }
@@ -425,7 +437,10 @@ function reservedWrapperIssues(wrappers: unknown): Issue[] {
  * Sources that carry no issue of their own stay usable even when the rest of the
  * config is rejected; an over-limit or non-array `rules` field yields none.
  */
-function collectValidSources(config: unknown, issues: readonly Issue[]): Set<string> {
+export function collectValidSources(
+  config: unknown,
+  issues: readonly { path: readonly PropertyKey[] }[],
+): Set<string> {
   const rules = isRecord(config) ? config.rules : undefined;
   if (!Array.isArray(rules)) return new Set();
   if (issues.some((issue) => issue.path.length === 1 && issue.path[0] === 'rules')) {
@@ -652,14 +667,18 @@ function unlistedRuleCommandIssues(rulebook: Record<string, unknown>): Issue[] {
  * The schema reports issues in declaration order and appends refinement issues last,
  * so group them back into the field order the diagnostics have always used.
  */
-function sortIssues(issues: readonly Issue[], fields: readonly string[]): Issue[] {
+export function sortIssues<T extends { path: readonly PropertyKey[] }>(
+  issues: readonly T[],
+  fields: readonly string[],
+  isRefinement: (issue: T) => boolean,
+): T[] {
   const entries = issues.map((issue) => issue.path[1]);
   const entryOrder = [...new Set(entries.filter((entry) => typeof entry === 'string'))];
-  const rank = (issue: Issue, entry: PropertyKey | undefined) =>
+  const rank = (issue: T, entry: PropertyKey | undefined) =>
     [
       issue.path.length === 0 ? -1 : fields.indexOf(String(issue.path[0])),
       typeof entry === 'number' ? entry : entryOrder.indexOf(String(entry)),
-      issue.kind === 'custom' ? 0 : 1,
+      isRefinement(issue) ? 0 : 1,
     ] as const;
   return issues
     .map((issue, index) => ({ issue, rank: rank(issue, entries[index]) }))
@@ -696,7 +715,7 @@ function formatIssues(
   ];
 }
 
-function renderIssuePath(path: readonly PropertyKey[]): string {
+export function renderIssuePath(path: readonly PropertyKey[]): string {
   return path
     .map((segment, index) => {
       if (typeof segment === 'number') return `[${segment}]`;

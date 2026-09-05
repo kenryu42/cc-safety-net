@@ -27,7 +27,7 @@ const GIT_CONFIG_TIMEOUT_MS = 2000;
  * Null when `cwd` is not a directory, not a verified linked worktree, or the effective
  * `submodule.recurse` setting could not be read (a failed or timed-out `git config` spawn):
  * every one of those means no relaxation.
- * @internal `gitBinary` is exposed so a test can point the spawn at a fake executable.
+ * `gitBinary` is exposed so a test can point the spawn at a fake executable.
  */
 export function resolveWorktreeFacts(
   cwd: string,
@@ -48,6 +48,7 @@ function resolveDirectory(cwd: string): string | null {
   }
 }
 
+/** @internal */
 export function isLinkedWorktree(cwd: string): boolean {
   const dotGitPath = findDotGit(cwd);
   if (!dotGitPath) {

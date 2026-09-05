@@ -8,7 +8,12 @@ import {
 import { createProcessEnvironment, type Environment } from '@next/core/environment';
 import { ENV_FLAGS, envTruthy, shouldRecordAllowedCommands } from '@next/core/policy/env';
 import { getCommandFromToolInput, ToolInputLimitError } from '@next/core/tool-input';
-import { outputFailedClosed, parseHookJson, readBoundedHookInput } from '@next/gate/intake';
+import {
+  outputFailedClosed,
+  parseHookJson,
+  readBoundedHookInput,
+  resolveStandardHookContext,
+} from '@next/gate/intake';
 import type { ToolCallContext, ToolRoute } from '@next/gate/invocation';
 import { createToolInvocation } from '@next/gate/invocation';
 import { type GuardDependencies, GuardEvaluationError, type GuardStage } from '@next/gate/pipeline';
@@ -47,6 +52,24 @@ type ConfiguredHookAdapter<T> = Omit<HookAdapter<T>, 'outputDeny' | 'outputAllow
 };
 
 type ToolInputResult = { ok: true; input: unknown; route: ToolRoute } | { ok: false };
+
+/** The context every host that reports its own cwd resolves: the hook's `cwd` field, falling back
+ *  to the process's. */
+export const getStandardHookContext: HookAdapter<{ cwd?: string }>['getContext'] = (
+  input,
+  toolInput,
+  toolName,
+  outputDeny,
+  environment,
+) =>
+  resolveStandardHookContext(
+    input.cwd,
+    toolInput,
+    toolName,
+    outputDeny,
+    environment.paths,
+    process.cwd(),
+  );
 
 function outputHookDeny(
   createDenyOutput: (message: string) => object,

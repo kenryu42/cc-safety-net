@@ -12,6 +12,7 @@ import { MAX_AUDIT_RETENTION_DAYS, MIN_AUDIT_RETENTION_DAYS } from './audit-rete
 import { RULE_SOURCE_LIMIT, RULE_SOURCE_LIMIT_ERROR } from './resource-limits';
 import { getRulebookSourceSyntaxError, NAME_PATTERN } from './source-syntax';
 import { isReservedTransparentWrapper } from './transparent-wrappers';
+import { collectValidSources, renderIssuePath, sortIssues } from './validate';
 
 let schemas: ReturnType<typeof createSchemas> | undefined;
 const OVER_LIMIT_RULE_SOURCES = Array(RULE_SOURCE_LIMIT + 1).fill('over-limit');
@@ -344,6 +345,7 @@ export function getRulesConfigDiagnostics(config: unknown): string[] {
   return getRulesConfigValidation(config).errors;
 }
 
+/** @internal */
 export function getRulesConfigValidation(config: unknown): {
   errors: string[];
   sources: Set<string>;
@@ -351,15 +353,21 @@ export function getRulesConfigValidation(config: unknown): {
   const parsed = getSchemas().RulesConfigDiagnosticSchema.safeParse(config);
   if (parsed.success) return { errors: [], sources: new Set(parsed.data.rules) };
   return {
-    errors: formatSchemaIssues(sortSchemaIssues(parsed.error.issues, RULES_CONFIG_FIELDS)),
+    errors: formatSchemaIssues(
+      sortIssues(parsed.error.issues, RULES_CONFIG_FIELDS, (issue) => issue.code === 'custom'),
+    ),
     sources: collectValidSources(config, parsed.error.issues),
   };
 }
 
+/** @internal */
 export function getUserPolicyDiagnostics(config: unknown, home: string): string[] {
   const parsed = getUserPolicySchema(home).safeParse(config);
   if (parsed.success) return [];
-  return formatSchemaIssues(sortSchemaIssues(parsed.error.issues, USER_POLICY_FIELDS), ' ');
+  return formatSchemaIssues(
+    sortIssues(parsed.error.issues, USER_POLICY_FIELDS, (issue) => issue.code === 'custom'),
+    ' ',
+  );
 }
 
 /**
@@ -435,56 +443,6 @@ function renderExpectedValues(values: readonly z.core.util.Primitive[]) {
   );
   if (rendered.length < 2) return `${rendered[0]}`;
   return `${rendered.slice(0, -1).join(', ')}${rendered.length > 2 ? ',' : ''} or ${rendered.at(-1)}`;
-}
-
-function renderIssuePath(path: readonly PropertyKey[]): string {
-  return path
-    .map((segment, index) => {
-      if (typeof segment === 'number') return `[${segment}]`;
-      return index === 0 ? String(segment) : `.${String(segment)}`;
-    })
-    .join('');
-}
-
-/**
- * Zod reports issues in schema-declaration order and appends refinement issues last,
- * so group them back into the field order the diagnostics have always used.
- */
-function sortSchemaIssues(issues: readonly z.core.$ZodIssue[], fields: readonly string[]) {
-  const entries = issues.map((issue) => issue.path[1]);
-  const entryOrder = [...new Set(entries.filter((entry) => typeof entry === 'string'))];
-  const rank = (issue: z.core.$ZodIssue, entry: PropertyKey | undefined) =>
-    [
-      issue.path.length === 0 ? -1 : fields.indexOf(String(issue.path[0])),
-      typeof entry === 'number' ? entry : entryOrder.indexOf(String(entry)),
-      issue.code === 'custom' ? 0 : 1,
-    ] as const;
-  return issues
-    .map((issue, index) => ({ issue, rank: rank(issue, entries[index]) }))
-    .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.rank[2] - b.rank[2])
-    .map((entry) => entry.issue);
-}
-
-/**
- * Sources that carry no issue of their own stay usable even when the rest of the
- * config is rejected; an over-limit or non-array `rules` field yields none.
- */
-function collectValidSources(config: unknown, issues: readonly z.core.$ZodIssue[]): Set<string> {
-  const rules = isRecord(config) ? config.rules : undefined;
-  if (!Array.isArray(rules)) return new Set();
-  if (issues.some((issue) => issue.path.length === 1 && issue.path[0] === 'rules')) {
-    return new Set();
-  }
-  const rejected = new Set(
-    issues
-      .filter((issue) => issue.path[0] === 'rules' && typeof issue.path[1] === 'number')
-      .map((issue) => issue.path[1]),
-  );
-  return new Set(
-    rules.filter(
-      (source, index): source is string => typeof source === 'string' && !rejected.has(index),
-    ),
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

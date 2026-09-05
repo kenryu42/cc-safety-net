@@ -199,6 +199,7 @@ function remember(budget: Budget, path: string, base: string, suffixes: string[]
   return resolved;
 }
 
+/** @internal */
 export function probeExistingPath(
   path: string,
   paths: PathResolver,

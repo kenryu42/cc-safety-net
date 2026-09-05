@@ -509,7 +509,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   a verbatim copy of `src/gui/frontend`) (Phase 10); deleting `next/gate/evaluate-command.ts`
   with its differential tests (Phase 11).
 
-### Phase 10 — Build, verification, release (M) `[ ]`
+### Phase 10 — Build, verification, release (M) `[x]`
 
 - Bundles with no module-level work; committed `dist/` with the pinned entry paths; the
   verify-build allowlist updated; packed-tarball journeys on the six-cell matrix; the atomic
@@ -539,6 +539,81 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   the frozen page carries the helper modules in the ported import order); the jscpd scope, once
   widened to `next/`, must exclude `next/gui/frontend`; the frozen assets should retire
   `tests/next/helpers/gui-bundle-repair.ts`.
+- Phase 10 landed: `scripts/build-layout.ts` holds the two source trees the scripts can bundle
+  (`SHIPPED_LAYOUT`: `src/` into the committed `dist/`; `PORTED_LAYOUT`: `next/entries/*` into
+  the gitignored `dist-next/`) and `resolveLayout(argv)` reads `--layout shipped|ported`; every
+  build and verify script (`build`, `build-runtime`, `build-output`, `verify-build`,
+  `gui-assets`, `build-schema`, `verify-package`, `verify-repository-plugin`) takes a defaulted
+  layout, so every layout-less invocation is unchanged and the shipped bundles built before and
+  after the change are byte-identical. `bun run build:next` emits the shipped layout minus
+  `vendor/zod.cjs`: the ported schema imports zod statically and lies behind the bin's single
+  `import(`, so zod is bundled into the CLI chunk (`ZodError` is the pinned marker that the hook
+  closure must not carry) and the bin itself is a 7 KB entry whose hook path lives in two shared
+  chunks. `tsconfig.build-next.json` emits the declarations (byte-identical to the shipped
+  `index.d.ts` and `api.d.ts`); `verify:package:next` stages a temporary package directory with
+  `dist-next` as `dist` and runs the unchanged packed journeys (ported tarball 453,777 bytes
+  against the 560,000 cap; shipped 519,686); the ported schema generation writes to a temporary
+  path and must equal the committed asset (shared writer in `build-schema.ts`, test under
+  `tests/next/core/policy`). knip covers `next/` (entries for the six roots, the frontend and
+  the differential harness; every reported export unexported, deleted or tagged `/** @internal */`
+  at the root cause; no hints left), `check-duplicates` runs a second jscpd invocation over
+  `next tests/next` with the frontend excluded (the six clones inside `next/` are gone), and the
+  architecture test gains a static-import cycle check (238 files, 803 edges, none), bans on
+  `fetch(`, `require(`, `createRequire` and non-literal `import(` below the host layer, the
+  socket-module ban on every layer, and a non-literal `import(` ban everywhere with the OpenClaw
+  installer's probe allowed. `tests/next` spawns bun only through `process.execPath`, builds
+  child environments through `isolatedSpawnEnv` over `createSpawnEnv`, builds path expectations
+  with `join`, and compares doctor JSON raw while the goldens store the
+  `normalizeDoctorJson` form (time, version and platform folds only); `tests/helpers.ts` roots
+  the worktree seed under `CC_SAFETY_NET_TEST_TMPDIR` and drops it in `afterAll`; the two
+  root-only audit-log rows became three root-safe rows (a regular file where the logs directory
+  is expected, a spied `unlinkSync`). `tests/next/e2e/packed-runtime.test.ts` builds both
+  layouts fresh into temporary outdirs and runs eight journeys through `node` on both bins under
+  isolated homes and an empty `PATH`; `tests/scripts/build-layout.test.ts` pins the ported
+  layout's paths, the zod-free hook closure, the single dynamic import and the version define.
+- Adopted: a layout carries only what the trees differ on (`outdir`, `alias`, `entrypoints`,
+  the `emitted` names Bun and tsc choose from the entries' common root, `typesCommand`,
+  `lazyZod` standing for the vendored copy, the inline plugin and the allowlist entry together,
+  and the `loadArtifacts`/`loadGuiAssets` loaders that keep one layout's build from importing the
+  other tree); the schema generators are static imports in `build-schema.ts` because a loader
+  made knip credit every export of both schema modules; `PORTED_LAYOUT` is `@internal` until the
+  cutover makes it the only layout. The Phase 7 wording of the seed fix (`process.on('exit')`)
+  was unusable: bun's test runner never emits `exit`.
+- Verified: `bun run check` passes lint, typecheck, knip and both duplication scans; the suite
+  runs 7,683 of 7,722 tests with only the two root-only failures, `tests/next` and `tests/scripts`
+  alone 2,532; coverage 96.97% lines against the 90% floor. The verify drive against the
+  built bins (`node dist-next/bin/cc-safety-net.js` beside `node dist/bin/cc-safety-net.js`, run
+  id `verify-20260905-175324-next10`, 36 checks) passes: `node --check` on both, the same tree
+  minus `vendor/zod.cjs`, the zod-free hook closure, `--version`, `--help`, `hook --help`,
+  `explain` (text and `--json`), `status`, the hook on a deny, an allow and `rm -rf /`, `logs`,
+  `doctor` (`--json` and text) byte-identical after folding roots, times and audit ids; the
+  `api`, `index`, `pi` and OpenClaw entries load under node with identical results; the managed
+  headers, manifests and declarations are identical; `gui --no-open` on the built bin gates on
+  the token (403/200), serves the frozen page with the same lines as the shipped one, and
+  answers `/api/policy`, `/api/rules` and `/api/activity` identically; only the started PIDs are
+  killed and nothing reaches the real home. `verify:package:next`, `verify-repository-plugin
+  --layout ported` and `build-schema --layout ported` pass.
+- Recorded: this sandbox exports `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*`,
+  which makes verify-package's incomplete-Git-config journey resolve as a complete config on
+  both layouts (run it with those unset); the local bun 1.3.11 build of the shipped layout
+  differs from the committed `dist/` (chunk hashes and minified bytes), so the shipped layout is
+  only ever built into a temporary outdir here; the ported chunks total 872 KB against the
+  shipped 463 KB of chunks plus the vendored zod because the four entries share their code
+  through chunks instead of the bin, while the tarball is 66 KB smaller; `gui-bundle-repair.ts`
+  stays because the tests that build the ported layout import `next/gui/assets` in-process; tsc
+  leaves empty directories under `dist-next`. Windows-only gaps left as recorded (CI runs
+  `bun test` on ubuntu and macos): `DYNAMIC_IMPORT_ALLOWANCES` compares a native `relative()`
+  path against a `/`-spelled literal, about 45 `<home>/`-spelled row-table constants remain, and
+  the CLI differential's fake bin is `#!/bin/sh`. Pre-existing leaks outside this phase: the
+  per-fixture `safety-net-worktree-*` roots whose callers never call `cleanup`, the module-scope
+  `safety-net-hook-cwd-*` root in `tests/integrations/hook-helpers.ts`, and the
+  `cc-safety-net-release-seed-*` root in `tests/scripts/release-git.test.ts`.
+- Carried: flipping the default layout to ported, deleting the shipped half of
+  `build-layout.ts` with the `src/` artifact imports and `tsconfig.build-next.json` (re-pointing
+  `tsconfig.build.json`), rebuilding `dist/`, retiring `gui-bundle-repair.ts`, deleting
+  `next/gate/evaluate-command.ts` with its knip entry and the differential tests, folding
+  `build:next` and `verify:package:next` back into the defaults in `package.json` and `ci.yml`,
+  and the Windows-only gaps and the per-fixture worktree leak (Phase 11).
 
 ### Phase 11 — Performance validation and cutover (S+M) `[ ]`
 
@@ -551,6 +626,14 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   closed secret-walk gap.
 - Acceptance: hook path at or under Node startup plus a fixed budget; all corpus rows including
   the former known-gap rows pass; release notes drafted.
+- From Phase 10: the scripts take `--layout`; the cutover flips the default to the ported
+  tree, deletes the shipped half of `scripts/build-layout.ts` (and the `src/` artifact
+  imports), folds `tsconfig.build-next.json` into `tsconfig.build.json` and `build:next` and
+  `verify:package:next` into the default scripts and `ci.yml`, retires
+  `tests/next/helpers/gui-bundle-repair.ts`, and removes the `next/gate/evaluate-command.ts`
+  knip entry with the harness; the remaining Windows-only gaps in `tests/next` (a `/`-spelled
+  allowance literal, `<home>/`-spelled row-table constants, the `#!/bin/sh` fake bin) and the
+  per-fixture `safety-net-worktree-*` leak are the portability items left.
 
 ## How to resume
 

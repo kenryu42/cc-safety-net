@@ -1,6 +1,6 @@
-import { getToolRoute, resolveStandardHookContext } from '@next/gate/intake';
+import { getToolRoute } from '@next/gate/intake';
 import type { CommandToolKind } from '@next/gate/invocation';
-import { runConfiguredHookAdapter } from '@next/hosts/hook/common';
+import { getStandardHookContext, runConfiguredHookAdapter } from '@next/hosts/hook/common';
 import { GEMINI_CLI_HOOK_EVENT } from '@next/hosts/hook/constants';
 
 /** Gemini CLI hook input format */
@@ -49,15 +49,7 @@ export async function runGeminiCLIHook(): Promise<void> {
       input: input.tool_input,
       route: getGeminiCliToolRoute(toolName),
     }),
-    getContext: (input, toolInput, toolName, outputDeny, environment) =>
-      resolveStandardHookContext(
-        input.cwd,
-        toolInput,
-        toolName,
-        outputDeny,
-        environment.paths,
-        process.cwd(),
-      ),
+    getContext: getStandardHookContext,
     getSessionId: (input) => input.session_id,
   });
 }

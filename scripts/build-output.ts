@@ -1,24 +1,28 @@
+import { type Layout, SHIPPED_LAYOUT } from './build-layout';
+
 interface BuildOutput {
   path: string;
   size: number;
 }
 
-export function getBundledOutputs(outputs: BuildOutput[]) {
+export function getBundledOutputs(outputs: BuildOutput[], layout: Layout = SHIPPED_LAYOUT) {
   return {
     indexOutput: outputs.find((output) =>
-      normalizeBuildPath(output.path).endsWith('dist/index.js'),
+      normalizeBuildPath(output.path).endsWith(`${layout.outdir}/index.js`),
     ),
     binOutput: outputs.find((output) =>
-      normalizeBuildPath(output.path).endsWith('dist/cli/cc-safety-net.js'),
+      normalizeBuildPath(output.path).endsWith(`${layout.outdir}/${layout.emitted.bin}`),
     ),
     piOutput: outputs.find((output) =>
-      normalizeBuildPath(output.path).endsWith('dist/integrations/pi/index.js'),
+      normalizeBuildPath(output.path).endsWith(`${layout.outdir}/${layout.emitted.pi}`),
     ),
   };
 }
 
-export function isPublicDeclarationOutput(path: string): boolean {
-  return ['dist/index.d.ts', 'dist/api.d.ts'].includes(normalizeBuildPath(path));
+export function isPublicDeclarationOutput(path: string, layout: Layout = SHIPPED_LAYOUT): boolean {
+  return layout.emitted.declarations
+    .map((declaration) => `${layout.outdir}/${declaration}`)
+    .includes(normalizeBuildPath(path));
 }
 
 function normalizeBuildPath(path: string): string {

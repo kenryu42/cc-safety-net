@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import { DEFAULT_GUI_POLICY } from '@next/core/policy/store';
 import { DESTRUCTIVE_COMMAND_RULE_METADATA } from '@next/core/rules/destructive';
 import type { TreeEntry, TreeSpec } from '../helpers/fixture-tree';
@@ -14,7 +15,7 @@ import { removeTempRoots } from '../helpers/temp-home';
 
 const USER_POLICY_FILE = 'home/.cc-safety-net/policy.json';
 const PROJECT_POLICY_FILE = 'project/.cc-safety-net/policy.json';
-const USER_POLICY_PATH = `<root>/${USER_POLICY_FILE}`;
+const USER_POLICY_PATH = join('<root>', USER_POLICY_FILE);
 
 /** The canonical document the writer produces, seeded with a level and a window of its own. */
 const USER_POLICY = {
@@ -256,10 +257,10 @@ describe('the policy GUI server', () => {
     const weakened = await readPolicy(S5);
     const strengthened = await readPolicy(S6);
 
-    expect(weakened.projectPolicy?.path).toBe(`<root>/${PROJECT_POLICY_FILE}`);
+    expect(weakened.projectPolicy?.path).toBe(join('<root>', PROJECT_POLICY_FILE));
     expect(weakened.projectPolicy?.weakenings.length).toBeGreaterThan(0);
     expect(strengthened.projectPolicy).toStrictEqual({
-      path: `<root>/${PROJECT_POLICY_FILE}`,
+      path: join('<root>', PROJECT_POLICY_FILE),
       weakenings: [],
     });
   });

@@ -177,7 +177,7 @@ export function expectRow(
     left: string | undefined;
   },
 ): void {
-  const configPath = `<home>/${expected.file}`;
+  const configPath = join('<home>', expected.file);
   expect({
     install: steps?.install.result,
     wrote: fileAt(steps?.install.tree, expected.file),

@@ -2,15 +2,16 @@ import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import * as nodeFs from 'node:fs';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AnalysisLimit, LIMITS, type LimitKind } from '@next/core/budget';
-import { createProcessEnvironment } from '@next/core/environment';
-import { analyzeCommandWithProgram as portedAnalyzeCommand } from '@next/gate/analyzer';
 import {
-  REASON_COMMAND_ANALYSIS_LIMIT,
+  AnalysisLimit,
+  LIMITS,
+  type LimitKind,
   REASON_DERIVED_COMMAND_WORK_LIMIT,
   REASON_PARALLEL_ANALYSIS_LIMIT,
-  REASON_RECURSION_LIMIT,
-} from '@next/gate/analyzer/reasons';
+} from '@next/core/budget';
+import { createProcessEnvironment } from '@next/core/environment';
+import { analyzeCommandWithProgram as portedAnalyzeCommand } from '@next/gate/analyzer';
+import { REASON_COMMAND_ANALYSIS_LIMIT, REASON_RECURSION_LIMIT } from '@next/gate/analyzer/reasons';
 import { outputFailedClosed as portedOutputFailedClosed } from '@next/gate/intake';
 import {
   type GuardDependencies as PortedDependencies,

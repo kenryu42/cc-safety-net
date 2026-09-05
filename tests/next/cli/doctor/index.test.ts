@@ -12,6 +12,7 @@ import {
   seedFiles,
 } from '../../helpers/cli-differential';
 import { json } from '../../helpers/cli-fixtures';
+import { normalizeDoctorJson } from '../../helpers/doctor-json';
 import { environmentFor, removeTempRoots } from '../../helpers/temp-home';
 
 /**
@@ -20,24 +21,16 @@ import { environmentFor, removeTempRoots } from '../../helpers/temp-home';
  * literal golden from the shipped side, which keeps guarding the document shape after the
  * differential is deleted at cutover.
  *
- * The two bins are compared raw: the fixture fixes the clock the entries record, both sides read
- * the same version and the same machine, so every byte of the document has to agree. Three
- * classes of value are normalized for the literal file alone, because only three cannot be fixed
- * by the fixture across runs and machines: the rendered relative times, the package version
- * (`dev` in a checkout, a real number in a tarball) and the platform. Every path is already
- * spelled from the temp root by the harness.
+ * The two sides are compared raw: every byte a doctor document carries, down to which entry it
+ * calls the oldest and which version it reports, has to agree. Only the golden is normalized,
+ * because what the normalizer folds is exactly what the literal file cannot pin across machines:
+ * the rendered relative times, the package version (`dev` in a checkout, a real number in a
+ * tarball) and the platform.
  */
 
 afterEach(() => {
   removeTempRoots();
 });
-
-const VOLATILE = [
-  [/"(timestamp|relativeTime|oldestEntry|newestEntry)": "[^"]*"/g, '"$1": "<time>"'],
-  [/"(version|currentVersion)": "[^"]*"/g, '"$1": "<version>"'],
-  // An integration id never contains a space, so only `system.platform` matches.
-  [/"platform": "[^"]* [^"]*"/g, '"platform": "<platform>"'],
-] as const;
 
 /** `.golden` rather than `.json`: seven renderings of one document share most of their lines, and
  *  the duplication scan the repository runs over `tests/` tokenizes every `.json` and `.txt` file
@@ -45,11 +38,7 @@ const VOLATILE = [
 const goldenPath = (slug: string) =>
   join(import.meta.dir, '..', '..', 'fixtures', 'cli', 'doctor', `${slug}.json.golden`);
 
-function pinGolden(slug: string, stdout: string): void {
-  const document = VOLATILE.reduce(
-    (value, [pattern, replacement]) => value.replace(pattern, replacement),
-    stdout,
-  );
+function pinGolden(slug: string, document: string): void {
   if (process.env.CC_SAFETY_NET_UPDATE_GOLDENS === '1') {
     mkdirSync(dirname(goldenPath(slug)), { recursive: true });
     writeFileSync(goldenPath(slug), document);
@@ -59,10 +48,12 @@ function pinGolden(slug: string, stdout: string): void {
 }
 
 async function runDoctorJson(slug: string, row: Omit<CliRow, 'args'>) {
-  const outcome = expectSameCli(
-    await runCliDifferential({ args: ['doctor', '--json', '--skip-update-check'], ...row }),
-  );
-  pinGolden(slug, outcome.stdout);
+  const result = await runCliDifferential({
+    args: ['doctor', '--json', '--skip-update-check'],
+    ...row,
+  });
+  const outcome = expectSameCli(result);
+  pinGolden(slug, normalizeDoctorJson(outcome.stdout));
   return { outcome, report: JSON.parse(outcome.stdout) as DoctorReport };
 }
 
@@ -189,16 +180,18 @@ describe('doctor --json', () => {
       },
     });
     expect(report.v2Leftovers).toEqual([
-      '<root>/project/.cc-safety-net/rules/rule.lock',
-      '<root>/home/.cc-safety-net/cache',
+      join('<root>', 'project/.cc-safety-net/rules/rule.lock'),
+      join('<root>', 'home/.cc-safety-net/cache'),
     ]);
     const leftovers = report.findings.filter(
       (finding) => finding.checkId === 'config.v2-leftovers',
     );
     expect(leftovers).toHaveLength(1);
     expect(leftovers[0]?.severity).toBe('info');
-    expect(leftovers[0]?.detail).toContain('<root>/project/.cc-safety-net/rules/rule.lock');
-    expect(leftovers[0]?.detail).toContain('<root>/home/.cc-safety-net/cache');
+    expect(leftovers[0]?.detail).toContain(
+      join('<root>', 'project/.cc-safety-net/rules/rule.lock'),
+    );
+    expect(leftovers[0]?.detail).toContain(join('<root>', 'home/.cc-safety-net/cache'));
   }, 120_000);
 
   test('a regular file where the config directory belongs is an unsafe posture', async () => {
@@ -212,7 +205,7 @@ describe('doctor --json', () => {
       [
         {
           kind: 'config',
-          path: '<root>/home/.cc-safety-net/rules',
+          path: join('<root>', 'home/.cc-safety-net/rules'),
           status: 'unsafe',
           issues: ['not-directory'],
         },

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
@@ -125,6 +125,10 @@ function layeringViolations(file: string, source: string): string[] {
   const specifiers = importSpecifiers(source);
   const allowedThirdParty = THIRD_PARTY_ALLOWANCES[path] ?? [];
   const offending = specifiers.filter((specifier) => {
+    // The socket ban holds for every layer: below the hosts nothing may open one at all, and
+    // `node:https` reached from `core` is the same violation as `node:http` reached from `gui`.
+    if (NETWORK_MODULES.includes(specifier))
+      return !(NETWORK_ALLOWANCES[path] ?? []).includes(specifier);
     if (
       layer === 'hosts' ||
       layer === 'entries' ||
@@ -132,8 +136,6 @@ function layeringViolations(file: string, source: string): string[] {
       layer === 'rules-manager' ||
       layer === 'gui'
     ) {
-      if (NETWORK_MODULES.includes(specifier))
-        return !(NETWORK_ALLOWANCES[path] ?? []).includes(specifier);
       if (specifier === 'node:child_process') return !CHILD_PROCESS_ALLOWANCES.includes(path);
     }
     if (layer === 'hosts') {
@@ -176,6 +178,103 @@ function layeringViolations(file: string, source: string): string[] {
       )
       .map((specifier) => `${path} imports ${specifier} as a value`),
   ];
+}
+
+/**
+ * A static import cycle is a pair of modules neither of which can be loaded on its own: whichever
+ * one the loader reaches first runs against a half-initialized other half, so a constant read at
+ * module scope is `undefined` and no type checks the difference. Only value imports build the
+ * graph — an `import type` is erased before anything runs.
+ */
+const VALUE_IMPORT = /(?:^|[\n;])\s*((?:import|export)\b[^'"]*?)\bfrom\s*['"]([^'"]+)['"]/g;
+
+/** The files a module loads at import time, resolved the way the bundler resolves them: a module
+ *  path names either the file itself or the `index.ts` of the directory. */
+function importedModules(file: string, source: string): string[] {
+  return [...source.matchAll(VALUE_IMPORT)].flatMap((match) => {
+    const specifier = match[2];
+    if (specifier === undefined || match[1]?.trimStart().startsWith('import type')) return [];
+    const base = specifier.startsWith('@next/')
+      ? join(NEXT_ROOT, specifier.slice('@next/'.length))
+      : specifier.startsWith('.')
+        ? join(file, '..', specifier)
+        : undefined;
+    if (base === undefined) return [];
+    return [existsSync(`${base}.ts`) ? `${base}.ts` : join(base, 'index.ts')];
+  });
+}
+
+/** Three-colour depth-first search over the import graph: a node still on the walking stack is
+ *  grey, and an edge back to one is a cycle, reported as the stack from that node onward. */
+function findImportCycles(graph: Map<string, string[]>): string[][] {
+  const visited = new Map<string, 'walking' | 'done'>();
+  const cycles: string[][] = [];
+  for (const root of graph.keys()) {
+    if (visited.has(root)) continue;
+    visited.set(root, 'walking');
+    const walked = [root];
+    const frames = [{ node: root, edges: graph.get(root) ?? [], next: 0 }];
+    while (frames.length > 0) {
+      const frame = frames.at(-1) as (typeof frames)[number];
+      if (frame.next === frame.edges.length) {
+        visited.set(frame.node, 'done');
+        walked.pop();
+        frames.pop();
+        continue;
+      }
+      const edge = frame.edges[frame.next] as string;
+      frame.next += 1;
+      if (visited.get(edge) === 'walking') {
+        cycles.push([...walked.slice(walked.indexOf(edge)), edge]);
+        continue;
+      }
+      if (visited.has(edge)) continue;
+      visited.set(edge, 'walking');
+      walked.push(edge);
+      frames.push({ node: edge, edges: graph.get(edge) ?? [], next: 0 });
+    }
+  }
+  return cycles;
+}
+
+/** A dynamic import the bundler cannot see through: its target is decided at run time, so it is
+ *  never bundled and resolves against whatever the installed tree happens to hold. */
+const NON_LITERAL_IMPORT = /\bimport\s*\((?!\s*["'])/;
+
+/**
+ * The capabilities the layers beneath the hosts have no use for. The gate runs on every tool call
+ * from a bundle that must work in a checkout with no `node_modules`: it never calls out to the
+ * network, never falls back to CommonJS to reach a package, and never defers a load it cannot name.
+ */
+const LOW_LAYER_BANS = [
+  /\bfetch\s*\(/,
+  /\brequire\s*\(/,
+  /\bcreateRequire\b/,
+  NON_LITERAL_IMPORT,
+] as const;
+
+/** The installer imports the cached plugin's `main` entry through `pathToFileURL` to prove the
+ *  export is callable — a runtime path by nature, and off the hook path. */
+const DYNAMIC_IMPORT_ALLOWANCES: readonly string[] = ['hosts/opencode/install.ts'];
+
+function matchedBans(path: string, source: string, patterns: readonly RegExp[]): string[] {
+  return source.split('\n').flatMap((line) =>
+    patterns.flatMap((pattern) => {
+      const match = line.match(pattern);
+      return match === null ? [] : [`${path}: ${match[0]}`];
+    }),
+  );
+}
+
+function lowLayerBans(path: string, source: string): string[] {
+  const layer = path.split(sep)[0];
+  if (layer !== 'core' && layer !== 'gate' && layer !== 'audit') return [];
+  return matchedBans(path, source, LOW_LAYER_BANS);
+}
+
+function dynamicImportBans(path: string, source: string): string[] {
+  if (DYNAMIC_IMPORT_ALLOWANCES.includes(path)) return [];
+  return matchedBans(path, source, [NON_LITERAL_IMPORT]);
 }
 
 describe('next/ architecture', () => {
@@ -296,6 +395,12 @@ describe('next/ architecture', () => {
         "import { colorize } from '@next/cli/utils/colors';\n",
       ),
     ).toEqual(['core/example.ts imports @next/cli/utils/colors']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'core', 'example.ts'),
+        "import { request } from 'node:https';\n",
+      ),
+    ).toEqual(['core/example.ts imports node:https']);
     const gateHelper = "import { analysisWordText } from '@next/gate/analyzer/command-words';\n";
     expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), gateHelper)).toEqual([
       'core/example.ts imports @next/gate/analyzer/command-words',
@@ -393,5 +498,83 @@ describe('next/ architecture', () => {
     expect(layeringViolations(join(NEXT_ROOT, 'rules-manager', 'example.ts'), guiHelper)).toEqual([
       'rules-manager/example.ts imports @next/gui/activity',
     ]);
+  });
+
+  test('no module under next/ loads another in a cycle', () => {
+    const graph = new Map(
+      files
+        .filter((file) => !relative(NEXT_ROOT, file).startsWith(join('gui', 'frontend')))
+        .map((file) => [file, importedModules(file, readFileSync(file, 'utf-8'))] as const),
+    );
+    expect(
+      findImportCycles(graph).map((cycle) => cycle.map((file) => relative(NEXT_ROOT, file))),
+    ).toEqual([]);
+  });
+
+  test('core, gate and audit reach neither the network, CommonJS nor an unnameable load', () => {
+    expect(
+      files.flatMap((file) => lowLayerBans(relative(NEXT_ROOT, file), readFileSync(file, 'utf-8'))),
+    ).toEqual([]);
+  });
+
+  test('every dynamic import under next/ names its target as a literal', () => {
+    expect(
+      files.flatMap((file) =>
+        dynamicImportBans(relative(NEXT_ROOT, file), readFileSync(file, 'utf-8')),
+      ),
+    ).toEqual([]);
+  });
+
+  test('the cycle and capability rules are falsifiable', () => {
+    expect(
+      findImportCycles(
+        new Map([
+          ['a.ts', ['b.ts']],
+          ['b.ts', ['a.ts']],
+          ['c.ts', ['a.ts']],
+        ]),
+      ),
+    ).toEqual([['a.ts', 'b.ts', 'a.ts']]);
+    expect(
+      findImportCycles(
+        new Map([
+          ['a.ts', ['b.ts', 'c.ts']],
+          ['b.ts', ['c.ts']],
+          ['c.ts', []],
+        ]),
+      ),
+    ).toEqual([]);
+    expect(
+      importedModules(
+        join(NEXT_ROOT, 'gate', 'pipeline.ts'),
+        [
+          "import type { Budget } from '@next/core/budget';",
+          "import { evaluateGuard } from './example-missing';",
+          "import { redactSecrets } from '@next/core/redaction';",
+        ].join('\n'),
+      ),
+    ).toEqual([
+      join(NEXT_ROOT, 'gate', 'example-missing', 'index.ts'),
+      join(NEXT_ROOT, 'core', 'redaction.ts'),
+    ]);
+
+    const banned = [
+      'const r = await fetch(url);',
+      "const z = require('zod');",
+      "import { createRequire } from 'node:module';",
+      'const m = await import(name);',
+      "const ok = await import('@next/cli/main');",
+    ].join('\n');
+    const core = join('core', 'example.ts');
+    expect(lowLayerBans(core, banned)).toEqual([
+      `${core}: fetch(`,
+      `${core}: require(`,
+      `${core}: createRequire`,
+      `${core}: import(`,
+    ]);
+    const hook = join('hosts', 'example', 'hook.ts');
+    expect(lowLayerBans(hook, banned)).toEqual([]);
+    expect(dynamicImportBans(hook, banned)).toEqual([`${hook}: import(`]);
+    expect(dynamicImportBans('hosts/opencode/install.ts', banned)).toEqual([]);
   });
 });

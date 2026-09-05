@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestEnvironment, processPathResolver } from '@next/core/environment';
+import { createSpawnEnv } from '../../helpers';
 import { snapshotTree } from './fixture-tree';
 
 /**
@@ -60,6 +61,27 @@ export function isolationEnv(
     TMPDIR: join(home, 'tmp'),
     ...overrides,
   };
+}
+
+/**
+ * The same isolation as a child process environment, for spawning the built bins through node:
+ * the inherited shell keeps everything the run needs (a PATH override, the terminal), while every
+ * home, config and cache `isolationEnv` points at the temp root is applied over it and every host
+ * variable it blanks leaves the map — Node stringifies an `undefined` value to the literal
+ * `'undefined'`, so a blanked name has to be absent rather than unset.
+ */
+export function isolatedSpawnEnv(
+  home: string,
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string> {
+  const values = isolationEnv(home, overrides);
+  const blanked = new Set(Object.keys(values).filter((name) => values[name] === undefined));
+  const inherited = createSpawnEnv(
+    Object.fromEntries(
+      Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ),
+  );
+  return Object.fromEntries(Object.entries(inherited).filter(([name]) => !blanked.has(name)));
 }
 
 /** Run `fn` with `values` applied to `process.env`, restoring the previous values afterwards. */

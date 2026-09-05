@@ -75,11 +75,13 @@ export const REASON_RECURSION_LIMIT =
 export const REASON_SAFETY_NET_FAILED_CLOSED =
   'CC Safety Net failed closed because command analysis failed unexpectedly. This is not caused by your command. Report it to the user.';
 
-export const REASON_HOOK_INPUT_UNREADABLE = 'Failed to parse hook input JSON.';
+const REASON_HOOK_INPUT_UNREADABLE = 'Failed to parse hook input JSON.';
 
+/** @internal */
 export const REASON_DERIVED_COMMAND_WORK_LIMIT =
   "Command analysis exceeds CC Safety Net's derived-command work limit. Reduce nested or embedded command complexity and retry.";
 
+/** @internal */
 export const REASON_PARALLEL_ANALYSIS_LIMIT =
   "Parallel command expands beyond CC Safety Net's analysis limits. Reduce the template or explicit argument list and retry.";
 

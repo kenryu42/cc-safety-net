@@ -36,7 +36,7 @@ export function findGitMetadataMutationTargetInSemanticFacts(
   ) {
     if (isReadOnlyTool(facts.invocation.toolName)) return null;
     const target = facts.paths.find((path) =>
-      isProtectedGitWriteTarget(path, cwd, metadata, environment, budget),
+      isProtectedGitWriteLikeTarget(path, cwd, metadata, environment, budget, metadata.entries),
     );
     return target ? { target } : null;
   }
@@ -48,7 +48,14 @@ export function findGitMetadataMutationTargetInSemanticFacts(
     findSegmentTarget: (segment, state) =>
       findGitMetadataMoveTarget(segment, state, metadata, environment, budget),
     isRedirectionTarget: (target, state) =>
-      isProtectedGitRedirectionTarget(target, state.cwd, metadata, environment, budget),
+      isProtectedGitWriteLikeTarget(
+        target,
+        state.cwd,
+        metadata,
+        environment,
+        budget,
+        metadata.markerFiles,
+      ),
     findMalformedTarget: () => null,
     normalizeCwd: normalizeProtectedPathCandidate,
   });
@@ -111,42 +118,6 @@ function isProtectedGitMoveDestination(
   return isProtectedExactOrHookTarget(
     comparePath(normalizeProtectedPathCandidate(target, cwd, environment, budget)),
     metadata,
-  );
-}
-
-function isProtectedGitWriteTarget(
-  target: string,
-  cwd: string,
-  metadata: ProtectedGitMetadata | null,
-  environment: EnvironmentContext,
-  budget: Budget,
-): boolean {
-  if (!metadata) return false;
-  return isProtectedGitWriteLikeTarget(
-    target,
-    cwd,
-    metadata,
-    environment,
-    budget,
-    metadata.entries,
-  );
-}
-
-function isProtectedGitRedirectionTarget(
-  target: string,
-  cwd: string,
-  metadata: ProtectedGitMetadata | null,
-  environment: EnvironmentContext,
-  budget: Budget,
-): boolean {
-  if (!metadata) return false;
-  return isProtectedGitWriteLikeTarget(
-    target,
-    cwd,
-    metadata,
-    environment,
-    budget,
-    metadata.markerFiles,
   );
 }
 

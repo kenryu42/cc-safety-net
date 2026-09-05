@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import { installCursor } from '@next/hosts/cursor/install';
 import { type CliRow, expectSameCli, runCliDifferential } from '../helpers/cli-differential';
 import { environmentFor, removeTempRoots } from '../helpers/temp-home';
@@ -134,7 +135,9 @@ describe('install, update and uninstall reach the Phase 6 flows', () => {
   test('`install --cursor` writes the Cursor hook', async () => {
     const shipped = await differential({ args: ['install', '--cursor'] });
     expect(shipped.exitCode).toBe(0);
-    expect(shipped.stdout).toBe('Installed Cursor hook in <root>/home/.cursor/hooks.json\n');
+    expect(shipped.stdout).toBe(
+      `Installed Cursor hook in ${join('<root>', 'home/.cursor/hooks.json')}\n`,
+    );
     expect(shipped.tree.map((entry) => entry.path)).toContain('home/.cursor/hooks.json');
   }, 60_000);
 
@@ -146,7 +149,9 @@ describe('install, update and uninstall reach the Phase 6 flows', () => {
       },
     });
     expect(shipped.exitCode).toBe(0);
-    expect(shipped.stdout).toBe('Uninstalled Cursor hook from <root>/home/.cursor/hooks.json\n');
+    expect(shipped.stdout).toBe(
+      `Uninstalled Cursor hook from ${join('<root>', 'home/.cursor/hooks.json')}\n`,
+    );
   }, 60_000);
 
   test('`install` with no target and no terminal refuses to guess', async () => {

@@ -6,6 +6,7 @@ import { getAuditLogHomeDir, writeAuditLog } from '@next/audit/writer';
 import type { AuditLogEntry } from '@next/core/audit';
 import { createTestEnvironment } from '@next/core/environment';
 import { writeAuditLog as shippedWriteAuditLog } from '@/engine/audit';
+import { createSpawnEnv } from '../../helpers';
 import { snapshotTree } from '../helpers/fixture-tree';
 
 const NOW = '2026-05-17T12:34:56.789Z';
@@ -426,14 +427,14 @@ describe('audit writer contract', () => {
     const workers = Array.from({ length: 4 }, (_, worker) =>
       Bun.spawn({
         cmd: [
-          'bun',
+          process.execPath,
           join(import.meta.dir, 'concurrent-append-worker.ts'),
           home,
           'session-concurrent',
           String(worker),
         ],
         cwd: REPO_ROOT,
-        env: { ...process.env },
+        env: createSpawnEnv({}),
       }),
     );
     expect(await Promise.all(workers.map((worker) => worker.exited))).toStrictEqual([0, 0, 0, 0]);

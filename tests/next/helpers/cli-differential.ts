@@ -4,7 +4,7 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createFakeBin } from './fake-bin';
 import { snapshotTree, type TreeEntry, type TreeSpec, writeTree } from './fixture-tree';
-import { createTempRoot, isolationEnv, normalize } from './temp-home';
+import { createTempRoot, isolatedSpawnEnv, normalize } from './temp-home';
 
 /**
  * The two bins over the same argument vector. Each row runs `bun run src/cli/cc-safety-net.ts`
@@ -77,24 +77,19 @@ function createSide(label: string): CliSide {
   const project = join(root, 'project');
   mkdirSync(home, { recursive: true });
   mkdirSync(project, { recursive: true });
-  const values = {
-    ...process.env,
-    ...isolationEnv(home),
-    ...createFakeBin(root, []).env,
-    TZ: 'UTC',
-    ...Object.fromEntries(BLANKED_ENV_NAMES.map((name) => [name, undefined])),
-  };
   return {
     root,
     home,
     project,
-    // Node stringifies an `undefined` value to the literal `'undefined'`, so a blanked
-    // variable has to leave the map rather than sit in it unset.
-    env: Object.fromEntries(
-      Object.entries(values).flatMap(([name, value]) =>
-        value === undefined ? [] : [[name, value] as const],
-      ),
-    ),
+    // `isolatedSpawnEnv` drops a blanked name from the map rather than leaving it unset (Node
+    // stringifies `undefined` to the literal `'undefined'`) and, on Windows, drops the
+    // case-insensitive duplicate an inherited `Path` would otherwise leave in front of the
+    // fake bin's `PATH`.
+    env: isolatedSpawnEnv(home, {
+      ...createFakeBin(root, []).env,
+      TZ: 'UTC',
+      ...Object.fromEntries(BLANKED_ENV_NAMES.map((name) => [name, undefined])),
+    }),
   };
 }
 

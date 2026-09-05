@@ -23,6 +23,7 @@ artifacts
 .amp/github-issue-events/
 .amp/github-issues-webhook.json
 coverage
+dist-next
 .codex
 .playwright
 .playwright-cli
