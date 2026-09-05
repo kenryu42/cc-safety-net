@@ -97,7 +97,7 @@ export function getPolicyPaths(environment: Environment, options: RulesPolicyOpt
   };
 }
 
-function getUserPolicyFilesystemScope(
+export function getUserPolicyFilesystemScope(
   environment: Environment,
   options: UserScopeOptions,
 ): PolicyFilesystemScope {
@@ -107,7 +107,10 @@ function getUserPolicyFilesystemScope(
   return bindPolicyFilesystemScope(root, 'user policy');
 }
 
-function getProjectPolicyFilesystemScope(configPath: string, cwd: string): PolicyFilesystemScope {
+export function getProjectPolicyFilesystemScope(
+  configPath: string,
+  cwd: string,
+): PolicyFilesystemScope {
   const projectRoot = resolve(cwd);
   const absoluteConfigPath = resolve(configPath);
   const fromCwd = relative(projectRoot, absoluteConfigPath);

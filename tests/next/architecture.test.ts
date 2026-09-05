@@ -43,7 +43,10 @@ const CHILD_PROCESS_ALLOWANCES: readonly string[] = [
 ];
 
 /** The layers a CLI command may reach for; `entries` is above it, and `cli` is its own. */
-const CLI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'cli'];
+const CLI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager', 'cli'];
+
+/** The layers the rulebook manager may reach for; `cli` and `entries` are above it. */
+const RULES_MANAGER_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager'];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
@@ -111,7 +114,7 @@ function layeringViolations(file: string, source: string): string[] {
   const specifiers = importSpecifiers(source);
   const allowedThirdParty = THIRD_PARTY_ALLOWANCES[path] ?? [];
   const offending = specifiers.filter((specifier) => {
-    if (layer === 'hosts' || layer === 'entries' || layer === 'cli') {
+    if (layer === 'hosts' || layer === 'entries' || layer === 'cli' || layer === 'rules-manager') {
       if (NETWORK_MODULES.includes(specifier)) return true;
       if (specifier === 'node:child_process') return !CHILD_PROCESS_ALLOWANCES.includes(path);
     }
@@ -123,12 +126,17 @@ function layeringViolations(file: string, source: string): string[] {
       if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
       return !CLI_LAYERS.includes(layerOf(specifier, file) ?? '');
     }
+    if (layer === 'rules-manager') {
+      if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
+      return !RULES_MANAGER_LAYERS.includes(layerOf(specifier, file) ?? '');
+    }
     if (layer === 'core' || layer === 'gate' || layer === 'audit') {
       if (layer === 'core' && layerOf(specifier, file) === 'gate') return true;
       return (
         layerOf(specifier, file) === 'hosts' ||
         layerOf(specifier, file) === 'entries' ||
-        layerOf(specifier, file) === 'cli'
+        layerOf(specifier, file) === 'cli' ||
+        layerOf(specifier, file) === 'rules-manager'
       );
     }
     return false;
@@ -271,6 +279,35 @@ describe('next/ architecture', () => {
     expect(layeringViolations(join(NEXT_ROOT, 'gate', 'rulebook-fixtures.ts'), gateHelper)).toEqual(
       [],
     );
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'rules-manager', 'example.ts'),
+        "import { runCli } from '@next/cli/main';\nimport { request } from 'node:https';\nimport { spawn } from 'node:child_process';\n",
+      ),
+    ).toEqual([
+      'rules-manager/example.ts imports @next/cli/main',
+      'rules-manager/example.ts imports node:https',
+      'rules-manager/example.ts imports node:child_process',
+    ]);
+    const managerHelper = "import { syncRulesConfig } from '@next/rules-manager/sync';\n";
+    expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), managerHelper)).toEqual([
+      'core/example.ts imports @next/rules-manager/sync',
+    ]);
+    expect(layeringViolations(join(NEXT_ROOT, 'gate', 'example.ts'), managerHelper)).toEqual([
+      'gate/example.ts imports @next/rules-manager/sync',
+    ]);
+    expect(
+      layeringViolations(join(NEXT_ROOT, 'hosts', 'example', 'hook.ts'), managerHelper),
+    ).toEqual(['hosts/example/hook.ts imports @next/rules-manager/sync']);
+    expect(layeringViolations(join(NEXT_ROOT, 'cli', 'rule', 'index.ts'), managerHelper)).toEqual(
+      [],
+    );
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'rules-manager', 'sync.ts'),
+        "import { evaluateRulebookFixtures } from '@next/gate/rulebook-fixtures';\nimport { getLocalRulebookPath } from '@next/core/policy/paths';\n",
+      ),
+    ).toEqual([]);
     expect(
       layeringViolations(
         join(NEXT_ROOT, 'hosts', 'install', 'native.ts'),

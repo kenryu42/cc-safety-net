@@ -10,18 +10,13 @@ import { dirname, join, resolve } from 'node:path';
 import type { Environment } from '@next/core/environment';
 import {
   bindDelegatedPolicyFilesystemTarget,
-  bindPolicyFilesystemScope,
-  getPolicyFilesystemTargetForPath,
   PolicyFilesystemError,
-  type PolicyFilesystemScope,
   type PolicyFilesystemTarget,
   readPolicyFile,
   writePolicyFileAtomic,
 } from '@next/core/io/safe-read';
 import { getUserRulesDir, type UserScopeOptions } from './paths';
-import { type RuleOverride, type RulesConfig, readRulesConfig } from './rules-config';
 import { formatSchemaIssues, getLegacyConfigSchema } from './schema';
-import { loadScopePolicy } from './scope-policy';
 import { collectCustomRuleNames, getRulesConfigValidation } from './validate';
 
 const LEGACY_RULES_CONFIG_FILE = 'config.json';
@@ -108,55 +103,4 @@ export function getLegacyUserRulesConfigPath(
   options: UserScopeOptions = {},
 ): string {
   return join(dirname(getUserRulesDir(environment, options)), LEGACY_RULES_CONFIG_FILE);
-}
-
-export function getRulesConfigRuntimeErrorsForConfig(
-  configPath: string,
-  filesystemScope?: PolicyFilesystemScope,
-): string[] {
-  const loaded = loadScopePolicyForConfig(configPath, filesystemScope);
-  if (!loaded) return [];
-  return [
-    ...loaded.scope.errors,
-    ...loaded.scope.warnings,
-    ...getUnknownOverrideErrorsForScope(loaded.config, loaded.scope, configPath),
-  ];
-}
-
-function loadScopePolicyForConfig(configPath: string, filesystemScope?: PolicyFilesystemScope) {
-  const scope =
-    filesystemScope ?? bindPolicyFilesystemScope(dirname(dirname(configPath)), 'rules policy');
-  const config = readRulesConfig(getPolicyFilesystemTargetForPath(scope, configPath)).config;
-  if (!config) {
-    return null;
-  }
-  return {
-    config,
-    scope: loadScopePolicy(config, dirname(configPath), 'project', scope),
-  };
-}
-
-function getUnknownOverrideErrorsForScope(
-  config: RulesConfig,
-  scope: ReturnType<typeof loadScopePolicy>,
-  configPath: string,
-): string[] {
-  return scope.canValidateOverrides
-    ? getUnknownOverrideErrors(config.overrides ?? {}, scope.knownRuleIds, configPath)
-    : [];
-}
-
-// A copy of the loader's own check: `scope-policy.ts` keeps it private, and this module is the
-// only other caller. Phase 8 exports it there and deletes this copy.
-function getUnknownOverrideErrors(
-  overrides: Record<string, RuleOverride>,
-  knownRuleIds: Set<string>,
-  configPath: string,
-): string[] {
-  return Object.keys(overrides)
-    .filter((key) => !knownRuleIds.has(key))
-    .map(
-      (key) =>
-        `unknown override key "${key}" in ${configPath}; only that override is ignored and other overrides and rules keep their configured state; correct or remove it in that file`,
-    );
 }

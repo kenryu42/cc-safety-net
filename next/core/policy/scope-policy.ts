@@ -125,6 +125,55 @@ export function loadRulesPolicy(
   };
 }
 
+export function getRulesConfigRuntimeErrorsForConfig(
+  configPath: string,
+  filesystemScope?: PolicyFilesystemScope,
+): string[] {
+  const loaded = loadScopePolicyForConfig(configPath, filesystemScope);
+  if (!loaded) return [];
+  return [
+    ...loaded.scope.errors,
+    ...loaded.scope.warnings,
+    ...getUnknownOverrideErrorsForScope(loaded.config, loaded.scope, configPath),
+  ];
+}
+
+/** @internal - exported for test coverage */
+export function getUnknownOverrideErrorsForConfig(
+  configPath: string,
+  filesystemScope?: PolicyFilesystemScope,
+): string[] {
+  const loaded = loadScopePolicyForConfig(configPath, filesystemScope);
+  if (!loaded) return [];
+  return getUnknownOverrideErrorsForScope(loaded.config, loaded.scope, configPath);
+}
+
+function loadScopePolicyForConfig(
+  configPath: string,
+  filesystemScope?: PolicyFilesystemScope,
+): { config: RulesConfig; scope: ScopePolicy } | null {
+  const scope =
+    filesystemScope ?? bindPolicyFilesystemScope(dirname(dirname(configPath)), 'rules policy');
+  const config = readRulesConfig(getPolicyFilesystemTargetForPath(scope, configPath)).config;
+  if (!config) {
+    return null;
+  }
+  return {
+    config,
+    scope: loadScopePolicy(config, dirname(configPath), 'project', scope),
+  };
+}
+
+function getUnknownOverrideErrorsForScope(
+  config: RulesConfig,
+  scope: ScopePolicy,
+  configPath: string,
+): string[] {
+  return scope.canValidateOverrides
+    ? getUnknownOverrideErrors(config.overrides ?? {}, scope.knownRuleIds, configPath)
+    : [];
+}
+
 export function loadScopePolicy(
   config: RulesConfig,
   configDir: string,

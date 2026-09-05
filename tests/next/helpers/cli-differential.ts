@@ -142,8 +142,8 @@ export function seedFiles(side: CliSide, spec: TreeSpec): void {
   writeTree(side.root, spec);
 }
 
-/** The ported bin alone, for the verbs whose shipped handler cannot run here: `gui` starts a
- *  loopback server that never exits, and `rule` is Phase 8's. */
+/** The ported bin alone, for the verb whose shipped handler cannot run here: `gui` starts a
+ *  loopback server that never exits. */
 export function runPortedCli(row: CliRow): CliOutcome {
   return runSide(PORTED_ENTRY, row, 'ported');
 }

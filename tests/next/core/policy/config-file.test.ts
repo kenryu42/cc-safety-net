@@ -9,7 +9,6 @@ import {
 } from '@/rules/config';
 import { writeJsonAtomic } from '@/rules/policy/config-file';
 import { getLegacyUserRulesConfigPath } from '@/rules/policy/paths';
-import { getRulesConfigRuntimeErrorsForConfig } from '@/rules/policy/scope-policy';
 import { snapshotTree, type TreeSpec, writeTree } from '../../helpers/fixture-tree';
 import {
   createTempRoot,
@@ -26,22 +25,6 @@ import {
  * twice. Only the diagnostics are contract here: doctor prints them verbatim, so a reworded
  * or reordered message is a changed report.
  */
-
-const RULEBOOK = JSON.stringify({
-  rulebook_version: 1,
-  name: 'project-rules',
-  version: '1.0.0',
-  allowed_commands: ['docker'],
-  rules: [
-    {
-      name: 'block-docker-system-prune',
-      command: 'docker',
-      subcommand: 'system',
-      block_args: ['prune'],
-      reason: 'Use targeted cleanup instead.',
-    },
-  ],
-});
 
 const TREE: TreeSpec = {
   'valid/rule.json': '{"version":1,"rules":["project-rules"],"transparent_wrappers":["rtk"]}',
@@ -73,10 +56,6 @@ const TREE: TreeSpec = {
     version: 1,
     rules: [{ name: 'BAD NAME!', command: 'git', block_args: [], reason: '' }],
   }),
-  'unknown-override/.cc-safety-net/rules/rule.json':
-    '{"version":1,"rules":["project-rules"],"overrides":{"project-rules/gone":"off"}}',
-  'unknown-override/.cc-safety-net/rules/project-rules/rulebook.json': RULEBOOK,
-  'missing-rulebook/.cc-safety-net/rules/rule.json': '{"version":1,"rules":["absent-book"]}',
 };
 
 /** The same fixture tree under one root per implementation, so neither can see the other's. */
@@ -128,23 +107,6 @@ describe('the legacy config validator reports what the shipped one reports', () 
       'rules[0].block_args: must have at least one element',
       'rules[0].reason: must not be empty',
     ]);
-  });
-
-  test.each([
-    'unknown-override',
-    'missing-rulebook',
-  ] as const)('reports the same runtime errors for a %s config', (scope) => {
-    const root = trees();
-    const configPath = (base: string) => join(base, scope, '.cc-safety-net', 'rules', 'rule.json');
-    expect(
-      normalize(ported.getRulesConfigRuntimeErrorsForConfig(configPath(root.ported)), [
-        [root.ported, '<root>'],
-      ]),
-    ).toEqual(
-      normalize(getRulesConfigRuntimeErrorsForConfig(configPath(root.shipped)), [
-        [root.shipped, '<root>'],
-      ]),
-    );
   });
 });
 

@@ -10,17 +10,16 @@ import {
   type PolicyFilesystemTarget,
   readPolicyFile,
 } from '@next/core/io/safe-read';
-import {
-  getRulesConfigRuntimeErrorsForConfig,
-  type ValidationResult,
-  validateRulesConfigFile,
-} from '@next/core/policy/config-file';
+import { type ValidationResult, validateRulesConfigFile } from '@next/core/policy/config-file';
 import {
   getPolicyPaths,
   getProjectRulesConfigPath,
   getUserRulesConfigPath,
 } from '@next/core/policy/paths';
-import { loadRulesPolicy } from '@next/core/policy/scope-policy';
+import {
+  getRulesConfigRuntimeErrorsForConfig,
+  loadRulesPolicy,
+} from '@next/core/policy/scope-policy';
 import type { CustomRule } from '@next/core/policy/types';
 import type { ConfigSourceInfo, EffectiveRule, ShadowedRule } from '@next/hosts/doctor-types';
 

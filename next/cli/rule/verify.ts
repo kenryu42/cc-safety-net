@@ -13,7 +13,6 @@ import {
 import {
   getLegacyProjectConfigPath,
   getLegacyUserRulesConfigPath,
-  getRulesConfigRuntimeErrorsForConfig,
   type ValidationResult,
   validateConfigFile,
   validateRulesConfigFile,
@@ -24,6 +23,7 @@ import {
   getUserRulesConfigPath,
 } from '@next/core/policy/paths';
 import { assertValidRulebook } from '@next/core/policy/rulebook';
+import { getRulesConfigRuntimeErrorsForConfig } from '@next/core/policy/scope-policy';
 import { NAME_PATTERN, RULES_DIR } from '@next/core/policy/source-syntax';
 import { evaluateRulebookFixtures } from '@next/gate/rulebook-fixtures';
 

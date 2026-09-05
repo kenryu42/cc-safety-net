@@ -6,6 +6,7 @@ import { runExplain } from '@next/cli/explain/run';
 import { printHelp, printVersion, showCommandHelp } from '@next/cli/help';
 import { runInstallCommand, runUpdateCommand } from '@next/cli/install/index';
 import { runPolicyCommand } from '@next/cli/policy/index';
+import { runRuleCommand } from '@next/cli/rule/index';
 import { printStatus } from '@next/cli/status';
 import { printStatusline } from '@next/cli/statusline';
 import { createProcessEnvironment } from '@next/core/environment';
@@ -52,9 +53,8 @@ const commandHandlers = {
   uninstall: async (args) => {
     process.exit(await runInstallCommand('uninstall', args));
   },
-  rule: async () => {
-    console.error('cc-safety-net: the rule command is not available in this build');
-    process.exit(1);
+  rule: async (args) => {
+    process.exit(await runRuleCommand(createProcessEnvironment(), args));
   },
   policy: async (args) => {
     process.exit(await runPolicyCommand(createProcessEnvironment(), args));

@@ -168,13 +168,10 @@ describe('install, update and uninstall reach the Phase 6 flows', () => {
   }, 60_000);
 });
 
-// `rule` lands in Phase 8 and `gui` in Phase 9; until then each names itself on one stderr line.
-// The shipped side is not run: its `gui` starts a loopback server that never exits.
+// `gui` lands in Phase 9; until then it names itself on one stderr line. The shipped side is
+// not run: its `gui` starts a loopback server that never exits.
 describe('the commands this build does not carry', () => {
-  for (const [name, args] of [
-    ['rule', ['rule', 'list']],
-    ['gui', ['gui', '--no-open']],
-  ] as const) {
+  for (const [name, args] of [['gui', ['gui', '--no-open']]] as const) {
     test(`\`${args.join(' ')}\` says the ${name} command is unavailable`, () => {
       const ported = runPortedCli({ args });
       expect(ported.stdout).toBe('');

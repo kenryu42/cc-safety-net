@@ -365,7 +365,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   failing `--prune-legacy`) (Phase 10); deleting `next/gate/evaluate-command.ts` with its
   differential tests (Phase 11).
 
-### Phase 8 — Rulebook manager (M) `[ ]`
+### Phase 8 — Rulebook manager (M) `[x]`
 
 - `rule init`, `add`, `remove`, `update`, `list`, `wrapper`, with `migrate` and `sync` as edge
   shims; bounded GitHub fetch (64 sources, 4 concurrent, 131 requests, 64 MiB, 15 s, no
@@ -378,6 +378,60 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   verbatim, export `getUnknownOverrideErrors` from the scope-policy module with
   `getUnknownOverrideErrorsForConfig` and delete the private copy in `next/core/policy/config-file.ts`,
   give `validateConfig` its consumer, and add the `rule --help` differential row.
+- Phase 8 landed: the manager library is a new top-level layer, `next/rules-manager/`
+  (`resolver`, `sync`, `sources`, `resource-limits`, `config-file`, `types`, `paths`), and
+  `next/cli/rule/` is complete (`index` with `runRuleCommand(environment, args)`, `format`,
+  `migrate`, `update-notice`, `sync-migrate` with `runRuleSyncMigration`), all verbatim ports with
+  the Environment first and `src`'s parameters after it; `next/cli/main.ts` dispatches `rule`
+  for real. The runtime-error helpers (`getRulesConfigRuntimeErrorsForConfig`,
+  `getUnknownOverrideErrorsForConfig`) moved into `next/core/policy/scope-policy.ts` where `src`
+  keeps them and `config-file.ts` lost its private copy; the two filesystem-scope binders are
+  exported from core paths for `getScopePaths`; `findRuleV2Leftovers` uses `getScopePaths`;
+  `validateConfig` has its consumer in `migrate.ts`. The architecture test carries the
+  `rules-manager` layer (imports core, gate, audit, hosts; no network or child-process modules;
+  cli may import it; nothing below may) and the closure test keeps it off the hook path.
+- Adopted: `getScopePaths` keeps `src`'s `options.cwd ?? process.cwd()` fallbacks and `rule list`
+  passes `process.cwd()` to the loader (core's loader requires a cwd); `SyncRulesConfigOptions`
+  extends `Partial<RulesPolicyOptions>` for the same reason; the source-limit constants stay in
+  core and the manager's `RULE_SYNC_RESOURCE_LIMITS` imports `RULE_SOURCE_LIMIT`; the fetch is
+  the global `fetch` with `redirect: 'error'`, `GITHUB_FETCH_LIMITS` and
+  `RULE_SYNC_RESOURCE_LIMITS` unchanged and pinned as literals, and `resolveUrl` on the operation
+  is the only seam tests use to reach a loopback server. Superseded: fixtures are evaluated at
+  fetch and author time against the rulebook's own rules (`evaluateRulebookFixtures`), not
+  through the pipeline: a fixture asserts which of the rulebook's rules fires or that none does,
+  which the full pipeline cannot express because a built-in rule would fire first.
+- Validation: in-process differentials over twin seeded homes against one loopback fake GitHub
+  (`tests/next/helpers/{loopback-server,fake-github,rules-manager-differential,rulebook-seeds}.ts`)
+  cover every fetch cap and exact-cap acceptance, the 131-request catalogue add, the 65th source,
+  budget exhaustion across responses, a redirect, a stall, non-OK bodies left unread, a fanout of
+  four with the first error aborting the rest, both fault hooks and every rollback, name
+  collisions and unclaimed files, selective and whole-scope updates, every remove match form and
+  the runtime reload; process-level rows through both bins cover every rule verb, help leaf and
+  usage error with stdout, stderr, exit code and tree compared; the update notice runs on both
+  sides with `getPackageVersion` and `fetch` spied and a fixed clock. `rule add owner/repo` never
+  runs through a bin. The manager suite runs behind a dead `HTTPS_PROXY` so an accidental real
+  fetch fails fast.
+- Verified: `bun run check` passes lint, typecheck, knip and the duplication scan (0 clones); the
+  suite runs 7,580 tests with only the two root-only failures, `tests/next` alone 2,315; coverage
+  97.21% lines against the 90% floor. A rule-command drive against `next/entries/bin.ts` under
+  isolated homes (init with the starter, list, add and remove of a local source with
+  `--delete-source`, wrapper add/list and the reserved-head refusal, update, verify, sync, migrate,
+  doc, the help and usage paths) is byte-identical to the shipped bin in output and tree, with
+  nothing leaked into the real home; no drive reaches GitHub.
+- Recorded for `main`, carried verbatim and pinned by the differentials: `rule add` and
+  `rule remove` do not run the post-change runtime reload (only `rule update` and `--check` do),
+  so contract 6.1's "add/remove/update re-load the changed scope" describes `update` alone and an
+  add over a stale override key reports success; an add's fetch failure reports the bare fetch
+  message where an update wraps the same failure as `Failed to update <spec>: …`; `rule init`
+  over a malformed `rule.json` prints `Rule config initialized.` and exits 0 leaving the file;
+  `rule migrate` restores `rule.json` and the migrated rulebook when the post-write reload
+  reports a stale override, so `docs/config-recovery.md`'s "the migrated files are written and
+  the legacy file is retained" describes only the legacy file; `rule sync` removes the lock and
+  cache even for a source it could not migrate from them. Fix on `main` first, then re-port.
+- Carried: the gui command (Phase 9); knip entries for `next/rules-manager` and `next/cli` (the
+  `/** @internal */` tags on the manager's test hooks are unchecked until then), the two-chunk
+  dist build and the packaged CLI journeys (Phase 10); deleting `next/gate/evaluate-command.ts`
+  with its differential tests (Phase 11).
 
 ### Phase 9 — GUI (M, optional) `[ ]`
 
@@ -409,6 +463,9 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   the CLI chunk with the dynamic specifier intact; the doctor JSON goldens under
   `tests/next/fixtures/cli/doctor/` embed Linux-shaped system info and must be normalized or
   parameterized before CI runs them on Windows and macOS.
+- From Phase 8: knip needs entries for `next/rules-manager`; the manager's loopback rows move
+  roughly 80 MiB per run and the catalogue add issues 262 loopback requests, so they are the rows
+  to watch on a slow CI runner.
 
 ### Phase 11 — Performance validation and cutover (S+M) `[ ]`
 

@@ -141,6 +141,8 @@ describe('the hook entry closure', () => {
 
     expect(offTheHookPath('cli/args.ts')).toBeFalse();
     expect(offTheHookPath('cli/main.ts')).toBeTrue();
+    expect(offTheHookPath('rules-manager/sync.ts')).toBeTrue();
+    expect(offTheHookPath('cli/rule/index.ts')).toBeTrue();
     expect(
       dynamicSpecifiers(
         "const cli = await import('@next/cli/main');\nconst gui = await import('@next/cli/gui');\n",
