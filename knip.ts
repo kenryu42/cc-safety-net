@@ -22,6 +22,7 @@ const config: KnipConfig = {
     'next/gate/evaluate-command.ts!',
     // scripts invoked directly by package.json scripts or GitHub workflows
     'scripts/build.ts!',
+    'scripts/project-bun.ts!',
     'scripts/build-schema.ts!',
     'scripts/prepare-release-files.ts!',
     'scripts/release-assets.ts!',

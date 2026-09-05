@@ -57,9 +57,16 @@ A quick 5-minute issue can save hours of implementation time on both sides.
 
 ### Prerequisites
 
-- **Bun 1.4.0** - Required build/test runtime and package manager ([install guide](https://bun.sh/docs/installation))
+- **Bun** - Required build/test runtime and package manager ([install guide](https://bun.sh/docs/installation))
 - **Node.js 18 or newer** - Supported runtime for built artifacts
 - **Claude Code** or **OpenCode** - For testing the plugin
+
+`package.json` defines the project Bun version in `packageManager`. CI, `bun run build`,
+and Git hooks use that version automatically, independently of your global Bun version.
+If it differs, the launcher downloads and caches the selected Bun through `bun x`;
+this requires network access on first use or after cache eviction. To run another
+command with the project runtime, use `bun scripts/project-bun.ts run check`.
+To upgrade Bun, change `packageManager`, rebuild, and commit the regenerated artifacts.
 
 ### Development Setup
 
@@ -179,7 +186,7 @@ bun run build
 
 | Convention | Rule |
 |------------|------|
-| Build/test runtime | **Bun 1.4.0** |
+| Build/test runtime | **Bun**, pinned in `package.json` |
 | Published runtime | **Node.js 18+** |
 | Package Manager | **bun only** (`bun install`, `bun run`) |
 | Formatter/Linter | **Biome** |

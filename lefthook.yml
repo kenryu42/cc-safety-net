@@ -2,13 +2,13 @@ pre-commit:
   piped: true
   jobs:
     - name: knip
-      run: bun run knip
+      run: bun scripts/project-bun.ts run knip
     - name: biome
-      run: bunx biome check --write --no-errors-on-unmatched {staged_files}
+      run: bun scripts/project-bun.ts x biome check --write --no-errors-on-unmatched {staged_files}
       glob: "*.{js,ts,cjs,mjs,d.cts,d.mts,json,jsonc}"
       stage_fixed: true
     - name: build
-      run: bun run build && git add -A dist/
+      run: bun scripts/project-bun.ts run build && git add -A dist/
 
 pre-push:
   jobs:
@@ -20,4 +20,4 @@ pre-push:
         - "**/*.yml"
         - "*.yaml"
         - "**/*.yaml"
-      run: bun run check
+      run: bun scripts/project-bun.ts run check

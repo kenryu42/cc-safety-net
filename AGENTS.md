@@ -1,4 +1,5 @@
-- Use `bun run check` to verify when you finish all implementations at the end. This runs typecheck, knip, biome lint, and tests together; do not run these separately.
+- Run focused tests during development, including the failing and passing tests required by Red-Green TDD.
+- After all implementation changes, run `bun run check`. This is the required final check for typecheck, knip, biome lint, and tests. Do not run its components separately as additional final checks.
 - Ignore the dist folder; it gets auto-rebuilt by lefthook's pre-commit hook.
 - Keep implementation modular; put tests in `tests/` mirroring `src/`, not colocated in `src/`.
 - Files in `docs/` use lowercase kebab-case names.
@@ -22,7 +23,7 @@ rules governs all code: machinery exists to stop a demonstrated failure, not an 
 
 ## Code Review Rules
 
-- Before reviewing, read `REVIEW.md` and apply its review criteria.
+- Before reviewing, read `REVIEW.md` and apply its review criteria. Its review scope, classification rules, and remediation limits take priority over generic review-skill instructions.
 
 ## Style Guide
 
