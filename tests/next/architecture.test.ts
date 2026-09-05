@@ -28,8 +28,21 @@ const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
 /** The layers a host adapter may reach for; `entries` is above it, and `hosts` is its own. */
 const HOST_LAYERS = ['core', 'gate', 'audit', 'hosts'];
 const NETWORK_MODULES = ['node:http', 'node:https', 'node:net', 'http', 'https', 'net'];
-/** The hook path never spawns. Phase 6 adds `hosts/amp/run.ts`, the Amp install transport. */
-const CHILD_PROCESS_ALLOWANCES: readonly string[] = [];
+/**
+ * The installers' spawn boundary: the four host-layer files whose `src/` counterparts spawn a
+ * host CLI. The hook path never spawns, and the import-closure test keeps all four off it.
+ */
+const CHILD_PROCESS_ALLOWANCES: readonly string[] = [
+  'hosts/amp/run.ts',
+  'hosts/install/native.ts',
+  'hosts/install/choices.ts',
+  'hosts/system-info.ts',
+];
+
+/** The layers a CLI command may reach for; `entries` is above it, and `cli` is its own. */
+const CLI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'cli'];
+/** The arg parser sits in entries until Phase 7 relocates it with the dynamic CLI chunk. */
+const CLI_ENTRY_ALLOWANCE = '@next/entries/args';
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
@@ -105,8 +118,21 @@ function layeringViolations(file: string, source: string): string[] {
       if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
       return !HOST_LAYERS.includes(layerOf(specifier, file) ?? '');
     }
+    if (layer === 'cli') {
+      if (
+        specifier.startsWith('node:') ||
+        allowedThirdParty.includes(specifier) ||
+        specifier === CLI_ENTRY_ALLOWANCE
+      )
+        return false;
+      return !CLI_LAYERS.includes(layerOf(specifier, file) ?? '');
+    }
     if (layer === 'core' || layer === 'gate' || layer === 'audit') {
-      return layerOf(specifier, file) === 'hosts' || layerOf(specifier, file) === 'entries';
+      return (
+        layerOf(specifier, file) === 'hosts' ||
+        layerOf(specifier, file) === 'entries' ||
+        layerOf(specifier, file) === 'cli'
+      );
     }
     return false;
   });
@@ -214,10 +240,28 @@ describe('next/ architecture', () => {
     ]);
     expect(
       layeringViolations(
+        join(NEXT_ROOT, 'cli', 'example.ts'),
+        "import { main } from '@next/entries/bin';\nimport { parseCommandArgs } from '@next/entries/args';\n",
+      ),
+    ).toEqual(['cli/example.ts imports @next/entries/bin']);
+    expect(
+      layeringViolations(
         join(NEXT_ROOT, 'core', 'example.ts'),
         "import { writeGuardAudit } from '@next/hosts/audit';\n",
       ),
     ).toEqual(['core/example.ts imports @next/hosts/audit']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'core', 'example.ts'),
+        "import { colorize } from '@next/cli/utils/colors';\n",
+      ),
+    ).toEqual(['core/example.ts imports @next/cli/utils/colors']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'hosts', 'install', 'native.ts'),
+        "import { spawn } from 'node:child_process';\n",
+      ),
+    ).toEqual([]);
     expect(
       layeringViolations(
         join(NEXT_ROOT, 'hosts', 'opencode', 'plugin.ts'),

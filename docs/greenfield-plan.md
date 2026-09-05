@@ -237,7 +237,7 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   413 and Hermes process-kill tests.
 
 
-### Phase 6 — Installers and detectors (L) `[ ]`
+### Phase 6 — Installers and detectors (L) `[x]`
 
 - Thirteen installers and detectors with the managed hook command shared with each adapter;
   detection from host state files only; probes with a 5 s timeout; exact artifacts written
@@ -249,6 +249,53 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   running `node "${PLUGIN_ROOT}/dist/bin/cc-safety-net.js" hook --codex`, so the pinned bin path
   now has a third consumer) and the Hermes shim's Windows process-tree kill are part of the port
   source.
+- Phase 6 landed: `src/` maps one file per file onto `next/hosts/<id>/{detect,install,artifact}.ts`
+  (thirteen detectors, eight installers, three artifacts), `next/hosts/install/` (types, targets,
+  native, npx and bunx caches, choices), `next/hosts/detect/` (context, index),
+  `next/hosts/{system-info,doctor-types,managed-command}.ts`, `next/hosts/copilot-cli/plugin-id.ts`,
+  `next/hosts/amp/run.ts`, `next/entries/openclaw.ts` and the first `next/cli/` files (the
+  install/update/uninstall flow, prompt, banners, colors, lolcat, command definitions, update check),
+  as verbatim ports. Every `homeDir` became the Environment (host relocation variables read
+  `environment.env` with each site's `??`/`||` preserved, `tmpdir()` became `environment.tmpdir`,
+  the spawn env and `process.platform` stay ambient), `detectAllHooks(environment, cwd, options)`
+  lost its `homedir()` fallback, and the command flows call `createProcessEnvironment()` once per
+  invocation. The bin still exits 1 for install, update and uninstall until Phase 7.
+- Adopted: `next/hosts/managed-command.ts` derives every `npx -y cc-safety-net hook --<flag>`
+  string from the catalog's long runtime flag; the four hook-config installers and the Hermes
+  shim's `ANALYZER` list render it, and a test pins each against the literal `src` ships. Kimi's
+  TOML and OpenCode's JSONC edits call `next/core/io` (Phase 1's port of the inline walkers, error
+  strings intact); the Amp policy stamp goes through `getUserPolicyPath(environment)` /
+  `normalizeGuiPolicy(value, home)`; `doctor-types` holds only HookPlatform, HookStatus, SystemInfo
+  and UpdateInfo. The architecture test allows `node:child_process` only in
+  `hosts/{install/native,install/choices,system-info,amp/run}.ts`, adds the `cli` layer with one
+  temporary `cli -> entries/args` allowance, and the closure test bans `system-info` and `cli/`
+  from the hook path.
+- Validation: fresh helpers under `tests/next/helpers` (`temp-home`, `fake-bin`, `fake-command`,
+  `host-differential`, `amp-runner`, `fake-tty`, `command-flow`) drive `src/` through `process.env`
+  and `next/` through an Environment over a second seeded home; every installer, detector and
+  uninstaller row compares trees, results and thrown messages (idempotent re-install, drift repair,
+  malformed files, JSON comment loss, TOML and JSONC byte-identical restore, symlink and
+  ownership-header refusals); the command flows run in-process on both sides for all thirteen
+  targets with fake host CLIs as the only entries on `PATH` (an unscripted command fails with
+  ENOENT instead of reaching a real binary) and the row's own temp root as the working directory;
+  the update flow, the probes including the 5 s stall, the cache sweeps and Amp's scripted runner
+  are covered. No test reaches the real home, a real host CLI, npx, git or the network.
+- Verified: `bun run check` passes lint, typecheck, knip and the duplication scan (0 clones); the
+  suite runs 6,989 tests with only the two root-only failures, `tests/next` alone 1,763; coverage
+  98.54% lines against the 90% floor. The verify skill's hook recipes still pass unchanged
+  against `next/entries/bin.ts` (deny, allow, both audit entries, isolation, every stdin flag), so
+  the port left the hook path untouched. The verify skill never drives install, update or
+  uninstall; the differential suite is the only evidence for those flows.
+- Carried: relocating `next/entries/args.ts` to `next/cli/args.ts` with the dynamic CLI chunk and
+  the bin's install/update/uninstall dispatch, retiring the `cli -> entries/args` allowance and
+  extending the child-process and network bans to `cli` (Phase 7); doctor's remaining types and the
+  self-test (Phase 7); building `dist/amp` and `dist/openclaw` and validating the repository
+  manifests, and Windows and macOS portability of `tests/next` (Phase 10).
+- Recorded for `main`, carried verbatim and pinned by the differentials: appending to a Kimi inline
+  `hooks = [...]` whose last item is followed by a trailing comment places the separator after the
+  comment, valid TOML only because the seeded item already ends with a comma; uninstalling OpenCode
+  from a JSONC config leaves `[ "other-plugin"]`; `uninstall --hermes-agent` leaves the emptied
+  plugins directory behind. Fix on `main` first, then re-port.
 
 ### Phase 7 — CLI diagnostics (M) `[ ]`
 
@@ -258,6 +305,10 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - Acceptance: explain goldens; doctor JSON goldens; exit codes 0 and 1 only; every surface is a
   projection of one policy resolution; the verify skill's explain, diagnostics, and logs recipes pass.
 - From `main` v2.3.3: `logs --project` matches with `relative`/`sep` rather than a `/` prefix.
+- From Phase 6: the command flows already live in `next/cli/install/`; wire them behind the bin's
+  dynamic CLI chunk, move `parseCommandArgs` from `next/entries/args.ts` to `next/cli/args.ts`,
+  retire the architecture test's `cli -> entries/args` allowance and extend its child-process and
+  network bans to the `cli` layer.
 
 ### Phase 8 — Rulebook manager (M) `[ ]`
 
@@ -290,6 +341,9 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   `check:ci` on Windows and macOS, so `tests/next` must be portable before cutover: spawn through
   `process.execPath`, build child environments with `createSpawnEnv`, quote native paths in POSIX
   fixtures, and avoid `/`-joined path assertions.
+- From Phase 6: `tests/helpers.ts` creates its linked-worktree seed under the real `tmpdir()` once
+  per process and never removes it, so every full run leaves one more `safety-net-worktree-seed-*`
+  directory behind; root it under `CC_SAFETY_NET_TEST_TMPDIR` or remove it on exit.
 
 ### Phase 11 — Performance validation and cutover (S+M) `[ ]`
 

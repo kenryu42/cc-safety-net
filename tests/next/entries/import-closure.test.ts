@@ -54,10 +54,11 @@ function closureOf(entryFile: string) {
 }
 
 // Anchored at a path segment: `hosts/hook/agent-detection.ts` is the Claude transcript
-// attribution the hook path itself needs, while `hosts/<id>/install.ts`, a detector and the
-// doctor modules are the CLI's.
+// attribution the hook path itself needs, while `hosts/<id>/install.ts`, a detector, the doctor
+// modules and `hosts/system-info.ts` (which spawns a host CLI) are the CLI's, as is every file
+// under `cli/`.
 const OFF_THE_HOOK_PATH =
-  /(^|\/)(install|detect|doctor)|(^|\/)gui\/|rules-manager\/|^core\/policy\/schema\.ts$/;
+  /(^|\/)(install|detect|doctor|system-info)|^cli\/|(^|\/)gui\/|rules-manager\/|^core\/policy\/schema\.ts$/;
 const IN_PROCESS_ENTRIES = [
   'hosts/openclaw/',
   'hosts/opencode/',
@@ -102,9 +103,14 @@ describe('the hook entry closure', () => {
 
   test('the predicates are falsifiable', () => {
     const source =
-      "import { a } from '@next/core/policy/schema'; import z from 'zod'; import { b } from './x';";
+      "import { a } from '@next/core/policy/schema'; import z from 'zod'; import { b } from './x'; import { c } from '@next/hosts/system-info';";
     const specifiers = staticSpecifiers(source);
-    expect(specifiers).toEqual(['@next/core/policy/schema', 'zod', './x']);
+    expect(specifiers).toEqual([
+      '@next/core/policy/schema',
+      'zod',
+      './x',
+      '@next/hosts/system-info',
+    ]);
 
     const resolved = specifiers.map((specifier) => resolveSpecifier(specifier, HOOK_ENTRY));
     expect(
@@ -112,7 +118,7 @@ describe('the hook entry closure', () => {
         .filter((file) => file !== undefined)
         .map((file) => relative(NEXT_ROOT, file))
         .filter(offTheHookPath),
-    ).toEqual(['core/policy/schema.ts']);
+    ).toEqual(['core/policy/schema.ts', 'hosts/system-info.ts']);
     expect(
       specifiers.filter((_, index) => resolved[index] === undefined).filter(offTheCheckout),
     ).toEqual(['zod']);
