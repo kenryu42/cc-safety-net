@@ -40,13 +40,24 @@ const CHILD_PROCESS_ALLOWANCES: readonly string[] = [
   'hosts/install/native.ts',
   'hosts/install/choices.ts',
   'hosts/system-info.ts',
+  // The browser opener and `gh`.
+  'gui/index.ts',
+  // The folder dialogs.
+  'gui/choose-directory.ts',
 ];
+
+/** The one loopback listener under `next/`. */
+const NETWORK_ALLOWANCES: Record<string, readonly string[]> = { 'gui/index.ts': ['node:http'] };
 
 /** The layers a CLI command may reach for; `entries` is above it, and `cli` is its own. */
 const CLI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager', 'cli'];
 
 /** The layers the rulebook manager may reach for; `cli` and `entries` are above it. */
 const RULES_MANAGER_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager'];
+
+/** The one host-tier module that reaches into `cli`, for the install flow, the argument parser,
+ *  doctor's activity summary and its update check. */
+const GUI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager', 'cli', 'gui'];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
@@ -114,8 +125,15 @@ function layeringViolations(file: string, source: string): string[] {
   const specifiers = importSpecifiers(source);
   const allowedThirdParty = THIRD_PARTY_ALLOWANCES[path] ?? [];
   const offending = specifiers.filter((specifier) => {
-    if (layer === 'hosts' || layer === 'entries' || layer === 'cli' || layer === 'rules-manager') {
-      if (NETWORK_MODULES.includes(specifier)) return true;
+    if (
+      layer === 'hosts' ||
+      layer === 'entries' ||
+      layer === 'cli' ||
+      layer === 'rules-manager' ||
+      layer === 'gui'
+    ) {
+      if (NETWORK_MODULES.includes(specifier))
+        return !(NETWORK_ALLOWANCES[path] ?? []).includes(specifier);
       if (specifier === 'node:child_process') return !CHILD_PROCESS_ALLOWANCES.includes(path);
     }
     if (layer === 'hosts') {
@@ -124,11 +142,16 @@ function layeringViolations(file: string, source: string): string[] {
     }
     if (layer === 'cli') {
       if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
+      if (layerOf(specifier, file) === 'gui') return path !== 'cli/main.ts';
       return !CLI_LAYERS.includes(layerOf(specifier, file) ?? '');
     }
     if (layer === 'rules-manager') {
       if (specifier.startsWith('node:') || allowedThirdParty.includes(specifier)) return false;
       return !RULES_MANAGER_LAYERS.includes(layerOf(specifier, file) ?? '');
+    }
+    if (layer === 'gui') {
+      if (specifier.startsWith('node:')) return false;
+      return !GUI_LAYERS.includes(layerOf(specifier, file) ?? '');
     }
     if (layer === 'core' || layer === 'gate' || layer === 'audit') {
       if (layer === 'core' && layerOf(specifier, file) === 'gate') return true;
@@ -136,7 +159,8 @@ function layeringViolations(file: string, source: string): string[] {
         layerOf(specifier, file) === 'hosts' ||
         layerOf(specifier, file) === 'entries' ||
         layerOf(specifier, file) === 'cli' ||
-        layerOf(specifier, file) === 'rules-manager'
+        layerOf(specifier, file) === 'rules-manager' ||
+        layerOf(specifier, file) === 'gui'
       );
     }
     return false;
@@ -320,5 +344,54 @@ describe('next/ architecture', () => {
         "import { Plugin } from '@opencode-ai/plugin';\n",
       ),
     ).toEqual(['hosts/opencode/plugin.ts imports @opencode-ai/plugin as a value']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'gui', 'activity.ts'),
+        "import { createServer } from 'node:http';\nimport { spawn } from 'node:child_process';\nimport { main } from '@next/entries/bin';\n",
+      ),
+    ).toEqual([
+      'gui/activity.ts imports node:http',
+      'gui/activity.ts imports node:child_process',
+      'gui/activity.ts imports @next/entries/bin',
+    ]);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'gui', 'index.ts'),
+        "import { createServer } from 'node:http';\nimport { spawn } from 'node:child_process';\nimport { runInstallCommand } from '@next/cli/install/index';\nimport { request } from 'node:https';\n",
+      ),
+    ).toEqual(['gui/index.ts imports node:https']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'gui', 'index.ts'),
+        "import { createConnection } from 'node:net';\n",
+      ),
+    ).toEqual(['gui/index.ts imports node:net']);
+    expect(
+      layeringViolations(
+        join(NEXT_ROOT, 'gui', 'choose-directory.ts'),
+        "import { spawn } from 'node:child_process';\nimport { createServer } from 'node:http';\n",
+      ),
+    ).toEqual(['gui/choose-directory.ts imports node:http']);
+    const guiEntry = "import { runGuiCommand } from '@next/gui/index';\n";
+    expect(layeringViolations(join(NEXT_ROOT, 'cli', 'main.ts'), guiEntry)).toEqual([]);
+    expect(layeringViolations(join(NEXT_ROOT, 'cli', 'status.ts'), guiEntry)).toEqual([
+      'cli/status.ts imports @next/gui/index',
+    ]);
+    const guiHelper = "import { getActivityFeed } from '@next/gui/activity';\n";
+    expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), guiHelper)).toEqual([
+      'core/example.ts imports @next/gui/activity',
+    ]);
+    expect(layeringViolations(join(NEXT_ROOT, 'gate', 'example.ts'), guiHelper)).toEqual([
+      'gate/example.ts imports @next/gui/activity',
+    ]);
+    expect(layeringViolations(join(NEXT_ROOT, 'audit', 'example.ts'), guiHelper)).toEqual([
+      'audit/example.ts imports @next/gui/activity',
+    ]);
+    expect(layeringViolations(join(NEXT_ROOT, 'hosts', 'example', 'hook.ts'), guiHelper)).toEqual([
+      'hosts/example/hook.ts imports @next/gui/activity',
+    ]);
+    expect(layeringViolations(join(NEXT_ROOT, 'rules-manager', 'example.ts'), guiHelper)).toEqual([
+      'rules-manager/example.ts imports @next/gui/activity',
+    ]);
   });
 });

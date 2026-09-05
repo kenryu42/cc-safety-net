@@ -16,6 +16,8 @@ import {
   getSecretDenyPathError,
 } from './allow-paths';
 import { clampAuditRetentionDays, DEFAULT_AUDIT_RETENTION_DAYS } from './audit-retention-days';
+import { resolveEffectiveDestructiveCommandRules } from './effective-rules';
+import { getCCSafetyNetEnvModes } from './env';
 import { mergeProjectPolicy, type ProjectPolicyProjection } from './merge';
 import {
   getProjectPolicyPath,
@@ -26,6 +28,8 @@ import {
 import { SAFETY_OVERRIDE_KEYS } from './safety-level';
 import type {
   DestructiveCommandRuleOverride,
+  EffectiveDestructiveCommandRuleState,
+  EffectiveSafetyCapabilities,
   GuiPolicy,
   PolicySafety,
   PolicySafetyLevel,
@@ -289,10 +293,79 @@ function createDefaultGuiPolicy(): GuiPolicy {
   return structuredClone(DEFAULT_GUI_POLICY);
 }
 
+export interface GuiPolicyReadResult {
+  path: string;
+  exists: boolean;
+  raw: string;
+  policy: GuiPolicy;
+  errors: string[];
+}
+
+export interface PolicyPreview {
+  selectedPreset: PolicySafetyLevel;
+  effectiveLevel: ReturnType<typeof getCCSafetyNetEnvModes>['effectiveLevel'];
+  capabilities: EffectiveSafetyCapabilities;
+  rules: Readonly<Record<string, EffectiveDestructiveCommandRuleState>>;
+  counts: {
+    enabled: number;
+    disabled: number;
+    effectiveCustomizations: number;
+  };
+}
+
 export interface GuiPolicyWriteResult {
   path: string;
   policy: GuiPolicy;
   errors: string[];
+}
+
+export function readUserPolicyForGui(
+  environment: Environment,
+  options: UserScopeOptions = {},
+): GuiPolicyReadResult {
+  const path = getUserPolicyPath(environment, options);
+  if (!existsSync(path)) {
+    return {
+      path,
+      exists: false,
+      raw: '',
+      policy: createDefaultGuiPolicy(),
+      errors: [],
+    };
+  }
+
+  const raw = readFileSync(path, 'utf-8');
+  if (!raw.trim()) {
+    return {
+      path,
+      exists: true,
+      raw,
+      policy: createDefaultGuiPolicy(),
+      errors: ['Config file is empty'],
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const errors = getUserPolicyDiagnostics(parsed, environment.home);
+    // The GUI displays the same salvaged projection the engine enforces and repair would
+    // write, so a partially invalid file cannot show one policy while another is in force.
+    return {
+      path,
+      exists: true,
+      raw,
+      policy: normalizeGuiPolicy(parsed, environment.home),
+      errors,
+    };
+  } catch (error) {
+    return {
+      path,
+      exists: true,
+      raw,
+      policy: createDefaultGuiPolicy(),
+      errors: [`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`],
+    };
+  }
 }
 
 // The write goes straight through the atomic writer rather than `config-file.ts`'s
@@ -318,6 +391,71 @@ export function writeUserPolicyFromGui(
   );
   chmodSync(path, 0o600);
   return { path, policy: normalizedPolicy, errors: [] };
+}
+
+export function previewUserPolicyForGui(
+  environment: Environment,
+  policy: unknown,
+): {
+  preview?: PolicyPreview;
+  errors: string[];
+} {
+  const errors = getUserPolicyDiagnostics(policy, environment.home);
+  if (errors.length > 0) return { errors };
+  return {
+    preview: createPolicyPreview(normalizeGuiPolicy(policy, environment.home), environment.env),
+    errors: [],
+  };
+}
+
+export function createPolicyPreview(
+  policy: GuiPolicy,
+  env: ReadonlyMap<string, string>,
+): PolicyPreview {
+  const modes = getCCSafetyNetEnvModes({ safety: normalizeSafety(policy.safety) }, env);
+  const rules = resolveEffectiveDestructiveCommandRules(
+    {
+      destructiveCommandProtectionEnabled: policy.destructive_command_protection.enabled,
+      destructiveCommandRuleOverrides: policy.destructive_command_protection.overrides,
+    },
+    modes.capabilities,
+  );
+  const values = Object.values(rules);
+  // Catastrophic rules are always enforced and not user-configurable, so they are surfaced
+  // separately in the GUI and excluded from the configurable active/disabled tallies.
+  const configurableValues = values.filter((state) => state.source !== 'catastrophic');
+  return {
+    selectedPreset: policy.safety.level,
+    effectiveLevel: modes.effectiveLevel,
+    capabilities: modes.capabilities,
+    rules,
+    counts: {
+      enabled: configurableValues.filter((state) => state.enabled).length,
+      disabled: configurableValues.filter((state) => !state.enabled).length,
+      effectiveCustomizations: values.filter((state) => state.changesInherited).length,
+    },
+  };
+}
+
+export function repairUserPolicyForGui(
+  environment: Environment,
+  options: UserScopeOptions = {},
+): GuiPolicyWriteResult {
+  const path = getUserPolicyPath(environment, options);
+  if (!existsSync(path)) return writeUserPolicyFromGui(environment, DEFAULT_GUI_POLICY, options);
+
+  const raw = readFileSync(path, 'utf-8');
+  if (!raw.trim()) return writeUserPolicyFromGui(environment, DEFAULT_GUI_POLICY, options);
+
+  try {
+    return writeUserPolicyFromGui(
+      environment,
+      normalizeGuiPolicy(JSON.parse(raw) as unknown, environment.home),
+      options,
+    );
+  } catch {
+    return writeUserPolicyFromGui(environment, DEFAULT_GUI_POLICY, options);
+  }
 }
 
 /**

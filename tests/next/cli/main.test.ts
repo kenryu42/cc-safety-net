@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { installCursor } from '@next/hosts/cursor/install';
-import {
-  type CliRow,
-  expectSameCli,
-  runCliDifferential,
-  runPortedCli,
-} from '../helpers/cli-differential';
+import { type CliRow, expectSameCli, runCliDifferential } from '../helpers/cli-differential';
 import { environmentFor, removeTempRoots } from '../helpers/temp-home';
 
 /**
@@ -63,6 +58,7 @@ describe('help', () => {
   for (const args of [
     ['status', '--help'],
     ['doctor', '-h'],
+    ['gui', '--help'],
   ]) {
     test(`\`${args.join(' ')}\` prints that command's help`, async () => {
       const shipped = await differential({ args });
@@ -166,19 +162,15 @@ describe('install, update and uninstall reach the Phase 6 flows', () => {
     expect(shipped.stdout).toBe('');
     expect(shipped.stderr).toBe('Unknown option for update: --nope\n');
   }, 60_000);
-});
 
-// `gui` lands in Phase 9; until then it names itself on one stderr line. The shipped side is
-// not run: its `gui` starts a loopback server that never exits.
-describe('the commands this build does not carry', () => {
-  for (const [name, args] of [['gui', ['gui', '--no-open']]] as const) {
-    test(`\`${args.join(' ')}\` says the ${name} command is unavailable`, () => {
-      const ported = runPortedCli({ args });
-      expect(ported.stdout).toBe('');
-      expect(ported.exitCode).toBe(1);
-      expect(ported.stderr).toBe(
-        `cc-safety-net: the ${name} command is not available in this build\n`,
-      );
-    }, 60_000);
-  }
+  // The one `gui` vector both bins can run to completion: the usage error is decided before a
+  // server is ever bound, so neither side is left holding a listener that never exits.
+  test('`gui --bad` fails on the flag before the server is bound', async () => {
+    const shipped = await differential({ args: ['gui', '--bad'] });
+    expect(shipped.exitCode).toBe(1);
+    expect(shipped.stdout).toBe('');
+    expect(shipped.stderr).toBe(
+      'Unknown option for gui: --bad\nUsage: cc-safety-net gui [--no-open]\n',
+    );
+  }, 60_000);
 });

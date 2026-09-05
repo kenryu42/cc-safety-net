@@ -10,6 +10,7 @@ import { runRuleCommand } from '@next/cli/rule/index';
 import { printStatus } from '@next/cli/status';
 import { printStatusline } from '@next/cli/statusline';
 import { createProcessEnvironment } from '@next/core/environment';
+import { runGuiCommand } from '@next/gui/index';
 
 /**
  * Handle "help <command>" pattern.
@@ -91,9 +92,8 @@ const commandHandlers = {
   logs: async (args) => {
     process.exit(await runLogsCommand(createProcessEnvironment(), args));
   },
-  gui: async () => {
-    console.error('cc-safety-net: the gui command is not available in this build');
-    process.exit(1);
+  gui: async (args) => {
+    process.exit(await runGuiCommand(args));
   },
   explain: async (args) => {
     process.exit(await runExplain(createProcessEnvironment(), args));

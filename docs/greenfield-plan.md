@@ -433,13 +433,81 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   dist build and the packaged CLI journeys (Phase 10); deleting `next/gate/evaluate-command.ts`
   with its differential tests (Phase 11).
 
-### Phase 9 — GUI (M, optional) `[ ]`
+### Phase 9 — GUI (M, optional) `[x]`
 
 - Loopback server, ephemeral port, token in the URL and the POST header, 1 MiB bodies, policy
   editor, activity feed, project draft with compare-and-swap, scrubbed false-positive report. The
   star, health, and install-from-GUI endpoints are deferred unless a demonstrated need appears.
 - Acceptance: token and CSRF tests; CAS conflict; no core module imports the GUI; the verify
   skill's GUI recipe passes.
+- From Phase 8: `next/cli/main.ts` dispatches `gui` to a stub; port `src/gui` and the four GUI
+  store helpers and wire the handler.
+- Phase 9 landed: `next/gui/` is a new top-level layer (`index`, `activity`, `assets`, `page`,
+  `choose-directory`, `frontend/*`) ported verbatim from `src/gui` behind the Environment seam:
+  `runGuiCommand(args, options)` creates one `createProcessEnvironment()` and hands it to
+  `createPolicyGuiServer(environment, options)`; every policy, rules, audit, retention, baseline
+  and snapshot read takes it; `getActivityFeed(environment, days, logsDir)` reports
+  `environment.home`; `fetchIntegrations`, `fetchHealth` and `fetchStarContext` take the
+  environment and lose `probe.homeDir`. The four GUI store helpers (`readUserPolicyForGui`,
+  `previewUserPolicyForGui`, `createPolicyPreview(policy, env)`, `repairUserPolicyForGui`) live
+  in `next/core/policy/store.ts` and the GUI imports the rule metadata constants from
+  `core/rules` directly. `next/cli/main.ts` dispatches `gui` through a static import of
+  `@next/gui/index` behind the bin's one dynamic import; the architecture test carries the `gui`
+  layer (imports core, gate, audit, hosts, rules-manager and cli; `node:http` only in
+  `gui/index.ts`, `node:child_process` only there and in `choose-directory.ts`; nothing below
+  imports it and only `cli/main.ts` may) and the closure test keeps `gui/` off the hook path.
+  `assets.ts`, `page.ts`, `choose-directory.ts` and the four non-TS frontend files are
+  byte-identical to `src`; `frontend/main.ts` differs only in its three import specifiers.
+- Adopted: every endpoint the shipped page calls is ported, superseding the deferral of star,
+  health and install-from-GUI (the Integrations and Overview views are blank without them); they
+  stay the thin wrappers `src` has, injectable through the server options and droppable later.
+  Named deviations beyond the seam: `PolicyGuiServerOptions` and `RunGuiCommandOptions` extend
+  `Partial<RulesPolicyOptions>` with a private `loaderOptions` supplying
+  `options.cwd ?? process.cwd()` to core's loaders; the `node:net` `AddressInfo` type import is
+  an inline `{ port: number }` cast; `readRetentionDays` replaces `resolveAuditRetentionDays`;
+  biome sorts the ported frontend's imports, so the served page carries the same three helper
+  module bodies in a different order (the page tests sort module sections rather than skip the
+  script).
+- Validation: twin-home in-process differentials (`tests/next/helpers/{gui-differential,gui-page}.ts`)
+  drive both servers with the same request sequences and compare status, headers, bodies and
+  trees: the token and header guard on every route, the page, every user-policy state, preview,
+  explain against a draft, write, reset, repair, the body cap, the project draft with the
+  revision compare-and-swap (including an apply held open across a directory pick), the symlink
+  refusal, the activity window and retention bound, the rulebook listing, star, integrations,
+  health, install and uninstall through injected hooks, and 404; direct differentials cover the
+  feed, the picker with fake dialogs, the star helpers with a fake `gh`, integrations and health
+  with the stub fetcher, `runIntegration` against fake homes and `runGuiCommand`; four page-slice
+  tests evaluate the pure blocks of both pages; `gui --help`, `help gui` and `gui --bad` run
+  through both bins, `gui --no-open` never does.
+- Verified: `bun run check` passes lint, typecheck, knip and the duplication scan (0 clones); the
+  suite runs 7,696 tests with only the two root-only failures, `tests/next` alone 2,431; coverage
+  97.21% lines against the 90% floor. The verify skill's GUI recipe against `next/entries/bin.ts`
+  (`gui --no-open` under an isolated home seeded through the hook: the auth gate 403/200 and the
+  POST header gate, the served page, the activity feed showing the seeded `git.reset-hard` deny,
+  the tester through `/api/policy/explain`, a policy save proven on disk with mode 0600 and in
+  `status`, the project draft's 409 on a stale revision and its apply, an invalid write refused,
+  teardown of the started PID only) passes with every deterministic response byte-identical to
+  the shipped server and nothing leaked into the real home; rendering the page in a headless
+  browser for the screenshots let the page's own load-time calls fetch the public star count and
+  the npm latest version (read-only).
+- Recorded, test-side only: under bun 1.3.11 a module-load `Bun.build` leaves the bundler's
+  listing of `next/core` and `next/gui` stale for the rest of a `bun test` process, so every test
+  file that imports `@next/gui/{index,page,assets}` directly calls
+  `repairBundlerDirectoryCache()` from `tests/next/helpers/gui-bundle-repair.ts` (Phase 10's
+  frozen assets should retire it); `os.homedir()` is resolved at process start, so the shipped
+  side of the feed rows is spied rather than moved through `HOME`; the two implementations never
+  run concurrently in one file (both register `process.once` signal handlers and both read
+  `process.env`); the shipped 413 row answers 200 on both sides under this bun, so the body-cap
+  row is a pure differential; bun's `fetch` in this container ignores a dead `HTTPS_PROXY`, so
+  that guard is not a fence and the manager and GUI suites reach no external host by
+  construction (loopback `resolveUrl`, injected hooks). `POST /api/rules/choose-directory`
+  calls the picker directly on both sides, so it is the one route no hook can stub (fix on
+  `main` first if a seam is wanted).
+- Carried: knip entries for `next/gui` and the frontend entry, freezing `next/gui/assets.ts`
+  into dist through `scripts/gui-assets.ts`, the two-chunk dist build and the packaged CLI
+  journeys, and excluding `next/gui/frontend` from the widened jscpd scope until cutover (it is
+  a verbatim copy of `src/gui/frontend`) (Phase 10); deleting `next/gate/evaluate-command.ts`
+  with its differential tests (Phase 11).
 
 ### Phase 10 — Build, verification, release (M) `[ ]`
 
@@ -466,6 +534,11 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
 - From Phase 8: knip needs entries for `next/rules-manager`; the manager's loopback rows move
   roughly 80 MiB per run and the catalogue add issues 262 loopback requests, so they are the rows
   to watch on a slow CI runner.
+- From Phase 9: knip needs entries for `next/gui` and `next/gui/frontend/main.ts`;
+  `scripts/gui-assets.ts` must freeze `next/gui/assets.ts` as it freezes the shipped module (and
+  the frozen page carries the helper modules in the ported import order); the jscpd scope, once
+  widened to `next/`, must exclude `next/gui/frontend`; the frozen assets should retire
+  `tests/next/helpers/gui-bundle-repair.ts`.
 
 ### Phase 11 — Performance validation and cutover (S+M) `[ ]`
 

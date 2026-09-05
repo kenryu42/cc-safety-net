@@ -113,6 +113,12 @@ describe('the hook entry closure', () => {
     expect(dynamicSpecifiers(readFileSync(HOOK_ENTRY, 'utf-8'))).toEqual(['@next/cli/main']);
   });
 
+  test('the CLI chunk carries the GUI on a static import', () => {
+    expect(staticSpecifiers(readFileSync(join(NEXT_ROOT, 'cli', 'main.ts'), 'utf-8'))).toContain(
+      '@next/gui/index',
+    );
+  });
+
   test('git-checkout mode: the closure names no package', () => {
     expect([...closure.bare].filter(offTheCheckout)).toEqual([]);
   });
@@ -143,6 +149,8 @@ describe('the hook entry closure', () => {
     expect(offTheHookPath('cli/main.ts')).toBeTrue();
     expect(offTheHookPath('rules-manager/sync.ts')).toBeTrue();
     expect(offTheHookPath('cli/rule/index.ts')).toBeTrue();
+    expect(offTheHookPath('gui/index.ts')).toBeTrue();
+    expect(offTheHookPath('gui/frontend/main.ts')).toBeTrue();
     expect(
       dynamicSpecifiers(
         "const cli = await import('@next/cli/main');\nconst gui = await import('@next/cli/gui');\n",
