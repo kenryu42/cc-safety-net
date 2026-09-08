@@ -8,7 +8,7 @@ import type {
   AnalyzeResult,
   DestructiveCommandRuleMatch,
 } from '@/gate/analysis';
-import type { NestedCommandAnalyzeContext } from './child-command';
+import type { ChildProvenance, NestedCommandAnalyzeContext } from './child-command';
 import { analyzeFindMatch } from './find';
 import { analyzeGitMatch } from './git';
 import { analyzeParallel } from './parallel';
@@ -30,6 +30,8 @@ export type InternalOptions = AnalyzeInput & {
   literalHeredocFiles?: ReadonlyMap<string, string>;
   functionDefinitions?: ReadonlyMap<string, CommandProgram>;
   wrapperNormalizationBudget?: { iterations: number };
+  /** Set when these words are a child a producer synthesized rather than the command as written. */
+  child?: ChildProvenance;
 };
 
 export type AnalyzerRuleContext = {
@@ -57,6 +59,14 @@ export type AnalyzerRuleContext = {
   readonly analyzeChildTokens: (
     tokens: readonly string[],
     cwd: string | null | undefined,
+  ) => DestructiveCommandRuleMatch | null;
+  /**
+   * Analyzes a child a producer synthesizes from its own arguments and the input it cannot see
+   * (an xargs or parallel child) through the same per-command path, carrying the provenance.
+   */
+  readonly analyzeChild: (
+    tokens: readonly string[],
+    child: ChildProvenance,
   ) => DestructiveCommandRuleMatch | null;
 };
 
@@ -124,6 +134,7 @@ export const ANALYZER_RULES: readonly AnalyzerRule[] = [
     analyze: (context) =>
       analyzeXargs(context.words, {
         ...nestedCommandAnalyzeContext(context),
+        analyzeChild: context.analyzeChild,
         analyzeNested: (command, overrides) =>
           matchFromBlockResult(context.options.analyzeNested(command, overrides)),
       }),
@@ -133,6 +144,7 @@ export const ANALYZER_RULES: readonly AnalyzerRule[] = [
     analyze: (context) =>
       analyzeParallel(context.words, {
         ...nestedCommandAnalyzeContext(context),
+        analyzeChild: context.analyzeChild,
         analyzeNested: (command, overrides) =>
           matchFromBlockResult(context.options.analyzeNested(command, overrides)),
       }),

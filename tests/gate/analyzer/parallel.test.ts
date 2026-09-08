@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir as systemTempDir } from 'node:os';
 import { join } from 'node:path';
 import { type Budget, createBudget, REASON_PARALLEL_ANALYSIS_LIMIT } from '@/core/budget';
-import type { PolicyRule } from '@/core/rules/types';
+import type { CustomRule } from '@/core/policy/types';
 import { textCommandWords } from '@/gate/analyzer/command-words';
 import {
   analyzeParallel,
@@ -12,8 +12,10 @@ import {
   REASON_PARALLEL_SHELL,
   replaceParallelPlaceholder,
 } from '@/gate/analyzer/parallel';
+import { analyzeChildCommand } from '@/gate/analyzer/segment';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
+import { policySnapshot, testModes } from '../../helpers/policy';
 
 /**
  * GNU parallel builds its jobs from a template, a `:::` argument product, a stream nobody can
@@ -37,7 +39,7 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const RULES: readonly PolicyRule[] = [
+const RULES: readonly CustomRule[] = [
   {
     name: 'no-prod-deploy',
     command: 'deploy-tool',
@@ -60,7 +62,7 @@ type ParallelRow = {
   readonly strict?: boolean;
   readonly paranoidRm?: boolean;
   readonly worktreeMode?: boolean;
-  readonly rules?: readonly PolicyRule[];
+  readonly rules?: readonly CustomRule[];
   readonly env?: Record<string, string>;
   readonly assignments?: ReadonlyMap<string, string>;
   readonly disabledRule?: string;
@@ -102,6 +104,7 @@ function bothAnalyzers(tokens: readonly string[], row: ParallelRow) {
   const budget = createBudget();
   const scan = { units: 0 };
   const jobs: string[] = [];
+  const snapshot = policySnapshot({ rules: row.rules ?? [], transparent_wrappers: ['uv'] });
   const settings = {
     cwd: project,
     originalCwd: project,
@@ -112,9 +115,7 @@ function bothAnalyzers(tokens: readonly string[], row: ParallelRow) {
     envAssignments: row.assignments ?? new Map<string, string>(),
     protectedGitMetadata: null,
     policy: {
-      rules: row.rules ?? [],
-      transparentWrappers: ['uv'],
-      destructiveCommandProtectionEnabled: true,
+      ...snapshot.policy,
       effectiveDestructiveCommandRules: row.disabledRule
         ? {
             [row.disabledRule]: {
@@ -127,13 +128,30 @@ function bothAnalyzers(tokens: readonly string[], row: ParallelRow) {
         : {},
     },
   };
+  // The dispatch the analyzer entry point would hand this producer, so a job reaches the same
+  // rules it reaches through the whole gate. The capabilities are inert here: the modes each
+  // child is judged under are the ones `settings` already carries.
+  const dispatchOptions = {
+    ...settings,
+    policySnapshot: snapshot,
+    effectiveCapabilities: testModes().capabilities,
+    effectiveCwd: project,
+    environment: paired,
+    budget,
+    scanWork: scan,
+    analyzeNested: (command: string, overrides?: { effectiveCwd?: string | null }) => {
+      jobs.push(`${command} @ ${overrides?.effectiveCwd ?? '-'}`);
+      return command.includes('BOOM')
+        ? { reason: NESTED.reason, ruleId: NESTED.id, intent: NESTED.intent }
+        : null;
+    },
+  };
   return {
     match: describeOutcome(() =>
       analyzeParallel(textCommandWords(tokens), {
-        ...settings,
-        environment: paired,
-        budget,
-        scanWork: scan,
+        ...dispatchOptions,
+        analyzeChild: (childTokens, child) =>
+          analyzeChildCommand(childTokens, 0, dispatchOptions, child),
         analyzeNested: (command: string, overrides?: { effectiveCwd?: string | null }) => {
           jobs.push(`${command} @ ${overrides?.effectiveCwd ?? '-'}`);
           return command.includes('BOOM') ? NESTED : null;
@@ -383,6 +401,11 @@ describe('parallel analysis', () => {
       { tokens: ['parallel', 'git', 'reset', '--hard', ':::', 'a'], id: 'git.reset-hard' },
       { tokens: ['parallel', 'find', '.', '-delete', ':::', 'a'], id: 'find.delete' },
       { tokens: ['parallel', 'rm', '-rf', '/', ':::', 'a'], id: 'rm.recursive-force-root-or-home' },
+      // busybox is peeled by the child dispatch, so the applet is the command the job runs.
+      {
+        tokens: ['parallel', 'busybox', 'rm', '-rf', '/', ':::', 'a'],
+        id: 'rm.recursive-force-root-or-home',
+      },
       { tokens: ['parallel', 'rm', 'build', ':::', 'a'], id: null },
       {
         tokens: ['parallel', 'deploy-tool', '--prod'],

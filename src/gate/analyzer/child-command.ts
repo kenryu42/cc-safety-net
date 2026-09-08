@@ -1,6 +1,7 @@
 import { AnalysisLimit, type Budget, LIMITS } from '@/core/budget';
 import type { DestructiveCommandRulePolicy } from '@/core/policy/effective-rules';
 import type { EffectivePolicy } from '@/core/policy/types';
+import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import { getBasename } from '@/core/shell/tokens';
 import type { EnvironmentContext, ProtectedGitMetadata } from '@/gate/analysis';
 import { isStandardCommandWrapper, unwrapTransparentWrapper } from './transparent-wrappers';
@@ -34,6 +35,34 @@ export interface NormalizedChildCommand {
   envAssignments: ReadonlyMap<string, string>;
   head: string;
   wrappedByTransparent: boolean;
+}
+
+/**
+ * Where a synthesized child came from and what its producer already knows about the input that
+ * completes it. The dispatch reads it at the points where a child a producer built from its own
+ * arguments differs from the command as written: an exec'd child has no parent redirections, no
+ * stdin script and no suffix to scan, and the producer, not the dispatch, owns the reason the
+ * input it cannot see earns.
+ */
+export interface ChildProvenance {
+  readonly producer: 'xargs' | 'parallel' | 'unknown-head';
+  /** Directory the child runs in once its wrappers are peeled. */
+  readonly cwd: string | undefined;
+  /** Directory the analysis started from; undefined once a wrapper made it unknown. */
+  readonly originalCwd: string | undefined;
+  /** Directory a nested source analyzes in; null when it cannot be known. */
+  readonly effectiveCwd: string | null | undefined;
+  readonly envAssignments: ReadonlyMap<string, string>;
+  readonly allowTmpdirVar: boolean;
+  readonly worktreeMode: boolean | undefined;
+  /** An embedded child reaches the custom rules only through a transparent wrapper. */
+  readonly wrappedByTransparent: boolean;
+  readonly dynamicInput?: boolean;
+  readonly dynamicRmInput?: boolean;
+  readonly dynamicSourceInput?: boolean;
+  readonly shellDynamicMatch?: DestructiveCommandRuleMatch;
+  readonly dynamicSourceMatch?: DestructiveCommandRuleMatch;
+  readonly rmDynamicMatch?: DestructiveCommandRuleMatch;
 }
 
 /** @internal */

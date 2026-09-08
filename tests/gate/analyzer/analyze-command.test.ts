@@ -174,6 +174,111 @@ describe('analyzeCommand', () => {
     }
   });
 
+  test('a child each producer synthesizes reaches its rule through the dispatch', () => {
+    const rows: readonly {
+      readonly command: string;
+      readonly ruleId: string;
+      readonly intent: 'hard_stop' | 'manual_only' | 'scope_down' | 'use_alternative';
+      readonly reason: string;
+      readonly segment: string;
+    }[] = [
+      {
+        command: 'echo / | xargs rm -rf',
+        ruleId: 'xargs.rm-recursive-force-dynamic',
+        intent: 'scope_down',
+        reason: 'xargs rm -rf with dynamic input is dangerous. Use explicit file list instead.',
+        segment: 'xargs rm -rf',
+      },
+      // busybox is peeled by the child dispatch, never by the wrapper prelude.
+      {
+        command: 'echo / | xargs busybox rm -rf',
+        ruleId: 'xargs.rm-recursive-force-dynamic',
+        intent: 'scope_down',
+        reason: 'xargs rm -rf with dynamic input is dangerous. Use explicit file list instead.',
+        segment: 'xargs busybox rm -rf',
+      },
+      // An argument list expands the job, so it is analyzed as the command it runs.
+      {
+        command: 'parallel rm -rf / ::: a',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reason:
+          'rm -rf targeting root or home directory is extremely dangerous and always blocked.',
+        segment: 'parallel rm -rf / ::: a',
+      },
+      {
+        command: 'parallel busybox rm -rf / ::: a',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reason:
+          'rm -rf targeting root or home directory is extremely dangerous and always blocked.',
+        segment: 'parallel busybox rm -rf / ::: a',
+      },
+      {
+        command: 'find logs -exec busybox rm -rf {} ;',
+        ruleId: 'find.exec-rm-recursive-force',
+        intent: 'scope_down',
+        reason: 'find -exec rm -rf is dangerous. Use explicit file list instead.',
+        segment: 'find logs -exec busybox rm -rf {}',
+      },
+      {
+        command: 'python3 -c "import os; os.system(\'rm -rf /\')"',
+        ruleId: 'interpreter.dangerous-command',
+        intent: 'use_alternative',
+        reason:
+          'Interpreter code contains a dangerous command. Run the underlying command directly so it can be analyzed, or use the safer alternative for that command.',
+        segment: "python3 -c import os; os.system('rm -rf /')",
+      },
+      {
+        command: 'sh -c "git reset --hard"',
+        ruleId: 'git.reset-hard',
+        intent: 'use_alternative',
+        reason:
+          "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.",
+        segment: 'sh -c git reset --hard',
+      },
+      // The unknown head scans its own suffix for a command it would run.
+      {
+        command: 'unknown-head -x git reset --hard',
+        ruleId: 'git.reset-hard',
+        intent: 'use_alternative',
+        reason:
+          "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.",
+        segment: 'unknown-head -x git reset --hard',
+      },
+      // An embedded child reaches the custom rules only through a transparent wrapper.
+      {
+        command: 'unknown-head -x doas terraform destroy -auto-approve',
+        ruleId: 'custom.terraform-destroy',
+        intent: 'manual_only',
+        reason:
+          '[terraform-destroy] Terraform destroy removes live infrastructure. Ask the user to run it.',
+        segment: 'unknown-head -x doas terraform destroy -auto-approve',
+      },
+      // `eval` is not a head of the dynamic-execution carrier walk: an eval body inside a child
+      // shell is read by the producer's own scan of the script it would run.
+      {
+        command: 'echo x | xargs sh -c \'eval "$1"\' _',
+        ruleId: 'xargs.shell-dynamic',
+        intent: 'scope_down',
+        reason:
+          'xargs dynamic input can supply arbitrary executable command source. Use an explicit child command and arguments instead.',
+        segment: 'xargs sh -c eval "$1" _',
+      },
+    ];
+    for (const row of rows) {
+      expect(decision(row.command, standard), row.command).toStrictEqual({
+        kind: 'deny',
+        reason: row.reason,
+        intent: row.intent,
+        ruleId: row.ruleId,
+        evidence: [{ kind: 'command', command: row.command, segment: row.segment }],
+      });
+    }
+    // Without the wrapper the same embedded command is only a command.
+    expect(decision('unknown-head -x terraform destroy -auto-approve', standard)).toBeNull();
+  });
+
   test('a command that only names a destructive one is allowed', () => {
     const rows: readonly string[] = [
       '',

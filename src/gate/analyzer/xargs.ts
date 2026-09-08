@@ -7,8 +7,12 @@ import type { DestructiveCommandRuleMatch, PolicyRule } from '@/core/rules/types
 import type { CommandWord } from '@/core/shell/model';
 import type { AnalyzeNestedOverrides, EnvironmentContext } from '@/gate/analysis';
 import { AWK_EXECUTABLE_SOURCE_SELECTORS, parseAwkArgv } from './awk';
-import { analyzeChildCommandMatch } from './child-analyzer';
-import { type NestedCommandAnalyzeContext, normalizeChildCommands } from './child-command';
+import {
+  type ChildProvenance,
+  type NestedCommandAnalyzeContext,
+  type NormalizedChildCommand,
+  normalizeChildCommands,
+} from './child-command';
 import { analysisWordText, textCommandWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
 import { getFindExecCommand, getFindPrimaryArity, isFindExecPrimary } from './find';
@@ -38,6 +42,10 @@ const SHELL_EXPANSION_RE =
 const POSITIONAL_SHELL_PARAMETER_RE = /^(?:[0-9]+|[@*])$/;
 
 export interface XargsAnalyzeContext extends NestedCommandAnalyzeContext {
+  analyzeChild: (
+    tokens: readonly string[],
+    child: ChildProvenance,
+  ) => DestructiveCommandRuleMatch | null;
   analyzeNested: (
     command: string,
     overrides?: AnalyzeNestedOverrides,
@@ -79,35 +87,25 @@ export function analyzeXargs(
       childCommand.head === 'rm' &&
       replacementToken !== null &&
       replacementCanChangeRmOptions(childTokens, replacementToken);
-    const childResult = analyzeChildCommandMatch(
-      childTokens,
-      {
-        ...context,
-        cwd: childCommand.cwd,
-        envAssignments: childCommand.envAssignments,
-      },
-      {
-        dynamicInput,
-        dynamicSourceInput:
-          dynamicRmInput ||
-          xargsInputCanChangeExecutedSource(
-            childTokens,
-            childCommand.head,
-            replacementToken,
-            childCommand.wrapperEnvAssignments,
-            dynamicInput,
-            context.scanWork,
-            context.environment,
-          ),
-        dynamicRmInput,
-        shellDynamicMatch,
-        dynamicSourceMatch: shellDynamicMatch,
-        rmDynamicMatch: destructiveCommandMatch(
-          'xargs.rm-recursive-force-dynamic',
-          REASON_XARGS_RM,
+    const childResult = context.analyzeChild(childTokens, {
+      ...childProvenance(childCommand, context),
+      dynamicInput,
+      dynamicSourceInput:
+        dynamicRmInput ||
+        xargsInputCanChangeExecutedSource(
+          childTokens,
+          childCommand.head,
+          replacementToken,
+          childCommand.wrapperEnvAssignments,
+          dynamicInput,
+          context.scanWork,
+          context.environment,
         ),
-      },
-    );
+      dynamicRmInput,
+      shellDynamicMatch,
+      dynamicSourceMatch: shellDynamicMatch,
+      rmDynamicMatch: destructiveCommandMatch('xargs.rm-recursive-force-dynamic', REASON_XARGS_RM),
+    });
     if (childResult) return childResult;
 
     const dynamicCustomResult = matchDynamicPolicyRule(
@@ -126,10 +124,8 @@ export function analyzeXargs(
           Array.from(childCommand.envAssignments.values()).some((value) =>
             value.includes(replacementToken),
           ));
-      const gitResult = analyzeChildCommandMatch(gitTokens, {
-        ...context,
-        cwd: childCommand.cwd,
-        envAssignments: childCommand.envAssignments,
+      const gitResult = context.analyzeChild(gitTokens, {
+        ...childProvenance(childCommand, context),
         worktreeMode:
           replacementToken === null || hasDynamicReplacement ? false : context.worktreeMode,
       });
@@ -141,6 +137,23 @@ export function analyzeXargs(
   }
 
   return null;
+}
+
+/** What the dispatch needs to know about a child this xargs synthesized from its arguments. */
+function childProvenance(
+  childCommand: NormalizedChildCommand,
+  context: XargsAnalyzeContext,
+): ChildProvenance {
+  return {
+    producer: 'xargs',
+    cwd: childCommand.cwd,
+    originalCwd: context.originalCwd,
+    effectiveCwd: childCommand.cwd,
+    envAssignments: childCommand.envAssignments,
+    allowTmpdirVar: context.allowTmpdirVar,
+    worktreeMode: context.worktreeMode,
+    wrappedByTransparent: false,
+  };
 }
 
 function matchDynamicPolicyRule(

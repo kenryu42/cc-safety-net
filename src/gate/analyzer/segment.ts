@@ -21,7 +21,7 @@ import type {
 } from '@/gate/analysis';
 import type { CommandTraceContext } from '@/gate/trace';
 import { analyzeAwkSystemCallMatch, extractAwkExecutableSources } from './awk';
-import { type NormalizedChildCommand, normalizeChildCommands } from './child-command';
+import { type ChildProvenance, normalizeChildCommands } from './child-command';
 import { analysisWordText, analyzedViewWords, textCommandWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
 import { analyzeDynamicCommandStructure, hasDynamicExecutableSource } from './derived-input';
@@ -37,6 +37,7 @@ import {
   REASON_INTERPRETER_DANGEROUS,
 } from './interpreters';
 import { REASON_STRICT_UNPARSEABLE } from './reasons';
+import { hasRecursiveForceFlags } from './rm-flags';
 import {
   ANALYZER_RULES,
   type AnalyzerRuleContext,
@@ -87,9 +88,19 @@ export function analyzeSegment(
   const dialect = options.commandView?.dialect ?? 'posix';
   const texts = (candidates: readonly CommandWord[]) =>
     candidates.map((word) => (dialect === 'posix' ? analysisWordText(word) : word.text));
+  // A child a producer synthesized enters here as text words carrying its provenance. Every
+  // point below where such a child differs from the command as written reads it, and nothing
+  // else does. A child arrives already peeled, so the prelude walk below is a no-op on it.
+  const child = options.child;
+  const stream = child !== undefined && child.producer !== 'unknown-head';
+  const embedded = child?.producer === 'unknown-head';
   const cwdUnknown = options.effectiveCwd === null;
-  const baseCwdForRm = cwdUnknown ? undefined : (options.effectiveCwd ?? options.cwd);
-  const originalCwd = cwdUnknown ? undefined : options.cwd;
+  const baseCwdForRm = child
+    ? child.cwd
+    : cwdUnknown
+      ? undefined
+      : (options.effectiveCwd ?? options.cwd);
+  const originalCwd = child ? child.originalCwd : cwdUnknown ? undefined : options.cwd;
   const leading = stripEnvAssignmentWords(commandWords);
   if (leading.envAssignments.size > 0) {
     trace?.recordSegment({
@@ -175,7 +186,10 @@ export function analyzeSegment(
   const cwdForRm = prelude.cwd === null ? undefined : (prelude.cwd ?? baseCwdForRm);
   const originalCwdForRm = prelude.cwd === null ? undefined : originalCwd;
   const nestedEffectiveCwd = prelude.cwd === undefined ? options.effectiveCwd : prelude.cwd;
-  const allowTmpdirVar = !isTmpdirOverriddenToNonTemp(envAssignments, options.environment);
+  // The producer already read the environment it hands the child.
+  const allowTmpdirVar = child
+    ? child.allowTmpdirVar
+    : !isTmpdirOverriddenToNonTemp(envAssignments, options.environment);
 
   // Reads the parsed words: PowerShell stand-ins would report every head as dynamic.
   const dynamicCommandMatch = analyzeDynamicCommandStructure(
@@ -219,12 +233,28 @@ export function analyzeSegment(
     return null;
   }
 
-  const shellBuiltinSource =
-    normalizedHead === 'eval'
+  // An embedded candidate is a suffix of another command, not a builtin the shell would run,
+  // and a stream child installs no trap.
+  const shellBuiltinSource = embedded
+    ? undefined
+    : normalizedHead === 'eval'
       ? extractEvalSource(words)
-      : normalizedHead === 'trap'
+      : normalizedHead === 'trap' && !stream
         ? extractTrapSource(words)
         : undefined;
+  if (stream && child && normalizedHead === 'eval') {
+    if (shellBuiltinSource?.kind === 'dynamic') {
+      return childShellDynamicResult(child, options.policy);
+    }
+    if (shellBuiltinSource?.kind === 'literal') {
+      const result = options.analyzeNested(shellBuiltinSource.source, {
+        effectiveCwd: nestedEffectiveCwd,
+        envAssignments,
+      });
+      if (result) return result;
+    }
+    return childDynamicSourceResult(child, options.policy);
+  }
   if (
     shellBuiltinSource?.kind === 'dynamic' &&
     (options.strict ||
@@ -249,79 +279,127 @@ export function analyzeSegment(
     if (result) return result;
   }
 
-  if (isShellWrapperCommand(head, normalizedHead)) {
+  // A stream child's head is the executable the producer hands the kernel, never a shell
+  // variable the caller wrote.
+  const shellWrapperHead = stream
+    ? SHELL_WRAPPERS.has(normalizedHead)
+    : isShellWrapperCommand(head, normalizedHead);
+  if (shellWrapperHead) {
     if (isShellSyntaxCheck(stripped)) return null;
-    const startupResult = analyzeShellStartupSources(
-      stripped,
-      envAssignments,
-      nestedEffectiveCwd,
-      options,
-      trace,
-      depth,
-    );
-    if (startupResult) return startupResult;
-    const dashCArg = extractDashCArg(stripped);
-    if (dashCArg) {
-      const positionalSource = extractPositionalShellSource(words, dashCArg);
-      if (positionalSource.kind === 'dynamic') return dynamicShellSourceResult(trace);
-      const source = positionalSource.kind === 'literal' ? positionalSource.source : dashCArg;
-      const traceInnerCommand = unwrapTraceQuotes(source);
-      trace?.recordSegment({
-        type: 'shell-wrapper',
-        wrapper: normalizedHead,
-        innerCommand: traceInnerCommand,
-      });
-      trace?.recordSegment({
-        type: 'recurse',
-        reason: 'shell-wrapper',
-        innerCommand: traceInnerCommand,
-        depth: depth + 1,
-      });
-      const result = options.analyzeNested(source, {
-        effectiveCwd: nestedEffectiveCwd,
-        envAssignments,
-      });
-      if (result) return result;
-      return shellSourceHasUnresolvedDynamicExecutionCarrier(source)
-        ? dynamicShellSourceResult(trace)
+    if (stream && child) {
+      // The producer owns the reason: its stream can spell the script the shell would run.
+      const streamDashCArg = extractDashCArg(stripped);
+      if (streamDashCArg) {
+        if (child.dynamicSourceInput ?? child.dynamicInput) {
+          const dynamic = childShellDynamicResult(child, options.policy);
+          if (dynamic) return dynamic;
+        }
+        if (shellSourceHasUnresolvedDynamicExecutionCarrier(streamDashCArg)) {
+          const dynamic = childShellDynamicResult(child, options.policy);
+          if (dynamic) return dynamic;
+        }
+        return options.analyzeNested(streamDashCArg, {
+          effectiveCwd: nestedEffectiveCwd,
+          envAssignments,
+        });
+      }
+      const streamScript = extractShellScriptOperandSource(words);
+      if (streamScript.kind === 'dynamic') return childShellDynamicResult(child, options.policy);
+      if (streamScript.kind === 'literal') {
+        return child.dynamicSourceInput ? childShellDynamicResult(child, options.policy) : null;
+      }
+      return (child.dynamicSourceInput ?? child.dynamicInput)
+        ? childShellDynamicResult(child, options.policy)
         : null;
     }
-
-    const scriptSource = extractShellScriptOperandSource(words);
-    if (scriptSource.kind === 'dynamic') return dynamicShellSourceResult(trace);
-    if (scriptSource.kind === 'literal') {
-      return analyzeTrackedHeredocScript(
-        scriptSource.source,
-        nestedEffectiveCwd,
+    if (embedded) {
+      // An embedded shell is read from the script it spells out; anything else it might run is
+      // named in a file this analysis cannot see.
+      const embeddedDashCArg = extractDashCArg(stripped);
+      const embeddedResult = embeddedDashCArg
+        ? options.analyzeNested(embeddedDashCArg, {
+            effectiveCwd: nestedEffectiveCwd,
+            envAssignments,
+          })
+        : extractShellScriptOperandSource(words).kind === 'dynamic'
+          ? dynamicShellSourceResult(trace)
+          : null;
+      if (embeddedResult) return embeddedResult;
+    }
+    if (child === undefined) {
+      const startupResult = analyzeShellStartupSources(
+        stripped,
         envAssignments,
+        nestedEffectiveCwd,
         options,
         trace,
         depth,
       );
-    }
+      if (startupResult) return startupResult;
+      const dashCArg = extractDashCArg(stripped);
+      if (dashCArg) {
+        const positionalSource = extractPositionalShellSource(words, dashCArg);
+        if (positionalSource.kind === 'dynamic') return dynamicShellSourceResult(trace);
+        const source = positionalSource.kind === 'literal' ? positionalSource.source : dashCArg;
+        const traceInnerCommand = unwrapTraceQuotes(source);
+        trace?.recordSegment({
+          type: 'shell-wrapper',
+          wrapper: normalizedHead,
+          innerCommand: traceInnerCommand,
+        });
+        trace?.recordSegment({
+          type: 'recurse',
+          reason: 'shell-wrapper',
+          innerCommand: traceInnerCommand,
+          depth: depth + 1,
+        });
+        const result = options.analyzeNested(source, {
+          effectiveCwd: nestedEffectiveCwd,
+          envAssignments,
+        });
+        if (result) return result;
+        return shellSourceHasUnresolvedDynamicExecutionCarrier(source)
+          ? dynamicShellSourceResult(trace)
+          : null;
+      }
 
-    const stdinSource = extractShellStdinSource(
-      words,
-      options.commandView?.redirections ?? [],
-      options.hasPipelineInput ?? false,
-      options.literalShellInput,
-    );
-    if (stdinSource.kind === 'dynamic') return dynamicShellSourceResult(trace);
-    if (stdinSource.kind === 'literal') {
-      trace?.recordSegment({
-        type: 'recurse',
-        reason: 'shell-stdin',
-        innerCommand: stdinSource.source,
-        depth: depth + 1,
-      });
-      return options.analyzeNested(stdinSource.source, {
-        effectiveCwd: nestedEffectiveCwd,
-        envAssignments,
-      });
+      const scriptSource = extractShellScriptOperandSource(words);
+      if (scriptSource.kind === 'dynamic') return dynamicShellSourceResult(trace);
+      if (scriptSource.kind === 'literal') {
+        return analyzeTrackedHeredocScript(
+          scriptSource.source,
+          nestedEffectiveCwd,
+          envAssignments,
+          options,
+          trace,
+          depth,
+        );
+      }
+
+      const stdinSource = extractShellStdinSource(
+        words,
+        options.commandView?.redirections ?? [],
+        options.hasPipelineInput ?? false,
+        options.literalShellInput,
+      );
+      if (stdinSource.kind === 'dynamic') return dynamicShellSourceResult(trace);
+      if (stdinSource.kind === 'literal') {
+        trace?.recordSegment({
+          type: 'recurse',
+          reason: 'shell-stdin',
+          innerCommand: stdinSource.source,
+          depth: depth + 1,
+        });
+        return options.analyzeNested(stdinSource.source, {
+          effectiveCwd: nestedEffectiveCwd,
+          envAssignments,
+        });
+      }
     }
   }
 
-  if (normalizedHead === 'source' || normalizedHead === '.') {
+  // A child names no file the caller's shell would source.
+  if (!child && (normalizedHead === 'source' || normalizedHead === '.')) {
     const sourceSearchPathIndex = stripped[1] === '-p' ? 2 : null;
     if (sourceSearchPathIndex !== null) {
       const sourceSearchPath = options.commandView ? words[sourceSearchPathIndex] : undefined;
@@ -352,8 +430,9 @@ export function analyzeSegment(
     }
   }
 
-  if (AWK_INTERPRETERS.has(normalizedHead)) {
+  if (AWK_INTERPRETERS.has(normalizedHead) && !embedded) {
     if (
+      !child &&
       options.strict &&
       hasDynamicExecutableSource(extractAwkExecutableSources(stripped), words)
     ) {
@@ -379,14 +458,25 @@ export function analyzeSegment(
     }
   }
 
-  if (isInterpreterCommand(normalizedHead)) {
+  if (isInterpreterCommand(normalizedHead) && !embedded) {
     if (
+      !child &&
       options.strict &&
       hasDynamicExecutableSource(extractInterpreterExecutableSources(stripped), words)
     ) {
       return dynamicShellSourceResult(trace);
     }
     const codeArg = extractInterpreterCodeArg(stripped);
+    if (stream && child) {
+      return analyzeStreamInterpreterChild(
+        normalizedHead,
+        codeArg,
+        nestedEffectiveCwd,
+        envAssignments,
+        options,
+        child,
+      );
+    }
     if (codeArg) {
       const paranoidInterpreterRuleEnabled = destructiveCommandRuleIsEnabled(
         options.policy,
@@ -462,10 +552,13 @@ export function analyzeSegment(
     });
   }
 
-  const filteredDeviceMatch = filterDestructiveCommandMatch(
-    analyzeDeviceCommandMatch(normalizedHead, stripped),
-    options.policy,
-  );
+  // A device rule reads the command as written; the producers report their own dynamic input.
+  const filteredDeviceMatch = child
+    ? null
+    : filterDestructiveCommandMatch(
+        analyzeDeviceCommandMatch(normalizedHead, stripped),
+        options.policy,
+      );
   if (filteredDeviceMatch) {
     trace?.recordSegment({
       type: 'rule-check',
@@ -490,16 +583,31 @@ export function analyzeSegment(
     effectiveCwd: nestedEffectiveCwd,
     options: analyzerOptions,
     analyzeChildTokens: (childTokens, childCwd) =>
-      matchFromBlockResult(
-        analyzeSegment(textCommandWords(childTokens), depth + 1, {
-          ...analyzerOptions,
-          commandView: undefined,
-          effectiveCwd: childCwd,
-          envAssignments,
-        }),
-      ) ?? checkPolicyRuleMatch(childTokens, analyzerOptions.policy.rules),
+      // A child of a child stays the producer's child: the stream that completes the outer
+      // command completes this one too.
+      stream && child
+        ? analyzeChildCommand(childTokens, depth, analyzerOptions, {
+            ...child,
+            cwd: childCwd ?? undefined,
+            effectiveCwd: childCwd ?? undefined,
+          })
+        : (matchFromBlockResult(
+            analyzeSegment(textCommandWords(childTokens), depth + 1, {
+              ...analyzerOptions,
+              commandView: undefined,
+              effectiveCwd: childCwd,
+              envAssignments,
+            }),
+          ) ?? checkPolicyRuleMatch(childTokens, analyzerOptions.policy.rules)),
+    analyzeChild: (childTokens, childProvenance) =>
+      analyzeChildCommand(childTokens, depth, analyzerOptions, childProvenance),
   };
-  const commandAnalyzer = findCommandAnalyzer(normalizedHead);
+  // A synthesized child never re-enters a producer: xargs and parallel read a stream this
+  // analysis cannot see, so their rules stay with the command as written.
+  const commandAnalyzer =
+    child && (normalizedHead === 'xargs' || normalizedHead === 'parallel')
+      ? undefined
+      : findCommandAnalyzer(normalizedHead);
   if (normalizedHead === 'rm' || normalizedHead === 'xargs' || normalizedHead === 'parallel') {
     trace?.recordSegment({
       type: 'tmpdir-check',
@@ -523,13 +631,27 @@ export function analyzeSegment(
     return blockResultFromMatch(commandResult);
   }
 
+  // Appended input can still complete an rm the child spells only partly, and the producer owns
+  // that reason. It answers alone: a child rm reaches no other rule.
+  if (stream && child && (normalizedHead === 'rm' || normalizedHead === 'rmdir')) {
+    const dynamicRmPolicyApplies =
+      normalizedHead === 'rm' && (hasRecursiveForceFlags(stripped) || child.dynamicRmInput);
+    if (!dynamicRmPolicyApplies) return null;
+    return (
+      (child.dynamicRmInput ? childDynamicSourceResult(child, options.policy) : null) ??
+      childDynamicRmResult(child, options.policy)
+    );
+  }
+
   const matchedKnown = commandAnalyzer !== undefined;
 
   // Fallback: scan tokens for embedded git/rm/find commands
   // This catches cases like "command -px git reset --hard" where the head
   // token is not a known command but contains dangerous commands later
   // Skip for display-only commands that don't execute their arguments
-  const scansForEmbedded = !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead);
+  // A child was synthesized from arguments the producer already read; only the command as
+  // written hides a command in its own suffix.
+  const scansForEmbedded = !child && !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead);
   const tokensScanned: string[] | undefined = trace && scansForEmbedded ? [] : undefined;
   if (scansForEmbedded) {
     for (let i = 1; i < stripped.length; i++) {
@@ -538,7 +660,16 @@ export function analyzeSegment(
       tokensScanned?.push(token);
 
       const match = filterBuiltInCommandMatch(
-        analyzeEmbeddedCommand(commandContext, stripped, i),
+        analyzeEmbeddedSuffix(
+          stripped,
+          i,
+          depth,
+          analyzerOptions,
+          cwdForRm,
+          originalCwdForRm,
+          nestedEffectiveCwd,
+          envAssignments,
+        ),
         options.policy,
       );
       if (match) {
@@ -553,7 +684,11 @@ export function analyzeSegment(
   }
   trace?.recordSegment({ type: 'fallback-scan', tokensScanned: tokensScanned ?? [] });
 
-  if (depth !== 0 && matchedKnown) {
+  // An embedded candidate is only a command the caller named, so it reaches the custom rules
+  // just when a transparent wrapper says the caller meant to run it. A stream child always asks
+  // them: nothing else answers for the command a producer hands the kernel.
+  if (embedded && child && !child.wrappedByTransparent) return null;
+  if (!child && depth !== 0 && matchedKnown) {
     trace?.recordSegment({
       type: 'custom-rules-check',
       rulesChecked: false,
@@ -573,7 +708,161 @@ export function analyzeSegment(
     return blockResultFromMatch(customResult);
   }
 
+  return stream && child ? childDynamicSourceResult(child, options.policy) : null;
+}
+
+/**
+ * Analyzes a child a producer synthesized from its own arguments through the same per-command
+ * path, with the parent's budget, policy and environment and the producer's provenance.
+ */
+/** @internal */
+export function analyzeChildCommand(
+  tokens: readonly string[],
+  depth: number,
+  options: InternalOptions,
+  child: ChildProvenance,
+): DestructiveCommandRuleMatch | null {
+  return matchFromBlockResult(
+    analyzeSegment(textCommandWords(tokens), depth + 1, {
+      ...options,
+      // A child runs on its own: no parent redirections, pipeline input or shell functions.
+      trace: undefined,
+      commandView: undefined,
+      hasPipelineInput: undefined,
+      literalShellInput: undefined,
+      functionDefinitions: undefined,
+      cwd: child.originalCwd,
+      effectiveCwd: child.effectiveCwd,
+      envAssignments: child.envAssignments,
+      worktreeMode: child.dynamicInput ? false : child.worktreeMode,
+      wrapperNormalizationBudget: { iterations: 0 },
+      child,
+    }),
+  );
+}
+
+/** The first candidate a command's own suffix normalizes to, analyzed as an embedded child. */
+function analyzeEmbeddedSuffix(
+  tokens: readonly string[],
+  index: number,
+  depth: number,
+  options: InternalOptions,
+  cwd: string | undefined,
+  originalCwd: string | undefined,
+  effectiveCwd: string | null | undefined,
+  envAssignments: ReadonlyMap<string, string>,
+): DestructiveCommandRuleMatch | null {
+  for (const childCommand of normalizeChildCommands(tokens.slice(index), {
+    environment: options.environment,
+    cwd,
+    envAssignments,
+    policy: options.policy,
+  })) {
+    const token = childCommand.tokens[0];
+    if (!token) continue;
+    const head = normalizeCommandToken(token);
+    const dispatches =
+      isShellWrapperCommand(token, head) ||
+      (findCommandAnalyzer(head) !== undefined && head !== 'xargs' && head !== 'parallel');
+    if (dispatches || (childCommand.wrappedByTransparent && options.policy.rules.length > 0)) {
+      options.budget.charge('derivedTokens', tokens.length - index);
+    }
+    const result = analyzeChildCommand(childCommand.tokens, depth, options, {
+      producer: 'unknown-head',
+      cwd: childCommand.cwd,
+      originalCwd: childCommand.wrapperCwd === null ? undefined : originalCwd,
+      effectiveCwd: childCommand.wrapperCwd === undefined ? effectiveCwd : childCommand.wrapperCwd,
+      envAssignments: childCommand.envAssignments,
+      allowTmpdirVar: !isTmpdirOverriddenToNonTemp(
+        childCommand.envAssignments,
+        options.environment,
+      ),
+      // A command the caller only named cannot claim the worktree relaxation.
+      worktreeMode: false,
+      wrappedByTransparent: childCommand.wrappedByTransparent,
+    });
+    if (result) return result;
+  }
   return null;
+}
+
+/** The interpreter branch for a child whose producer owns the unverifiable-source reason. */
+function analyzeStreamInterpreterChild(
+  normalizedHead: string,
+  codeArg: string | null | undefined,
+  effectiveCwd: string | null | undefined,
+  envAssignments: ReadonlyMap<string, string>,
+  options: InternalOptions,
+  child: ChildProvenance,
+): AnalyzeBlockResult | null {
+  if (!codeArg) return childDynamicSourceResult(child, options.policy);
+  if (
+    destructiveCommandRuleIsEnabled(
+      options.policy,
+      'interpreter.one-liner-paranoid',
+      !!options.paranoidInterpreters,
+    )
+  ) {
+    const paranoid = filterDestructiveCommandMatch(
+      destructiveCommandMatch('interpreter.one-liner-paranoid', REASON_INTERPRETER_BLOCKED),
+      options.policy,
+    );
+    if (paranoid) return blockResultFromMatch(paranoid);
+  }
+  if (isInterpreterDisplayOnly(normalizedHead, codeArg)) {
+    return childDynamicSourceResult(child, options.policy);
+  }
+  const nested = options.analyzeNested(codeArg, { effectiveCwd, envAssignments });
+  if (
+    nested &&
+    nested.ruleId !== 'raw-text.dangerous-command' &&
+    (nested.reason !== REASON_STRICT_UNPARSEABLE || hasUnclosedQuotes(codeArg))
+  ) {
+    return nested;
+  }
+  if (containsDangerousCode(codeArg, options.scanWork)) {
+    const dangerous = filterDestructiveCommandMatch(
+      destructiveCommandMatch('interpreter.dangerous-command', REASON_INTERPRETER_DANGEROUS),
+      options.policy,
+    );
+    if (dangerous) return blockResultFromMatch(dangerous);
+  }
+  return childDynamicSourceResult(child, options.policy);
+}
+
+/** The producer's reason for a shell whose script its own stream can spell. */
+function childShellDynamicResult(
+  child: ChildProvenance,
+  policy: CommandAnalysisPolicy,
+): AnalyzeBlockResult | null {
+  const match = child.shellDynamicMatch
+    ? filterDestructiveCommandMatch(child.shellDynamicMatch, policy)
+    : null;
+  return match ? blockResultFromMatch(match) : null;
+}
+
+/** The producer's reason for input that can change which source the child executes. */
+function childDynamicSourceResult(
+  child: ChildProvenance,
+  policy: CommandAnalysisPolicy,
+): AnalyzeBlockResult | null {
+  const match =
+    child.dynamicSourceInput && child.dynamicSourceMatch
+      ? filterDestructiveCommandMatch(child.dynamicSourceMatch, policy)
+      : null;
+  return match ? blockResultFromMatch(match) : null;
+}
+
+/** The producer's reason for input that can complete a recursive, forced delete. */
+function childDynamicRmResult(
+  child: ChildProvenance,
+  policy: CommandAnalysisPolicy,
+): AnalyzeBlockResult | null {
+  const match =
+    child.dynamicInput && child.rmDynamicMatch
+      ? filterDestructiveCommandMatch(child.rmDynamicMatch, policy)
+      : null;
+  return match ? blockResultFromMatch(match) : null;
 }
 
 function analyzeShellStartupSources(
@@ -705,93 +994,6 @@ function isShellWrapperCommand(head: string, normalizedHead: string): boolean {
     head === '${SHELL}' ||
     SHELL_WRAPPERS.has(getBasename(normalizedHead))
   );
-}
-
-function analyzeEmbeddedCommand(
-  context: AnalyzerRuleContext,
-  tokens: readonly string[],
-  index: number,
-): DestructiveCommandRuleMatch | null {
-  const childCommands = normalizeChildCommands(tokens.slice(index), {
-    environment: context.options.environment,
-    cwd: context.cwd,
-    envAssignments: context.envAssignments,
-    policy: context.options.policy,
-  });
-
-  for (const childCommand of childCommands) {
-    const result = analyzeNormalizedEmbeddedCommand(context, index, childCommand);
-    if (result) return result;
-  }
-
-  return null;
-}
-
-function analyzeNormalizedEmbeddedCommand(
-  context: AnalyzerRuleContext,
-  index: number,
-  childCommand: NormalizedChildCommand,
-): DestructiveCommandRuleMatch | null {
-  const token = childCommand.tokens[0];
-  if (!token) {
-    return null;
-  }
-
-  const cmd = normalizeCommandToken(token);
-  if (isShellWrapperCommand(token, cmd)) {
-    context.options.budget.charge('derivedTokens', context.words.length - index);
-    const shellTokens = childCommand.tokens;
-    if (isShellSyntaxCheck(shellTokens)) return null;
-    const dashCArg = extractDashCArg(shellTokens);
-    if (!dashCArg) {
-      if (extractShellScriptOperandSource(textCommandWords(shellTokens)).kind === 'dynamic') {
-        return dynamicShellSourceMatch();
-      }
-      return matchEmbeddedCustomRule(context, childCommand);
-    }
-    const result = context.options.analyzeNested(dashCArg, {
-      effectiveCwd:
-        childCommand.wrapperCwd === undefined ? context.effectiveCwd : childCommand.wrapperCwd,
-      envAssignments: childCommand.envAssignments,
-    });
-    return result ? matchFromBlockResult(result) : matchEmbeddedCustomRule(context, childCommand);
-  }
-
-  const analyzer = findCommandAnalyzer(cmd);
-  if (!analyzer || cmd === 'xargs' || cmd === 'parallel') {
-    if (childCommand.wrappedByTransparent && context.options.policy.rules.length > 0) {
-      context.options.budget.charge('derivedTokens', context.words.length - index);
-    }
-    return matchEmbeddedCustomRule(context, childCommand);
-  }
-
-  context.options.budget.charge('derivedTokens', context.words.length - index);
-  const embeddedTokens = [cmd, ...childCommand.tokens.slice(1)];
-  const embeddedContext: AnalyzerRuleContext = {
-    ...context,
-    words: textCommandWords(embeddedTokens),
-    head: cmd,
-    cwd: childCommand.cwd,
-    originalCwd: childCommand.wrapperCwd === null ? undefined : context.originalCwd,
-    envAssignments: childCommand.envAssignments,
-    allowTmpdirVar: !isTmpdirOverriddenToNonTemp(
-      childCommand.envAssignments,
-      context.options.environment,
-    ),
-    effectiveCwd:
-      childCommand.wrapperCwd === undefined ? context.effectiveCwd : childCommand.wrapperCwd,
-    options: cmd === 'git' ? { ...context.options, worktreeMode: false } : context.options,
-  };
-  return analyzer(embeddedContext) ?? matchEmbeddedCustomRule(context, childCommand);
-}
-
-function matchEmbeddedCustomRule(
-  context: AnalyzerRuleContext,
-  childCommand: NormalizedChildCommand,
-): DestructiveCommandRuleMatch | null {
-  return childCommand.wrappedByTransparent
-    ? checkPolicyRuleMatch(childCommand.tokens, context.options.policy.rules)
-    : null;
 }
 
 function filterBuiltInCommandMatch(

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createBudget } from '@/core/budget';
-import type { PolicyRule } from '@/core/rules/types';
+import type { CustomRule } from '@/core/policy/types';
 import { textCommandWords } from '@/gate/analyzer/command-words';
+import { analyzeChildCommand } from '@/gate/analyzer/segment';
 import {
   analyzeXargs,
   extractXargsChildCommandWithInfo,
@@ -10,6 +11,7 @@ import {
 } from '@/gate/analyzer/xargs';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome } from '../../helpers/fixture-tree';
+import { policySnapshot, testModes } from '../../helpers/policy';
 
 /**
  * `xargs` reads its arguments from a stream nobody can see, so the analyzer asks two questions of
@@ -25,7 +27,7 @@ import { describeOutcome } from '../../helpers/fixture-tree';
 const AGENT_HOME = '/srv/agent';
 const CHECKOUT = '/srv/agent/checkout';
 
-const DEPLOY_RULES: readonly PolicyRule[] = [
+const DEPLOY_RULES: readonly CustomRule[] = [
   {
     name: 'no-cluster-drain',
     command: 'kubectl',
@@ -49,7 +51,7 @@ const NESTED_HIT = {
 
 type XargsSetting = {
   readonly label: string;
-  readonly rules?: readonly PolicyRule[];
+  readonly rules?: readonly CustomRule[];
   readonly strict?: boolean;
   readonly paranoidRm?: boolean;
   readonly worktreeMode?: boolean;
@@ -80,6 +82,10 @@ function ruleStates(id: string | undefined) {
   };
 }
 
+function snapshotFor(setting: XargsSetting) {
+  return policySnapshot({ rules: setting.rules ?? [], transparent_wrappers: ['uv'] });
+}
+
 /** One token list through the analyzer, with its own budget and nested-source log. */
 function runBothXargs(tokens: readonly string[], setting: XargsSetting) {
   const paired = pairedEnvironments({ HOME: AGENT_HOME, PATH: '/usr/bin:/bin' }, AGENT_HOME);
@@ -91,26 +97,41 @@ function runBothXargs(tokens: readonly string[], setting: XargsSetting) {
     originalCwd: CHECKOUT,
     paranoidRm: setting.paranoidRm,
     policy: {
-      destructiveCommandProtectionEnabled: true,
+      ...snapshotFor(setting).policy,
       effectiveDestructiveCommandRules: ruleStates(setting.ruleOff),
-      rules: setting.rules ?? [],
-      transparentWrappers: ['uv'],
     },
     protectedGitMetadata: null,
     strict: setting.strict,
     worktreeMode: setting.worktreeMode,
   };
+  // The dispatch the analyzer entry point would hand this producer, so a child reaches the same
+  // rules it reaches through the whole gate. The capabilities are inert here: the modes each
+  // child is judged under are the ones `shared` already carries.
+  const dispatchOptions = {
+    ...shared,
+    policySnapshot: snapshotFor(setting),
+    effectiveCapabilities: testModes().capabilities,
+    budget: createBudget(),
+    effectiveCwd: CHECKOUT,
+    environment: paired,
+    analyzeNested: (source: string) => {
+      asked.push(source);
+      return source.includes('BOOM')
+        ? { reason: NESTED_HIT.reason, ruleId: NESTED_HIT.id, intent: NESTED_HIT.intent }
+        : null;
+    },
+  };
   return {
     asked,
     match: describeOutcome(() =>
       analyzeXargs(textCommandWords(tokens), {
-        ...shared,
+        ...dispatchOptions,
+        analyzeChild: (childTokens, child) =>
+          analyzeChildCommand(childTokens, 0, dispatchOptions, child),
         analyzeNested: (source: string) => {
           asked.push(source);
           return source.includes('BOOM') ? NESTED_HIT : null;
         },
-        budget: createBudget(),
-        environment: paired,
       }),
     ),
   };
@@ -316,8 +337,14 @@ describe('xargs analysis', () => {
       { tokens: ['xargs', 'printf', '%s'], id: null },
       { tokens: ['xargs', 'node', '-e', 'console.log(1)', '--'], id: null },
       { tokens: ['xargs', 'git', 'status'], id: null },
+      // busybox is peeled by the child dispatch, so the applet is the child that is judged.
+      { tokens: ['xargs', 'busybox', 'rm', '-rf'], id: 'xargs.rm-recursive-force-dynamic' },
       // A literal catastrophic target is judged by the child's own rule.
       { tokens: ['xargs', '-I', '{}', 'rm', '-rf', '/'], id: 'rm.recursive-force-root-or-home' },
+      {
+        tokens: ['xargs', '-I', '{}', 'busybox', 'rm', '-rf', '/'],
+        id: 'rm.recursive-force-root-or-home',
+      },
       { tokens: ['xargs', 'git', 'reset', '--hard'], id: 'git.reset-hard' },
       { tokens: ['xargs', 'find', '.', '-delete'], id: 'find.delete' },
     ];

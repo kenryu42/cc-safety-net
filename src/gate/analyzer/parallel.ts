@@ -13,8 +13,8 @@ import { normalizeCommandToken } from '@/core/shell/tokens';
 import { parseSimpleWords } from '@/core/shell/traversal';
 import type { AnalyzeNestedOverrides, PathResolver } from '@/gate/analysis';
 import { extractAwkExecutableSources } from './awk';
-import { analyzeChildCommandMatch } from './child-analyzer';
 import {
+  type ChildProvenance,
   collectCommandTemplate,
   type NestedCommandAnalyzeContext,
   type NormalizedChildCommand,
@@ -99,6 +99,10 @@ const MAX_EXPANDED_BYTE_OVERCOUNT =
   LIMITS.parallelDerivedBytes.cap + 4 * LIMITS.parallelPlaceholderReplacements.cap;
 
 export interface ParallelAnalyzeContext extends NestedCommandAnalyzeContext {
+  analyzeChild: (
+    tokens: readonly string[],
+    child: ChildProvenance,
+  ) => DestructiveCommandRuleMatch | null;
   analyzeNested: (
     command: string,
     overrides?: AnalyzeNestedOverrides,
@@ -220,11 +224,6 @@ function analyzeParallelChildCommand(
 ): DestructiveCommandRuleMatch | null {
   const { jobs, templateHasPlaceholder, runsRemotely, usesStdin } = parseResult;
   const childTokens = childCommand.tokens;
-  const childContext = {
-    ...executionContext,
-    cwd: childCommand.cwd,
-    envAssignments: childCommand.envAssignments,
-  };
   const childEnvValues = [...childCommand.envAssignments.values()];
   if (childEnvValues.some(hasUnsupportedParallelPlaceholder)) {
     const reason = parallelUnsupportedReason(context);
@@ -247,9 +246,9 @@ function analyzeParallelChildCommand(
       if (!templateHasPlaceholder || jobs.length === 0) return null;
       reserveParallelAnalysis(context.budget, expandedTokenJobWork(childTokens, jobs, 'generic'));
       return firstMatch(jobs, (job) =>
-        analyzeChildCommandMatch(
+        context.analyzeChild(
           childTokens.map((token) => replaceParallelJobPlaceholder(token, job)),
-          childContext,
+          childProvenance(childCommand, executionContext),
         ),
       );
     };
@@ -290,7 +289,8 @@ function analyzeParallelChildCommand(
           }
         }
         const dynamicReason = scriptTokens
-          ? analyzeChildCommandMatch(scriptTokens, childContext, {
+          ? context.analyzeChild(scriptTokens, {
+              ...childProvenance(childCommand, executionContext),
               dynamicInput: usesStdin,
               shellDynamicMatch: destructiveCommandMatch(
                 'parallel.shell-dynamic',
@@ -462,24 +462,19 @@ function analyzeParallelChildCommand(
         findDynamicInput?.executedSource === true ||
         (findDynamicInput === null &&
           parallelInputCanChangeExecutedSource(tokens, normalizedHead)));
-    const result = analyzeChildCommandMatch(
-      tokens,
-      {
-        ...childContext,
-        worktreeMode: runsRemotely || usesStdin || hasPlaceholder ? false : context.worktreeMode,
-      },
-      {
-        dynamicInput: usesStdin || hasPlaceholder,
-        dynamicRmInput,
-        dynamicSourceInput: dynamicCustomResult !== null || dynamicSourceInput,
-        shellDynamicMatch,
-        dynamicSourceMatch: shellDynamicMatch,
-        rmDynamicMatch: destructiveCommandMatch(
-          'parallel.rm-recursive-force-dynamic',
-          REASON_PARALLEL_RM,
-        ),
-      },
-    );
+    const result = context.analyzeChild(tokens, {
+      ...childProvenance(childCommand, executionContext),
+      worktreeMode: runsRemotely || usesStdin || hasPlaceholder ? false : context.worktreeMode,
+      dynamicInput: usesStdin || hasPlaceholder,
+      dynamicRmInput,
+      dynamicSourceInput: dynamicCustomResult !== null || dynamicSourceInput,
+      shellDynamicMatch,
+      dynamicSourceMatch: shellDynamicMatch,
+      rmDynamicMatch: destructiveCommandMatch(
+        'parallel.rm-recursive-force-dynamic',
+        REASON_PARALLEL_RM,
+      ),
+    });
     // Prefer the parallel dynamic-source rule when stdin/placeholders can change executable
     // source selection, even if a nested analyzer (e.g. awk.system-dynamic) also matches.
     if (dynamicSourceInput) {
@@ -490,6 +485,23 @@ function analyzeParallelChildCommand(
       result ?? dynamicCustomResult ?? checkPolicyRuleMatch(tokens, context.policy?.rules ?? [])
     );
   });
+}
+
+/** What the dispatch needs to know about a child this parallel synthesized from its template. */
+function childProvenance(
+  childCommand: NormalizedChildCommand,
+  executionContext: ParallelAnalyzeContext,
+): ChildProvenance {
+  return {
+    producer: 'parallel',
+    cwd: childCommand.cwd,
+    originalCwd: executionContext.originalCwd,
+    effectiveCwd: childCommand.cwd,
+    envAssignments: childCommand.envAssignments,
+    allowTmpdirVar: executionContext.allowTmpdirVar,
+    worktreeMode: executionContext.worktreeMode,
+    wrappedByTransparent: false,
+  };
 }
 
 function parallelInputCanChangeExecutedSource(
