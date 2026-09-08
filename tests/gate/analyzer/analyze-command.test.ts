@@ -6,21 +6,18 @@ import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@/core/budget';
 import { createTestEnvironment, processPathResolver as portedPaths } from '@/core/environment';
 import { resolveProtectedGitMetadata } from '@/core/git/metadata';
 import type { EffectiveSafetyCapabilities } from '@/core/policy/types';
-import { analyzeOrCapBreach, analyzeCommand as portedAnalyzeCommand } from '@/gate/analyzer';
+import { analyzeCommand, analyzeOrCapBreach } from '@/gate/analyzer';
 import { REASON_RECURSION_LIMIT } from '@/gate/analyzer/reasons';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
 import { policySnapshot } from '../../helpers/policy';
-import { corpusCommands, differentialSources } from '../../helpers/shell-inputs';
 
 /**
- * The analyzer entry point decides the whole destructive half of the gate, so this runs the corpus
- * commands, the fixed parser table and the seeded fuzz through it with one policy, one capability
- * set and one process state, and records the deny decision. Every budget the entry owns also gets
- * a breach and a below-the-cap counterpart, so a cap that silently moves fails here rather than in
- * a later phase.
+ * The analyzer entry point decides the whole destructive half of the gate, so each level states
+ * the rule a command reaches under one policy, one capability set and one process state. Every
+ * budget the entry owns also gets a breach and a below-the-cap counterpart, so a cap that silently
+ * moves fails here rather than in a later phase.
  */
 
-const workspace = mkdtempSync(join(systemTempRoot(), 'analyze-command-differential-'));
+const workspace = mkdtempSync(join(systemTempRoot(), 'analyze-command-'));
 const agentHome = join(workspace, 'agent-home');
 const scratch = join(workspace, 'scratch');
 const project = join(workspace, 'checkout');
@@ -40,16 +37,16 @@ const processState = new Map([
   ['USER', 'agent'],
 ]);
 
-const portedEnvironment = createTestEnvironment({
+const environment = createTestEnvironment({
   env: processState,
   home: agentHome,
   tmpdir: scratch,
   paths: portedPaths,
 });
 
-// Resolved once, so the recorded decisions isolate the entry point from anchor resolution
+// Resolved once, so the stated decisions isolate the entry point from anchor resolution
 // (pinned by tests/core/git/metadata.test.ts).
-const gitMetadata = resolveProtectedGitMetadata(project, portedEnvironment);
+const gitMetadata = resolveProtectedGitMetadata(project, environment);
 
 const customRules = [
   {
@@ -68,7 +65,7 @@ const customRules = [
 ];
 const transparentWrappers = ['doas', 'nice'];
 
-const portedSnapshot = policySnapshot({
+const snapshot = policySnapshot({
   rules: customRules,
   transparent_wrappers: transparentWrappers,
 });
@@ -100,93 +97,162 @@ function mode(label: string, options: AnalysisMode['options']): AnalysisMode {
   };
 }
 
-const FULL_INPUT_MODES: readonly AnalysisMode[] = [
-  mode('standard', {}),
-  mode('strict', { strict: true }),
-];
-
-const CORPUS_ONLY_MODES: readonly AnalysisMode[] = [
-  mode('paranoid_rm', { paranoidRm: true }),
-  mode('paranoid_interpreters', { paranoidInterpreters: true }),
-  mode('worktree_mode', { worktreeMode: true }),
-];
+const standard = mode('standard', {});
+const strict = mode('strict', { strict: true });
+const paranoidRm = mode('paranoid_rm', { paranoidRm: true });
+const paranoidInterpreters = mode('paranoid_interpreters', { paranoidInterpreters: true });
 
 /**
- * The analyzer throws the caps the pipeline maps back into denials; the recorded decision maps
- * them the same way and rethrows the rest.
+ * The analyzer throws the caps the pipeline maps back into denials; this maps them the same way
+ * and rethrows the rest.
  */
-function portedDecision(command: string, analysis: AnalysisMode) {
+function decisionAt(cwd: string, command: string, analysis: AnalysisMode) {
   return analyzeOrCapBreach(
     () =>
-      portedAnalyzeCommand(command, {
-        policySnapshot: portedSnapshot,
+      analyzeCommand(command, {
+        policySnapshot: snapshot,
         effectiveCapabilities: analysis.capabilities,
-        environment: portedEnvironment,
+        environment,
         protectedGitMetadata: gitMetadata,
-        cwd: project,
+        cwd,
         ...analysis.options,
       }),
     command,
   ).decision;
 }
 
-/**
- * Every decision the port reached since the last digest. Each test drains it, so the recorded
- * hash covers exactly the commands that test compared.
- */
-const recorded: [string, unknown][] = [];
-
-/** Records one command's decision, naming it so a digest diff points at the input. */
-function expectSameDecision(command: string, analysis: AnalysisMode) {
-  const ported = portedDecision(command, analysis);
-  recorded.push([`${analysis.label}: ${command}`, ported]);
-  return ported;
+function decision(command: string, analysis: AnalysisMode) {
+  return decisionAt(project, command, analysis);
 }
 
-describe('analyzeCommand differential', () => {
-  for (const analysis of FULL_INPUT_MODES) {
-    test(`corpora, fixed commands and seeded fuzz agree at ${analysis.label}`, () => {
-      const denials = differentialSources().filter(
-        (command) => expectSameDecision(command, analysis) !== null,
-      );
-      expect(denials.length).toBeGreaterThan(20);
-      expectRecordedDigest(
-        `analyzer-analyze-command/sources-${analysis.label}`,
-        recorded.splice(0),
-        workspace,
-      );
+describe('analyzeCommand', () => {
+  test('a denied command reports the rule, the intent and the segment that matched', () => {
+    expect(decision('echo start && git reset --hard', standard)).toStrictEqual({
+      kind: 'deny',
+      reason:
+        "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.",
+      intent: 'use_alternative',
+      ruleId: 'git.reset-hard',
+      evidence: [
+        {
+          kind: 'command',
+          command: 'echo start && git reset --hard',
+          segment: 'git reset --hard',
+        },
+      ],
     });
-  }
+  });
 
-  for (const analysis of CORPUS_ONLY_MODES) {
-    test(`the corpus agrees under ${analysis.label}`, () => {
-      const commands = corpusCommands();
-      expect(commands.length).toBeGreaterThan(50);
-      for (const command of commands) expectSameDecision(command, analysis);
-      expectRecordedDigest(
-        `analyzer-analyze-command/corpus-${analysis.label}`,
-        recorded.splice(0),
-        workspace,
-      );
-    });
-  }
-
-  test('the custom rules and transparent wrappers of this snapshot are reachable', () => {
-    const standard = FULL_INPUT_MODES[0];
-    if (!standard) throw new Error('missing standard mode');
-    for (const command of [
-      'terraform destroy -auto-approve',
-      'doas terraform destroy -auto-approve',
-      'nice -n 5 helm uninstall release',
-      'helm upgrade release',
-    ]) {
-      expectSameDecision(command, standard);
+  test('each destructive shape reaches its rule at the standard level', () => {
+    const rows: readonly { readonly command: string; readonly ruleId: string }[] = [
+      { command: 'git push --force', ruleId: 'git.push-force' },
+      { command: 'rm -rf /', ruleId: 'rm.recursive-force-root-or-home' },
+      { command: 'echo $(rm -rf /)', ruleId: 'rm.recursive-force-root-or-home' },
+      // The fixture checkout holds a `.git`, which a delete rooted at `.` would reach.
+      { command: 'find . -delete', ruleId: 'find.delete-git-metadata' },
+      { command: 'find logs -exec rm -rf {} +', ruleId: 'find.exec-rm-recursive-force' },
+      { command: 'echo / | xargs rm -rf', ruleId: 'xargs.rm-recursive-force-dynamic' },
+      { command: 'parallel r$(printf m) -rf ::: child', ruleId: 'parallel.shell-dynamic' },
+      { command: 'terraform destroy -auto-approve', ruleId: 'custom.terraform-destroy' },
+      // A transparent wrapper lets the custom rules inspect the command it runs.
+      { command: 'doas terraform destroy -auto-approve', ruleId: 'custom.terraform-destroy' },
+      { command: 'nice -n 5 helm uninstall release', ruleId: 'custom.helm-uninstall' },
+      {
+        command: 'awk \'BEGIN { system("rm -rf /") }\'',
+        ruleId: 'rm.recursive-force-root-or-home',
+      },
+      { command: "bash <<'EOF'\nrm -rf ~\nEOF", ruleId: 'raw-text.dangerous-command' },
+      {
+        command: 'cat <<EOF && rm -rf ~\nharmless body\nEOF',
+        ruleId: 'rm.recursive-force-root-or-home',
+      },
+      { command: 'cat <<EOF\n$(find . -delete)\nEOF', ruleId: 'find.delete-git-metadata' },
+      { command: 'find logs -delete', ruleId: 'find.delete' },
+    ];
+    for (const row of rows) {
+      expect(decision(row.command, standard)?.ruleId, row.command).toBe(row.ruleId);
     }
-    expect(expectSameDecision('terraform destroy -auto-approve', standard)?.ruleId).toBe(
-      'custom.terraform-destroy',
+  });
+
+  test('a command that only names a destructive one is allowed', () => {
+    const rows: readonly string[] = [
+      '',
+      '""',
+      'helm upgrade release',
+      'git status',
+      'rm -f file.txt',
+      'find . -print',
+      'echo git reset --hard',
+      "printf 'rm -rf /'",
+      "rg 'rm -rf' .",
+      "awk '/rm -rf/ {print}' log.txt",
+      'xargs git status',
+      "cat <<'EOF'\nrm -rf ~ remains inert prose\nEOF",
+      'TMPDIR=/tmp rm -rf $TMPDIR/test-dir',
+    ];
+    for (const command of rows) {
+      expect(decision(command, standard), command).toBeNull();
+      expect(decision(command, strict), `strict: ${command}`).toBeNull();
+    }
+  });
+
+  test('rm -rf in the home directory is denied there and nowhere else', () => {
+    expect(decisionAt(agentHome, 'rm -rf build', standard)?.ruleId).toBe(
+      'rm.recursive-force-home-cwd',
     );
-    expect(expectSameDecision('helm upgrade release', standard)).toBeNull();
-    expectRecordedDigest('analyzer-analyze-command/custom-rules', recorded.splice(0), workspace);
+    expect(decisionAt(agentHome, 'rm -f file.txt', standard)).toBeNull();
+    expect(decisionAt(project, 'rm -rf build', standard)).toBeNull();
+  });
+
+  test('strict adds the rules for command text it cannot verify', () => {
+    const rows: readonly {
+      readonly command: string;
+      readonly ruleId: string;
+      readonly intent: string;
+    }[] = [
+      {
+        command: 'rm -rf "$target"',
+        ruleId: 'rm.recursive-force-dynamic-target',
+        intent: 'scope_down',
+      },
+      {
+        command: '$(printf r)m -rf /tmp/x',
+        ruleId: 'shell.dynamic-executable',
+        intent: 'manual_only',
+      },
+      {
+        command: 'git reset $(printf --hard)',
+        ruleId: 'shell.dynamic-structure',
+        intent: 'stop_and_explain',
+      },
+      {
+        command: 'c=rm; "$c" -rf dir',
+        ruleId: 'shell.dynamic-executable',
+        intent: 'manual_only',
+      },
+    ];
+    for (const row of rows) {
+      expect(decision(row.command, standard), `standard: ${row.command}`).toBeNull();
+      expect(decision(row.command, strict), row.command).toMatchObject({
+        ruleId: row.ruleId,
+        intent: row.intent,
+      });
+    }
+    for (const command of ["echo 'unclosed", 'cd "unterminated']) {
+      expect(decision(command, standard), `standard: ${command}`).toBeNull();
+      const denial = decision(command, strict);
+      expect(denial?.intent, command).toBe('stop_and_explain');
+      expect(denial?.reason, command).toContain('strict mode');
+    }
+  });
+
+  test('a paranoid capability blocks what the standard level allows', () => {
+    expect(decision('rm -rf ./cache', standard)).toBeNull();
+    expect(decision('rm -rf ./cache', paranoidRm)?.ruleId).toBe('rm.recursive-force-paranoid');
+    expect(decision('python -c "print(1)"', standard)).toBeNull();
+    expect(decision('python -c "print(1)"', paranoidInterpreters)?.ruleId).toBe(
+      'interpreter.one-liner-paranoid',
+    );
   });
 });
 
@@ -240,20 +306,21 @@ const BUDGET_BREACHES: readonly {
 ];
 
 describe('analyzer budget breaches', () => {
-  const standard = FULL_INPUT_MODES[0];
-  if (!standard) throw new Error('missing standard mode');
-
   for (const breach of BUDGET_BREACHES) {
     test(`${breach.budget} denies with its reason, and stays silent below the cap`, () => {
-      const denial = expectSameDecision(breach.breaching, standard);
+      const denial = decision(breach.breaching, standard);
       expect(denial?.reason).toBe(breach.reason);
       expect(denial?.intent).toBe('stop_and_explain');
-      expect(expectSameDecision(breach.allowed, standard)).toBeNull();
-      expectRecordedDigest(
-        `analyzer-analyze-command/budget-${breach.budget}`,
-        recorded.splice(0),
-        workspace,
-      );
+      expect(decision(breach.allowed, standard)).toBeNull();
     });
   }
+
+  test('the recursion cap is met before the payload it wraps', () => {
+    expect(decision(nestShellWrappers(10, 'rm -rf /some/path'), standard)?.reason).toBe(
+      REASON_RECURSION_LIMIT,
+    );
+    expect(decision(nestShellWrappers(9, 'rm -rf /some/path'), standard)?.ruleId).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
+  });
 });

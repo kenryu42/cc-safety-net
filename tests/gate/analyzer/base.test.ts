@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { createBudget } from '@/core/budget';
 import { processPathResolver } from '@/core/environment';
+import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import { parseCommand } from '@/core/shell/parse';
 import { projectCommandViews } from '@/core/shell/traversal';
 import {
@@ -14,6 +15,7 @@ import {
 } from '@/gate/analyzer/command-words';
 import { isDataOnlyQuotedAssignment } from '@/gate/analyzer/deferred-assignment';
 import { analyzeDeviceCommandMatch } from '@/gate/analyzer/device';
+import type { GitConfigCountResolution } from '@/gate/analyzer/git/env';
 import {
   getGitEnvValue,
   hasConfigAffectingEnvAssignment,
@@ -48,9 +50,6 @@ import {
   scannedText,
   wordAt,
 } from '@/gate/analyzer/text-scanner';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, fuzzShellSources } from '../../helpers/shell-inputs';
-import { normalize, rootFolds } from '../../helpers/temp-home';
 
 /** The leaf analyzer modules that carry no dispatch of their own. */
 
@@ -59,175 +58,246 @@ function argvOf(line: string): string[] {
 }
 
 describe('text scanner', () => {
-  const texts = ['', 'rm -rf /', 'a_b9 c\td\ne', 'söme text more', '|;&x', 'systemd'];
-
-  test('character classification agrees for every code point in the sample texts', () => {
-    const recorded: [string, unknown][] = [];
-    for (const text of [...texts, fuzzShellSources(120, 0x0075_c001).join(' ')]) {
-      for (const char of [...text, undefined]) {
-        const classified = {
-          ascii: isAsciiWord(char),
-          whitespace: isEcmaWhitespace(char),
-          terminator: isJsLineTerminator(char),
-          raw: isRawStop(char),
-          pipe: isPipeSemicolonStop(char),
-        };
-        recorded.push([String(char), classified]);
-      }
+  test('each character class answers for the characters the scanners stop on', () => {
+    const rows: readonly {
+      readonly char: string | undefined;
+      readonly ascii: boolean;
+      readonly whitespace: boolean;
+      readonly terminator: boolean;
+      readonly raw: boolean;
+      readonly pipe: boolean;
+    }[] = [
+      { char: 'a', ascii: true, whitespace: false, terminator: false, raw: false, pipe: false },
+      { char: 'Z', ascii: true, whitespace: false, terminator: false, raw: false, pipe: false },
+      { char: '9', ascii: true, whitespace: false, terminator: false, raw: false, pipe: false },
+      { char: '_', ascii: true, whitespace: false, terminator: false, raw: false, pipe: false },
+      { char: '-', ascii: false, whitespace: false, terminator: false, raw: false, pipe: false },
+      { char: 'ö', ascii: false, whitespace: false, terminator: false, raw: false, pipe: false },
+      { char: ' ', ascii: false, whitespace: true, terminator: false, raw: false, pipe: false },
+      { char: '\t', ascii: false, whitespace: true, terminator: false, raw: false, pipe: false },
+      { char: ' ', ascii: false, whitespace: true, terminator: false, raw: false, pipe: false },
+      { char: '﻿', ascii: false, whitespace: true, terminator: false, raw: false, pipe: false },
+      { char: '\n', ascii: false, whitespace: true, terminator: true, raw: true, pipe: false },
+      { char: '\r', ascii: false, whitespace: true, terminator: true, raw: false, pipe: false },
+      { char: ' ', ascii: false, whitespace: true, terminator: true, raw: false, pipe: false },
+      { char: ';', ascii: false, whitespace: false, terminator: false, raw: true, pipe: true },
+      { char: '|', ascii: false, whitespace: false, terminator: false, raw: true, pipe: true },
+      { char: '&', ascii: false, whitespace: false, terminator: false, raw: true, pipe: false },
+      {
+        char: undefined,
+        ascii: false,
+        whitespace: false,
+        terminator: false,
+        raw: false,
+        pipe: false,
+      },
+    ];
+    for (const row of rows) {
+      const label = JSON.stringify(row.char);
+      expect(isAsciiWord(row.char), label).toBe(row.ascii);
+      expect(isEcmaWhitespace(row.char), label).toBe(row.whitespace);
+      expect(isJsLineTerminator(row.char), label).toBe(row.terminator);
+      expect(isRawStop(row.char), label).toBe(row.raw);
+      expect(isPipeSemicolonStop(row.char), label).toBe(row.pipe);
     }
-    expectRecordedDigest('analyzer-base/character-classes', recorded);
   });
 
-  test('the scanned-text readers agree and charge the same units', () => {
-    const recorded: [string, unknown][] = [];
-    for (const text of texts) {
-      const work = { units: 0 };
-      const scanned = scannedText(text, work);
-      const length = scanLength(scanned);
-      recorded.push([text, { scanned, length }]);
-      for (let index = -1; index <= text.length; index++) {
-        const read = {
-          char: scanChar(scanned, index),
-          fixed: fixedAt(scanned, index, 'rm'),
-          word: wordAt(scanned, index, 'system'),
-          boundary: hasWordBoundaryAfter(scanned, index),
-        };
-        recorded.push([`${text}@${index}`, read]);
-      }
-      recorded.push([`${text} work`, work]);
-    }
-    expectRecordedDigest('analyzer-base/scanned-text', recorded);
+  test('a scanned text reads by index, charging one unit per character read', () => {
+    const work = { units: 0 };
+    const scanned = scannedText('rm -rf /', work);
+    expect(scanLength(scanned)).toBe(8);
+    expect(scanChar(scanned, 0)).toBe('r');
+    expect(scanChar(scanned, -1)).toBeUndefined();
+    expect(scanChar(scanned, 8)).toBeUndefined();
+    expect(work.units).toBe(3);
   });
 
-  test('the charge helpers agree, including saturation and the missing counter', () => {
-    const recorded: [string, unknown][] = [];
-    for (const text of texts) {
-      for (const passes of [1, 3]) {
-        const work = { units: Number.MAX_SAFE_INTEGER - 4 };
-        chargeScan(work, text, passes);
-        recorded.push([`${text} x${passes}`, work]);
-      }
-      const linear = { units: 7 };
-      chargeNativeLinearPass(linear, text);
-      const uncounted = chargeScan(undefined, text);
-      recorded.push([`${text} linear`, { linear, uncounted }]);
+  test('a fixed string and a whole word are found only where they start', () => {
+    const rows: readonly {
+      readonly text: string;
+      readonly index: number;
+      readonly fixed: boolean;
+      readonly word: boolean;
+      readonly boundary: boolean;
+    }[] = [
+      { text: 'rm -rf /', index: 0, fixed: true, word: false, boundary: true },
+      { text: 'rm -rf /', index: 1, fixed: false, word: false, boundary: false },
+      { text: 'rm -rf /', index: 2, fixed: false, word: false, boundary: true },
+      // Neither side of the index is a word character, so there is no boundary.
+      { text: 'rm -rf /', index: 7, fixed: false, word: false, boundary: false },
+      // A word must not run into a longer identifier.
+      { text: 'systemd', index: 0, fixed: false, word: false, boundary: true },
+      { text: 'x system(', index: 2, fixed: false, word: true, boundary: true },
+      { text: 'x system(', index: 0, fixed: false, word: false, boundary: true },
+    ];
+    for (const row of rows) {
+      const scanned = scannedText(row.text, undefined);
+      const label = `${row.text}@${row.index}`;
+      expect(fixedAt(scanned, row.index, 'rm'), label).toBe(row.fixed);
+      expect(wordAt(scanned, row.index, 'system'), label).toBe(row.word);
+      expect(hasWordBoundaryAfter(scanned, row.index), label).toBe(row.boundary);
     }
-    expectRecordedDigest('analyzer-base/charge-helpers', recorded);
+  });
+
+  test('the charge helpers add one unit per character per pass and saturate', () => {
+    const scan = { units: 0 };
+    chargeScan(scan, 'abc', 3);
+    expect(scan.units).toBe(9);
+
+    const linear = { units: 7 };
+    chargeNativeLinearPass(linear, 'abc');
+    expect(linear.units).toBe(10);
+
+    const saturating = { units: Number.MAX_SAFE_INTEGER - 4 };
+    chargeScan(saturating, 'abcdef', 1);
+    expect(saturating.units).toBe(Number.MAX_SAFE_INTEGER);
+
+    expect(() => chargeScan(undefined, 'abc')).not.toThrow();
   });
 });
 
 describe('rm flags', () => {
-  const flagCases: readonly (readonly string[])[] = [
-    [],
-    ['rm'],
-    ['rm', '-rf', '/tmp/x'],
-    ['rm', '-fr', '/tmp/x'],
-    ['rm', '-r', '-f', '/tmp/x'],
-    ['rm', '-R', '--force', '/tmp/x'],
-    ['rm', '--recursive', '--force'],
-    ['rm', '--rec', '--for'],
-    ['rm', '--r', '--f'],
-    ['rm', '-r'],
-    ['rm', '-f'],
-    ['rm', '--', '-rf'],
-    ['rm', '-rf', '--', '-r'],
-    ['rm', '-i', '-rf'],
-    ['rm', '--recursiv', 'x'],
-    ['rm', '--recursively', 'x'],
-    ['rm', '-vRf', 'x'],
-    ['rm', '-Rv', 'x'],
-    ['chmod', '-R', '777', '/'],
-  ];
-
-  test('both flag readers agree over the table and the corpus argv', () => {
-    const recorded: [string, unknown][] = [];
-    for (const argv of [...flagCases, ...corpusCommands().map(argvOf)]) {
-      const flags = {
-        recursiveForce: hasRecursiveForceFlags(argv),
-        recursive: hasRecursiveOption(argv),
-      };
-      recorded.push([argv.join(' '), flags]);
+  test('recursion and force are read from the options, never from an operand', () => {
+    const rows: readonly {
+      readonly argv: readonly string[];
+      readonly recursiveForce: boolean;
+      readonly recursive: boolean;
+    }[] = [
+      { argv: [], recursiveForce: false, recursive: false },
+      { argv: ['rm'], recursiveForce: false, recursive: false },
+      { argv: ['rm', '-rf', '/tmp/x'], recursiveForce: true, recursive: true },
+      { argv: ['rm', '-fr', '/tmp/x'], recursiveForce: true, recursive: true },
+      { argv: ['rm', '-r', '-f', '/tmp/x'], recursiveForce: true, recursive: true },
+      { argv: ['rm', '-R', '--force', '/tmp/x'], recursiveForce: true, recursive: true },
+      { argv: ['rm', '--recursive', '--force'], recursiveForce: true, recursive: true },
+      // A long option may be abbreviated to any prefix, down to one letter.
+      { argv: ['rm', '--rec', '--for'], recursiveForce: true, recursive: true },
+      { argv: ['rm', '--r', '--f'], recursiveForce: true, recursive: true },
+      // An abbreviation that is not a prefix names no option.
+      { argv: ['rm', '--rf'], recursiveForce: false, recursive: false },
+      { argv: ['rm', '--recursively', 'x'], recursiveForce: false, recursive: false },
+      { argv: ['rm', '-r'], recursiveForce: false, recursive: true },
+      { argv: ['rm', '-f'], recursiveForce: false, recursive: false },
+      { argv: ['rm', '-i', '-rf'], recursiveForce: true, recursive: true },
+      { argv: ['rm', '-vRf', 'x'], recursiveForce: true, recursive: true },
+      // After `--` an option-shaped token is an operand.
+      { argv: ['rm', '--', '-rf'], recursiveForce: false, recursive: false },
+      { argv: ['rm', '-rf', '--', '-r'], recursiveForce: true, recursive: true },
+      { argv: ['chmod', '-R', '777', '/'], recursiveForce: false, recursive: true },
+    ];
+    for (const row of rows) {
+      expect(hasRecursiveForceFlags(row.argv), row.argv.join(' ')).toBe(row.recursiveForce);
+      expect(hasRecursiveOption(row.argv), row.argv.join(' ')).toBe(row.recursive);
     }
-    expectRecordedDigest('analyzer-base/rm-flags', recorded);
   });
 });
 
 describe('command words', () => {
-  const sources = [
-    'echo one two',
-    'echo "$(id)" `hostname` $HOME',
-    'echo \'literal\' "double"',
-    'Remove-Item -Recurse $env:TEMP\\x',
-    'rm -rf $(cat list)',
-  ];
+  const firstWords = (source: string, dialect: 'posix' | 'powershell' = 'posix') =>
+    projectCommandViews(parseCommand(source, dialect))[0]?.words ?? [];
 
-  test('the word projections agree for parsed and text-only words', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of sources) {
-      for (const dialect of ['posix', 'powershell'] as const) {
-        const views = projectCommandViews(parseCommand(source, dialect));
-        views.forEach((view, index) => {
-          const texts = view.words.map(analysisWordText);
-          const analyzed = analyzedViewWords(view.dialect, view.words);
-          recorded.push([`${source} ${dialect} [${index}]`, { texts, analyzed }]);
-          view.words.forEach((word, wordIndex) => {
-            const literal = isLiteralExecutionSourceWord(word, word.text);
-            recorded.push([`${source} ${dialect} [${index}][${wordIndex}]`, literal]);
-          });
-        });
-      }
-    }
-    expectRecordedDigest('analyzer-base/word-projections', recorded);
+  test('a command substitution is analyzed as its source, every other word as its text', () => {
+    const words = firstWords('echo "$(id)" one');
+    expect(words.map(analysisWordText)).toStrictEqual(['echo', '"$(id)"', 'one']);
+    expect(firstWords('echo \'literal\' "double"').map(analysisWordText)).toStrictEqual([
+      'echo',
+      'literal',
+      'double',
+    ]);
   });
 
-  test('text-only stand-ins carry no parser facts on either side', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of sources) {
-      const tokens = source.split(' ');
-      const words = textCommandWords(tokens);
-      const literal = isLiteralExecutionSourceWord(undefined, source);
-      recorded.push([source, { words, literal }]);
+  test('PowerShell words are analyzed as text-only stand-ins, POSIX words as parsed', () => {
+    const posix = firstWords('echo one');
+    expect(analyzedViewWords('posix', posix)).toBe(posix);
+    const powershell = firstWords('Remove-Item -Recurse $env:TEMP\\x', 'powershell');
+    const analyzed = analyzedViewWords('powershell', powershell);
+    expect(analyzed.map((word) => word.text)).toStrictEqual(powershell.map((word) => word.text));
+    expect(analyzed.every((word) => word.provenance === 'unknown')).toBeTrue();
+  });
+
+  test('an execution source is literal by provenance, or by its text when it has none', () => {
+    const rows: readonly { readonly text: string; readonly literal: boolean }[] = [
+      { text: 'rm', literal: true },
+      { text: '/usr/bin/rm', literal: true },
+      { text: '$X', literal: false },
+      { text: '`hostname`', literal: false },
+      { text: '*.sh', literal: false },
+      { text: 'a?b', literal: false },
+      { text: 'a[b]', literal: false },
+    ];
+    for (const row of rows) {
+      expect(isLiteralExecutionSourceWord(undefined, row.text), row.text).toBe(row.literal);
     }
-    expectRecordedDigest('analyzer-base/text-only-words', recorded);
+    const [literal, substitution] = firstWords('echo $(id)');
+    expect(isLiteralExecutionSourceWord(literal, 'anything')).toBeTrue();
+    expect(isLiteralExecutionSourceWord(substitution, 'rm')).toBeFalse();
+  });
+
+  test('text-only stand-ins carry no parser facts', () => {
+    expect(textCommandWords([])).toStrictEqual([]);
+    expect(textCommandWords(['rm', '-rf'])).toStrictEqual([
+      {
+        kind: 'word',
+        text: 'rm',
+        raw: 'rm',
+        span: { start: 0, end: 0 },
+        provenance: 'unknown',
+        quoted: false,
+        parts: [],
+      },
+      {
+        kind: 'word',
+        text: '-rf',
+        raw: '-rf',
+        span: { start: 0, end: 0 },
+        provenance: 'unknown',
+        quoted: false,
+        parts: [],
+      },
+    ]);
   });
 });
 
 describe('deferred assignment', () => {
-  const assignments = [
-    "W='rm -rf ~'",
-    "W='rm -rf ~'; echo $W",
-    'W=\'rm -rf ~\'; echo "$W"',
-    "W='rm -rf ~'; echo '$W'",
-    "W='rm -rf ~'; $W",
-    "W='rm -rf ~'; eval $W",
-    "W='rm -rf ~'; echo ${W}",
-    "W='rm -rf ~'; echo $WORD",
-    "W='rm -rf ~'; echo \\$W",
-    "W='rm -rf ~'; echo $(echo $W)",
-    "W='rm -rf ~'; f() { echo $W; }; f",
-    'W=\'rm -rf ~\'; { echo "$W"; }',
-    "W='rm -rf ~' > out",
-    "W='rm -rf ~'; cat > $W",
-    "W='rm -rf ~'; cat <<EOF\n$W\nEOF",
-    "W='rm -rf ~'; cat <<'EOF'\n$W\nEOF",
-    'W="rm -rf ~"; echo "$W"',
-    "W='rm -rf ~' X='echo'",
-    "1W='rm -rf ~'; echo $1W",
-  ];
-
-  test('the data-only decision and its scan work agree over assignments and corpus commands', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of [...assignments, ...corpusCommands()]) {
-      const program = parseCommand(source, 'posix');
-      const views = projectCommandViews(program);
-      views.forEach((view, index) => {
-        const work = { units: 0 };
-        const dataOnly = isDataOnlyQuotedAssignment(view, program, work);
-        const withoutProgram = isDataOnlyQuotedAssignment(view, undefined);
-        recorded.push([`${source} [${index}]`, { dataOnly, work, withoutProgram }]);
-      });
+  test('a quoted assignment is data only while nothing can run its value', () => {
+    const rows: readonly { readonly source: string; readonly dataOnly: boolean }[] = [
+      { source: "W='rm -rf ~'", dataOnly: true },
+      { source: 'W=\'rm -rf ~\'; echo "$W"', dataOnly: true },
+      { source: "W='rm -rf ~'; echo '$W'", dataOnly: true },
+      { source: "W='rm -rf ~'; echo \\$W", dataOnly: true },
+      // A name the reference does not end on is a different variable.
+      { source: "W='rm -rf ~'; echo $WORD", dataOnly: true },
+      { source: "W='rm -rf ~'; cat <<'EOF'\n$W\nEOF", dataOnly: true },
+      { source: 'W="rm -rf ~"; echo "$W"', dataOnly: true },
+      // An unquoted expansion is field-split before it is used.
+      { source: "W='rm -rf ~'; echo $W", dataOnly: false },
+      { source: "W='rm -rf ~'; $W", dataOnly: false },
+      { source: "W='rm -rf ~'; eval $W", dataOnly: false },
+      { source: "W='rm -rf ~'; echo ${W}", dataOnly: false },
+      { source: "W='rm -rf ~'; echo $(echo $W)", dataOnly: false },
+      { source: "W='rm -rf ~'; cat <<EOF\n$W\nEOF", dataOnly: false },
+      // Two words are not a lone assignment.
+      { source: "W='rm -rf ~' X='echo'", dataOnly: false },
+      { source: "1W='rm -rf ~'; echo $1W", dataOnly: false },
+    ];
+    for (const row of rows) {
+      const program = parseCommand(row.source, 'posix');
+      const view = projectCommandViews(program)[0];
+      if (!view) throw new Error(`no command view for ${row.source}`);
+      expect(isDataOnlyQuotedAssignment(view, program), row.source).toBe(row.dataOnly);
+      // Without the surrounding program the later uses cannot be read, so nothing is data only.
+      expect(isDataOnlyQuotedAssignment(view, undefined), `${row.source} (no program)`).toBeFalse();
     }
-    expectRecordedDigest('analyzer-base/deferred-assignment', recorded);
+  });
+
+  test('the decision charges two passes over the program source', () => {
+    const source = 'W=\'rm -rf ~\'; echo "$W"';
+    const program = parseCommand(source, 'posix');
+    const view = projectCommandViews(program)[0];
+    if (!view) throw new Error('no command view');
+    const work = { units: 0 };
+    expect(isDataOnlyQuotedAssignment(view, program, work)).toBeTrue();
+    expect(work.units).toBe(source.length * 2);
   });
 });
 
@@ -235,7 +305,7 @@ describe('heredoc files', () => {
   let root = '';
 
   beforeAll(() => {
-    root = mkdtempSync(join(tmpdir(), 'next-heredoc-'));
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'heredoc-')));
     mkdirSync(join(root, 'dir'));
     writeFileSync(join(root, 'dir', 'file'), 'x');
     symlinkSync(join(root, 'dir'), join(root, 'link'));
@@ -245,203 +315,306 @@ describe('heredoc files', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  test('the tracked-path resolution agrees for absolute, relative and unknown cwd sources', () => {
-    // `../escape` resolves out of the fixture, so the directory holding it is folded as well.
-    const recordFolds = () => [
-      ...rootFolds(root),
-      [realpathSync(dirname(root)), '<tmpdir>'] as const,
-      [dirname(root), '<tmpdir>'] as const,
-    ];
-    const recorded: [string, unknown][] = [];
-    for (const source of ['dir/file', 'link/file', 'missing/deep/file', './dir', '../escape', '']) {
-      for (const cwd of [root, join(root, 'dir'), null, undefined]) {
-        const resolved = resolveTrackedHeredocPath(
-          source,
-          cwd,
-          processPathResolver,
-          createBudget(),
-        );
-        recorded.push([
-          normalize(`${source} @ ${cwd}`, recordFolds()),
-          normalize(resolved, recordFolds()),
-        ]);
-      }
-      const absolute = join(root, source);
-      const resolved = resolveTrackedHeredocPath(
-        absolute,
-        null,
-        processPathResolver,
-        createBudget(),
-      );
-      recorded.push([`absolute ${source}`, normalize(resolved, recordFolds())]);
-    }
-    expectRecordedDigest('analyzer-base/heredoc-paths', recorded);
+  test('a tracked path resolves against the directory the heredoc is written in', () => {
+    const resolve = (source: string, cwd: string | null | undefined) =>
+      resolveTrackedHeredocPath(source, cwd, processPathResolver, createBudget());
+
+    expect(resolve('dir/file', root)).toBe(join(root, 'dir', 'file'));
+    // A symlinked directory resolves to the directory it points at.
+    expect(resolve('link/file', root)).toBe(join(root, 'dir', 'file'));
+    expect(resolve('file', join(root, 'dir'))).toBe(join(root, 'dir', 'file'));
+    // A tail that does not exist yet is kept as written.
+    expect(resolve('missing/deep/file', root)).toBe(join(root, 'missing', 'deep', 'file'));
+    expect(resolve(join(root, 'dir', 'file'), null)).toBe(join(root, 'dir', 'file'));
+    expect(resolve(join(root, 'dir', 'file'), undefined)).toBe(join(root, 'dir', 'file'));
+    // A relative path with no directory to resolve against is not a path.
+    expect(resolve('dir/file', null)).toBeUndefined();
+    expect(resolve('dir/file', undefined)).toBeUndefined();
+    expect(resolve('dir/file', '')).toBeUndefined();
+    expect(resolve('', root)).toBe(root);
   });
 
-  test('the persistence test is the shipped one', () => {
-    const recorded: [string, unknown][] = [];
-    for (const path of ['/dev', '/dev/null', '/devices/x', '/proc/1/fd/2', '/sys', '/tmp/out']) {
-      const persistent = isPersistentHeredocFilePath(path);
-      recorded.push([path, persistent]);
+  test('a heredoc written to a device or kernel path leaves nothing behind', () => {
+    const rows: readonly { readonly path: string; readonly persistent: boolean }[] = [
+      { path: '/dev', persistent: false },
+      { path: '/dev/null', persistent: false },
+      { path: '/proc/1/fd/2', persistent: false },
+      { path: '/sys', persistent: false },
+      // A path that merely starts with the same letters is an ordinary file.
+      { path: '/devices/x', persistent: true },
+      { path: '/tmp/out', persistent: true },
+    ];
+    for (const row of rows) {
+      expect(isPersistentHeredocFilePath(row.path), row.path).toBe(row.persistent);
     }
-    expectRecordedDigest('analyzer-base/heredoc-persistence', recorded);
   });
 });
 
 describe('device commands', () => {
-  test('the device rules agree over the table', () => {
-    const commands: readonly (readonly string[])[] = [
-      ['dd', 'if=/dev/zero', 'of=/dev/sda'],
-      ['dd', 'if=/dev/zero', 'of=/tmp/x'],
-      ['dd', 'of=/dev/'],
-      ['dd'],
-      ['mkfs', '/dev/sda1'],
-      ['mkfs.ext4', '/dev/sda1'],
-      ['mkfs.ext4', 'image.img'],
-      ['mkfsx', '/dev/sda1'],
-      ['shred', 'secret'],
-      ['shred'],
-      ['rm', '-rf', '/dev/sda'],
+  test('a write to a /dev target is reported per tool', () => {
+    const rows: readonly {
+      readonly argv: readonly string[];
+      readonly match: DestructiveCommandRuleMatch | null;
+    }[] = [
+      {
+        argv: ['dd', 'if=/dev/zero', 'of=/dev/sda'],
+        match: {
+          id: 'dd.device-write',
+          reason:
+            'dd writing to a /dev device can destroy a disk or partition. Run device writes manually after confirming the target.',
+          intent: 'manual_only',
+        },
+      },
+      { argv: ['dd', 'if=/dev/zero', 'of=/tmp/x'], match: null },
+      // The target has to name something under /dev.
+      { argv: ['dd', 'of=/dev/'], match: null },
+      { argv: ['dd'], match: null },
+      {
+        argv: ['mkfs', '/dev/sda1'],
+        match: {
+          id: 'mkfs.device',
+          reason:
+            'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.',
+          intent: 'manual_only',
+        },
+      },
+      {
+        argv: ['mkfs.ext4', '/dev/sda1'],
+        match: {
+          id: 'mkfs.device',
+          reason:
+            'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.',
+          intent: 'manual_only',
+        },
+      },
+      { argv: ['mkfs.ext4', 'image.img'], match: null },
+      { argv: ['mkfsx', '/dev/sda1'], match: null },
+      {
+        argv: ['shred', 'secret'],
+        match: {
+          id: 'shred.target',
+          reason:
+            'shred permanently destroys the given target. Use rm for ordinary deletes, or run shred manually.',
+          intent: 'use_alternative',
+        },
+      },
+      { argv: ['shred'], match: null },
+      // Another tool writing to a device is not this module's rule.
+      { argv: ['rm', '-rf', '/dev/sda'], match: null },
     ];
-    const recorded: [string, unknown][] = [];
-    for (const argv of commands) {
-      const head = argv[0] ?? '';
-      const match = analyzeDeviceCommandMatch(head, argv);
-      recorded.push([argv.join(' '), match]);
+    for (const row of rows) {
+      expect(analyzeDeviceCommandMatch(row.argv[0] ?? '', row.argv), row.argv.join(' ')).toEqual(
+        row.match,
+      );
     }
-    expectRecordedDigest('analyzer-base/device-commands', recorded);
   });
 });
 
 describe('git environment', () => {
-  test('the GIT_CONFIG_COUNT resolution agrees, cap included', () => {
-    const counts = ['', '0', '1', '7', '1024', '1025', '9007199254740993', 'x', '-1', ' 1', '01'];
-    const recorded: [string, unknown][] = [];
-    for (const value of counts) {
-      const env = new Map([['GIT_CONFIG_COUNT', value]]);
-      const fromEnv = resolveGitConfigCount(env);
-      const fromOverride = resolveGitConfigCount(new Map(), env);
-      recorded.push([value, { fromEnv, fromOverride }]);
+  test('GIT_CONFIG_COUNT is read only as a plain integer within the cap', () => {
+    const rows: readonly {
+      readonly value: string;
+      readonly resolution: GitConfigCountResolution;
+    }[] = [
+      { value: '', resolution: { state: 'valid', count: 0 } },
+      { value: '0', resolution: { state: 'valid', count: 0 } },
+      { value: '7', resolution: { state: 'valid', count: 7 } },
+      { value: '01', resolution: { state: 'valid', count: 1 } },
+      { value: '1024', resolution: { state: 'valid', count: 1024 } },
+      { value: '1025', resolution: { state: 'invalid' } },
+      { value: '9007199254740993', resolution: { state: 'invalid' } },
+      { value: 'x', resolution: { state: 'invalid' } },
+      { value: '-1', resolution: { state: 'invalid' } },
+      { value: ' 1', resolution: { state: 'invalid' } },
+    ];
+    for (const row of rows) {
+      const env = new Map([['GIT_CONFIG_COUNT', row.value]]);
+      expect(resolveGitConfigCount(env), row.value).toStrictEqual(row.resolution);
+      // An assignment on the command line masks the inherited value.
+      expect(resolveGitConfigCount(new Map(), env), `assigned ${row.value}`).toStrictEqual(
+        row.resolution,
+      );
     }
-    const withoutCount = resolveGitConfigCount(new Map());
-    recorded.push(['<unset>', withoutCount]);
-    expectRecordedDigest('analyzer-base/git-config-count', recorded);
-    expect(resolveGitConfigCount(new Map([['GIT_CONFIG_COUNT', '1025']])).state).toBe('invalid');
+    expect(resolveGitConfigCount(new Map())).toStrictEqual({ state: 'absent' });
+    expect(
+      resolveGitConfigCount(
+        new Map([['GIT_CONFIG_COUNT', '1']]),
+        new Map([['GIT_CONFIG_COUNT', '']]),
+      ),
+    ).toStrictEqual({ state: 'valid', count: 0 });
   });
 
-  test('the tracked-name tests and value reads agree', () => {
-    const names = [
-      'GIT_DIR',
-      'GIT_WORK_TREE',
-      'GIT_COMMON_DIR',
-      'GIT_INDEX_FILE',
-      'GIT_CONFIG_COUNT',
-      'GIT_CONFIG_PARAMETERS',
-      'GIT_CONFIG_KEY_0',
-      'GIT_CONFIG_VALUE_12',
-      'GIT_CONFIG_KEY_X',
-      'GIT_CONFIG_GLOBAL',
-      'GIT_CONFIG_NOSYSTEM',
-      'GIT_CONFIG_SYSTEM',
-      'GIT_SSH',
-      'GIT_SSH_COMMAND',
-      'GIT_SSH_VARIANT',
-      'HOME',
-      'XDG_CONFIG_HOME',
-      'PATH',
-      '',
+  test('the tracked names are the context overrides, the config inputs and the SSH hooks', () => {
+    const rows: readonly {
+      readonly name: string;
+      readonly override: boolean;
+      readonly tracked: boolean;
+    }[] = [
+      { name: 'GIT_DIR', override: true, tracked: true },
+      { name: 'GIT_WORK_TREE', override: true, tracked: true },
+      { name: 'GIT_COMMON_DIR', override: true, tracked: true },
+      { name: 'GIT_INDEX_FILE', override: true, tracked: true },
+      { name: 'GIT_CONFIG_COUNT', override: false, tracked: true },
+      { name: 'GIT_CONFIG_PARAMETERS', override: false, tracked: true },
+      { name: 'GIT_CONFIG_KEY_0', override: false, tracked: true },
+      { name: 'GIT_CONFIG_VALUE_12', override: false, tracked: true },
+      { name: 'GIT_CONFIG_GLOBAL', override: false, tracked: true },
+      { name: 'GIT_SSH_COMMAND', override: false, tracked: true },
+      { name: 'GIT_SSH_VARIANT', override: false, tracked: true },
+      { name: 'HOME', override: false, tracked: true },
+      { name: 'XDG_CONFIG_HOME', override: false, tracked: true },
+      // A key index that is not a number names no config entry.
+      { name: 'GIT_CONFIG_KEY_X', override: false, tracked: false },
+      { name: 'PATH', override: false, tracked: false },
+      { name: '', override: false, tracked: false },
     ];
+    for (const row of rows) {
+      expect(isGitContextEnvOverrideName(row.name), row.name).toBe(row.override);
+      expect(isTrackedGitEnvName(row.name), row.name).toBe(row.tracked);
+    }
+  });
+
+  test('a value is read from the assignments when they carry the name, else the environment', () => {
     const env = new Map([
       ['GIT_DIR', '/env/git'],
       ['HOME', '/env/home'],
     ]);
     const assignments = new Map([
       ['GIT_DIR', '/assigned/git'],
-      ['GIT_SSH_COMMAND', 'ssh -o X'],
+      ['GIT_SSH_COMMAND', ''],
     ]);
-    const recorded: [string, unknown][] = [];
-    for (const name of names) {
-      const facts = {
-        override: isGitContextEnvOverrideName(name),
-        tracked: isTrackedGitEnvName(name),
-        assigned: getGitEnvValue(name, env, assignments),
-        plain: getGitEnvValue(name, env),
-      };
-      recorded.push([name, facts]);
-    }
-    for (const [index, candidate] of [
-      undefined,
-      new Map<string, string>(),
-      assignments,
-      env,
-    ].entries()) {
-      const ssh = hasGitSshEnvAssignment(candidate);
-      const config = hasConfigAffectingEnvAssignment(candidate);
-      recorded.push([`candidate ${index}`, { ssh, config }]);
-    }
-    expectRecordedDigest('analyzer-base/git-env-names', recorded);
+    expect(getGitEnvValue('GIT_DIR', env, assignments)).toBe('/assigned/git');
+    expect(getGitEnvValue('GIT_DIR', env)).toBe('/env/git');
+    expect(getGitEnvValue('HOME', env, assignments)).toBe('/env/home');
+    // An assignment to the empty string is a value, not an absence.
+    expect(getGitEnvValue('GIT_SSH_COMMAND', env, assignments)).toBe('');
+    expect(getGitEnvValue('PATH', env, assignments)).toBeUndefined();
+
+    expect(hasGitSshEnvAssignment(assignments)).toBeTrue();
+    expect(hasGitSshEnvAssignment(new Map())).toBeFalse();
+    expect(hasGitSshEnvAssignment(undefined)).toBeFalse();
+    expect(hasConfigAffectingEnvAssignment(new Map([['HOME', '/tmp/home']]))).toBeTrue();
+    expect(hasConfigAffectingEnvAssignment(assignments)).toBeFalse();
+    expect(hasConfigAffectingEnvAssignment(undefined)).toBeFalse();
   });
 
-  test('append assignments agree for tracked and untracked names', () => {
-    const tokens = [
-      'GIT_DIR+=/extra',
-      'GIT_CONFIG_COUNT+=2',
-      'HOME+=/extra',
-      'PATH+=:/extra',
-      'TMPDIR+=/extra',
-      'GIT_DIR=/plain',
-      '+=/extra',
-      '1BAD+=x',
-      'GIT_DIR+=',
-    ];
+  test('an append assignment extends the value the name already holds', () => {
     const env = new Map([['GIT_DIR', '/env/git']]);
     const assignments = new Map([['GIT_DIR', '/assigned/git']]);
-    const recorded: [string, unknown][] = [];
-    for (const token of tokens) {
-      const assigned = parseGitContextAppendEnvAssignment(token, env, assignments);
-      const plain = parseGitContextAppendEnvAssignment(token, env);
-      recorded.push([token, { assigned, plain }]);
+    const rows: readonly {
+      readonly token: string;
+      readonly assigned: { name: string; value: string } | null;
+      readonly plain: { name: string; value: string } | null;
+    }[] = [
+      {
+        token: 'GIT_DIR+=/extra',
+        assigned: { name: 'GIT_DIR', value: '/assigned/git/extra' },
+        plain: { name: 'GIT_DIR', value: '/env/git/extra' },
+      },
+      {
+        token: 'GIT_DIR+=',
+        assigned: { name: 'GIT_DIR', value: '/assigned/git' },
+        plain: { name: 'GIT_DIR', value: '/env/git' },
+      },
+      {
+        token: 'GIT_CONFIG_COUNT+=2',
+        assigned: { name: 'GIT_CONFIG_COUNT', value: '2' },
+        plain: { name: 'GIT_CONFIG_COUNT', value: '2' },
+      },
+      {
+        token: 'HOME+=/extra',
+        assigned: { name: 'HOME', value: '/extra' },
+        plain: { name: 'HOME', value: '/extra' },
+      },
+      // A name the analyzer does not track carries no Git meaning.
+      { token: 'PATH+=:/extra', assigned: null, plain: null },
+      { token: 'TMPDIR+=/extra', assigned: null, plain: null },
+      { token: 'GIT_DIR=/plain', assigned: null, plain: null },
+      { token: '+=/extra', assigned: null, plain: null },
+      { token: '1BAD+=x', assigned: null, plain: null },
+    ];
+    for (const row of rows) {
+      expect(
+        parseGitContextAppendEnvAssignment(row.token, env, assignments),
+        row.token,
+      ).toStrictEqual(row.assigned);
+      expect(parseGitContextAppendEnvAssignment(row.token, env), row.token).toStrictEqual(
+        row.plain,
+      );
     }
-    expectRecordedDigest('analyzer-base/git-append-assignments', recorded);
   });
 });
 
 describe('git command line parsing', () => {
-  const lines = [
-    'git',
-    'git status',
-    'git -C /tmp -c a.b=c checkout -- .',
-    'git --git-dir=/tmp/x --work-tree /tmp status',
-    'git -- checkout',
-    'git -- -x',
-    'git --config-env core.sshCommand=SSH fetch',
-    'git --config-env=core.sshCommand=SSH fetch',
-    'git -c core.sshCommand=ssh clone url',
-    'git -ccore.sshCommand=ssh clone url',
-    'git -c CORE.SSHCOMMAND=ssh clone url',
-    'git clone url -- extra -- more',
-    'not-git -c core.sshCommand=ssh clone url',
-  ];
-
-  test('subcommand extraction and double-dash splitting agree', () => {
-    const recorded: [string, unknown][] = [];
-    for (const argv of [[], ...lines.map(argvOf), ...corpusCommands().map(argvOf)]) {
-      const subcommand = extractGitSubcommandAndRest(argv);
-      const split = splitAtDoubleDash(argv);
-      recorded.push([argv.join(' '), { subcommand, split }]);
+  test('the subcommand is the first word that is not a global option or its value', () => {
+    const rows: readonly {
+      readonly line: string;
+      readonly subcommand: string | null;
+      readonly rest: readonly string[];
+    }[] = [
+      { line: 'git', subcommand: null, rest: [] },
+      { line: 'git status', subcommand: 'status', rest: [] },
+      { line: 'git -C /tmp -c a.b=c checkout -- .', subcommand: 'checkout', rest: ['--', '.'] },
+      { line: 'git --git-dir=/tmp/x --work-tree /tmp status', subcommand: 'status', rest: [] },
+      { line: 'git -- checkout', subcommand: 'checkout', rest: [] },
+      { line: 'git -- -x', subcommand: null, rest: ['-x'] },
+      { line: '/usr/bin/GIT.EXE status', subcommand: 'status', rest: [] },
+      { line: 'not-git status', subcommand: null, rest: [] },
+    ];
+    for (const row of rows) {
+      expect(extractGitSubcommandAndRest(argvOf(row.line)), row.line).toStrictEqual({
+        subcommand: row.subcommand,
+        rest: [...row.rest],
+      });
     }
-    expectRecordedDigest('analyzer-base/git-subcommand-split', recorded);
+    expect(extractGitSubcommandAndRest([])).toStrictEqual({ subcommand: null, rest: [] });
   });
 
-  test('the ssh-command config scan agrees for the command line and the environment', () => {
+  test('the double-dash split reports the first separator only', () => {
+    expect(splitAtDoubleDash(['a', '--', 'b', 'c'])).toStrictEqual({
+      index: 1,
+      before: ['a'],
+      after: ['b', 'c'],
+    });
+    expect(splitAtDoubleDash(['a', 'b'])).toStrictEqual({
+      index: -1,
+      before: ['a', 'b'],
+      after: [],
+    });
+    expect(splitAtDoubleDash(['--', '--', 'x'])).toStrictEqual({
+      index: 0,
+      before: [],
+      after: ['--', 'x'],
+    });
+    expect(splitAtDoubleDash([])).toStrictEqual({ index: -1, before: [], after: [] });
+  });
+
+  test('a core.sshCommand set on the command line is found in every spelling', () => {
     const env = new Map([['SSH', 'ssh -o StrictHostKeyChecking=no']]);
-    const assignments = new Map([['SSH', 'ssh -o X']]);
-    const recorded: [string, unknown][] = [];
-    for (const argv of lines.map(argvOf)) {
-      const assigned = hasGitCommandLineSshCommandConfig(argv, env, assignments);
-      const plain = hasGitCommandLineSshCommandConfig(argv, env);
-      recorded.push([argv.join(' '), { assigned, plain }]);
+    const rows: readonly { readonly line: string; readonly configured: boolean }[] = [
+      { line: 'git -c core.sshCommand=ssh clone url', configured: true },
+      { line: 'git -ccore.sshCommand=ssh clone url', configured: true },
+      // The key is compared case-folded, as Git reads it.
+      { line: 'git -c CORE.SSHCOMMAND=ssh clone url', configured: true },
+      { line: 'git --config-env core.sshCommand=SSH fetch', configured: true },
+      { line: 'git --config-env=core.sshCommand=SSH fetch', configured: true },
+      { line: 'git status', configured: false },
+      { line: 'git -C /tmp -c a.b=c checkout -- .', configured: false },
+      { line: 'not-git -c core.sshCommand=ssh clone url', configured: false },
+      // The scan stops at the subcommand, so a later `-c` is that subcommand's own option.
+      { line: 'git clone url -c core.sshCommand=ssh', configured: false },
+    ];
+    for (const row of rows) {
+      expect(hasGitCommandLineSshCommandConfig(argvOf(row.line), env), row.line).toBe(
+        row.configured,
+      );
     }
-    expectRecordedDigest('analyzer-base/git-ssh-command-config', recorded);
+    expect(
+      hasGitCommandLineSshCommandConfig(
+        argvOf('git --config-env core.sshCommand=SSH fetch'),
+        new Map(),
+        new Map([['SSH', 'ssh -o X']]),
+      ),
+    ).toBeTrue();
   });
 });

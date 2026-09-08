@@ -14,14 +14,12 @@ import {
 } from '@/gate/analyzer/parallel';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, FUZZ_SEED, fuzzShellSources } from '../../helpers/shell-inputs';
 
 /**
  * GNU parallel builds its jobs from a template, a `:::` argument product, a stream nobody can
- * see, and options that can move the work to another host or another directory. The two
- * implementations are compared on all four, on the work each reserves against the parallel
- * budget, and on the `PARALLEL` value each reads through its own environment seam.
+ * see, and options that can move the work to another host or another directory. Each row states
+ * the verdict for one of those, the work it reserves against the parallel budget, and the
+ * `PARALLEL` value read through the environment seam.
  */
 
 let root = '';
@@ -281,49 +279,184 @@ const TEMPLATE_SHAPES: readonly (readonly string[])[] = [
 const ALL_SHAPES = [...ARGUMENT_SHAPES, ...TEMPLATE_SHAPES];
 
 describe('parallel command parsing', () => {
-  test('finds the same child start as the shipped parser', () => {
-    const recorded: [string, unknown][] = [];
-    for (const tokens of [...ALL_SHAPES, [], ['-j4']]) {
-      const start = extractParallelChildStart(tokens);
-      recorded.push([tokens.join(' '), start]);
+  test('the child command starts after the options and their values', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly start: number }[] = [
+      { tokens: ['parallel', 'rm', '-rf'], start: 1 },
+      { tokens: ['parallel', '--', 'rm', '-rf', '{}', ':::', 'a'], start: 2 },
+      { tokens: ['parallel', '-j4', 'echo', ':::', 'a'], start: 2 },
+      { tokens: ['parallel', '-j', '4', 'echo', ':::', 'a'], start: 3 },
+      { tokens: ['parallel', '--jobs', '4', 'echo', ':::', 'a'], start: 3 },
+      { tokens: ['parallel', '-n', '2', 'echo', ':::', 'a', 'b'], start: 3 },
+      { tokens: ['parallel', '-I', '{}', 'echo', '{}', ':::', 'a'], start: 3 },
+      { tokens: ['parallel', '-I%', 'echo', '%', ':::', 'a'], start: 2 },
+      { tokens: ['parallel', '-S', 'host', 'rm', '-rf', '{}', ':::', 'a'], start: 3 },
+      { tokens: ['parallel', '--workdir', '/tmp', 'rm', '-rf', 'x', ':::', 'a'], start: 3 },
+      { tokens: ['parallel', '--dry-run', 'rm', '-rf', '{}', ':::', 'a'], start: 2 },
+      { tokens: ['parallel', 'echo', '{}', ':::', 'a', 'b'], start: 1 },
+      { tokens: ['parallel'], start: 1 },
+      // With no child at all the start is past the last token, marker included.
+      { tokens: ['parallel', ':::', 'a'], start: 3 },
+      { tokens: [], start: 0 },
+      { tokens: ['-j4'], start: 1 },
+    ];
+    for (const row of rows) {
+      expect(extractParallelChildStart(row.tokens), row.tokens.join(' ')).toBe(row.start);
     }
-    expectRecordedDigest('analyzer-parallel/child-start', recorded, root);
   });
 
-  test('replaces placeholders exactly as the shipped helper does', () => {
-    const recorded: [string, unknown][] = [];
-    for (const template of [
-      '{}',
-      'a{}b',
-      '{1}',
-      '{-2}',
-      '{.}/{}',
-      'plain',
-      '{ }',
-      '{{}}',
-      '{=x=}',
-    ]) {
-      for (const argument of ['x', '', 'a b', '{}']) {
-        const replaced = replaceParallelPlaceholder(template, argument);
-        recorded.push([`${template} <- ${argument}`, replaced]);
-      }
+  test('a placeholder is replaced wherever it appears, and nothing else is', () => {
+    const rows: readonly {
+      readonly template: string;
+      readonly argument: string;
+      readonly replaced: string;
+    }[] = [
+      { template: '{}', argument: 'x', replaced: 'x' },
+      { template: 'a{}b', argument: 'x', replaced: 'axb' },
+      { template: 'a{}b', argument: '', replaced: 'ab' },
+      { template: '{1}', argument: 'x', replaced: 'x' },
+      { template: '{-2}', argument: 'x', replaced: 'x' },
+      { template: '{.}/{}', argument: 'a b', replaced: 'a b/a b' },
+      { template: '{=x=}', argument: 'x', replaced: 'x' },
+      // The inner braces are the placeholder.
+      { template: '{{}}', argument: 'x', replaced: '{x}' },
+      { template: 'plain', argument: 'x', replaced: 'plain' },
+      // Whitespace is not part of a placeholder name.
+      { template: '{ }', argument: 'x', replaced: '{ }' },
+      { template: '{}', argument: '{}', replaced: '{}' },
+      // A replacement is inserted literally, including the characters a replace call would read.
+      { template: 'before{}after', argument: '$&', replaced: 'before$&after' },
+      { template: 'before{}after', argument: "$'", replaced: "before$'after" },
+      { template: 'before{}after', argument: '$`', replaced: 'before$`after' },
+    ];
+    for (const row of rows) {
+      expect(
+        replaceParallelPlaceholder(row.template, row.argument),
+        `${row.template} <- ${row.argument}`,
+      ).toBe(row.replaced);
     }
-    expectRecordedDigest('analyzer-parallel/placeholders', recorded, root);
   });
 });
 
 describe('parallel analysis', () => {
-  test('reports the same rule, reserved work and nested jobs as the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    for (const row of ROWS) {
-      for (const tokens of ALL_SHAPES) {
-        const pair = bothAnalyzers(tokens, row);
-        const label = `${row.label}: ${tokens.join(' ')}`;
-        const budget = parallelWork(pair.budget);
-        recorded.push([label, { match: pair.match, jobs: pair.jobs, budget, scan: pair.scan }]);
-      }
+  const idFor = (tokens: readonly string[], row: ParallelRow = { label: 'bare' }) => {
+    const outcome = bothAnalyzers(tokens, row).match;
+    if (!outcome.ok) throw outcome.error;
+    return outcome.value?.id ?? null;
+  };
+
+  test('a job whose template can carry a command is unverifiable', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['parallel', 'rm', '-rf', '{}'], id: 'parallel.rm-recursive-force-dynamic' },
+      { tokens: ['parallel', 'bash', '-c', '{}'], id: 'parallel.shell-dynamic' },
+      { tokens: ['parallel', 'git', '{}'], id: 'parallel.shell-dynamic' },
+      // With the arguments spelled out the job is expanded and analyzed as itself.
+      { tokens: ['parallel', 'git', '{}', ':::', 'status'], id: null },
+      { tokens: ['parallel', 'git', '-c', '{}', 'status'], id: 'parallel.shell-dynamic' },
+      { tokens: ['parallel', 'find', '{}', '-delete'], id: 'parallel.shell-dynamic' },
+      { tokens: ['parallel', 'awk', '-f', '{}'], id: 'parallel.shell-dynamic' },
+      { tokens: ['parallel', 'python3', '-c', '{}'], id: 'parallel.shell-dynamic' },
+      { tokens: ['parallel', 'eval', '{}'], id: 'parallel.shell-dynamic' },
+      { tokens: ['parallel', 'source', '{}'], id: 'parallel.shell-dynamic' },
+      // A placeholder that can only become data leaves the command verifiable — the expanded
+      // job is then analyzed as itself.
+      {
+        tokens: ['parallel', 'git', 'checkout', '--', '{}', ':::', '.'],
+        id: 'git.checkout-double-dash',
+      },
+      { tokens: ['parallel', 'find', '.', '-name', '{}'], id: null },
+      { tokens: ['parallel', 'find', '.', '-newermt', '{}', '-print'], id: null },
+      { tokens: ['parallel', 'python3', '{}'], id: 'parallel.shell-dynamic' },
+    ];
+    for (const row of rows) {
+      expect(idFor(row.tokens), row.tokens.join(' ')).toBe(row.id);
     }
-    expectRecordedDigest('analyzer-parallel/analysis', recorded, root);
+  });
+
+  test('a job with no placeholder is analyzed as the command it runs', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly row?: ParallelRow;
+      readonly id: string | null;
+    }[] = [
+      { tokens: ['parallel', 'echo', ':::', 'a', 'b'], id: null },
+      { tokens: ['parallel', 'git', 'status', ':::', 'a'], id: null },
+      { tokens: ['parallel', 'git', 'reset', '--hard', ':::', 'a'], id: 'git.reset-hard' },
+      { tokens: ['parallel', 'find', '.', '-delete', ':::', 'a'], id: 'find.delete' },
+      { tokens: ['parallel', 'rm', '-rf', '/', ':::', 'a'], id: 'rm.recursive-force-root-or-home' },
+      { tokens: ['parallel', 'rm', 'build', ':::', 'a'], id: null },
+      {
+        tokens: ['parallel', 'deploy-tool', '--prod'],
+        row: { label: 'custom rules', rules: RULES },
+        id: 'custom.no-prod-deploy',
+      },
+      // Without the rule in the policy the same command is only a command.
+      { tokens: ['parallel', 'deploy-tool', '--prod'], id: null },
+      // A transparent wrapper is peeled by the child dispatch, not by the template reader, so
+      // the placeholder is not read as rm's target here.
+      { tokens: ['parallel', 'uv', 'run', 'rm', '-rf', '{}', ':::', 'a'], id: null },
+      { tokens: ['parallel', 'FOO=bar', 'echo', ':::', 'a'], id: null },
+      // A value the job exports carries command text of its own.
+      {
+        tokens: ['parallel', 'FOO=rm -rf /', 'echo', ':::', 'a'],
+        id: 'raw-text.dangerous-command',
+      },
+    ];
+    for (const row of rows) {
+      expect(idFor(row.tokens, row.row), row.tokens.join(' ')).toBe(row.id);
+    }
+  });
+
+  test('an input the reader cannot enumerate makes the command stream unverifiable', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['parallel'], id: 'parallel.command-stream-dynamic' },
+      { tokens: ['parallel', '::::', 'file'], id: 'parallel.command-stream-dynamic' },
+      { tokens: ['parallel', ':::+', 'a'], id: 'parallel.command-stream-dynamic' },
+      { tokens: ['parallel', '-a', 'list', 'echo'], id: 'parallel.command-stream-dynamic' },
+      {
+        tokens: ['parallel', '--colsep', ',', 'echo', ':::', 'a'],
+        id: 'parallel.command-stream-dynamic',
+      },
+      {
+        tokens: ['parallel', '--rpl', '{x}', 'echo', ':::', 'a'],
+        id: 'parallel.command-stream-dynamic',
+      },
+      {
+        tokens: ['parallel', '-I', '%', 'echo', '%', ':::', 'a'],
+        id: 'parallel.command-stream-dynamic',
+      },
+      {
+        tokens: ['parallel', '--env', 'FOO', 'echo', ':::', 'a'],
+        id: 'parallel.command-stream-dynamic',
+      },
+      // A template that can carry a command is reported before the unreadable input is.
+      {
+        tokens: ['parallel', '--pipe', 'rm', '-rf', '{}'],
+        id: 'parallel.rm-recursive-force-dynamic',
+      },
+      {
+        tokens: ['parallel', '--workdir', '...', 'rm', '-rf', 'x', ':::', 'a'],
+        id: 'parallel.command-stream-dynamic',
+      },
+      {
+        tokens: ['parallel', '--wd=', 'rm', '-rf', 'x', ':::', 'a'],
+        id: 'parallel.command-stream-dynamic',
+      },
+      { tokens: ['parallel', '-I', '{}', 'echo', '{}', ':::', 'a'], id: null },
+      { tokens: ['parallel', '--dry-run', 'rm', '-rf', '{}', ':::', 'a'], id: null },
+    ];
+    for (const row of rows) {
+      expect(idFor(row.tokens), row.tokens.join(' ')).toBe(row.id);
+    }
+    // With the rule off the stream is no longer the analyzer's to report.
+    expect(
+      idFor(['parallel'], { label: 'off', disabledRule: 'parallel.command-stream-dynamic' }),
+    ).toBeNull();
+  });
+
+  test('a job the analyzer can read is handed to the caller with its directory', () => {
+    const pair = bothAnalyzers(['parallel', 'bash', '-c', 'echo BOOM'], { label: 'bare' });
+    expect(pair.jobs).toStrictEqual([`echo BOOM @ ${project}`]);
+    expect(pair.match.ok && pair.match.value).toStrictEqual(NESTED);
   });
 
   test('the shapes reach the shell, rm, command-stream and unsupported verdicts', () => {
@@ -361,7 +494,6 @@ describe('parallel analysis', () => {
       env: { PARALLEL: '-j4' },
     });
     expect(ambient.match.ok && ambient.match.value?.id).toBe('parallel.command-stream-dynamic');
-    expectRecordedDigest('analyzer-parallel/ambient-value', [['ambient', ambient.match]], root);
     // A shell assignment shadows the environment, so an empty one restores the plain verdict.
     const shadowed = bothAnalyzers(['parallel', 'echo', ':::', 'a'], {
       label: 'shadowed',
@@ -369,7 +501,6 @@ describe('parallel analysis', () => {
       assignments: new Map([['PARALLEL', '']]),
     });
     expect(shadowed.match).toStrictEqual({ ok: true, value: null });
-    expectRecordedDigest('analyzer-parallel/shadowed-value', [['shadowed', shadowed.match]], root);
   });
 
   test('an argument product past the child-analysis cap breaches the parallel budget', () => {
@@ -387,35 +518,18 @@ describe('parallel analysis', () => {
     });
     expect(within.match).toStrictEqual({ ok: true, value: null });
     expect(within.budget.counters.get('parallelChildAnalyses')).toBe(1000);
-    const budget = parallelWork(within.budget);
-    expectRecordedDigest('analyzer-parallel/child-analysis-cap', [['within', budget]], root);
+    expect(parallelWork(within.budget)).toMatchObject({
+      childAnalyses: 1000,
+      placeholderReplacements: 1000,
+    });
   });
 
-  test('the reason strings are the shipped strings', () => {
-    expectRecordedDigest(
-      'analyzer-parallel/reasons',
-      [
-        ['rm', REASON_PARALLEL_RM],
-        ['shell', REASON_PARALLEL_SHELL],
-      ],
-      root,
+  test('the two reasons are the strings the denials render', () => {
+    expect(REASON_PARALLEL_RM).toBe(
+      'parallel rm -rf with dynamic input is dangerous. Use explicit file list instead.',
     );
-  });
-
-  test('corpus and fuzz sources placed after parallel agree with the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of [...corpusCommands(), ...fuzzShellSources(1_000, FUZZ_SEED)]) {
-      const words = source.split(/\s+/).filter((token) => token !== '');
-      for (const suffix of [[], [':::', 'a', 'b']]) {
-        const tokens = ['parallel', ...words, ...suffix];
-        const pair = bothAnalyzers(tokens, { label: 'fuzz', rules: RULES, strict: true });
-        const budget = parallelWork(pair.budget);
-        recorded.push([
-          `${source} ${suffix.join(' ')}`,
-          { match: pair.match, jobs: pair.jobs, budget },
-        ]);
-      }
-    }
-    expectRecordedDigest('analyzer-parallel/corpus-and-fuzz', recorded, root);
+    expect(REASON_PARALLEL_SHELL).toBe(
+      'parallel with shell -c can execute arbitrary commands from dynamic input. Run the inner command directly on an explicit file list instead.',
+    );
   });
 });

@@ -1,23 +1,22 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { processPathResolver } from '@/core/environment';
 import { GIT_GLOBAL_OPTS_WITH_VALUE } from '@/core/rules/constants';
+import type { GitExecutionContext } from '@/gate/analyzer/git/worktree';
 import { getGitExecutionContext, hasGitContextEnvOverride } from '@/gate/analyzer/git/worktree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { normalize } from '../../helpers/temp-home';
 
 /**
- * Worktree relaxation only applies to the directory Git would actually run in, so the ported
- * reader has to land on the same directory for every `-C`, `--git-dir` and `--work-tree` form.
+ * Worktree relaxation only applies to the directory Git would actually run in, so the reader has
+ * to land on the right directory for every `-C`, `--git-dir` and `--work-tree` form.
  */
 
 let root = '';
 const paths = { repo: '', sub: '', deep: '', outside: '' };
 
 beforeAll(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), 'next-git-exec-')));
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'git-exec-')));
   paths.repo = join(root, 'repo');
   paths.sub = join(paths.repo, 'sub');
   paths.deep = join(paths.sub, 'deep');
@@ -65,66 +64,136 @@ const TOKEN_ROWS: readonly (readonly string[])[] = [
   ['git', '-C', 'sub', '-C', 'deep', '-C', '../..', 'status'],
 ];
 
-function cwdRows(): (string | undefined)[] {
-  return [
-    undefined,
-    '',
-    root,
-    paths.repo,
-    paths.sub,
-    paths.outside,
-    join(paths.repo, 'link'),
-    join(paths.repo, 'file.txt'),
-    join(paths.repo, 'missing'),
-    '.',
-  ];
-}
-
-const ENV_ROWS: readonly (readonly [string, string])[][] = [
-  [],
-  [['PATH', '/usr/bin']],
-  [['GIT_DIR', '/tmp/other.git']],
-  [['GIT_WORK_TREE', '/tmp/tree']],
-  [['GIT_COMMON_DIR', '/tmp/common']],
-  [['GIT_INDEX_FILE', '/tmp/index']],
-  [['GIT_CONFIG_COUNT', '1']],
-  [['git_dir', '/tmp/other.git']],
-];
-
-describe('next/gate/analyzer/git/worktree against src/analyzer/git/worktree', () => {
-  test('carries the same global-option table', () => {
-    expectRecordedDigest(
-      'analyzer-git-worktree/global-options',
-      [['options', [...GIT_GLOBAL_OPTS_WITH_VALUE].sort()]],
-      root,
-    );
+describe('gate/analyzer/git/worktree', () => {
+  test('the global-option table names every option that consumes the next token', () => {
+    expect([...GIT_GLOBAL_OPTS_WITH_VALUE].sort()).toStrictEqual([
+      '--config-env',
+      '--git-dir',
+      '--namespace',
+      '--super-prefix',
+      '--work-tree',
+      '-C',
+      '-c',
+    ]);
   });
 
-  test('resolves the same execution directory for every -C and context form', () => {
-    const recorded: [string, unknown][] = [];
-    for (const cwd of cwdRows()) {
-      for (const tokens of TOKEN_ROWS) {
-        const resolved = {
-          cwd,
-          tokens,
-          context: getGitExecutionContext(tokens, cwd, processPathResolver),
-        };
-        // The `undefined`, `''` and `'.'` cwd rows resolve against the checkout, which the
-        // digest's own `root` fold does not reach; `-C ..` from one of them lands on its parent.
-        // A `-C ..` taken from the fixture root instead lands on the temp directory the host
-        // chose, which no fold can hide — folding it would rewrite the literal `/tmp` the tables
-        // spell — so that row is compared like every other and left out of the record.
-        if (cwd !== root || !tokens.includes('..'))
-          recorded.push([
-            tokens.join(' '),
-            normalize(resolved, [
-              [process.cwd(), '<cwd>'],
-              [dirname(process.cwd()), '<cwd>/..'],
-            ]),
-          ]);
-      }
+  test('the execution directory follows every -C form and stops at the first operand', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly cwd: () => string | undefined;
+      readonly context: () => GitExecutionContext;
+    }[] = [
+      {
+        tokens: ['git', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', 'status'],
+        cwd: () => undefined,
+        context: () => ({ gitCwd: null, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', 'status'],
+        cwd: () => join(root, 'missing'),
+        context: () => ({ gitCwd: null, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C', 'sub', '-C', 'deep', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.deep, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-Csub', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
+      },
+      {
+        // contract: src/core/paths/chdir.ts — a `-C` through a symlink lands on the physical
+        // directory, as a shell `cd` would.
+        tokens: ['git', '-C', 'link', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C', 'missing', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: null, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C', 'file.txt', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: null, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: null, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C', ''],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: null, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C', 'sub', '-C', 'deep', '-C', '../..', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '-C', 'sub/deep', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.deep, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '--git-dir', '.git', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: true }),
+      },
+      {
+        tokens: ['git', '--work-tree=.', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: true }),
+      },
+      {
+        tokens: ['git', '-C', 'sub', '--git-dir', 'x', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: true }),
+      },
+      {
+        tokens: ['git', '--git-dir', 'x', '-C', 'sub', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: true }),
+      },
+      {
+        tokens: ['git', '--namespace', 'ns', '-C', 'sub', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', '--no-pager', '-C', 'sub', 'status'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
+      },
+      {
+        // contract: src/gate/analyzer/git/worktree.ts:41 — `--` ends the global options, so what
+        // follows is an operand rather than a directory change.
+        tokens: ['git', '--', '-C', 'sub'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: false }),
+      },
+      {
+        tokens: ['git', 'status', '-C', 'sub'],
+        cwd: () => paths.repo,
+        context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: false }),
+      },
+    ];
+    for (const row of rows) {
+      expect(
+        getGitExecutionContext(row.tokens, row.cwd(), processPathResolver),
+        row.tokens.join(' '),
+      ).toStrictEqual(row.context());
     }
-    expectRecordedDigest('analyzer-git-worktree/execution-context', recorded, root);
   });
 
   test('the table reaches a resolved directory and an explicit context', () => {
@@ -136,20 +205,31 @@ describe('next/gate/analyzer/git/worktree against src/analyzer/git/worktree', ()
     expect(contexts.filter((context) => context.hasExplicitGitContext).length).toBeGreaterThan(3);
   });
 
-  test('reads the same Git context environment overrides', () => {
-    const recorded: [string, unknown][] = [];
-    for (const env of ENV_ROWS) {
-      for (const assignments of [...ENV_ROWS, undefined]) {
-        const envMap = new Map(env);
-        const assignmentMap = assignments === undefined ? undefined : new Map(assignments);
-        const read = {
-          env,
-          assignments,
-          override: hasGitContextEnvOverride(envMap, assignmentMap),
-        };
-        recorded.push([`${JSON.stringify(env)} ${JSON.stringify(assignments)}`, read]);
-      }
+  test('a Git context environment override is read from the environment or the assignments', () => {
+    const rows: readonly {
+      readonly env: readonly (readonly [string, string])[];
+      readonly assignments?: readonly (readonly [string, string])[];
+      readonly override: boolean;
+    }[] = [
+      { env: [], override: false },
+      { env: [['PATH', '/usr/bin']], override: false },
+      { env: [['GIT_CONFIG_COUNT', '1']], override: false },
+      // contract: src/gate/analyzer/git/env.ts — the override names are matched exactly.
+      { env: [['git_dir', '/tmp/other.git']], override: false },
+      { env: [['GIT_DIR', '/tmp/other.git']], override: true },
+      { env: [['GIT_WORK_TREE', '/tmp/tree']], override: true },
+      { env: [['GIT_COMMON_DIR', '/tmp/common']], override: true },
+      { env: [['GIT_INDEX_FILE', '/tmp/index']], override: true },
+      { env: [], assignments: [['GIT_DIR', '/tmp/other.git']], override: true },
+      { env: [], assignments: [['PATH', '/usr/bin']], override: false },
+      { env: [['GIT_DIR', '/tmp/other.git']], assignments: [], override: true },
+    ];
+    for (const row of rows) {
+      const assignments = row.assignments === undefined ? undefined : new Map(row.assignments);
+      expect(
+        hasGitContextEnvOverride(new Map(row.env), assignments),
+        `${JSON.stringify(row.env)} ${JSON.stringify(row.assignments)}`,
+      ).toBe(row.override);
     }
-    expectRecordedDigest('analyzer-git-worktree/env-overrides', recorded, root);
   });
 });

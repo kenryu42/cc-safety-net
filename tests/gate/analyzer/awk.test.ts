@@ -1,104 +1,14 @@
 import { describe, expect, test } from 'bun:test';
+import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
+import type { AwkArgvMetadata } from '@/gate/analyzer/awk';
 import {
   AWK_EXECUTABLE_SOURCE_SELECTORS,
   analyzeAwkSystemCallMatch,
   extractAwkExecutableSources,
   extractAwkSystemCommands,
   parseAwkArgv,
+  REASON_AWK_SYSTEM_DYNAMIC,
 } from '@/gate/analyzer/awk';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, fuzzShellSources } from '../../helpers/shell-inputs';
-
-/**
- * The awk module is recorded over every program the two corpora carry, a seeded fuzz, and a table
- * that walks each executable-source form the argv scanner knows.
- */
-
-const AWK_PROGRAMS: readonly string[] = [
-  '',
-  '{ print }',
-  'BEGIN { system("rm -rf /tmp/x") }',
-  "BEGIN { system('rm -rf /tmp/x') }",
-  'BEGIN { system("echo " $1) }',
-  'BEGIN { system($0) }',
-  'BEGIN { system() }',
-  '{ system("echo hi"); system("echo there") }',
-  'BEGIN { system ( "spaced" ) }',
-  'BEGIN { system("a" "b") }',
-  'BEGIN { system("unterminated }',
-  'BEGIN { system("esc\\"aped") }',
-  'BEGIN { system("tab\\there \\x41 \\101 \\q") }',
-  'BEGIN { mysystem("id") }',
-  'BEGIN { system2("id") }',
-  'function f() { system("id") } BEGIN { f() }',
-  '# comment with system("rm -rf /")\n{ print }',
-  '{ print "system(\\"rm\\")" }',
-  '/system\\(/ { print }',
-  'BEGIN { if (x ~ /a|b/) system("id") }',
-  'BEGIN { system("rm -rf {}") }',
-  'BEGIN { system("echo $HOME") }',
-  'BEGIN { system("echo `id`") }',
-  '{ print $0 | "sh" }',
-  '{ print $0 | "sh -c \'rm -rf /\'" }',
-  '{ print | cmd }',
-  '{ print "x" | "cat" ; print "y" }',
-  '{ printf "%s\\n", $0 | "cat" }',
-  '{ print "x" |& "cat" }',
-  '{ "date" | getline d }',
-  '{ cmd | getline line }',
-  '{ "echo " $1 | getline out }',
-  '{ "id" |& getline out }',
-  '{ getline line < "file" }',
-  'BEGIN { print > "file" }',
-  'BEGIN { x = 1 || 2 }',
-  '{ print $1 } # trailing\n{ "id" | getline }',
-  'BEGIN { system("one"); print "two" | "three" }',
-];
-
-const AWK_ARGVS: readonly (readonly string[])[] = [
-  ['awk'],
-  ['awk', '{ print }', 'file'],
-  ['awk', '-f', 'prog.awk', 'file'],
-  ['awk', '-fprog.awk', 'file'],
-  ['awk', '--file', 'prog.awk'],
-  ['awk', '--file=prog.awk'],
-  ['awk', '-e', 'BEGIN{system("id")}'],
-  ['awk', '-eBEGIN{system("id")}'],
-  ['awk', '--source', 'BEGIN{system("id")}'],
-  ['awk', '--source=BEGIN{system("id")}'],
-  ['awk', '-F', ':', '{print $1}'],
-  ['awk', '-F:', '{print $1}'],
-  ['awk', '-v', 'x=1', '{print x}'],
-  ['awk', '-vx=1', '{print x}'],
-  ['awk', '-v', '{print}'],
-  ['awk', '--assign=x=1', '{print}'],
-  ['awk', '--field-separator=:', '{print}'],
-  ['awk', '--'],
-  ['awk', '--', '{print}'],
-  ['awk', '-'],
-  ['awk', '-f'],
-  ['awk', '-e'],
-  ['awk', '--file'],
-  ['awk', '-W', 'interactive', '{print}'],
-  ['awk', '--unknown', '{print}'],
-  ['gawk', '-e', 'BEGIN{system("a")}', '-e', 'BEGIN{system("b")}'],
-  ['mawk', '-f', 'a.awk', '-e', 'BEGIN{}'],
-  ['nawk', '{ "id" | getline }', 'data'],
-  ['awk', '-f', 'a.awk', '{ print }'],
-  ['awk', '--', '-f', 'a.awk'],
-];
-
-function argvOf(command: string): string[] {
-  return command.split(/\s+/).filter((word) => word.length > 0);
-}
-
-function awkArgvs(): readonly (readonly string[])[] {
-  return [
-    ...AWK_ARGVS,
-    ...corpusCommands().map(argvOf),
-    ...AWK_PROGRAMS.map((code) => ['awk', code]),
-  ];
-}
 
 /** A nested analyzer whose answer depends only on the recovered command text. */
 function nestedAnalyzer(command: string) {
@@ -107,50 +17,221 @@ function nestedAnalyzer(command: string) {
     : null;
 }
 
+const DYNAMIC_MATCH: DestructiveCommandRuleMatch = {
+  id: 'awk.system-dynamic',
+  reason: REASON_AWK_SYSTEM_DYNAMIC,
+  intent: 'stop_and_explain',
+};
+
 describe('awk argv scanning', () => {
-  test('the selector table is the shipped table', () => {
-    expectRecordedDigest('analyzer-awk/selectors', [
-      ['selectors', AWK_EXECUTABLE_SOURCE_SELECTORS],
+  test('the selector table names each executable-source option and how it carries its value', () => {
+    expect(
+      AWK_EXECUTABLE_SOURCE_SELECTORS.map((entry) => [entry.selector, entry.kind, entry.valueForm]),
+    ).toStrictEqual([
+      ['-e', 'inline-code', 'attached-or-separate'],
+      ['--source', 'inline-code', 'equals-or-separate'],
+      ['-f', 'program-file', 'attached-or-separate'],
+      ['--file', 'program-file', 'equals-or-separate'],
     ]);
   });
 
-  test('parseAwkArgv and extractAwkExecutableSources agree with the shipped scanner', () => {
-    const recorded: [string, unknown][] = [];
-    for (const argv of awkArgvs()) {
-      const parsed = parseAwkArgv(argv);
-      const sources = extractAwkExecutableSources(argv);
-      recorded.push([argv.join(' '), { parsed, sources }]);
+  test('parseAwkArgv reports the executable sources and whether options are still open', () => {
+    const rows: readonly { readonly argv: readonly string[]; readonly parsed: AwkArgvMetadata }[] =
+      [
+        { argv: ['awk'], parsed: { sources: [], optionsOpen: true } },
+        {
+          argv: ['awk', '{ print }', 'file'],
+          parsed: {
+            sources: [{ tokenIndex: 1, kind: 'main-program', value: '{ print }' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '-f', 'prog.awk', 'file'],
+          parsed: {
+            sources: [{ tokenIndex: 2, kind: 'program-file', value: 'prog.awk' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '-fprog.awk', 'file'],
+          parsed: {
+            sources: [{ tokenIndex: 1, kind: 'program-file', value: 'prog.awk' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '--file=prog.awk'],
+          parsed: {
+            sources: [{ tokenIndex: 1, kind: 'program-file', value: 'prog.awk' }],
+            // contract: src/gate/analyzer/awk.ts:157 — an argv that runs out of tokens while every
+            // one of them was an option leaves the option list open.
+            optionsOpen: true,
+          },
+        },
+        {
+          argv: ['awk', '--source', 'BEGIN{system("id")}'],
+          parsed: {
+            sources: [{ tokenIndex: 2, kind: 'inline-code', value: 'BEGIN{system("id")}' }],
+            optionsOpen: true,
+          },
+        },
+        {
+          argv: ['awk', '-eBEGIN{system("id")}'],
+          parsed: {
+            sources: [{ tokenIndex: 1, kind: 'inline-code', value: 'BEGIN{system("id")}' }],
+            optionsOpen: true,
+          },
+        },
+        {
+          argv: ['gawk', '-e', 'BEGIN{system("a")}', '-e', 'BEGIN{system("b")}'],
+          parsed: {
+            sources: [
+              { tokenIndex: 2, kind: 'inline-code', value: 'BEGIN{system("a")}' },
+              { tokenIndex: 4, kind: 'inline-code', value: 'BEGIN{system("b")}' },
+            ],
+            optionsOpen: true,
+          },
+        },
+        {
+          argv: ['awk', '-F', ':', '{print $1}'],
+          parsed: {
+            sources: [{ tokenIndex: 3, kind: 'main-program', value: '{print $1}' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '-v', '{print}'],
+          // contract: src/gate/analyzer/awk.ts:108 — `-v` consumes the next token as its value, so
+          // no program is left to read.
+          parsed: { sources: [], optionsOpen: true },
+        },
+        {
+          argv: ['awk', '-W', 'interactive', '{print}'],
+          parsed: {
+            sources: [{ tokenIndex: 2, kind: 'main-program', value: 'interactive' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '--', '{print}'],
+          parsed: {
+            sources: [{ tokenIndex: 2, kind: 'main-program', value: '{print}' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '-'],
+          parsed: {
+            sources: [{ tokenIndex: 1, kind: 'main-program', value: '-' }],
+            optionsOpen: false,
+          },
+        },
+        {
+          argv: ['awk', '-f'],
+          // contract: src/gate/analyzer/awk.ts:110 — an option missing its value invalidates the scan.
+          parsed: { sources: [], optionsOpen: false },
+        },
+        { argv: ['awk', '-e'], parsed: { sources: [], optionsOpen: false } },
+      ];
+    for (const row of rows) {
+      const parsed = parseAwkArgv(row.argv);
+      expect(parsed, row.argv.join(' ')).toStrictEqual(row.parsed);
+      expect(extractAwkExecutableSources(row.argv), row.argv.join(' ')).toStrictEqual(
+        row.parsed.sources,
+      );
     }
-    expectRecordedDigest('analyzer-awk/argv-scan', recorded);
   });
 });
 
 describe('awk program scanning', () => {
-  test('extractAwkSystemCommands agrees over programs, corpus commands and fuzz', () => {
-    const sources = [...AWK_PROGRAMS, ...corpusCommands(), ...fuzzShellSources(500, 0x00a4_2f19)];
-    const recorded: [string, unknown][] = [];
-    for (const code of sources) {
-      const work = { units: 0 };
-      const commands = extractAwkSystemCommands(code, work);
-      recorded.push([code, { commands, work }]);
+  test('extractAwkSystemCommands recovers literal system() commands and flags the rest', () => {
+    const rows: readonly {
+      readonly code: string;
+      readonly extracted: { dynamic: boolean; commands: string[] } | null;
+    }[] = [
+      { code: '{ print }', extracted: null },
+      { code: 'BEGIN { mysystem("id") }', extracted: null },
+      { code: '# system("rm -rf /")\n{ print }', extracted: null },
+      { code: '{ print "system(\\"rm\\")" }', extracted: null },
+      { code: 'BEGIN { system("echo ok") }', extracted: { dynamic: false, commands: ['echo ok'] } },
+      {
+        code: 'BEGIN { system ( "spaced" ) }',
+        extracted: { dynamic: false, commands: ['spaced'] },
+      },
+      {
+        code: '{ system("echo hi"); system("echo there") }',
+        extracted: { dynamic: false, commands: ['echo hi', 'echo there'] },
+      },
+      {
+        code: 'BEGIN { system("esc\\"aped") }',
+        extracted: { dynamic: false, commands: ['esc"aped'] },
+      },
+      {
+        code: 'BEGIN { system("rm\\x20-rf\\040/") }',
+        extracted: { dynamic: false, commands: ['rm -rf /'] },
+      },
+      { code: 'BEGIN { system($0) }', extracted: { dynamic: true, commands: [] } },
+      { code: 'BEGIN { system() }', extracted: { dynamic: true, commands: [] } },
+      { code: 'BEGIN { system("unterminated }', extracted: { dynamic: true, commands: [] } },
+      { code: 'BEGIN { system("rm " $1) }', extracted: { dynamic: true, commands: [] } },
+      { code: 'BEGIN { system("a" "b") }', extracted: { dynamic: true, commands: [] } },
+    ];
+    for (const row of rows) {
+      expect(extractAwkSystemCommands(row.code), row.code).toStrictEqual(row.extracted);
     }
-    expectRecordedDigest('analyzer-awk/system-commands', recorded);
   });
 
-  test('analyzeAwkSystemCallMatch agrees, charging the same scan work', () => {
-    const recorded: [string, unknown][] = [];
-    for (const argv of awkArgvs()) {
-      const work = { units: 0 };
-      const match = analyzeAwkSystemCallMatch(argv, nestedAnalyzer, work);
-      recorded.push([argv.join(' '), { match, work }]);
+  test('a program scan charges its length once against the scan-work counter', () => {
+    const work = { units: 0 };
+    expect(extractAwkSystemCommands('{ print }', work)).toBeNull();
+    expect(work.units).toBe('{ print }'.length);
+  });
+
+  test('analyzeAwkSystemCallMatch hands literal commands to the nested analyzer and fails closed', () => {
+    const rows: readonly {
+      readonly argv: readonly string[];
+      readonly match: DestructiveCommandRuleMatch | null;
+    }[] = [
+      { argv: ['awk'], match: null },
+      { argv: ['awk', '{ print }'], match: null },
+      { argv: ['awk', 'BEGIN { subsystem("rm -rf /") }'], match: null },
+      { argv: ['awk', 'BEGIN { system("echo ok") }'], match: null },
+      // contract: src/gate/analyzer/awk.ts:168 — a program file is not read, so it offers no
+      // command text to analyze.
+      { argv: ['awk', '-f', 'prog.awk'], match: null },
+      { argv: ['awk', '{ "date" | getline d }'], match: null },
+      {
+        argv: ['awk', 'BEGIN { system("rm -rf /") }'],
+        match: { id: 'awk.system-dynamic', reason: 'nested rm -rf /', intent: 'manual_only' },
+      },
+      {
+        argv: ['awk', '{ print $0 | "sh -c \'rm -rf /\'" }'],
+        match: {
+          id: 'awk.system-dynamic',
+          reason: "nested sh -c 'rm -rf /'",
+          intent: 'manual_only',
+        },
+      },
+      { argv: ['awk', 'BEGIN { system($0) }'], match: DYNAMIC_MATCH },
+      { argv: ['awk', 'BEGIN { system("unterminated }'], match: DYNAMIC_MATCH },
+      { argv: ['awk', 'BEGIN { system("rm " $1) }'], match: DYNAMIC_MATCH },
+      // contract: src/gate/analyzer/awk.ts:56 — a replacement token is literal to awk but dynamic
+      // when xargs or parallel fills it in.
+      { argv: ['awk', 'BEGIN { system("echo {}") }'], match: DYNAMIC_MATCH },
+      { argv: ['awk', 'BEGIN { system("echo $HOME") }'], match: DYNAMIC_MATCH },
+      { argv: ['awk', '{ cmd | getline line }'], match: DYNAMIC_MATCH },
+    ];
+    for (const row of rows) {
+      expect(analyzeAwkSystemCallMatch(row.argv, nestedAnalyzer), row.argv.join(' ')).toStrictEqual(
+        row.match,
+      );
     }
-    expectRecordedDigest('analyzer-awk/system-call', recorded);
   });
 
   test('analyzeAwkSystemCallMatch works without a scan-work counter', () => {
-    const dynamic = ['awk', 'BEGIN { system($0) }'];
-    const match = analyzeAwkSystemCallMatch(dynamic, nestedAnalyzer);
-    expectRecordedDigest('analyzer-awk/no-counter', [[dynamic.join(' '), match]]);
-    expect(analyzeAwkSystemCallMatch(dynamic, nestedAnalyzer)?.id).toBe('awk.system-dynamic');
+    expect(analyzeAwkSystemCallMatch(['awk', 'BEGIN { system($0) }'], nestedAnalyzer)?.id).toBe(
+      'awk.system-dynamic',
+    );
   });
 });

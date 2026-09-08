@@ -13,14 +13,12 @@ import {
 } from '@/gate/analyzer/child-command';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, FUZZ_SEED, fuzzShellSources } from '../../helpers/shell-inputs';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 
 /**
  * A child command reaches the rule sets only after the wrapper prelude, the transparent
- * wrappers and busybox have been peeled, and the peel is bounded. Both halves are recorded:
- * what normalization yields for each candidate, and which rule the dispatch then reports.
+ * wrappers and busybox have been peeled, and the peel is bounded. Each row states both halves:
+ * what normalization yields for a candidate, and which rule the dispatch then reports.
  */
 
 let root = '';
@@ -47,41 +45,6 @@ const CUSTOM_RULES: readonly PolicyRule[] = [
 
 const TRANSPARENT_WRAPPERS: readonly string[] = ['uv', 'poetry'];
 
-const WRAPPED_COMMANDS: readonly (readonly string[])[] = [
-  [],
-  ['rm'],
-  ['rm', '-rf', 'build'],
-  ['sudo', 'rm', '-rf', 'build'],
-  ['sudo', '-u', 'root', '--', 'rm', '-rf', 'build'],
-  ['env', 'FOO=bar', 'rm', '-rf', 'build'],
-  ['env', '-C', '/tmp', 'rm', '-rf', 'build'],
-  ['env', '-i', 'PATH=/bin', 'find', '.', '-delete'],
-  ['env', '-S', 'rm -rf build', 'extra'],
-  ['env', '-S', 'echo "quoted"'],
-  ['command', '-p', 'rm', '-rf', 'build'],
-  ['builtin', 'rm', '-rf', 'build'],
-  ['busybox', 'rm', '-rf', 'build'],
-  ['busybox'],
-  ['/usr/bin/busybox', 'sh', '-c', 'rm -rf /'],
-  ['uv', 'run', 'rm', '-rf', 'build'],
-  ['uv', '--', 'rm', '-rf', 'build'],
-  ['uv', 'run', 'python3', '-c', 'print(1)'],
-  ['poetry', 'run', 'git', 'reset', '--hard'],
-  ['uv', 'run', 'echo', 'rm'],
-  ['uv'],
-  ['nice', '-n', '5', 'rm', '-rf', 'build'],
-  ['timeout', '5', 'rm', '-rf', 'build'],
-  ['xargs', 'rm', '-rf'],
-  ['deploy-tool', '--prod'],
-  ['echo', 'hello'],
-  ...Array.from({ length: 3 }, (_, index) => [
-    ...Array.from({ length: 8 + index * 8 }, () => 'busybox'),
-    'rm',
-    '-rf',
-    'build',
-  ]),
-];
-
 function normalizationContext(useEnv: boolean) {
   const paired = pairedEnvironments({ HOME: home, PATH: '/usr/bin' }, home);
   const shared = {
@@ -97,57 +60,116 @@ function normalizationContext(useEnv: boolean) {
   return { ...shared, environment: paired };
 }
 
-/** Maps do not survive `toStrictEqual` as plainly as entry arrays. */
-function readableCandidate(candidate: {
-  tokens: string[];
-  cwd: string | undefined;
-  wrapperCwd: string | null | undefined;
-  wrapperEnvAssignments: ReadonlyMap<string, string>;
-  envAssignments: ReadonlyMap<string, string>;
-  head: string;
-  wrappedByTransparent: boolean;
-}) {
-  return {
-    tokens: candidate.tokens,
-    cwd: candidate.cwd,
-    wrapperCwd: candidate.wrapperCwd,
-    wrapperEnv: [...candidate.wrapperEnvAssignments].sort(),
-    env: [...candidate.envAssignments].sort(),
-    head: candidate.head,
-    wrappedByTransparent: candidate.wrappedByTransparent,
-  };
-}
-
-/**
- * An outcome without the exception class: the analyzer throws the one `AnalysisLimit` for every
- * cap it enforces, so the class is pinned on the spot and only the wording and the value are
- * recorded.
- */
-function portedOutcome<T>(run: () => T, label: string) {
-  const outcome = describeOutcome(run);
-  if (!outcome.ok) expect(outcome.error.name, label).toBe('AnalysisLimit');
-  return outcome.ok ? outcome : { ok: outcome.ok, message: outcome.error.message };
-}
-
 describe('child command normalization', () => {
-  test('yields the same candidates as the shipped normalizer', () => {
-    const recorded: [string, unknown][] = [];
-    for (const useEnv of [false, true]) {
-      const context = normalizationContext(useEnv);
-      for (const tokens of WRAPPED_COMMANDS) {
-        const label = `${tokens.join(' ')} (env: ${useEnv})`;
-        const all = portedOutcome(
-          () => [...normalizeChildCommands(tokens, context)].map(readableCandidate),
-          label,
-        );
-        const one = portedOutcome(
-          () => readableCandidate(normalizeChildCommand(tokens, context)),
-          label,
-        );
-        recorded.push([label, { all, one }]);
-      }
+  test('the wrapper prelude, busybox and a transparent wrapper are peeled off the child', () => {
+    const context = normalizationContext(false);
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly head: string;
+      readonly child: readonly string[];
+      readonly wrappedByTransparent: boolean;
+      readonly cwd?: string;
+    }[] = [
+      {
+        tokens: ['rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['sudo', '-u', 'root', '--', 'rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['env', 'FOO=bar', 'rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['command', '-p', 'rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['builtin', 'rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['busybox', 'rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['env', '-S', 'git status'],
+        head: 'git',
+        child: ['git', 'status'],
+        wrappedByTransparent: false,
+        // An `env -S` string is re-split, and the directory it would run in is not known.
+        cwd: undefined,
+      },
+      {
+        tokens: ['uv', 'run', 'rm', '-rf', 'build'],
+        head: 'rm',
+        child: ['rm', '-rf', 'build'],
+        wrappedByTransparent: true,
+      },
+      {
+        tokens: ['poetry', 'run', 'git', 'reset', '--hard'],
+        head: 'git',
+        child: ['git', 'reset', '--hard'],
+        wrappedByTransparent: true,
+      },
+      // A command that is not a wrapper is its own child.
+      {
+        tokens: ['xargs', 'rm', '-rf'],
+        head: 'xargs',
+        child: ['xargs', 'rm', '-rf'],
+        wrappedByTransparent: false,
+      },
+      {
+        tokens: ['echo', 'hello'],
+        head: 'echo',
+        child: ['echo', 'hello'],
+        wrappedByTransparent: false,
+      },
+      { tokens: ['uv'], head: 'uv', child: ['uv'], wrappedByTransparent: false },
+      { tokens: ['busybox'], head: 'busybox', child: ['busybox'], wrappedByTransparent: false },
+    ];
+    for (const row of rows) {
+      const candidate = normalizeChildCommand(row.tokens, context);
+      expect(candidate.head, row.tokens.join(' ')).toBe(row.head);
+      expect(candidate.tokens, row.tokens.join(' ')).toStrictEqual([...row.child]);
+      expect(candidate.wrappedByTransparent, row.tokens.join(' ')).toBe(row.wrappedByTransparent);
+      expect(candidate.cwd, row.tokens.join(' ')).toBe('cwd' in row ? row.cwd : workspace);
     }
-    expectRecordedDigest('analyzer-child/normalization', recorded, root);
+  });
+
+  test('the wrapper carries the environment and directory it sets to the child', () => {
+    const candidate = normalizeChildCommand(
+      ['env', 'FOO=bar', 'rm', '-rf', 'build'],
+      normalizationContext(false),
+    );
+    expect([...candidate.wrapperEnvAssignments]).toStrictEqual([['FOO', 'bar']]);
+    expect([...candidate.envAssignments]).toStrictEqual([['FOO', 'bar']]);
+
+    const chdir = normalizeChildCommand(
+      ['env', '-C', join(root, 'elsewhere'), 'rm', '-rf', 'build'],
+      normalizationContext(false),
+    );
+    expect(chdir.wrapperCwd).toBe(join(root, 'elsewhere'));
+    expect(chdir.cwd).toBe(join(root, 'elsewhere'));
+
+    // An assignment the caller already tracked stays in the child's environment.
+    const seeded = normalizeChildCommand(['rm', '-rf', 'build'], normalizationContext(true));
+    expect([...seeded.envAssignments]).toStrictEqual([['SEEDED', 'yes']]);
+    expect([...seeded.wrapperEnvAssignments]).toStrictEqual([]);
   });
 
   test('the peel is bounded and a transparent wrapper offers every protectable child', () => {
@@ -169,19 +191,44 @@ describe('child command normalization', () => {
   });
 
   test('a parallel command template stops at the argument marker', () => {
-    const recorded: [string, unknown][] = [];
-    for (const tokens of [
-      ['parallel', 'rm', '-rf', '{}', ':::', 'a', 'b'],
-      ['parallel', 'rm', '-rf', '{}'],
-      ['parallel', ':::', 'a'],
-      [],
-    ]) {
-      for (const start of [0, 1, 2]) {
-        const template = collectCommandTemplate(tokens, start);
-        recorded.push([`${tokens.join(' ')}@${start}`, template]);
-      }
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly start: number;
+      readonly template: { markerIndex: number; templateTokens: string[] };
+    }[] = [
+      {
+        tokens: ['parallel', 'rm', '-rf', '{}', ':::', 'a', 'b'],
+        start: 1,
+        template: { markerIndex: 4, templateTokens: ['rm', '-rf', '{}'] },
+      },
+      {
+        tokens: ['parallel', 'rm', '-rf', '{}', ':::', 'a', 'b'],
+        start: 0,
+        template: { markerIndex: 4, templateTokens: ['parallel', 'rm', '-rf', '{}'] },
+      },
+      {
+        tokens: ['parallel', 'rm', '-rf', '{}'],
+        start: 1,
+        template: { markerIndex: -1, templateTokens: ['rm', '-rf', '{}'] },
+      },
+      {
+        tokens: ['parallel', ':::', 'a'],
+        start: 1,
+        template: { markerIndex: 1, templateTokens: [] },
+      },
+      {
+        tokens: ['parallel', ':::', 'a'],
+        start: 2,
+        template: { markerIndex: -1, templateTokens: ['a'] },
+      },
+      { tokens: [], start: 0, template: { markerIndex: -1, templateTokens: [] } },
+    ];
+    for (const row of rows) {
+      expect(
+        collectCommandTemplate(row.tokens, row.start),
+        `${row.tokens.join(' ')}@${row.start}`,
+      ).toStrictEqual(row.template);
     }
-    expectRecordedDigest('analyzer-child/command-template', recorded, root);
   });
 });
 
@@ -314,17 +361,102 @@ function dispatchPair(
 }
 
 describe('child command analysis', () => {
-  test('dispatches every head to the same rule as the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    for (const row of ANALYSIS_CASES) {
-      for (const options of ANALYSIS_OPTIONS) {
-        for (const tokens of CHILD_COMMANDS) {
-          const label = `${row.label}: ${tokens.join(' ')}`;
-          recorded.push([label, dispatchPair(tokens, row, options)]);
-        }
-      }
+  test('each head reaches the rule its own analyzer reports', () => {
+    const standard = { label: 'standard' };
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: [], id: null },
+      { tokens: [''], id: null },
+      { tokens: ['echo', 'hello'], id: null },
+      { tokens: ['rm', '-rf', 'build'], id: null },
+      { tokens: ['rm', '-rf', '/'], id: 'rm.recursive-force-root-or-home' },
+      { tokens: ['rm', '-rf', '/nonexistent/elsewhere'], id: 'rm.recursive-force-outside-cwd' },
+      { tokens: ['rm', 'notes'], id: null },
+      { tokens: ['find', '.', '-delete'], id: 'find.delete' },
+      {
+        tokens: ['find', '.', '-exec', 'rm', '-rf', '{}', ';'],
+        id: 'find.exec-rm-recursive-force',
+      },
+      { tokens: ['git', 'reset', '--hard'], id: 'git.reset-hard' },
+      { tokens: ['git', 'push', '--force'], id: 'git.push-force' },
+      { tokens: ['git', 'status'], id: null },
+      { tokens: ['deploy-tool', '--prod'], id: 'custom.block-deploy' },
+      { tokens: ['deploy-tool', '--dry-run'], id: null },
+      { tokens: ['unknown-tool', 'arg'], id: null },
+      {
+        tokens: ['python3', '-c', 'import os; os.system("rm -rf /")'],
+        id: 'interpreter.dangerous-command',
+      },
+      { tokens: ['python3', '-c', 'print("hello")'], id: null },
+      { tokens: ['python3', 'script.py'], id: null },
+      // A shell asked only to check syntax runs nothing.
+      { tokens: ['bash', '-n', '-c', 'rm -rf /'], id: null },
+      { tokens: ['awk', '{ print }'], id: null },
+      { tokens: ['gawk', '-f', 'prog.awk'], id: null },
+    ];
+    for (const row of rows) {
+      const outcome = dispatchPair(row.tokens, standard, {}).match;
+      if (!outcome.ok) throw outcome.error;
+      expect(outcome.value?.id ?? null, row.tokens.join(' ')).toBe(row.id);
     }
-    expectRecordedDigest('analyzer-child/dispatch', recorded, root);
+  });
+
+  test('the caller-supplied matches answer for the input it says is dynamic', () => {
+    const standard = { label: 'standard' };
+    const matchFor = (tokens: readonly string[], options: ChildCommandAnalysisOptions) => {
+      const outcome = dispatchPair(tokens, standard, options).match;
+      if (!outcome.ok) throw outcome.error;
+      return outcome.value;
+    };
+    expect(matchFor(['eval', '$COMMAND'], {})).toBeNull();
+    expect(
+      matchFor(['eval', '$COMMAND'], { dynamicInput: true, shellDynamicMatch: DYNAMIC_MATCH }),
+    ).toStrictEqual(DYNAMIC_MATCH);
+    expect(
+      matchFor(['bash', '-c', '$COMMAND'], {
+        dynamicInput: true,
+        shellDynamicMatch: DYNAMIC_MATCH,
+      }),
+    ).toStrictEqual(DYNAMIC_MATCH);
+    expect(
+      matchFor(['python3', 'script.py'], {
+        dynamicSourceInput: true,
+        dynamicSourceMatch: SOURCE_MATCH,
+      }),
+    ).toStrictEqual(SOURCE_MATCH);
+    expect(
+      matchFor(['rm', '-rf', 'build'], {
+        dynamicRmInput: true,
+        rmDynamicMatch: RM_MATCH,
+        dynamicInput: true,
+      }),
+    ).toStrictEqual(RM_MATCH);
+    // A catastrophic target is reported by the rm analyzer itself, not the caller's match.
+    expect(
+      matchFor(['rm', '-rf', '/'], {
+        dynamicRmInput: true,
+        rmDynamicMatch: RM_MATCH,
+        dynamicInput: true,
+      })?.id,
+    ).toBe('rm.recursive-force-root-or-home');
+  });
+
+  test('a paranoid capability blocks an interpreter one-liner the standard level allows', () => {
+    const idFor = (tokens: readonly string[], row: ChildAnalysisCase) => {
+      const outcome = dispatchPair(tokens, row, {}).match;
+      if (!outcome.ok) throw outcome.error;
+      return outcome.value?.id ?? null;
+    };
+    expect(idFor(['python3', '-c', 'print("hello")'], { label: 'standard' })).toBeNull();
+    expect(
+      idFor(['python3', '-c', 'print("hello")'], {
+        label: 'paranoid interpreters',
+        paranoidInterpreters: true,
+      }),
+    ).toBe('interpreter.one-liner-paranoid');
+    expect(idFor(['rm', '-rf', 'build'], { label: 'standard' })).toBeNull();
+    expect(idFor(['rm', '-rf', 'build'], { label: 'paranoid rm', paranoidRm: true })).toBe(
+      'rm.recursive-force-paranoid',
+    );
   });
 
   test('the table reaches the interpreter, rm, find, git, custom and dynamic reasons', () => {
@@ -362,17 +494,5 @@ describe('child command analysis', () => {
     expect(nestedFor(['awk', 'BEGIN { system("echo NESTED") }'])).toStrictEqual(['echo NESTED']);
     // A shell reading a script operand has no source the analyzer can see.
     expect(nestedFor(['bash', 'script.sh'])).toStrictEqual([]);
-  });
-
-  test('the corpus commands split into tokens agree with the shipped dispatch', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of [...corpusCommands(), ...fuzzShellSources(250, FUZZ_SEED)]) {
-      const tokens = source.split(/\s+/).filter((token) => token !== '');
-      recorded.push([
-        source,
-        dispatchPair(tokens, { label: 'strict', strict: true }, ANALYSIS_OPTIONS[1] ?? {}),
-      ]);
-    }
-    expectRecordedDigest('analyzer-child/corpus-dispatch', recorded, root);
   });
 });

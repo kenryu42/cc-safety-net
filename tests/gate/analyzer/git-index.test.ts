@@ -6,7 +6,6 @@ import type { EffectiveSafetyCapabilities } from '@/core/policy/types';
 import { textCommandWords } from '@/gate/analyzer/command-words';
 import { analyzeGitDetailed, analyzeGitMatch, getGitWorktreeRelaxation } from '@/gate/analyzer/git';
 import { createLinkedWorktreeFixture, withLinkedWorktreeFixture } from '../../helpers';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
 import { runGit } from '../../helpers/git-worktree';
 import { corpusCommands } from '../../helpers/shell-inputs';
 
@@ -139,10 +138,9 @@ function gitCorpusArgvs(): readonly (readonly string[])[] {
     .map((command) => command.split(/\s+/).filter(Boolean));
 }
 
-describe('next/gate/analyzer/git versus src/analyzer/git', () => {
+describe('gate/analyzer/git', () => {
   // Spawns git once per environment row, so the default per-test timeout is too short.
-  test('every Git command decides the same in and out of a linked worktree', () => {
-    const recorded: [string, unknown][] = [];
+  test('every Git command is decided in and out of a linked worktree', () => {
     const rows = [...GIT_ARGVS, ...gitCorpusArgvs()];
     let matches = 0;
     let relaxations = 0;
@@ -179,7 +177,7 @@ describe('next/gate/analyzer/git versus src/analyzer/git', () => {
                   environment,
                   policy,
                 });
-                recorded.push([tokens.join(' '), { match, detailed, relaxation }]);
+                expect(relaxation, tokens.join(' ')).toStrictEqual(detailed.relaxation);
 
                 if (match) matches++;
                 if (detailed.relaxation) relaxations++;
@@ -192,17 +190,15 @@ describe('next/gate/analyzer/git versus src/analyzer/git', () => {
 
     expect(matches).toBeGreaterThan(100);
     expect(relaxations).toBeGreaterThan(10);
-    expectRecordedDigest('analyzer-git-index/every-git-command', recorded, fixture.rootDir);
   }, 60_000);
 
-  test('dynamic arguments withhold the relaxation on both sides', () => {
+  test('dynamic arguments withhold the relaxation', () => {
     const env = new Map<string, string>();
     const environment = createTestEnvironment({
       env,
       home: fixture.rootDir,
       paths: processPathResolver,
     });
-    const recorded: [string, unknown][] = [];
     const shared = { cwd: fixture.linkedWorktree, worktreeMode: true };
     let relaxed = 0;
 
@@ -213,7 +209,6 @@ describe('next/gate/analyzer/git versus src/analyzer/git', () => {
           dynamicArguments,
           environment,
         });
-        recorded.push([`${tokens.join(' ')} ${dynamicArguments}`, detailed]);
         if (detailed.relaxation) {
           relaxed++;
           expect(dynamicArguments).toBeFalse();
@@ -222,12 +217,11 @@ describe('next/gate/analyzer/git versus src/analyzer/git', () => {
     }
 
     expect(relaxed).toBeGreaterThan(3);
-    expectRecordedDigest('analyzer-git-index/dynamic-arguments', recorded, fixture.rootDir);
   });
 
   // The `-c` rows above stop at the command-line scan; only a repository that sets
   // `submodule.recurse` itself reaches the fact the environment seam reads.
-  test('submodule.recurse in the worktree config withholds the relaxation on both sides', async () => {
+  test('submodule.recurse in the worktree config withholds the relaxation', async () => {
     await withLinkedWorktreeFixture((configured) => {
       runGit(configured.linkedWorktree, ['config', 'submodule.recurse', 'true']);
       const env = new Map<string, string>();
@@ -245,13 +239,176 @@ describe('next/gate/analyzer/git versus src/analyzer/git', () => {
           paths: processPathResolver,
         }),
       });
-      expectRecordedDigest(
-        'analyzer-git-index/configured-submodule-recurse',
-        [[tokens.join(' '), detailed]],
-        configured.rootDir,
-      );
       expect(detailed.relaxation).toBeNull();
       expect(detailed.match?.id).toBe('git.checkout-double-dash');
     });
+  });
+});
+
+const REASON_GIT_SSH_ENV =
+  'Git SSH environment overrides can execute arbitrary commands during network operations. Run git without GIT_SSH/GIT_SSH_COMMAND overrides, or ask the user to run it manually.';
+const REASON_GIT_ALIAS_CONFIG =
+  'Git aliases supplied through command-line or environment config can hide or execute commands. Run git without Git alias overrides, or ask the user to run it manually.';
+
+/** The `GIT_CONFIG_COUNT` protocol: a count and one key/value pair per entry. */
+function configEnv(count: number, entries: readonly (readonly [string, string])[] = []) {
+  const assignments = new Map<string, string>([['GIT_CONFIG_COUNT', String(count)]]);
+  entries.forEach(([key, value], index) => {
+    assignments.set(`GIT_CONFIG_KEY_${index}`, key);
+    assignments.set(`GIT_CONFIG_VALUE_${index}`, value);
+  });
+  return assignments;
+}
+
+describe('git configuration read through the environment', () => {
+  const environment = () =>
+    createTestEnvironment({
+      env: new Map<string, string>(),
+      home: fixture.rootDir,
+      paths: processPathResolver,
+    });
+
+  const analyze = (
+    tokens: readonly string[],
+    options: {
+      envAssignments?: ReadonlyMap<string, string>;
+      cwd?: string;
+      worktreeMode?: boolean;
+      policy?: DestructiveCommandRulePolicy;
+    } = {},
+  ) =>
+    analyzeGitMatch(textCommandWords(tokens), {
+      cwd: options.cwd ?? fixture.mainWorktree,
+      envAssignments: options.envAssignments,
+      worktreeMode: options.worktreeMode ?? false,
+      dynamicArguments: false,
+      environment: environment(),
+      policy: options.policy,
+    });
+
+  test('an alias defined through the environment is expanded before the rules run', () => {
+    expect(analyze([])).toBeNull();
+    expect(
+      analyze(['git', 'nuke'], { envAssignments: configEnv(1, [['alias.nuke', 'status']]) }),
+    ).toBeNull();
+    expect(
+      analyze(['git', 'nuke'], {
+        envAssignments: configEnv(1, [['alias.nuke', 'reset --hard']]),
+      })?.id,
+    ).toBe('git.reset-hard');
+    // The last entry for a key wins, and keys are compared case-folded.
+    expect(
+      analyze(['git', 'nuke'], {
+        envAssignments: configEnv(2, [
+          ['alias.nuke', 'reset --hard'],
+          ['ALIAS.NUKE', 'status'],
+        ]),
+      }),
+    ).toBeNull();
+    expect(
+      analyze(['git', 'nuke'], {
+        envAssignments: new Map([['GIT_CONFIG_PARAMETERS', "'alias.nuke=reset --hard'"]]),
+      })?.id,
+    ).toBe('git.reset-hard');
+  });
+
+  test('config the reader cannot enumerate is blocked as an alias override', () => {
+    const overLimit = analyze(['git', 'status'], { envAssignments: configEnv(1025) });
+    expect(overLimit).toStrictEqual({
+      id: 'git.alias-config',
+      reason: REASON_GIT_ALIAS_CONFIG,
+      intent: 'manual_only',
+    });
+    const atLimit = configEnv(
+      1024,
+      Array.from({ length: 1024 }, (_unused, index) => [`user.safety${index}`, ''] as const),
+    );
+    expect(analyze(['git', 'status'], { envAssignments: atLimit })).toBeNull();
+    // A counted entry whose key or value is missing cannot be read either.
+    expect(analyze(['git', 'status'], { envAssignments: configEnv(1) })?.id).toBe(
+      'git.alias-config',
+    );
+    expect(
+      analyze(['git', 'status'], {
+        envAssignments: new Map([['GIT_CONFIG_PARAMETERS', "'unterminated"]]),
+      })?.id,
+    ).toBe('git.alias-config');
+    expect(
+      analyze(['git', '-c', 'alias.wipe=!rm -rf /', 'wipe'], {
+        // With the alias rule off the expanded tokens are analyzed instead.
+        policy: policyPair(true, { 'git.alias-config': 'off' }, true),
+        envAssignments: configEnv(1025),
+      }),
+    ).toBeNull();
+  });
+
+  test('an SSH override is blocked for the network subcommands only', () => {
+    const sshEnv = new Map([['GIT_SSH_COMMAND', 'touch pwned']]);
+    expect(analyze(['git', 'fetch', 'origin'], { envAssignments: sshEnv })).toStrictEqual({
+      id: 'git.ssh-env',
+      reason: REASON_GIT_SSH_ENV,
+      intent: 'manual_only',
+    });
+    expect(analyze(['git', 'status'], { envAssignments: sshEnv })).toBeNull();
+    expect(
+      analyze(['git', 'archive', '--remote=origin', 'HEAD'], { envAssignments: sshEnv })?.id,
+    ).toBe('git.ssh-env');
+    expect(analyze(['git', 'archive', 'HEAD'], { envAssignments: sshEnv })).toBeNull();
+    expect(
+      analyze(['git', 'fetch', 'origin'], {
+        envAssignments: configEnv(1, [['CORE.SSHCOMMAND', '']]),
+      })?.id,
+    ).toBe('git.ssh-env');
+  });
+
+  test('a local discard is relaxed only inside a linked worktree that Git reads plainly', () => {
+    const relaxed = (
+      tokens: readonly string[],
+      options: { envAssignments?: ReadonlyMap<string, string>; cwd?: string } = {},
+    ) =>
+      analyzeGitDetailed(textCommandWords(tokens), {
+        cwd: options.cwd ?? fixture.linkedWorktree,
+        envAssignments: options.envAssignments,
+        worktreeMode: true,
+        dynamicArguments: false,
+        environment: environment(),
+      });
+
+    expect(relaxed(['git', 'reset', '--hard'])).toStrictEqual({
+      match: null,
+      relaxation: {
+        originalReason:
+          "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.",
+        gitCwd: expect.any(String),
+      },
+    });
+    expect(relaxed(['git', 'checkout', '--', '.']).match).toBeNull();
+    expect(relaxed(['git', 'reset', '--hard'], { cwd: fixture.mainWorktree }).match?.id).toBe(
+      'git.reset-hard',
+    );
+    // Config that could redirect what the command touches withholds the relaxation.
+    expect(
+      relaxed(['git', 'reset', '--hard'], {
+        envAssignments: configEnv(1, [['include.path', '.gitconfig-extra']]),
+      }).match?.id,
+    ).toBe('git.reset-hard');
+    expect(
+      relaxed(['git', 'reset', '--hard'], {
+        envAssignments: configEnv(1, [['submodule.recurse', 'true']]),
+      }).match?.id,
+    ).toBe('git.reset-hard');
+    expect(
+      relaxed(['git', 'reset', '--hard'], {
+        envAssignments: configEnv(2, [
+          ['SUBMODULE.RECURSE', 'true'],
+          ['submodule.recurse', 'false'],
+        ]),
+      }).match,
+    ).toBeNull();
+    expect(
+      relaxed(['git', 'reset', '--hard'], {
+        envAssignments: new Map([['GIT_DIR', '/elsewhere/.git']]),
+      }).match?.id,
+    ).toBe('git.reset-hard');
   });
 });

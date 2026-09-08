@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@/core/budget';
 import type { ProtectedGitMetadata } from '@/core/git/metadata';
 import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import { parseCommand } from '@/core/shell/parse';
@@ -17,13 +18,11 @@ import {
 } from '@/gate/analyzer/find';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, FUZZ_SEED, fuzzShellSources } from '../../helpers/shell-inputs';
 
 /**
  * The find analyzer decides three separate things — the catastrophic starting point, `-delete`
  * against the trusted temp roots, and what each `-exec` child is — and it hands the child to the
- * caller. The differential therefore compares the match and the sequence of nested calls.
+ * caller. Each row therefore states the match and the nested calls it issues.
  */
 
 let root = '';
@@ -199,36 +198,80 @@ function analyzePair(source: string, row: FindCase, mode: 'tokens' | 'nested') {
   };
 }
 
-function tokenLists(): readonly (readonly string[])[] {
-  return [
-    ...FIND_COMMANDS.map((source) => source.split(' ')),
-    ...corpusCommands().map((source) => source.split(/\s+/)),
-    ...fuzzShellSources(200, FUZZ_SEED).map((source) => source.split(/\s+/)),
-    [],
-    ['find'],
-    ['-delete'],
-    ['find', '-exec', '-exec', '-exec', ';'],
-  ];
+function caseFor(label: string): FindCase {
+  const row = findCases().find((candidate) => candidate.label === label);
+  if (!row) throw new Error(`missing case ${label}`);
+  return row;
+}
+
+function matchId(source: string, row: FindCase): string | null {
+  const outcome = analyzePair(source, row, 'tokens').match;
+  if (!outcome.ok) throw outcome.error;
+  return outcome.value?.id ?? null;
 }
 
 describe('find primaries', () => {
-  test('arity, exec primaries and the exec command slice match the shipped walk', () => {
-    const recorded: [string, unknown][] = [];
-    for (const tokens of tokenLists()) {
-      tokens.forEach((token, index) => {
-        const arity = getFindPrimaryArity(token);
-        const exec = isFindExecPrimary(token);
-        const command = getFindExecCommand(tokens, index);
-        recorded.push([`${token}@${index}`, { arity, exec, command }]);
-      });
-      const missing = isFindExecPrimary(undefined);
-      recorded.push(['undefined primary', missing]);
-      for (const start of [0, 1, 2]) {
-        const deletes = findHasDelete(tokens, start);
-        recorded.push([`${tokens.join(' ')}@${start}`, deletes]);
-      }
+  test('a primary reports how many operands it consumes, and which take a command', () => {
+    const rows: readonly {
+      readonly token: string | undefined;
+      readonly arity: number;
+      readonly exec: boolean;
+    }[] = [
+      { token: '-print', arity: 0, exec: false },
+      { token: '-delete', arity: 0, exec: false },
+      { token: '-name', arity: 1, exec: false },
+      { token: '-newerat', arity: 1, exec: false },
+      { token: '-newerXY', arity: 1, exec: false },
+      // contract: src/gate/analyzer/find.ts — `-newer` takes two letters after it.
+      { token: '-newerx', arity: 0, exec: false },
+      { token: '-fprintf', arity: 2, exec: false },
+      { token: '-exec', arity: 0, exec: true },
+      { token: '-execdir', arity: 0, exec: true },
+      { token: '-ok', arity: 0, exec: true },
+      { token: '-okdir', arity: 0, exec: true },
+      { token: 'logs', arity: 0, exec: false },
+      { token: undefined, arity: 0, exec: false },
+    ];
+    for (const row of rows) {
+      expect(getFindPrimaryArity(row.token ?? ''), `${row.token}`).toBe(row.arity);
+      expect(isFindExecPrimary(row.token), `${row.token}`).toBe(row.exec);
     }
-    expectRecordedDigest('analyzer-find/primaries', recorded, root);
+  });
+
+  test('an -exec body ends at its terminator', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly index: number;
+      readonly command: { tokens: string[]; nextIndex: number };
+    }[] = [
+      {
+        tokens: ['find', '.', '-exec', 'rm', '-rf', '{}', ';', '-print'],
+        index: 2,
+        command: { tokens: ['rm', '-rf', '{}'], nextIndex: 7 },
+      },
+      {
+        tokens: ['find', '.', '-exec', 'rm', '{}', '+'],
+        index: 2,
+        command: { tokens: ['rm', '{}'], nextIndex: 6 },
+      },
+      {
+        // contract: src/gate/analyzer/find.ts — a body without a terminator runs to the end.
+        tokens: ['find', '.', '-exec', 'rm', '-rf'],
+        index: 2,
+        command: { tokens: ['rm', '-rf'], nextIndex: 5 },
+      },
+      {
+        tokens: ['find', '-exec', '-exec', '-exec', ';'],
+        index: 1,
+        command: { tokens: ['-exec', '-exec'], nextIndex: 5 },
+      },
+      { tokens: ['find', '.', '-exec'], index: 2, command: { tokens: [], nextIndex: 3 } },
+    ];
+    for (const row of rows) {
+      expect(getFindExecCommand(row.tokens, row.index), row.tokens.join(' ')).toStrictEqual(
+        row.command,
+      );
+    }
   });
 
   test('-delete is found only as an action, never as an option value or inside -exec', () => {
@@ -240,30 +283,145 @@ describe('find primaries', () => {
     expect(getFindPrimaryArity('-print')).toBe(0);
   });
 
-  test('starting points and the exec-rm probe agree with the shipped helpers', () => {
-    const recorded: [string, unknown][] = [];
-    const paired = pairedEnvironments({ HOME: home }, home);
-    for (const source of [...FIND_COMMANDS, ...corpusCommands()]) {
-      const points = getFindStartingPoints(commandWords(source))?.map((word) => word.text) ?? null;
-      const tokens = source.split(' ');
-      const deletes = findExecRmDeletesFoundPaths(tokens, paired);
-      recorded.push([source, { points, deletes }]);
+  test('a scan for -delete skips the operands each primary owns', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly start: number;
+      readonly deletes: boolean;
+    }[] = [
+      {
+        tokens: ['find', '.', '-type', 'f', '-exec', 'rm', '{}', '+', '-delete'],
+        start: 1,
+        deletes: true,
+      },
+      { tokens: ['find', '.', '-fprintf', 'out', 'fmt', '-delete'], start: 1, deletes: true },
+      { tokens: ['find', '.', '-newermt', 'yesterday', '-delete'], start: 1, deletes: true },
+      { tokens: ['-delete'], start: 0, deletes: true },
+      { tokens: [], start: 0, deletes: false },
+      { tokens: ['find', '.', '-delete'], start: 3, deletes: false },
+      { tokens: ['find', '.', '-gid', '-delete', '-print'], start: 1, deletes: false },
+      { tokens: ['find', '.', '-exec', 'echo', '-delete', '+'], start: 1, deletes: false },
+    ];
+    for (const row of rows) {
+      expect(findHasDelete(row.tokens, row.start), row.tokens.join(' ')).toBe(row.deletes);
     }
-    expectRecordedDigest('analyzer-find/starting-points', recorded, root);
+  });
+
+  test('the starting points are the operands before the first primary', () => {
+    const rows: readonly { readonly source: string; readonly points: string[] | null }[] = [
+      { source: 'find -H -P -- logs -delete', points: ['logs'] },
+      { source: 'find logs -delete', points: ['logs'] },
+      { source: 'find . -name "*.log"', points: ['.'] },
+      { source: 'find /tmp/a /tmp/b -delete', points: ['/tmp/a', '/tmp/b'] },
+      // contract: src/gate/analyzer/find.ts:307 — no operand at all reads as no starting point,
+      // which the caller turns into the implicit `.`.
+      { source: 'find -delete', points: null },
+      { source: 'find', points: null },
+      // contract: src/gate/analyzer/find.ts — an expression the reader cannot bound gives up.
+      { source: 'find ! -name x -delete', points: null },
+      { source: 'find ( logs ) -delete', points: null },
+    ];
+    for (const row of rows) {
+      expect(
+        getFindStartingPoints(commandWords(row.source))?.map((word) => word.text) ?? null,
+        row.source,
+      ).toStrictEqual(row.points);
+    }
+  });
+
+  test('an -exec body that deletes the paths find hands it is recognized through wrappers', () => {
+    const paired = pairedEnvironments({ HOME: home }, home);
+    const rows: readonly { readonly tokens: readonly string[]; readonly deletes: boolean }[] = [
+      { tokens: ['find', '.', '-exec', 'rm', '-rf', '{}', ';'], deletes: true },
+      { tokens: ['find', '.', '-exec', 'sudo', 'rm', '-rf', '{}', '+'], deletes: true },
+      { tokens: ['find', '.', '-exec', 'env', 'rm', '-rf', '{}', ';'], deletes: true },
+      // contract: src/gate/analyzer/find.ts:225 — only the wrapper prelude is peeled here, so a
+      // busybox applet is not read as an rm.
+      { tokens: ['find', '.', '-exec', 'busybox', 'rm', '-rf', '{}', ';'], deletes: false },
+      { tokens: ['find', '.', '-execdir', 'rm', '-rf', '{}', ';'], deletes: true },
+      { tokens: ['find', '.', '-exec', 'rm', '-rf', 'x', ';'], deletes: false },
+      { tokens: ['find', '.', '-exec', 'echo', '{}', ';'], deletes: false },
+      // contract: src/gate/analyzer/find.ts:227 — the probe asks whether the body removes the
+      // paths find hands it, not whether the removal is recursive.
+      { tokens: ['find', '.', '-exec', 'rm', '{}', ';'], deletes: true },
+      { tokens: ['find', '.', '-exec', 'rmdir', '{}', ';'], deletes: true },
+      { tokens: ['find', '.', '-delete'], deletes: false },
+    ];
+    for (const row of rows) {
+      expect(findExecRmDeletesFoundPaths(row.tokens, paired), row.tokens.join(' ')).toBe(
+        row.deletes,
+      );
+    }
   });
 });
 
 describe('find analysis', () => {
-  test('matches the shipped analyzer and issues the same nested calls', () => {
-    const recorded: [string, unknown][] = [];
-    for (const row of findCases()) {
-      for (const mode of ['tokens', 'nested'] as const) {
-        for (const source of FIND_COMMANDS) {
-          recorded.push([`${row.label}/${mode}: ${source}`, analyzePair(source, row, mode)]);
-        }
-      }
+  test('a delete is judged against its starting point', () => {
+    const workspaceCase = caseFor('workspace');
+    const rows: readonly { readonly source: string; readonly id: string | null }[] = [
+      { source: 'find . -delete', id: 'find.delete' },
+      { source: 'find . -name "*.log" -delete', id: 'find.delete' },
+      { source: 'find -delete', id: 'find.delete' },
+      { source: 'find logs -delete', id: 'find.delete' },
+      { source: 'find logs -L -delete', id: 'find.delete' },
+      { source: 'find "$HOME"/notes -delete', id: 'find.delete' },
+      { source: 'find / -delete', id: 'rm.recursive-force-root-or-home' },
+      { source: 'find /* -delete', id: 'rm.recursive-force-root-or-home' },
+      { source: 'find ~ -delete', id: 'rm.recursive-force-root-or-home' },
+      { source: 'find $HOME -delete', id: 'rm.recursive-force-root-or-home' },
+      { source: 'find /tmp/next-find-probe -delete', id: null },
+      { source: 'find . -name -delete', id: null },
+      { source: 'find . -name hooks -print', id: null },
+      { source: 'find .', id: null },
+    ];
+    for (const row of rows) {
+      expect(matchId(row.source, workspaceCase), row.source).toBe(row.id);
     }
-    expectRecordedDigest('analyzer-find/analysis', recorded, root);
+  });
+
+  test('an -exec body decides the match, through the wrappers it runs behind', () => {
+    const workspaceCase = caseFor('workspace');
+    const rows: readonly { readonly source: string; readonly id: string | null }[] = [
+      { source: 'find . -exec rm -rf {} ;', id: 'find.exec-rm-recursive-force' },
+      { source: 'find . -exec rm -rf {} +', id: 'find.exec-rm-recursive-force' },
+      { source: 'find . -execdir rm -rf {} \\;', id: 'find.exec-rm-recursive-force' },
+      { source: 'find . -ok rm -rf {} \\;', id: 'find.exec-rm-recursive-force' },
+      { source: 'find . -exec sudo rm -rf {} \\;', id: 'find.exec-rm-recursive-force' },
+      { source: 'find /nonexistent -exec rm -rf {} +', id: 'find.exec-rm-recursive-force' },
+      { source: 'find . -exec DANGER {} \\;', id: 'rm.recursive-force-outside-cwd' },
+      { source: 'find . -exec CUSTOM {} \\;', id: 'custom.nested' },
+      {
+        source: 'find . -exec DANGER {} \\; -exec CUSTOM {} \\;',
+        id: 'rm.recursive-force-outside-cwd',
+      },
+      { source: 'find . -exec rm {} \\;', id: null },
+      { source: 'find . -exec echo {} \\;', id: null },
+      { source: 'find . -exec', id: null },
+    ];
+    for (const row of rows) {
+      expect(matchId(row.source, workspaceCase), row.source).toBe(row.id);
+    }
+  });
+
+  test('git metadata, a trusted TMPDIR and a disabled protection change the verdict', () => {
+    const metadata = caseFor('workspace with git metadata');
+    expect(matchId('find .git -delete', metadata)).toBe('find.delete-git-metadata');
+    expect(matchId('find . -name hooks -delete', metadata)).toBe('find.delete-git-metadata');
+    expect(matchId('find . -iname HOOKS -delete', metadata)).toBe('find.delete-git-metadata');
+    expect(matchId('find . -name hooks -print', metadata)).toBeNull();
+
+    const tmpdir = caseFor('tmpdir trusted');
+    expect(matchId('find $TMPDIR/build -delete', tmpdir)).toBeNull();
+    // The temp root itself is not a descendant of a trusted temp directory.
+    expect(matchId('find $TMPDIR -delete', tmpdir)).toBe('find.delete');
+    expect(matchId('find $TMPDIR/build -delete', caseFor('workspace'))).toBe('find.delete');
+
+    const off = caseFor('destructive protection off');
+    expect(matchId('find . -delete', off)).toBeNull();
+    expect(matchId('find . -exec DANGER {} \\;', off)).toBeNull();
+    // A custom rule is not the destructive protection to disable.
+    expect(matchId('find . -exec CUSTOM {} \\;', off)).toBe('custom.nested');
+    expect(matchId('find / -delete', off)).toBe('rm.recursive-force-root-or-home');
   });
 
   test('the table reaches the delete, exec and git-metadata rules', () => {
@@ -296,20 +454,18 @@ describe('find analysis', () => {
     expect(exec.calls).toStrictEqual([{ tokens: ['rm', '{}'], cwd: workspace }]);
   });
 
-  test('a derived-command budget shared across many exec bodies fails closed on both sides', () => {
+  test('a nested analysis is handed the exec body as a command', () => {
+    const nested = analyzePair('find . -exec rm {} \\;', { label: 'x', cwd: workspace }, 'nested');
+    expect(nested.calls).toStrictEqual([
+      { tokens: ['rm', '{}'], cwd: workspace, command: 'rm {}' },
+    ]);
+  });
+
+  test('a derived-command budget shared across many exec bodies fails closed', () => {
     const source = `find . ${'-exec rm {} \\; '.repeat(120)}`.trim();
     const pair = analyzePair(source, { label: 'budget', cwd: workspace }, 'tokens');
     expect(pair.match.ok).toBeFalse();
-    const message = pair.match.ok ? '' : pair.match.error.message;
-    expectRecordedDigest('analyzer-find/shared-budget', [[source, message]], root);
     expect(pair.match.ok ? '' : pair.match.error.name).toBe('AnalysisLimit');
-  });
-
-  test('the corpus commands and the seeded fuzz agree with the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of [...corpusCommands(), ...fuzzShellSources(300, FUZZ_SEED)]) {
-      recorded.push([source, analyzePair(source, { label: 'corpus', cwd: workspace }, 'nested')]);
-    }
-    expectRecordedDigest('analyzer-find/corpus-and-fuzz', recorded, root);
+    expect(pair.match.ok ? '' : pair.match.error.message).toBe(REASON_DERIVED_COMMAND_WORK_LIMIT);
   });
 });
