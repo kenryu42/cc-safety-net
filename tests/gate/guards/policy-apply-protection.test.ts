@@ -138,6 +138,10 @@ describe('policy apply protection', () => {
     expect(find('echo hi && cc-safety-net policy apply proposal.json')).toStrictEqual({
       target: 'cc-safety-net policy apply proposal.json',
     });
+    // A nested shell is walked, so an invocation inside one is still found.
+    expect(find('( cc-safety-net policy apply proposal.json )')).toStrictEqual({
+      target: 'cc-safety-net policy apply proposal.json',
+    });
   });
 
   test('a wrapper prelude, a runner option or a package spec does not hide the invocation', () => {

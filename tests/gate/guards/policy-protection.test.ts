@@ -123,6 +123,10 @@ describe('policy config protection through the shell', () => {
       // A `cd` moves the directory the later relative operand resolves against.
       { command: `cd ${sh(home)} && rm -rf .cc-safety-net`, blocked: true },
       { command: 'cd /nowhere-at-all && cp /dev/null .cc-safety-net/policy.json', blocked: false },
+      // A nested shell is walked, so a mutation inside one is still blocked — but its `cd` ends
+      // with it, so the operand after the group resolves against the project directory.
+      { command: `( rm -rf ${sh(safetyHome)} )`, blocked: true },
+      { command: `(cd ${sh(join(root, 'other'))}) && rm -rf .cc-safety-net`, blocked: true },
       { command: `env -S "cp /dev/null ${sh(userPolicy)}"`, blocked: true },
       { command: `sudo cp /dev/null ${sh(userPolicy)}`, blocked: true },
       // contract: src/gate/guards/policy-protection.ts:213 — outside a read-only segment any

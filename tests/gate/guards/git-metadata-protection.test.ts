@@ -285,6 +285,10 @@ describe('git metadata mutation targets in semantic facts', () => {
       { command: 'G=.git && mv ${G}/hooks /tmp/stash', target: '${G}/hooks' },
       // A `cd` moves the directory the later operand resolves against.
       { command: 'cd .git && mv hooks /tmp/stash', target: 'hooks' },
+      // A nested shell is walked, so a move inside one still reports its operand — but its `cd`
+      // ends with it, so a later operand resolves against the repository again.
+      { command: '( mv .git /tmp/stash )', target: '.git' },
+      { command: '(cd .git) && mv .git /tmp/stash', target: '.git' },
       { command: 'sudo mv .git /tmp/stash', target: '.git' },
       { command: 'env -i mv .git /tmp/stash', target: '.git' },
       // A redirection is compared against the marker files, and a plain checkout has none: its

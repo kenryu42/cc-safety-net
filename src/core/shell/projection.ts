@@ -19,7 +19,8 @@ export type ShellSyntaxEntry =
       readonly role: 'file-read' | 'file-write' | 'here-data';
       readonly targetOrder: 'immediate' | 'legacy-segment';
       readonly target?: string;
-    };
+    }
+  | { readonly kind: 'scope'; readonly edge: 'enter' | 'exit' };
 
 export type ShellSyntaxFacts = {
   readonly status: 'complete' | 'unclosed-quote' | 'invalid' | 'structural-limit';
@@ -35,6 +36,10 @@ const SPECIAL_VARIABLE_NAME = /[*@#?$!_-]/;
 // is one name rather than `$env` followed by literal text.
 const POWERSHELL_VARIABLE_NAME = /^\w+(?::\w+)*/;
 const EMPTY_ENTRIES = Object.freeze([]) as readonly ShellSyntaxEntry[];
+// A nested program that runs in its own shell is bracketed by these, so a walker can restore the
+// state it entered with where the shell would.
+const SCOPE_ENTER: ShellSyntaxEntry = Object.freeze({ kind: 'scope' as const, edge: 'enter' });
+const SCOPE_EXIT: ShellSyntaxEntry = Object.freeze({ kind: 'scope' as const, edge: 'exit' });
 const EMPTY_STRINGS = Object.freeze([]) as readonly string[];
 // A call site inlines the whole body, so branching recursion (`a() { a; a; }`) grows
 // exponentially where the depth cap alone never triggers. Real commands call a handful of
@@ -65,6 +70,10 @@ type PositionedEntries = { readonly start: number; readonly entries: readonly Sh
  * Projects the parsed program onto the flat entry stream the path scanners read.
  * Word text keeps shell expansions inert (`$NAME` becomes `${NAME}`) so downstream variable
  * tracking sees one spelling, and heredoc bodies fed to inert data sinks stay out of the stream.
+ * A nested program that runs in its own shell — a subshell group, `$( )`, backticks, a process
+ * substitution — is bracketed by `scope` entries so a walker can restore its state where the
+ * shell would; a brace group, a called function body and arithmetic run in the current shell and
+ * open no scope.
  */
 export function projectShellSyntax(source: string, program: CommandProgram): ShellSyntaxFacts {
   const suppressed =
@@ -142,11 +151,19 @@ function projectNode(
     return [
       {
         start: node.span.start,
-        entries: [
-          brace ? boundaryOperatorEntry('{') : operatorEntry('('),
-          ...projectProgram(node.body, groupContext),
-          ...(closed ? [brace ? boundaryOperatorEntry('}') : operatorEntry(')')] : []),
-        ],
+        entries: brace
+          ? [
+              boundaryOperatorEntry('{'),
+              ...projectProgram(node.body, groupContext),
+              ...(closed ? [boundaryOperatorEntry('}')] : []),
+            ]
+          : [
+              SCOPE_ENTER,
+              operatorEntry('('),
+              ...projectProgram(node.body, groupContext),
+              ...(closed ? [operatorEntry(')')] : []),
+              SCOPE_EXIT,
+            ],
       },
     ];
   }
@@ -373,7 +390,7 @@ function projectWord(
     if (part.raw.startsWith('`')) {
       pending += '${}';
       flush();
-      entries.push(...inner);
+      entries.push(SCOPE_ENTER, ...inner, SCOPE_EXIT);
       continue;
     }
     if (part.raw.startsWith('<(') || part.raw.startsWith('>(')) {
@@ -387,20 +404,25 @@ function projectWord(
               role: 'file-write' as const,
               targetOrder: 'immediate' as const,
             }),
+        SCOPE_ENTER,
         ...inner,
         ...(part.raw.endsWith(')') ? [operatorEntry(')')] : []),
+        SCOPE_EXIT,
       );
       continue;
     }
+    // Arithmetic runs in the current shell, so only the single-frame form opens a scope.
     const frames = part.raw.startsWith('$((') ? 2 : 1;
     pending += '${}';
     flush();
     entries.push(
       ...Array.from({ length: frames }, () => operatorEntry('(')),
+      ...(frames === 1 ? [SCOPE_ENTER] : []),
       ...inner,
       ...(part.raw.endsWith(')'.repeat(frames))
         ? Array.from({ length: frames }, () => operatorEntry(')'))
         : []),
+      ...(frames === 1 ? [SCOPE_EXIT] : []),
     );
   }
   flush();

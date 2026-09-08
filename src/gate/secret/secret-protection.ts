@@ -404,7 +404,8 @@ function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentCon
   for (const entry of syntax.shell.entries) {
     if (entry.kind === 'operator' && entry.boundary) return false;
     if (entry.kind === 'redirection') return false;
-    if (entry.kind !== 'operator') tokens.push(projectSensitiveShellText(entry.text, environment));
+    if (entry.kind === 'operator' || entry.kind === 'scope') continue;
+    tokens.push(projectSensitiveShellText(entry.text, environment));
   }
 
   const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
@@ -491,10 +492,17 @@ function extractCommandPathTargets(
     ),
   ];
   // The same walk the protected-path guards run: a segment's operands resolve against the cwd in
-  // force when it runs, and only a completed segment moves that cwd.
-  let state: ProtectedPathShellState = { cwd, variables: new Map() };
+  // force when it runs, and only a completed segment moves that cwd. A nested shell (`scope`
+  // entries) contributes its words to the segment around it as before, but its directory is its
+  // own: the pending segment is read with it before the parent's is handed back.
+  let state: ProtectedPathShellState = { cwd, variables: new Map(), previous: null };
   let segment: string[] = [];
   let pipeProducer: string[] | null = null;
+  const frames: {
+    readonly state: ProtectedPathShellState;
+    readonly segment: string[];
+    readonly pipeProducer: string[] | null;
+  }[] = [];
   // Reads the bindings above at call time: a completed segment contributes its own operands, plus
   // the paths the segment upstream of a pipe carries into it.
   const flushSegment = () => {
@@ -517,6 +525,20 @@ function extractCommandPathTargets(
   };
 
   for (const entry of syntax.entries) {
+    if (entry.kind === 'scope') {
+      if (entry.edge === 'enter') {
+        frames.push({ state, segment: [...segment], pipeProducer });
+        continue;
+      }
+      if (segment.length > 0) flushSegment();
+      const frame = frames.pop();
+      if (frame === undefined) throw new Error('scope exit without a matching enter');
+      state = frame.state;
+      segment = frame.segment;
+      pipeProducer = frame.pipeProducer;
+      continue;
+    }
+
     if (entry.kind === 'operator') {
       if (!entry.boundary) continue;
       if (segment.length === 0) {

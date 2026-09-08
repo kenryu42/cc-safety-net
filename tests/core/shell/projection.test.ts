@@ -102,8 +102,10 @@ describe('core/shell/projection', () => {
       { kind: 'word', text: 'cat' },
       { kind: 'word', text: '${}' },
       { kind: 'operator', operator: '(', boundary: false },
+      { kind: 'scope', edge: 'enter' },
       { kind: 'word', text: 'pwd' },
       { kind: 'operator', operator: ')', boundary: false },
+      { kind: 'scope', edge: 'exit' },
       { kind: 'word', text: '/.env' },
     ]);
     expect(entries('rm *.env')).toStrictEqual([
@@ -131,6 +133,50 @@ describe('core/shell/projection', () => {
       '/project/cache',
     ]);
     expect(project('loop() { loop; }; loop').status).toBe('structural-limit');
+  });
+
+  test('brackets a nested shell with scope entries, and nothing else', () => {
+    expect(entries('(cd x) && cat y')).toStrictEqual([
+      { kind: 'scope', edge: 'enter' },
+      { kind: 'operator', operator: '(', boundary: false },
+      { kind: 'word', text: 'cd' },
+      { kind: 'word', text: 'x' },
+      { kind: 'operator', operator: ')', boundary: false },
+      { kind: 'scope', edge: 'exit' },
+      { kind: 'operator', operator: '&&', boundary: true },
+      { kind: 'word', text: 'cat' },
+      { kind: 'word', text: 'y' },
+    ]);
+    expect(entries('cat `cd x`')).toStrictEqual([
+      { kind: 'word', text: 'cat' },
+      { kind: 'word', text: '${}' },
+      { kind: 'scope', edge: 'enter' },
+      { kind: 'word', text: 'cd' },
+      { kind: 'word', text: 'x' },
+      { kind: 'scope', edge: 'exit' },
+    ]);
+    expect(entries('cat <(cd x)')).toStrictEqual([
+      { kind: 'word', text: 'cat' },
+      { kind: 'operator', operator: '<(', boundary: false },
+      { kind: 'scope', edge: 'enter' },
+      { kind: 'word', text: 'cd' },
+      { kind: 'word', text: 'x' },
+      { kind: 'operator', operator: ')', boundary: false },
+      { kind: 'scope', edge: 'exit' },
+    ]);
+    // A group, a called function body and arithmetic all run in the current shell, so none of
+    // them opens a scope.
+    for (const source of [
+      '{ cd x; } && cat y',
+      'f() { cd x; }; f; cat y',
+      'echo $((1 + 2))',
+      'cd x && cat y',
+    ]) {
+      expect(
+        entries(source).some((entry) => entry.kind === 'scope'),
+        source,
+      ).toBeFalse();
+    }
   });
 
   test('projects heredoc bodies as segments and reports the assignment fallbacks', () => {

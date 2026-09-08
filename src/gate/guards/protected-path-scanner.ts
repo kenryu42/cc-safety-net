@@ -8,6 +8,8 @@ import { StructuralShellSyntaxLimitError } from './semantic-facts';
 export type ProtectedPathShellState = Readonly<{
   cwd: string;
   variables: ReadonlyMap<string, string>;
+  /** Where the last `cd` came from, so `cd -` can return to it. Null until one has moved. */
+  previous: string | null;
 }>;
 
 const MV_OPTIONS_WITH_VALUES = new Set(['-S', '--suffix']);
@@ -34,9 +36,23 @@ export function findProtectedPathMutationInCommand(
   if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
   if (syntax.status !== 'complete') return scanner.findMalformedTarget(syntax.source);
 
-  let state: ProtectedPathShellState = { cwd, variables: new Map() };
+  let state: ProtectedPathShellState = { cwd, variables: new Map(), previous: null };
   let segment: string[] = [];
+  const frames: { readonly state: ProtectedPathShellState; readonly segment: string[] }[] = [];
   for (const entry of syntax.entries) {
+    if (entry.kind === 'scope') {
+      if (entry.edge === 'enter') {
+        frames.push({ state, segment: [...segment] });
+        continue;
+      }
+      const target = scanner.findSegmentTarget(segment, state);
+      if (target) return target;
+      const frame = frames.pop();
+      if (frame === undefined) throw new Error('scope exit without a matching enter');
+      state = frame.state;
+      segment = frame.segment;
+      continue;
+    }
     if (entry.kind === 'operator') {
       if (!entry.boundary) continue;
       const target = scanner.findSegmentTarget(segment, state);
@@ -132,10 +148,13 @@ export function extractMvOperandPaths(args: readonly string[]): {
 
 /**
  * One segment's effect on the tracked shell state: an assignment-only segment extends the
- * variables, a `cd` after wrapper stripping moves the cwd through `normalizeCwd`, and a bare `cd`
- * or `cd -` leaves it where it was. Shared by the protected-path guards through
+ * variables, a `cd` after wrapper stripping moves the cwd through `normalizeCwd` and remembers
+ * where it came from, `cd -` returns to that directory, and a bare `cd` — or a `cd -` with nothing
+ * remembered — leaves the cwd where it was. Shared by the protected-path guards through
  * `findProtectedPathMutationInCommand` and by the secret matcher's own walk, so a relative operand
- * resolves against the same directory in both.
+ * resolves against the same directory in both. Both walks read the projection's `scope` markers
+ * the same way: a nested shell's words still join the segment around them, but the state it
+ * changed is dropped when it ends, so its `cd` never moves the shell that started it.
  */
 export function applyShellState(
   segment: readonly string[],
@@ -149,17 +168,20 @@ export function applyShellState(
     : state.variables;
   const stripped = stripWrappers([...segment], environment);
   const target = getBasename(stripped[0] ?? '').toLowerCase() === 'cd' ? stripped[1] : undefined;
+  if (!target) return { ...state, variables };
+  if (target === '-') {
+    if (state.previous === null) return { ...state, variables };
+    return { cwd: state.previous, variables, previous: state.cwd };
+  }
   return {
-    cwd:
-      !target || target === '-'
-        ? state.cwd
-        : normalizeCwd(
-            expandTrackedShellVariables(target, variables),
-            state.cwd,
-            environment,
-            budget,
-          ),
+    cwd: normalizeCwd(
+      expandTrackedShellVariables(target, variables),
+      state.cwd,
+      environment,
+      budget,
+    ),
     variables,
+    previous: state.cwd,
   };
 }
 

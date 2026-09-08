@@ -199,6 +199,14 @@ describe('protected path scanner walk', () => {
       { source: 'cd; rm -rf x', cwd: () => workspace },
       { source: 'cd ""; rm -rf x', cwd: () => workspace },
       { source: 'cd /absolute/missing && rm -rf x', cwd: () => '/absolute/missing' },
+      // A nested shell walks with its own copy of the state and hands the parent's back.
+      { source: '(cd policy) && rm -rf x', cwd: () => workspace },
+      { source: 'rm -rf $(cd policy; pwd)/x', cwd: () => workspace },
+      // `cd -` returns to the directory the previous `cd` left, and swaps again on a second one.
+      { source: 'cd policy && cd - && rm -rf x', cwd: () => workspace },
+      { source: 'cd policy; cd -; cd -; rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      // With nothing remembered there is nowhere to return to, so the cwd stays put.
+      { source: 'cd - && rm -rf x', cwd: () => workspace },
     ];
     for (const row of rows) {
       expect(lastSegmentCwd(row.source), row.source).toBe(row.cwd());
@@ -225,6 +233,9 @@ describe('protected path scanner walk', () => {
       { source: `A=1 B=2; rm -rf ${MARKER}`, result: `rm -rf ${MARKER}` },
       { source: `rm -rf x && echo hi > ${MARKER}`, result: MARKER },
       { source: `echo hi > ${MARKER}; echo second > other`, result: MARKER },
+      // A nested shell is walked, so a mutation inside one still reaches the guard.
+      { source: `( rm -rf ${MARKER} )`, result: `rm -rf ${MARKER}` },
+      { source: `(cd policy) && rm -rf ${MARKER}`, result: `rm -rf ${MARKER}` },
     ];
     for (const row of rows) {
       expect(completedWalk(walkPair(row.source, workspace, MARKER)).result, row.source).toBe(
