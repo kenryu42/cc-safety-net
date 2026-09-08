@@ -249,7 +249,7 @@ export async function runGuiRow(row: {
   const portedSide = seedSide('gui-ported-', row.seed);
 
   const portedServer = await createPortedServer(
-    environmentFor(portedSide.home, portedSide.values),
+    () => environmentFor(portedSide.home, portedSide.values),
     { cwd: portedSide.project, ...row.options?.(portedSide) },
   );
   const portedResponses = await drive(portedServer, row.requests).finally(portedServer.close);

@@ -1,12 +1,19 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { lstatSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { DEFAULT_GUI_POLICY } from '@/core/policy/store';
 import { DESTRUCTIVE_COMMAND_RULE_METADATA } from '@/core/rules/destructive';
+import { createPolicyGuiServer } from '@/gui/index';
+import { createLinkedWorktreeFixture } from '../helpers';
 import type { TreeEntry, TreeSpec } from '../helpers/fixture-tree';
 import { type GuiRequest, runGuiRow } from '../helpers/gui-differential';
 import { json, rulesConfig, v1Rulebook } from '../helpers/rulebook-seeds';
-import { removeTempRoots } from '../helpers/temp-home';
+import {
+  createTempRoot,
+  environmentFor,
+  isolationEnv,
+  removeTempRoots,
+} from '../helpers/temp-home';
 
 /**
  * The guard, the page and the user-policy endpoints, driven against the server over a seeded home.
@@ -417,5 +424,51 @@ describe('the policy GUI server', () => {
     );
     // Nothing parsed, so there is nothing to keep.
     expect(policyFile(repairedMalformed.tree)?.content).toBe(json(DEFAULT_GUI_POLICY));
+  });
+
+  /**
+   * Git facts are memoized per `Environment`, so a server that built one at startup answered every
+   * later request from the repository shape it saw first. One server and one token here, with the
+   * `.git` marker appearing and disappearing between requests.
+   */
+  test('reads the Git facts again for every request', async () => {
+    const root = createTempRoot('gui-git-marker-');
+    const home = join(root, 'home');
+    const project = join(root, 'project');
+    for (const dir of [home, project]) mkdirSync(dir, { recursive: true });
+    const values = isolationEnv(home);
+    const fixture = createLinkedWorktreeFixture();
+    const marker = join(project, '.git');
+    const server = await createPolicyGuiServer(() => environmentFor(home, values), {
+      cwd: project,
+    });
+    const explain = async () =>
+      (await (
+        await fetch(
+          `${server.origin}/api/policy/explain?token=${encodeURIComponent(server.token)}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-cc-safety-net-token': server.token },
+            body: JSON.stringify({ command: 'printf x > .git', policy: { version: 1 } }),
+          },
+        )
+      ).json()) as { result: string; ruleId?: string };
+
+    try {
+      expect(await explain()).toMatchObject({ result: 'allowed' });
+
+      // The linked worktree's own marker: a `gitdir:` line naming a directory that exists.
+      writeFileSync(marker, readFileSync(join(fixture.linkedWorktree, '.git'), 'utf-8'));
+      expect(await explain()).toMatchObject({
+        result: 'blocked',
+        ruleId: 'git-metadata-protection',
+      });
+
+      unlinkSync(marker);
+      expect(await explain()).toMatchObject({ result: 'allowed' });
+    } finally {
+      await server.close();
+      fixture.cleanup();
+    }
   });
 });

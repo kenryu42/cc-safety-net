@@ -143,7 +143,7 @@ export async function runGuiCommand(
     return 1;
   }
 
-  const server = await createPolicyGuiServer(createProcessEnvironment(), options);
+  const server = await createPolicyGuiServer(createProcessEnvironment, options);
   log(`CC Safety Net policy GUI: ${server.url}`);
 
   if (!parsed.flags.noOpen) {
@@ -168,7 +168,7 @@ export async function runGuiCommand(
 
 /** @internal */
 export async function createPolicyGuiServer(
-  environment: Environment,
+  createEnvironment: () => Environment,
   options: PolicyGuiServerOptions = {},
 ): Promise<PolicyGuiServer> {
   const token = randomBytes(24).toString('base64url');
@@ -176,7 +176,7 @@ export async function createPolicyGuiServer(
   // GUI this server serves, and a second server must not inherit its target.
   const session: ProjectDraftSession = { dir: null, revision: 0 };
   const server = createServer((request, response) => {
-    void handleRequest(environment, request, response, token, options, session);
+    void handleRequest(createEnvironment, request, response, token, options, session);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -198,13 +198,16 @@ export async function createPolicyGuiServer(
 }
 
 async function handleRequest(
-  environment: Environment,
+  createEnvironment: () => Environment,
   request: IncomingMessage,
   response: ServerResponse,
   token: string,
   options: PolicyGuiServerOptions,
   session: ProjectDraftSession,
 ): Promise<void> {
+  // Per request: an `Environment` memoizes the Git facts it resolves, so one built for the server
+  // would answer from the repository shape it saw first for as long as the GUI stays open.
+  const environment = createEnvironment();
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
   if (request.method === 'GET' && url.pathname === '/favicon.ico') {
     response.writeHead(204, { 'cache-control': 'no-store' });
