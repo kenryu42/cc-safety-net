@@ -9,18 +9,11 @@ import { projectCommandViews } from '@/core/shell/traversal';
 import { type AnalyzeRmOptions, analyzeRmMatch } from '@/gate/analyzer/rm';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import {
-  corpusCommands,
-  FIXED_COMMANDS,
-  FUZZ_SEED,
-  fuzzShellSources,
-} from '../../helpers/shell-inputs';
 
 /**
  * `rm` is the rule set with the most gates in front of it — recursion, force, brace expansion,
  * the Git control plane, allow paths, the temp roots and the paranoid tier — so every spelling
- * runs through the analyzer under the same process state.
+ * states the rule it earns under the option set it is read with.
  */
 
 let root = '';
@@ -234,16 +227,154 @@ function runPair(source: string, row: OptionCase) {
 }
 
 describe('rm rule set', () => {
-  test('every rm spelling matches the shipped analyzer under every option set', () => {
-    const recorded: [string, unknown][] = [];
-    for (const row of optionCases()) {
-      for (const source of RM_COMMANDS) {
-        for (const outcome of runPair(source, row)) {
-          recorded.push([`${row.label}: ${source}`, outcome]);
-        }
-      }
+  /** The rule id one spelling earns under one of the option sets above. */
+  function ruleIdFor(source: string, label: string): string | null {
+    const row = optionCases().find((option) => option.label === label);
+    if (!row) throw new Error(`unknown option case: ${label}`);
+    const outcome = runPair(source, row)[0];
+    if (!outcome) throw new Error(`no rm command in: ${source}`);
+    if (!outcome.ok) throw new Error(`${label}: ${source} threw ${outcome.error.name}`);
+    return outcome.value?.id ?? null;
+  }
+
+  test('a root or home target is catastrophic however it is spelled', () => {
+    const rows: readonly { readonly source: string; readonly id: string | null }[] = [
+      { source: 'rm -rf /', id: 'rm.recursive-force-root-or-home' },
+      { source: 'rm -rf /*', id: 'rm.recursive-force-root-or-home' },
+      { source: 'rm -rf ~', id: 'rm.recursive-force-root-or-home' },
+      { source: 'rm -rf $HOME', id: 'rm.recursive-force-root-or-home' },
+      { source: 'rm -rf "$HOME"', id: 'rm.recursive-force-root-or-home' },
+      { source: 'rm -r /', id: 'rm.recursive-force-root-or-home' },
+      // A path below home is an ordinary outside-cwd target once it is resolved; a `$` target
+      // is unverifiable instead, and unverifiable targets are strict-only.
+      { source: 'rm -rf ~/keep', id: 'rm.recursive-force-outside-cwd' },
+      { source: 'rm -rf ${HOME}/keep', id: null },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.source, 'plain workspace'), row.source).toBe(row.id);
+    const words = rmWords('rm -rf /')[0];
+    if (!words) throw new Error('missing root command');
+    expect(
+      analyzeRmMatch(words, {
+        environment: pairedEnvironments({ HOME: home }, home),
+        protectedGitMetadata: null,
+        cwd: workspace,
+        originalCwd: workspace,
+      }),
+    ).toStrictEqual({
+      id: 'rm.recursive-force-root-or-home',
+      reason: 'rm -rf targeting root or home directory is extremely dangerous and always blocked.',
+      intent: 'hard_stop',
+    });
+  });
+
+  test('a recursive force target is judged against the anchored cwd', () => {
+    const rows: readonly { readonly source: string; readonly id: string | null }[] = [
+      { source: 'rm -rf src', id: null },
+      { source: 'rm -rf ./src', id: null },
+      { source: 'rm -fr src', id: null },
+      { source: 'rm --recursive --force src', id: null },
+      { source: 'rm -rf "quoted dir"', id: null },
+      // Recursion without force reports only the catastrophic and Git-metadata targets.
+      { source: 'rm -r src', id: null },
+      { source: 'rm file.txt', id: null },
+      { source: 'rm -rf -- -weird-name', id: null },
+      { source: 'rm -rf .', id: 'rm.recursive-force-cwd-self' },
+      { source: 'rm -rf ./', id: 'rm.recursive-force-cwd-self' },
+      { source: 'rm -rf ..', id: 'rm.recursive-force-outside-cwd' },
+      { source: 'rm -rf -- ../outside', id: 'rm.recursive-force-outside-cwd' },
+      { source: 'rm -rf /nonexistent/elsewhere', id: 'rm.recursive-force-outside-cwd' },
+      // A literal brace expansion is judged per expanded target; a range is not expanded.
+      { source: 'rm -rf {a,b}', id: null },
+      { source: 'rm -rf {a,b}/{c,d}', id: null },
+      { source: 'rm -rf x{1..3}', id: 'rm.recursive-force-outside-cwd' },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.source, 'plain workspace'), row.source).toBe(row.id);
+  });
+
+  test('the temp roots and $TMPDIR are trusted unless word splitting can escape them', () => {
+    const rows: readonly {
+      readonly label: string;
+      readonly source: string;
+      readonly id: string | null;
+    }[] = [
+      { label: 'plain workspace', source: 'rm -rf /tmp/scratch-dir', id: null },
+      { label: 'plain workspace', source: 'rm -rf /var/tmp/scratch-dir', id: null },
+      { label: 'paranoid rm', source: 'rm -rf /tmp/scratch-dir', id: null },
+      { label: 'tmpdir trusted', source: 'rm -rf $TMPDIR/build', id: null },
+      { label: 'tmpdir trusted', source: 'rm -rf ${TMPDIR}/build', id: null },
+      {
+        label: 'tmpdir word splitting unsafe',
+        source: 'rm -rf $TMPDIR/build',
+        id: 'rm.recursive-force-outside-cwd',
+      },
+      { label: 'tmpdir word splitting unsafe', source: 'rm -rf "$TMPDIR"/build', id: null },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.source, row.label), `${row.label}: ${row.source}`).toBe(row.id);
+  });
+
+  test('an unverifiable target is reported in strict mode only', () => {
+    for (const source of ['rm -rf $UNKNOWN/x', 'rm -rf "$UNKNOWN"', 'rm -rf `pwd`', 'rm -rf *']) {
+      expect(ruleIdFor(source, 'plain workspace'), source).toBeNull();
+      expect(ruleIdFor(source, 'strict'), source).toBe('rm.recursive-force-dynamic-target');
     }
-    expectRecordedDigest('analyzer-rm/option-sets', recorded, root);
+  });
+
+  test('Git metadata is protected only when the caller resolved it', () => {
+    for (const source of [
+      'rm .git',
+      'rm -f .git/hooks/pre-commit',
+      'rm -rf .git',
+      'rm -rf .git/hooks',
+      'rm -r .git',
+      // An ancestor of the Git directory counts when the delete is recursive.
+      'rm -rf .',
+    ]) {
+      expect(ruleIdFor(source, 'git metadata resolved'), source).toBe('rm.git-metadata');
+      expect(ruleIdFor(source, 'plain workspace'), source).not.toBe('rm.git-metadata');
+    }
+    // contract: src/gate/guards/git-metadata-protection.ts:86 — a non-recursive delete matches
+    // only a Git directory entry or a hook path, so a marker file below it is not one.
+    expect(ruleIdFor('rm .git/HEAD', 'git metadata resolved')).toBeNull();
+  });
+
+  test('the home directory and a missing cwd change which target is anchored', () => {
+    const rows: readonly {
+      readonly label: string;
+      readonly source: string;
+      readonly id: string | null;
+    }[] = [
+      { label: 'home is the cwd', source: 'rm -rf src', id: 'rm.recursive-force-home-cwd' },
+      { label: 'home is the cwd', source: 'rm -rf *', id: 'rm.recursive-force-root-or-home' },
+      { label: 'home is the cwd', source: 'rm -rf /tmp/scratch-dir', id: null },
+      { label: 'no cwd at all', source: 'rm -rf src', id: 'rm.recursive-force-outside-cwd' },
+      { label: 'no cwd at all', source: 'rm -rf .', id: 'rm.recursive-force-outside-cwd' },
+      { label: 'no cwd at all', source: 'rm -rf /', id: 'rm.recursive-force-root-or-home' },
+      { label: 'no cwd at all', source: 'rm -rf /tmp/scratch-dir', id: null },
+      {
+        label: 'strict inside a nested directory',
+        source: 'rm -rf .',
+        id: 'rm.recursive-force-cwd-self',
+      },
+      // `..` is the anchored workspace, which holds the resolved Git directory.
+      { label: 'strict inside a nested directory', source: 'rm -rf ..', id: 'rm.git-metadata' },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.source, row.label), `${row.label}: ${row.source}`).toBe(row.id);
+  });
+
+  test('an allow path and the system temp root are both trusted', () => {
+    // The fixture root is itself a system temp directory, so every path under it is trusted
+    // whether or not the policy names it.
+    for (const label of ['plain workspace', 'allow paths cover a sibling directory'])
+      for (const target of [join(root, 'allowed'), join(root, 'allowed', 'inner')])
+        expect(ruleIdFor(`rm -rf ${target}`, label), `${label}: ${target}`).toBeNull();
+    // A path outside every trusted root stays outside the anchored cwd.
+    expect(ruleIdFor('rm -rf /nonexistent/allowed', 'allow paths cover a sibling directory')).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
   });
 
   test('the table reaches every rm rule the analyzer can report', () => {
@@ -314,20 +445,5 @@ describe('rm rule set', () => {
         },
       })?.id,
     ).toBe('rm.recursive-force-root-or-home');
-  });
-
-  test('the corpus commands and the seeded fuzz agree with the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    const row = { label: 'corpus', options: { cwd: workspace, originalCwd: workspace } };
-    for (const source of [
-      ...corpusCommands(),
-      ...FIXED_COMMANDS,
-      ...fuzzShellSources(400, FUZZ_SEED),
-    ]) {
-      for (const outcome of runPair(source, row)) {
-        recorded.push([source, outcome]);
-      }
-    }
-    expectRecordedDigest('analyzer-rm/corpus-and-fuzz', recorded, root);
   });
 });

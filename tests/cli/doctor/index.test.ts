@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { encodeCwdForLogDirname, getAuditLogsDir } from '@/audit/writer';
 import { installCursor } from '@/hosts/cursor/install';
@@ -17,12 +17,12 @@ import { environmentFor, removeTempRoots } from '../../helpers/temp-home';
 
 /**
  * `doctor` is the widest projection of one policy resolution, so each row seeds the single fact
- * a finding rule reads and pins the finding it produces. The JSON form is also written to a
- * literal golden, which guards the document shape on its own.
+ * a finding rule reads and pins the finding it produces. The JSON form is also pinned as a
+ * snapshot, which guards the document shape on its own.
  *
- * The run is recorded raw: every byte a doctor document carries, down to which entry it calls the
- * oldest and which version it reports, is pinned. Only the golden is normalized, because what the
- * normalizer folds is exactly what the literal file cannot pin across machines: the rendered
+ * The run is read raw: every byte a doctor document carries, down to which entry it calls the
+ * oldest and which version it reports, is pinned. Only the snapshot is normalized, because what
+ * the normalizer folds is exactly what a pinned document cannot hold across machines: the rendered
  * relative times, the package version (`dev` in a checkout, a real number in a tarball) and the
  * platform.
  */
@@ -31,28 +31,13 @@ afterEach(() => {
   removeTempRoots();
 });
 
-/** `.golden` rather than `.json`: seven renderings of one document share most of their lines, and
- *  the duplication scan the repository runs over `tests/` tokenizes every `.json` and `.txt` file
- *  it finds. The suffix keeps the goldens out of that scan without an ignore rule. */
-const goldenPath = (slug: string) =>
-  join(import.meta.dir, '..', '..', 'fixtures', 'cli', 'doctor', `${slug}.json.golden`);
-
-function pinGolden(slug: string, document: string): void {
-  if (process.env.CC_SAFETY_NET_UPDATE_GOLDENS === '1') {
-    mkdirSync(dirname(goldenPath(slug)), { recursive: true });
-    writeFileSync(goldenPath(slug), document);
-    return;
-  }
-  expect(document).toBe(readFileSync(goldenPath(slug), 'utf-8'));
-}
-
 async function runDoctorJson(slug: string, row: Omit<CliRow, 'args'>) {
   const result = await runCliDifferential({
     args: ['doctor', '--json', '--skip-update-check'],
     ...row,
   });
   const outcome = { ...result, stdout: foldWindowsPosture(result.stdout) };
-  pinGolden(slug, normalizeDoctorJson(outcome.stdout));
+  expect(normalizeDoctorJson(outcome.stdout)).toMatchSnapshot(slug);
   return { outcome, report: JSON.parse(outcome.stdout) as DoctorReport };
 }
 

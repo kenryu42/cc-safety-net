@@ -119,16 +119,17 @@ const folded = (input: string, verdict: GateVerdict) =>
 const recorded = loadHarvestedVerdicts();
 
 /**
- * A run with no table to compare against records one instead. `CC_SAFETY_NET_UPDATE_GOLDENS=1`
- * re-records a table that exists, the way the digest oracle this replaced did.
+ * A run with no table to compare against records one instead. To regenerate the table, delete
+ * `tests/fixtures/gate/harvested-verdicts.jsonl` and run this file once locally; a row that a
+ * change flips is edited by hand, with the reason stated in the commit message.
  */
-const RECORDING = recorded === null || process.env.CC_SAFETY_NET_UPDATE_GOLDENS === '1';
+const RECORDING = recorded === null;
 
 /** One row per literal, in the literal's order: what this run decided. */
 const rows: HarvestedRow[] = [];
 
 afterAll(() => {
-  // The local `bun test` path when the table is missing or being re-recorded; under CI the
+  // The local `bun test` path when the table is missing; under CI the
   // missing-table test has already failed instead, so a renamed column cannot pass vacuously.
   if (RECORDING && !process.env.CI && rows.length === HARVESTED_LITERAL_COUNT)
     writeHarvestedVerdicts(rows);

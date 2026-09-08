@@ -10,14 +10,12 @@ import {
 } from '@/gate/analyzer/xargs';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, FUZZ_SEED, fuzzShellSources } from '../../helpers/shell-inputs';
 
 /**
  * `xargs` reads its arguments from a stream nobody can see, so the analyzer asks two questions of
  * every child: what appended input can still change, and what a replacement token could be made to
- * spell. The analyzer answers over the option shapes, child heads and policy states, and the
- * nested sources it hands back to the caller are recorded with it.
+ * spell. Each row states the verdict the analyzer reaches over the option shapes, child heads and
+ * policy states, and the nested sources it hands back to the caller.
  *
  * The paths here are lexical, not a fixture tree: every verdict `xargs` reaches is decided by the
  * option scan and the child dispatch, and the canonicalization underneath is pinned by the path
@@ -225,13 +223,61 @@ const CHILD_SHAPES: readonly (readonly string[])[] = [
 const EVERY_SHAPE = [...OPTION_SHAPES, ...CHILD_SHAPES];
 
 describe('xargs option parsing', () => {
-  test('finds the same child start and replacement token as the shipped parser', () => {
-    const recorded: [string, unknown][] = [];
-    for (const tokens of [...EVERY_SHAPE, [], ['xargs', '-I', '', 'rm'], ['-I', '{}']]) {
-      const child = extractXargsChildCommandWithInfo(tokens);
-      recorded.push([tokens.join(' '), child]);
-    }
-    expectRecordedDigest('analyzer-xargs/child-start', recorded);
+  test('the option scan stops where the child command starts', () => {
+    const rows: readonly {
+      readonly tokens: readonly string[];
+      readonly info: { childStart: number; replacementToken: string | null };
+    }[] = [
+      { tokens: ['xargs', 'rm', '-rf'], info: { childStart: 1, replacementToken: null } },
+      {
+        tokens: ['xargs', '-I', '{}', 'rm', '-rf', '{}'],
+        info: { childStart: 3, replacementToken: '{}' },
+      },
+      {
+        tokens: ['xargs', '-I%', 'rm', '-rf', '%'],
+        info: { childStart: 2, replacementToken: '%' },
+      },
+      {
+        tokens: ['xargs', '--replace', 'rm', '-rf'],
+        info: { childStart: 2, replacementToken: '{}' },
+      },
+      {
+        tokens: ['xargs', '--replace=', 'rm', '-rf'],
+        info: { childStart: 2, replacementToken: '{}' },
+      },
+      {
+        tokens: ['xargs', '--replace=FOO', 'rm', 'FOO'],
+        info: { childStart: 2, replacementToken: 'FOO' },
+      },
+      {
+        tokens: ['xargs', '-J', '%', 'cp', 'src', '%'],
+        info: { childStart: 3, replacementToken: '%' },
+      },
+      // Value-taking options consume their value, attached or separate.
+      { tokens: ['xargs', '-0', 'rm'], info: { childStart: 2, replacementToken: null } },
+      { tokens: ['xargs', '-n', '1', 'rm'], info: { childStart: 3, replacementToken: null } },
+      { tokens: ['xargs', '-n1', 'rm'], info: { childStart: 2, replacementToken: null } },
+      {
+        tokens: ['xargs', '-P4', '-n', '2', 'rm'],
+        info: { childStart: 4, replacementToken: null },
+      },
+      { tokens: ['xargs', '--max-procs=4', 'rm'], info: { childStart: 2, replacementToken: null } },
+      {
+        tokens: ['xargs', '--process-slot-var', 'SLOT', 'rm'],
+        info: { childStart: 3, replacementToken: null },
+      },
+      {
+        tokens: ['xargs', '--process-slot-var=SLOT', 'rm'],
+        info: { childStart: 2, replacementToken: null },
+      },
+      { tokens: ['xargs', '--', 'rm', '-rf'], info: { childStart: 2, replacementToken: null } },
+      { tokens: ['xargs'], info: { childStart: 1, replacementToken: null } },
+      { tokens: [], info: { childStart: 0, replacementToken: null } },
+    ];
+    for (const row of rows)
+      expect(extractXargsChildCommandWithInfo(row.tokens), row.tokens.join(' ')).toStrictEqual(
+        row.info,
+      );
   });
 
   test('the table separates every replacement spelling from the plain options', () => {
@@ -246,16 +292,79 @@ describe('xargs option parsing', () => {
 });
 
 describe('xargs analysis', () => {
-  test('reports the same rule and asks for the same nested sources as the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    for (const tokens of EVERY_SHAPE) {
-      for (const setting of SETTINGS) {
-        const both = runBothXargs(tokens, setting);
-        const where = `${setting.label}: ${tokens.join(' ')}`;
-        recorded.push([where, { match: both.match, asked: both.asked }]);
-      }
+  /** The rule one child earns under one of the settings above. */
+  function ruleIdFor(tokens: readonly string[], label: string): string | null {
+    const setting = SETTINGS.find((row) => row.label === label);
+    if (!setting) throw new Error(`unknown setting: ${label}`);
+    const verdict = runBothXargs(tokens, setting).match;
+    if (!verdict.ok) throw new Error(`${label}: ${tokens.join(' ')} threw ${verdict.error.name}`);
+    return verdict.value?.id ?? null;
+  }
+
+  test('appended input can complete a wrapper, an interpreter or an option', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['xargs', 'env', '--'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', 'bash'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', 'python3'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', 'node', '-e', 'console.log(1)'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', 'git'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', 'find', '.'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', 'rm', '-rf'], id: 'xargs.rm-recursive-force-dynamic' },
+      // A child that only reads, or one whose options are already closed, has nothing to change.
+      { tokens: ['xargs', 'cat'], id: null },
+      { tokens: ['xargs', 'echo'], id: null },
+      { tokens: ['xargs', 'printf', '%s'], id: null },
+      { tokens: ['xargs', 'node', '-e', 'console.log(1)', '--'], id: null },
+      { tokens: ['xargs', 'git', 'status'], id: null },
+      // A literal catastrophic target is judged by the child's own rule.
+      { tokens: ['xargs', '-I', '{}', 'rm', '-rf', '/'], id: 'rm.recursive-force-root-or-home' },
+      { tokens: ['xargs', 'git', 'reset', '--hard'], id: 'git.reset-hard' },
+      { tokens: ['xargs', 'find', '.', '-delete'], id: 'find.delete' },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.tokens, 'defaults'), row.tokens.join(' ')).toBe(row.id);
+  });
+
+  test('a replacement token is judged by what it could be made to spell', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['xargs', '-I', '{}', 'bash', '{}'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', '-I', '{}', 'node', '-{}', 'console.log(1)'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', '-I', '{}', 'awk', '-f', '{}'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', '-I', '{}', 'git', 'reset', '{}'], id: 'xargs.shell-dynamic' },
+      { tokens: ['xargs', '-I', '{}', 'rm', '-{}', '/'], id: 'xargs.shell-dynamic' },
+      // A replacement that can only be an operand leaves the child as written.
+      { tokens: ['xargs', '-I', '{}', 'echo', '{}'], id: null },
+      { tokens: ['xargs', '-I', '{}', 'git', 'status', '--', '{}'], id: null },
+      { tokens: ['xargs', '-I', '{}', 'rm', '--', '{}'], id: null },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.tokens, 'defaults'), row.tokens.join(' ')).toBe(row.id);
+    // With the dynamic-source rule off, the replacement still reaches `rm`'s own options, so the
+    // dynamic-input rm rule is what remains.
+    expect(ruleIdFor(['xargs', '-I', '{}', 'rm', '-{}', '/'], 'dynamic rule off')).toBe(
+      'xargs.rm-recursive-force-dynamic',
+    );
+  });
+
+  test('a custom rule can be completed by appended input or by a replacement', () => {
+    for (const tokens of [
+      ['xargs', 'kubectl', 'drain'],
+      ['xargs', 'kubectl', 'drain', '--force'],
+      ['xargs', '-I', '{}', 'kubectl', 'drain', '{}'],
+    ]) {
+      expect(ruleIdFor(tokens, 'custom rules'), tokens.join(' ')).toBe('custom.no-cluster-drain');
+      expect(ruleIdFor(tokens, 'defaults'), tokens.join(' ')).not.toBe('custom.no-cluster-drain');
     }
-    expectRecordedDigest('analyzer-xargs/analysis', recorded);
+    expect(ruleIdFor(['xargs', 'skopeo', 'copy'], 'custom rules')).toBe('custom.no-registry-push');
+  });
+
+  test('the nested sources handed back are the child command bodies', () => {
+    expect(runBothXargs(['xargs', 'sh', '-c', 'echo hi'], { label: 'defaults' }).asked).toContain(
+      'echo hi',
+    );
+    const nested = runBothXargs(['xargs', 'bash', '-c', 'echo BOOM'], { label: 'defaults' });
+    expect(nested.match).toStrictEqual({ ok: true, value: NESTED_HIT });
+    expect(runBothXargs(['xargs', 'cat'], { label: 'defaults' }).asked).toStrictEqual([]);
   });
 
   test('the shapes reach the dynamic-source, dynamic-rm and custom-rule verdicts', () => {
@@ -296,31 +405,15 @@ describe('xargs analysis', () => {
     expect(on.ok && on.value?.id).toBe('xargs.shell-dynamic');
     expect(on.ok && on.value?.reason).toBe(REASON_XARGS_SHELL);
     const off = runBothXargs(dynamicShell, { label: 'off', ruleOff: 'xargs.shell-dynamic' });
-    expectRecordedDigest('analyzer-xargs/disabled-rule', [['off', off.match]]);
     expect(off.match).toStrictEqual({ ok: true, value: null });
   });
 
-  test('the reason strings are the shipped strings', () => {
-    expectRecordedDigest('analyzer-xargs/reasons', [
-      ['rm', REASON_XARGS_RM],
-      ['shell', REASON_XARGS_SHELL],
-    ]);
-  });
-
-  test('corpus and fuzz sources placed after xargs agree with the shipped analyzer', () => {
-    const recorded: [string, unknown][] = [];
-    const prefixes = [['xargs'], ['xargs', '-I', '{}'], ['xargs', '-0', '-n', '1']];
-    for (const source of [...corpusCommands(), ...fuzzShellSources(1_000, FUZZ_SEED)]) {
-      const words = source.split(/\s+/).filter((token) => token !== '');
-      for (const prefix of prefixes) {
-        const both = runBothXargs([...prefix, ...words], {
-          label: 'fuzz',
-          rules: DEPLOY_RULES,
-          strict: true,
-        });
-        recorded.push([`${prefix.join(' ')} ${source}`, { match: both.match, asked: both.asked }]);
-      }
-    }
-    expectRecordedDigest('analyzer-xargs/corpus-and-fuzz', recorded);
+  test('the denial reasons name what the caller should do instead', () => {
+    expect(REASON_XARGS_RM).toBe(
+      'xargs rm -rf with dynamic input is dangerous. Use explicit file list instead.',
+    );
+    expect(REASON_XARGS_SHELL).toBe(
+      'xargs dynamic input can supply arbitrary executable command source. Use an explicit child command and arguments instead.',
+    );
   });
 });

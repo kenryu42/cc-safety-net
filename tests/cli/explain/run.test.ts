@@ -1,22 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import type { ExplainResult } from '@/gate/explain';
 import type { TraceStep } from '@/gate/trace';
-import {
-  type CliOutcome,
-  type CliRow,
-  runCliDifferential,
-  seedFiles,
-} from '../../helpers/cli-differential';
+import { type CliRow, runCliDifferential, seedFiles } from '../../helpers/cli-differential';
 import { EXPLAIN_CASES, LIMIT_MESSAGES, LIMIT_SLUGS } from '../../helpers/explain-cases';
 import { removeTempRoots } from '../../helpers/temp-home';
 
 /**
  * `explain` is the surface a user reads when a denial surprises them, so both renderings of every
- * fixed command are pinned to a literal golden. The pin next to each row names what the row exists
- * to show — the rule that answered, the step the analyzer took, the redaction the recorder applied
- * — so a golden refreshed by hand cannot quietly accept a changed verdict.
+ * fixed command are pinned as a snapshot. The pin next to each row names what the row exists to
+ * show — the rule that answered, the step the analyzer took, the redaction the recorder applied —
+ * so a snapshot refreshed by hand cannot quietly accept a changed verdict.
  *
  * Nothing here is normalized beyond the temp root and the repository root the harness already
  * replaces: `explain` reads no clock, no version and no host.
@@ -25,21 +18,6 @@ import { removeTempRoots } from '../../helpers/temp-home';
 afterEach(() => {
   removeTempRoots();
 });
-
-const goldenFile = (name: string) =>
-  join(import.meta.dir, '..', '..', 'fixtures', 'cli', 'explain', `${name}.golden`);
-
-/** The rendering the bin produced, against the literal file. `CC_SAFETY_NET_UPDATE_GOLDENS=1`
- *  rewrites it instead of comparing. */
-function pinRendering(name: string, outcome: CliOutcome): void {
-  const path = goldenFile(name);
-  if (process.env.CC_SAFETY_NET_UPDATE_GOLDENS === '1') {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, outcome.stdout);
-    return;
-  }
-  expect(outcome.stdout).toBe(readFileSync(path, 'utf-8'));
-}
 
 const isParseStep = (step: TraceStep): step is Extract<TraceStep, { type: 'parse' }> =>
   step.type === 'parse';
@@ -242,7 +220,7 @@ describe('explain renders the same trace from both bins', () => {
       );
       const outcome = asJson;
       expect(outcome.exitCode).toBe(0);
-      pinRendering(`${explainCase.slug}.json`, asJson);
+      expect(asJson.stdout).toMatchSnapshot('json');
       expect(reportFacts(JSON.parse(outcome.stdout) as ExplainResult)).toEqual(
         PINS[explainCase.slug] as ReturnType<typeof reportFacts>,
       );
@@ -251,7 +229,7 @@ describe('explain renders the same trace from both bins', () => {
         rowFor(explainCase.slug, { args: ['explain', explainCase.command] }),
       );
       expect(asHuman.exitCode).toBe(0);
-      pinRendering(`${explainCase.slug}.txt`, asHuman);
+      expect(asHuman.stdout).toMatchSnapshot('human');
     }, 30_000);
   }
 });
@@ -268,7 +246,7 @@ describe('explain reports an analysis budget breach as bounded output', () => {
       const outcome = asJson;
       expect(outcome.stdout).toBe(`${JSON.stringify({ error: message })}\n`);
       expect(outcome.exitCode).toBe(1);
-      pinRendering(`${slug}.json`, asJson);
+      expect(asJson.stdout).toMatchSnapshot('json');
 
       // The human form writes the message to stderr and leaves stdout empty, so there is
       // nothing to pin as a rendering.
