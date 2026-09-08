@@ -5,7 +5,6 @@ import {
   normalizeProtectedPathCandidate,
 } from '@/core/paths/canonicalization';
 import { getProjectPolicyPath, getUserPolicyPath, POLICY_FILE } from '@/core/policy/paths';
-import type { ShellSyntaxFacts } from '@/core/shell/projection';
 import { getBasename } from '@/core/shell/tokens';
 import { isReadOnlyTool } from '@/core/tool-input';
 import type { EnvironmentContext } from '@/gate/analysis';
@@ -20,10 +19,13 @@ import type { SemanticFacts } from '@/gate/facts';
 import { createToolInvocation, type ToolCallContext, type ToolRoute } from '@/gate/invocation';
 import {
   expandTrackedShellVariables,
-  extractMvOperandPaths,
-  findProtectedPathMutationInCommand,
+  type GuardSyntax,
   isAssignmentOnlySegment,
   type ProtectedPathShellState,
+} from './guard-walk';
+import {
+  extractMvOperandPaths,
+  findProtectedPathMutationInCommand,
 } from './protected-path-scanner';
 import { createSemanticFacts, getCommandSyntaxFact } from './semantic-facts';
 
@@ -137,7 +139,7 @@ function findPolicyConfigMutationTargetInPaths(
 }
 
 function findPolicyConfigMutationTargetInCommand(
-  syntax: ShellSyntaxFacts,
+  syntax: GuardSyntax,
   cwd: string,
   identity: PolicyPathIdentity,
   environment: EnvironmentContext,
@@ -152,7 +154,6 @@ function findPolicyConfigMutationTargetInCommand(
     findMalformedTarget: (source) =>
       findPolicyConfigTargetInMalformedText(source, cwd, identity, environment, budget)?.target ??
       null,
-    normalizeCwd: normalizeProtectedPathCandidate,
   });
   return target ? { target } : null;
 }

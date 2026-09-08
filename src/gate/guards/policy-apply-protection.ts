@@ -1,5 +1,4 @@
 import { type Budget, createBudget } from '@/core/budget';
-import { normalizeProtectedPathCandidate } from '@/core/paths/canonicalization';
 import { getBasename } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
 import { stripWrappers } from '@/gate/analyzer/wrapper-prelude';
@@ -33,7 +32,6 @@ export function findPolicyApplyInvocationInSemanticFacts(
       findSegmentTarget: (segment) => findPolicyApplySegment(segment, environment),
       isRedirectionTarget: () => false,
       findMalformedTarget: () => null,
-      normalizeCwd: normalizeProtectedPathCandidate,
     },
   );
   return target ? { target } : null;

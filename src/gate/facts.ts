@@ -1,5 +1,5 @@
 import type { CommandProgram, ShellKind } from '@/core/shell/model';
-import type { ShellSyntaxFacts } from '@/core/shell/projection';
+import type { GuardSyntax } from './guards/guard-walk';
 import type { ToolCallContext, ToolRoute } from './invocation';
 
 export type CommandFactUsage = 'input-candidate' | 'declared-command';
@@ -8,11 +8,11 @@ export type CommandSyntaxFacts = {
   readonly usages: readonly CommandFactUsage[];
   readonly source: string;
   readonly program: CommandProgram;
-  readonly shell: ShellSyntaxFacts;
+  readonly shell: GuardSyntax;
 };
 
 export type SemanticFactStore = {
-  readonly getShellSyntax: (source: string, program?: CommandProgram) => ShellSyntaxFacts;
+  readonly getShellSyntax: (source: string, program?: CommandProgram) => GuardSyntax;
   readonly getCommandProgram: (source: string, dialect: ShellKind) => CommandProgram;
 };
 

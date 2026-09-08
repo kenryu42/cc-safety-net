@@ -1,11 +1,7 @@
 import { isAbsolute, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AnalysisLimit, type Budget, createBudget } from '@/core/budget';
-import {
-  normalizeMsysDrivePath,
-  normalizeProtectedPathCandidate,
-  resolveExistingPath,
-} from '@/core/paths/canonicalization';
+import { normalizeMsysDrivePath, resolveExistingPath } from '@/core/paths/canonicalization';
 import type { SecretProtectionConfig } from '@/core/policy/types';
 import { AWK_INTERPRETERS, GIT_GLOBAL_OPTS_WITH_VALUE } from '@/core/rules/constants';
 import {
@@ -19,16 +15,17 @@ import {
   SECRET_VARIANT_DOT_SUFFIX_RULES,
   SECRET_VARIANT_SEPARATOR_RULES,
 } from '@/core/rules/secret';
-import type { ShellSyntaxFacts } from '@/core/shell/projection';
 import { advanceQuoteScanState, getShellCommandString } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
 import { extractAwkSystemCommands } from '@/gate/analyzer/awk';
 import { extractXargsChildCommandWithInfo } from '@/gate/analyzer/xargs';
 import type { CommandSyntaxFacts, SemanticFactStore, SemanticFacts } from '@/gate/facts';
 import {
-  applyShellState,
-  type ProtectedPathShellState,
-} from '@/gate/guards/protected-path-scanner';
+  ADOPT_AS_OPERAND,
+  type GuardSyntax,
+  readGuardTokens,
+  walkGuardSyntax,
+} from '@/gate/guards/guard-walk';
 import { safetyNetSubcommandIndex } from '@/gate/guards/safety-net-invocation';
 import {
   createSemanticFacts,
@@ -206,7 +203,6 @@ const PATTERN_ARG_LONG = new Set([
   'max-count',
 ]);
 
-const PIPE_OPERATORS = new Set(['|', '|&']);
 const PIPE_INPUT_PATH_MARKER = '__CC_SAFETY_NET_PIPE_INPUT__';
 const SHELL_STDIN_INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh']);
 const VALUE_CONSUMING_INTERPRETER_FLAGS = new Map([
@@ -401,11 +397,11 @@ function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentCon
   }
 
   const tokens: string[] = [];
-  for (const entry of syntax.shell.entries) {
-    if (entry.kind === 'operator' && entry.boundary) return false;
-    if (entry.kind === 'redirection') return false;
-    if (entry.kind === 'operator' || entry.kind === 'scope') continue;
-    tokens.push(projectSensitiveShellText(entry.text, environment));
+  for (const token of readGuardTokens(syntax.shell)) {
+    if (token.kind === 'operator' && token.boundary) return false;
+    if (token.kind === 'redirection') return false;
+    if (token.kind === 'operator') continue;
+    tokens.push(projectSensitiveShellText(token.text, environment));
   }
 
   const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
@@ -468,7 +464,7 @@ function isPowerShell(command: CommandSyntaxFacts): boolean {
 }
 
 function extractCommandPathTargets(
-  syntax: ShellSyntaxFacts,
+  syntax: GuardSyntax,
   store: SemanticFactStore,
   options: PathExtractionOptions,
   environment: EnvironmentContext,
@@ -491,87 +487,40 @@ function extractCommandPathTargets(
       budget,
     ),
   ];
-  // The same walk the protected-path guards run: a segment's operands resolve against the cwd in
-  // force when it runs, and only a completed segment moves that cwd. A nested shell (`scope`
-  // entries) contributes its words to the segment around it as before, but its directory is its
-  // own: the pending segment is read with it before the parent's is handed back.
-  let state: ProtectedPathShellState = { cwd, variables: new Map(), previous: null };
-  let segment: string[] = [];
-  let pipeProducer: string[] | null = null;
-  const frames: {
-    readonly state: ProtectedPathShellState;
-    readonly segment: string[];
-    readonly pipeProducer: string[] | null;
-  }[] = [];
-  // Reads the bindings above at call time: a completed segment contributes its own operands, plus
-  // the paths the segment upstream of a pipe carries into it.
-  const flushSegment = () => {
-    targets.push(
-      ...extractSegmentPathTargets(segment, store, options, environment, state.cwd, budget),
-    );
-    if (pipeProducer !== null) {
+  // The one walk the protected-path guards run: a segment's operands resolve against the cwd in
+  // force when it runs, and only a completed segment moves that cwd. A nested shell contributes
+  // its words to the segment around it as before, but its directory is its own: the pending
+  // segment is read with it before the parent's is handed back.
+  const map = (text: string) =>
+    projectSensitiveShellText(rewritePowerShellHomePrefix(text, powershell), environment);
+  walkGuardSyntax(syntax, cwd, environment, budget, {
+    word: map,
+    segment: (tokens, state, pipeProducer) => {
+      if (tokens.length === 0) return null;
       targets.push(
-        ...extractPipeCarrierPathTargets(
-          pipeProducer,
-          segment,
-          store,
-          options,
-          environment,
-          state.cwd,
-          budget,
-        ),
+        ...extractSegmentPathTargets(tokens, store, options, environment, state.cwd, budget),
       );
-    }
-  };
-
-  for (const entry of syntax.entries) {
-    if (entry.kind === 'scope') {
-      if (entry.edge === 'enter') {
-        frames.push({ state, segment: [...segment], pipeProducer });
-        continue;
-      }
-      if (segment.length > 0) flushSegment();
-      const frame = frames.pop();
-      if (frame === undefined) throw new Error('scope exit without a matching enter');
-      state = frame.state;
-      segment = frame.segment;
-      pipeProducer = frame.pipeProducer;
-      continue;
-    }
-
-    if (entry.kind === 'operator') {
-      if (!entry.boundary) continue;
-      if (segment.length === 0) {
-        pipeProducer = null;
-        continue;
-      }
-      flushSegment();
-      state = applyShellState(segment, state, environment, budget, normalizeProtectedPathCandidate);
-      pipeProducer = PIPE_OPERATORS.has(entry.operator) ? segment : null;
-      segment = [];
-      continue;
-    }
-
-    if (entry.kind === 'redirection') {
-      const target = entry.target
-        ? projectSensitiveShellText(
-            rewritePowerShellHomePrefix(entry.target, powershell),
+      if (pipeProducer !== null) {
+        targets.push(
+          ...extractPipeCarrierPathTargets(
+            pipeProducer,
+            tokens,
+            store,
+            options,
             environment,
-          )
-        : undefined;
-      if (target && entry.targetOrder === 'legacy-segment') {
-        segment.push(target);
-        continue;
+            state.cwd,
+            budget,
+          ),
+        );
       }
-      if (target) targets.push({ target, cwd: state.cwd });
-      continue;
-    }
-    segment.push(
-      projectSensitiveShellText(rewritePowerShellHomePrefix(entry.text, powershell), environment),
-    );
-  }
-
-  if (segment.length > 0) flushSegment();
+      return null;
+    },
+    redirection: (redirection, state) => {
+      if (redirection.targetOrder === 'legacy-segment') return ADOPT_AS_OPERAND;
+      targets.push({ target: map(redirection.target), cwd: state.cwd });
+      return null;
+    },
+  });
 
   return targets;
 }
@@ -1248,20 +1197,20 @@ function extractCommandSubstitutionPathTargets(
 }
 
 function commandSubstitutionDecodesBase64(
-  syntax: ShellSyntaxFacts,
+  syntax: GuardSyntax,
   environment: EnvironmentContext,
 ): boolean {
-  const entries = syntax.entries;
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
+  const tokens = readGuardTokens(syntax);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
     if (
-      entry?.kind !== 'word' ||
-      basename(projectSensitiveShellText(entry.text, environment)).toLowerCase() !== 'base64'
+      token?.kind !== 'word' ||
+      basename(projectSensitiveShellText(token.text, environment)).toLowerCase() !== 'base64'
     ) {
       continue;
     }
-    for (let j = i + 1; j < entries.length; j++) {
-      const candidate = entries[j];
+    for (let j = i + 1; j < tokens.length; j++) {
+      const candidate = tokens[j];
       if (candidate?.kind === 'operator') break;
       if (candidate?.kind !== 'word') continue;
       const flag = projectSensitiveShellText(candidate.text, environment);
@@ -1277,15 +1226,15 @@ function commandSubstitutionDecodesBase64(
 }
 
 function extractBase64DecodedPathCandidates(
-  syntax: ShellSyntaxFacts,
+  syntax: GuardSyntax,
   environment: EnvironmentContext,
 ): string[] {
-  return syntax.entries
-    .flatMap((entry) =>
-      entry.kind === 'word'
-        ? [projectSensitiveShellText(entry.text, environment)]
-        : entry.kind === 'redirection' && entry.target
-          ? [projectSensitiveShellText(entry.target, environment)]
+  return readGuardTokens(syntax)
+    .flatMap((token) =>
+      token.kind === 'word'
+        ? [projectSensitiveShellText(token.text, environment)]
+        : token.kind === 'redirection' && token.target
+          ? [projectSensitiveShellText(token.target, environment)]
           : [],
     )
     .flatMap(decodeBase64PathCandidate);

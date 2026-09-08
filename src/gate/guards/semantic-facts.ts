@@ -3,11 +3,6 @@ import { expandSupportedPathEnvironmentVariables } from '@/core/paths/canonicali
 import type { CommandProgram, ShellKind } from '@/core/shell/model';
 import { parseCommand } from '@/core/shell/parse';
 import {
-  projectShellSyntax,
-  type ShellSyntaxEntry,
-  type ShellSyntaxFacts,
-} from '@/core/shell/projection';
-import {
   extractPatchTargetsFromToolInput,
   extractPathLikeToolValues,
   getCommandFromToolInput,
@@ -19,6 +14,7 @@ import type {
   SemanticFacts,
 } from '../facts';
 import type { ToolInvocation } from '../invocation';
+import { type GuardSyntax, readGuardSyntax } from './guard-walk';
 
 const PATH_LIKE_KEYS = new Set([
   'absolutepath',
@@ -38,14 +34,13 @@ const PATH_LIKE_KEYS = new Set([
 ]);
 const GREP_KEYS = new Set([...PATH_LIKE_KEYS, 'glob']);
 const GLOB_KEYS = new Set([...GREP_KEYS, 'pattern']);
-const EMPTY_SHELL_SYNTAX_ENTRIES: readonly ShellSyntaxEntry[] = [];
 
 export type FactParserDependencies = {
   parseCommand: typeof parseCommand;
-  projectShellSyntax: typeof projectShellSyntax;
+  readGuardSyntax: typeof readGuardSyntax;
 };
 
-const DEFAULT_PARSERS: FactParserDependencies = { parseCommand, projectShellSyntax };
+const DEFAULT_PARSERS: FactParserDependencies = { parseCommand, readGuardSyntax };
 
 export class StructuralShellSyntaxLimitError extends Error {
   override readonly name = 'StructuralShellSyntaxLimitError';
@@ -133,9 +128,9 @@ export function createSemanticFactStore(
   parserDependencies: Partial<FactParserDependencies> = {},
 ): SemanticFactStore {
   const parsers = { ...DEFAULT_PARSERS, ...parserDependencies };
-  const shellFacts = new Map<string, ShellSyntaxFacts>();
+  const shellFacts = new Map<string, GuardSyntax>();
   const commandPrograms = new Map<string, CommandProgram>();
-  const structuralLimitFacts = new WeakMap<CommandProgram, ShellSyntaxFacts>();
+  const structuralLimitFacts = new WeakMap<CommandProgram, GuardSyntax>();
   const getCommandProgram = (source: string, dialect: ShellKind) => {
     const key = `${dialect}\u0000${source}`;
     const existing = commandPrograms.get(key);
@@ -155,7 +150,7 @@ export function createSemanticFactStore(
       const syntax = {
         status: 'structural-limit' as const,
         source,
-        entries: EMPTY_SHELL_SYNTAX_ENTRIES,
+        program,
         assignmentFallbacks: [],
       };
       structuralLimitFacts.set(program, syntax);
@@ -163,7 +158,7 @@ export function createSemanticFactStore(
     }
     const existing = shellFacts.get(source);
     if (existing) return existing;
-    const syntax = parsers.projectShellSyntax(source, program);
+    const syntax = parsers.readGuardSyntax(source, program);
     shellFacts.set(source, syntax);
     return syntax;
   };

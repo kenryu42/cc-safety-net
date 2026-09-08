@@ -19,7 +19,7 @@
  * Structural shell syntax (`src/gate/guards/semantic-facts.ts`): a guard that meets a nested program
  * with status `limited` throws `StructuralShellSyntaxLimitError` → `structural-shell-syntax-limit`,
  * "exceeds safe analysis limits. Simplify or split…". The parser caps themselves
- * (`src/core/shell/parse.ts`: 131,072 code units, 16,384 words, depth 64; `projection.ts`:
+ * (`src/core/shell/parse.ts`: 131,072 code units, 16,384 words, depth 64; `gate/guards/guard-walk.ts`:
  * 256 function expansions) stay in the parser as status `limited`; the top-level program denies
  * with the recursion or structural-validation wording without throwing.
  *

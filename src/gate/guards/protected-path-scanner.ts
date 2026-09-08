@@ -1,16 +1,12 @@
 import type { Budget } from '@/core/budget';
-import type { ShellSyntaxFacts } from '@/core/shell/projection';
-import { getBasename } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
-import { stripWrappers } from '@/gate/analyzer/wrapper-prelude';
+import {
+  expandTrackedShellVariables,
+  type GuardSyntax,
+  type ProtectedPathShellState,
+  walkGuardSyntax,
+} from './guard-walk';
 import { StructuralShellSyntaxLimitError } from './semantic-facts';
-
-export type ProtectedPathShellState = Readonly<{
-  cwd: string;
-  variables: ReadonlyMap<string, string>;
-  /** Where the last `cd` came from, so `cd -` can return to it. Null until one has moved. */
-  previous: string | null;
-}>;
 
 const MV_OPTIONS_WITH_VALUES = new Set(['-S', '--suffix']);
 
@@ -18,16 +14,16 @@ type ProtectedPathCommandScanner = Readonly<{
   findSegmentTarget: (segment: readonly string[], state: ProtectedPathShellState) => string | null;
   isRedirectionTarget: (target: string, state: ProtectedPathShellState) => boolean;
   findMalformedTarget: (source: string) => string | null;
-  normalizeCwd: (
-    target: string,
-    cwd: string,
-    environment: EnvironmentContext,
-    budget: Budget,
-  ) => string;
 }>;
 
+/**
+ * The adapter every protected-path guard drives the walk through: a segment reaches
+ * `findSegmentTarget` with the directory it runs in, a write-like redirection target reaches
+ * `isRedirectionTarget` with the tracked variables expanded, and a command the parser could not
+ * read whole is handed to `findMalformedTarget` as text.
+ */
 export function findProtectedPathMutationInCommand(
-  syntax: ShellSyntaxFacts,
+  syntax: GuardSyntax,
   cwd: string,
   environment: EnvironmentContext,
   budget: Budget,
@@ -35,76 +31,18 @@ export function findProtectedPathMutationInCommand(
 ): string | null {
   if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
   if (syntax.status !== 'complete') return scanner.findMalformedTarget(syntax.source);
-
-  let state: ProtectedPathShellState = { cwd, variables: new Map(), previous: null };
-  let segment: string[] = [];
-  const frames: { readonly state: ProtectedPathShellState; readonly segment: string[] }[] = [];
-  for (const entry of syntax.entries) {
-    if (entry.kind === 'scope') {
-      if (entry.edge === 'enter') {
-        frames.push({ state, segment: [...segment] });
-        continue;
-      }
-      const target = scanner.findSegmentTarget(segment, state);
-      if (target) return target;
-      const frame = frames.pop();
-      if (frame === undefined) throw new Error('scope exit without a matching enter');
-      state = frame.state;
-      segment = frame.segment;
-      continue;
-    }
-    if (entry.kind === 'operator') {
-      if (!entry.boundary) continue;
-      const target = scanner.findSegmentTarget(segment, state);
-      if (target) return target;
-      state = applyShellState(segment, state, environment, budget, scanner.normalizeCwd);
-      segment = [];
-      continue;
-    }
-    if (entry.kind === 'redirection') {
-      if (
-        entry.role === 'file-write' &&
-        entry.target &&
-        scanner.isRedirectionTarget(
-          expandTrackedShellVariables(entry.target, state.variables),
-          state,
-        )
-      ) {
-        return entry.target;
-      }
-      continue;
-    }
-    segment.push(entry.text);
-  }
-  return scanner.findSegmentTarget(segment, state);
-}
-
-export function expandTrackedShellVariables(
-  text: string,
-  variables: ReadonlyMap<string, string>,
-): string {
-  return text
-    .replace(
-      /\$\{([A-Za-z_][A-Za-z0-9_]*)(:?[-+])([^}]*)\}/g,
-      (match, name: string, operator: string, word: string) => {
-        const value = variables.get(name);
-        if (value === undefined) return match;
-        const usable = operator.startsWith(':') ? value !== '' : true;
-        if (operator.endsWith('-')) {
-          return usable ? value : expandTrackedShellVariables(word, variables);
-        }
-        return usable ? expandTrackedShellVariables(word, variables) : '';
-      },
-    )
-    .replace(
-      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
-      (match, name: string) => variables.get(name) ?? match,
-    )
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, name: string) => variables.get(name) ?? match);
-}
-
-export function isAssignmentOnlySegment(tokens: readonly string[]): boolean {
-  return tokens.length > 0 && tokens.every((token) => /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token));
+  return walkGuardSyntax(syntax, cwd, environment, budget, {
+    word: (text) => text,
+    segment: (tokens, state) => scanner.findSegmentTarget(tokens, state),
+    redirection: (redirection, state) =>
+      redirection.role === 'file-write' &&
+      scanner.isRedirectionTarget(
+        expandTrackedShellVariables(redirection.target, state.variables),
+        state,
+      )
+        ? redirection.target
+        : null,
+  });
 }
 
 export function extractMvOperandPaths(args: readonly string[]): {
@@ -144,56 +82,4 @@ export function extractMvOperandPaths(args: readonly string[]): {
   return targetDirectory
     ? { sources: operands, destination: targetDirectory }
     : { sources: operands.slice(0, -1), destination: operands.at(-1) ?? null };
-}
-
-/**
- * One segment's effect on the tracked shell state: an assignment-only segment extends the
- * variables, a `cd` after wrapper stripping moves the cwd through `normalizeCwd` and remembers
- * where it came from, `cd -` returns to that directory, and a bare `cd` — or a `cd -` with nothing
- * remembered — leaves the cwd where it was. Shared by the protected-path guards through
- * `findProtectedPathMutationInCommand` and by the secret matcher's own walk, so a relative operand
- * resolves against the same directory in both. Both walks read the projection's `scope` markers
- * the same way: a nested shell's words still join the segment around them, but the state it
- * changed is dropped when it ends, so its `cd` never moves the shell that started it.
- */
-export function applyShellState(
-  segment: readonly string[],
-  state: ProtectedPathShellState,
-  environment: EnvironmentContext,
-  budget: Budget,
-  normalizeCwd: ProtectedPathCommandScanner['normalizeCwd'],
-): ProtectedPathShellState {
-  const variables = isAssignmentOnlySegment(segment)
-    ? new Map([...state.variables, ...extractShellAssignments(segment, state.variables)])
-    : state.variables;
-  const stripped = stripWrappers([...segment], environment);
-  const target = getBasename(stripped[0] ?? '').toLowerCase() === 'cd' ? stripped[1] : undefined;
-  if (!target) return { ...state, variables };
-  if (target === '-') {
-    if (state.previous === null) return { ...state, variables };
-    return { cwd: state.previous, variables, previous: state.cwd };
-  }
-  return {
-    cwd: normalizeCwd(
-      expandTrackedShellVariables(target, variables),
-      state.cwd,
-      environment,
-      budget,
-    ),
-    variables,
-    previous: state.cwd,
-  };
-}
-
-function extractShellAssignments(
-  segment: readonly string[],
-  variables: ReadonlyMap<string, string>,
-): readonly [string, string][] {
-  return segment.flatMap((token): [string, string][] => {
-    const assignment = /^([A-Za-z_][A-Za-z0-9_]*)(.*)$/.exec(token);
-    const value = assignment?.[2]?.startsWith('=') ? assignment[2].slice(1) : undefined;
-    return assignment?.[1] !== undefined && value !== undefined
-      ? [[assignment[1], expandTrackedShellVariables(value, variables)]]
-      : [];
-  });
 }

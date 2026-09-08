@@ -8,10 +8,12 @@ import { stripWrappersForPathScan } from '@/gate/analyzer/wrapper-prelude';
 import type { SemanticFacts } from '@/gate/facts';
 import {
   expandTrackedShellVariables,
-  extractMvOperandPaths,
-  findProtectedPathMutationInCommand,
   isAssignmentOnlySegment,
   type ProtectedPathShellState,
+} from './guard-walk';
+import {
+  extractMvOperandPaths,
+  findProtectedPathMutationInCommand,
 } from './protected-path-scanner';
 import { getCommandSyntaxFact } from './semantic-facts';
 
@@ -57,7 +59,6 @@ export function findGitMetadataMutationTargetInSemanticFacts(
         metadata.markerFiles,
       ),
     findMalformedTarget: () => null,
-    normalizeCwd: normalizeProtectedPathCandidate,
   });
   return target ? { target } : null;
 }

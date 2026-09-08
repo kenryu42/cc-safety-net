@@ -149,12 +149,8 @@ describe('gate/guards/semantic-facts', () => {
       { kind: 'command', shell: 'powershell' },
     );
     expect(powershell.commands[0]?.program.dialect).toBe('powershell');
-    expect(
-      powershell.commands[0]?.shell.entries.flatMap((entry) =>
-        entry.kind === 'word' ? [entry.text] : [],
-      ),
-    ).toContain('C:\\Temp');
-    // A source the projection cannot read is reported as such rather than as an empty stream.
+    expect(powershell.commands[0]?.shell.program).toBe(powershell.commands[0]?.program);
+    // A source the walk cannot read whole is reported as such rather than as a readable one.
     expect(
       facts('Bash', { command: 'echo "x' }, { kind: 'command', shell: 'posix' }).commands[0]?.shell
         .status,
@@ -180,7 +176,7 @@ describe('gate/guards/semantic-facts', () => {
     );
   });
 
-  test('a source over the structural limit projects no entries and reports the limit', () => {
+  test('a source over the structural limit is never read, and reports the limit', () => {
     const limited = createSemanticFacts(
       createToolInvocation(
         'Bash',
@@ -192,15 +188,17 @@ describe('gate/guards/semantic-facts', () => {
       {
         parseCommand: (source, dialect) =>
           parseCommand(source, dialect, { maxInputLength: 3, maxWords: 10, maxDepth: 10 }),
-        projectShellSyntax: () => {
-          throw new Error('a limited program is never projected');
+        readGuardSyntax: () => {
+          throw new Error('a limited program is never read');
         },
       },
     );
+    const limitedProgram = limited.commands[0]?.program;
+    if (limitedProgram === undefined) throw new Error('the limited command has no program');
     expect(limited.commands[0]?.shell).toStrictEqual({
       status: 'structural-limit',
       source: 'abcd',
-      entries: [],
+      program: limitedProgram,
       assignmentFallbacks: [],
     });
     const error = new StructuralShellSyntaxLimitError();

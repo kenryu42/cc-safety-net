@@ -9,13 +9,15 @@ import {
   normalizeProtectedPathCandidate,
 } from '@/core/paths/canonicalization';
 import { parseCommand } from '@/core/shell/parse';
-import { projectShellSyntax } from '@/core/shell/projection';
 import {
   expandTrackedShellVariables,
-  extractMvOperandPaths,
-  findProtectedPathMutationInCommand,
   isAssignmentOnlySegment,
   type ProtectedPathShellState,
+  readGuardSyntax,
+} from '@/gate/guards/guard-walk';
+import {
+  extractMvOperandPaths,
+  findProtectedPathMutationInCommand,
 } from '@/gate/guards/protected-path-scanner';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, type Outcome, writeTree } from '../../helpers/fixture-tree';
@@ -63,11 +65,11 @@ type Walk = { result: string | null; observations: readonly Observation[] };
 function walkWithNext(source: string, cwd: string, environment: Environment, stop: string | null) {
   const observations: Observation[] = [];
   const result = findProtectedPathMutationInCommand(
-    projectShellSyntax(source, parseCommand(source, 'posix')),
+    readGuardSyntax(source, parseCommand(source, 'posix')),
     cwd,
     environment,
     createBudget(),
-    { ...observing(observations, stop), normalizeCwd: normalizeProtectedPathCandidate },
+    observing(observations, stop),
   );
   return { result, observations };
 }
@@ -272,12 +274,12 @@ describe('protected path scanner walk', () => {
     ).toBeGreaterThan(5);
   });
 
-  test('a structural-limit projection throws, an incomplete one is malformed', () => {
+  test('a structural-limit read throws, an incomplete one is malformed', () => {
     const observations: Observation[] = [];
     const facts = {
       status: 'structural-limit',
       source: MARKER,
-      entries: [],
+      program: parseCommand(MARKER, 'posix'),
       assignmentFallbacks: [],
     } as const;
     expect(() =>
@@ -286,7 +288,7 @@ describe('protected path scanner walk', () => {
         workspace,
         pairedEnvironments({}, home),
         createBudget(),
-        { ...observing(observations, null), normalizeCwd: normalizeProtectedPathCandidate },
+        observing(observations, null),
       ),
     ).toThrow('Structural command analysis limit exceeded.');
     expect(observations).toStrictEqual([]);
@@ -481,11 +483,11 @@ test('the walk charges one shared budget', () => {
   const environment = pairedEnvironments({ HOME: home }, home);
   const observations: Observation[] = [];
   findProtectedPathMutationInCommand(
-    projectShellSyntax('cd policy && cd nested', parseCommand('cd policy && cd nested', 'posix')),
+    readGuardSyntax('cd policy && cd nested', parseCommand('cd policy && cd nested', 'posix')),
     workspace,
     environment,
     budget,
-    { ...observing(observations, null), normalizeCwd: normalizeProtectedPathCandidate },
+    observing(observations, null),
   );
   expect(budget.counters.get('realpathAttempts')).toBeGreaterThan(0);
 });

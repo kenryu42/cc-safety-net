@@ -1,3 +1,5 @@
+import type { Budget } from '@/core/budget';
+import { normalizeProtectedPathCandidate } from '@/core/paths/canonicalization';
 import {
   type CommandNode,
   type CommandProgram,
@@ -6,11 +8,78 @@ import {
   type CommandView,
   type CommandWord,
   getCalledCommandName,
-} from './model';
-import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from './parse';
-import { hasUnclosedQuotes } from './tokens';
+} from '@/core/shell/model';
+import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse';
+import { getBasename, hasUnclosedQuotes } from '@/core/shell/tokens';
+import type { EnvironmentContext } from '@/gate/analysis';
+import { stripWrappers } from '@/gate/analyzer/wrapper-prelude';
 
-export type ShellSyntaxEntry =
+/**
+ * The one walk every pre-analysis guard runs over a parsed command.
+ *
+ * `readGuardSyntax` reads the tree once to decide whether the command is scannable at all, and
+ * `walkGuardSyntax` then replays it as the linear stream of words, boundaries, redirections and
+ * shell scopes the guards decide on. Word text keeps shell expansions inert (`$NAME` becomes
+ * `${NAME}`) so variable tracking sees one spelling, heredoc bodies fed to inert data sinks stay
+ * out of the stream, and a nested program that runs in its own shell — a subshell group, `$( )`,
+ * backticks, a process substitution — saves and restores the directory state around it, while a
+ * brace group, a called function body and arithmetic run in the current shell.
+ *
+ * The event list a walk reads is an internal detail: it is memoized per syntax so a command that
+ * several guards inspect is read from the tree once, and it never leaves this module.
+ */
+
+export type GuardSyntax = Readonly<{
+  status: 'complete' | 'unclosed-quote' | 'invalid' | 'structural-limit';
+  /** The command source with inert heredoc bodies blanked out. */
+  source: string;
+  program: CommandProgram;
+  assignmentFallbacks: readonly string[];
+}>;
+
+export type ProtectedPathShellState = Readonly<{
+  cwd: string;
+  variables: ReadonlyMap<string, string>;
+  /** Where the last `cd` came from, so `cd -` can return to it. Null until one has moved. */
+  previous: string | null;
+}>;
+
+type GuardRedirection = Readonly<{
+  operator: string;
+  role: 'file-read' | 'file-write' | 'here-data';
+  targetOrder: 'immediate' | 'legacy-segment';
+  target: string;
+}>;
+
+/**
+ * A redirection whose target the shell reads as an operand of the segment around it (`<<`, `<<<`,
+ * `>|`) rather than as a file the command opens on its own.
+ */
+export const ADOPT_AS_OPERAND: unique symbol = Symbol('adopt-as-operand');
+
+export type GuardWalkVisitor = Readonly<{
+  /** Maps a word before it joins the open segment; the tracked `cd` reads the mapped token. */
+  word: (text: string) => string;
+  /** One segment, with the state it ran under and the segment that piped into it. */
+  segment: (
+    tokens: readonly string[],
+    state: ProtectedPathShellState,
+    pipeProducer: readonly string[] | null,
+    boundary: string | null,
+  ) => string | null;
+  redirection: (
+    redirection: GuardRedirection,
+    state: ProtectedPathShellState,
+  ) => string | null | typeof ADOPT_AS_OPERAND;
+}>;
+
+/** The words, boundaries and redirection targets of a command, for reads that track no state. */
+export type GuardToken =
+  | { readonly kind: 'word'; readonly text: string }
+  | { readonly kind: 'operator'; readonly boundary: boolean }
+  | { readonly kind: 'redirection'; readonly target: string | undefined };
+
+type GuardEvent =
   | { readonly kind: 'word'; readonly text: string }
   | { readonly kind: 'operator'; readonly operator: string; readonly boundary: boolean }
   | {
@@ -22,41 +91,35 @@ export type ShellSyntaxEntry =
     }
   | { readonly kind: 'scope'; readonly edge: 'enter' | 'exit' };
 
-export type ShellSyntaxFacts = {
-  readonly status: 'complete' | 'unclosed-quote' | 'invalid' | 'structural-limit';
-  readonly source: string;
-  readonly entries: readonly ShellSyntaxEntry[];
-  readonly assignmentFallbacks: readonly string[];
-};
-
 const LEGACY_BOUNDARIES = new Set(['&&', '||', '|&', '|', '&', ';']);
 const LEGACY_SEGMENT_REDIRECTS = new Set(['<<', '<<<', '>|']);
+const PIPE_OPERATORS = new Set(['|', '|&']);
 const SPECIAL_VARIABLE_NAME = /[*@#?$!_-]/;
 // PowerShell variable names carry an optional scope or provider prefix, so `$env:USERPROFILE`
 // is one name rather than `$env` followed by literal text.
 const POWERSHELL_VARIABLE_NAME = /^\w+(?::\w+)*/;
-const EMPTY_ENTRIES = Object.freeze([]) as readonly ShellSyntaxEntry[];
-// A nested program that runs in its own shell is bracketed by these, so a walker can restore the
-// state it entered with where the shell would.
-const SCOPE_ENTER: ShellSyntaxEntry = Object.freeze({ kind: 'scope' as const, edge: 'enter' });
-const SCOPE_EXIT: ShellSyntaxEntry = Object.freeze({ kind: 'scope' as const, edge: 'exit' });
+const EMPTY_EVENTS = Object.freeze([]) as readonly GuardEvent[];
+const SCOPE_ENTER: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'enter' });
+const SCOPE_EXIT: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'exit' });
 const EMPTY_STRINGS = Object.freeze([]) as readonly string[];
 // A call site inlines the whole body, so branching recursion (`a() { a; a; }`) grows
 // exponentially where the depth cap alone never triggers. Real commands call a handful of
-// functions; anything past this budget fails closed instead of running the projection dry.
+// functions; anything past this budget fails closed instead of reading the tree dry.
 const MAX_FUNCTION_EXPANSIONS = 256;
 
-type ProjectionFlags = {
+const READ_EVENTS = new WeakMap<GuardSyntax, readonly GuardEvent[]>();
+
+type ReadFlags = {
   invalid: boolean;
   limited: boolean;
   expansions: number;
   assignmentFallbacks: string[];
 };
 
-type ProjectionContext = {
+type ReadContext = {
   readonly source: string;
   readonly suppressed: ReadonlySet<CommandSpan>;
-  readonly flags: ProjectionFlags;
+  readonly flags: ReadFlags;
   readonly depth: number;
   readonly functions: Map<string, CommandProgram>;
   readonly powershell: boolean;
@@ -64,35 +127,26 @@ type ProjectionContext = {
 
 type QuoteState = { single: boolean; double: boolean };
 
-type PositionedEntries = { readonly start: number; readonly entries: readonly ShellSyntaxEntry[] };
+type PositionedEvents = { readonly start: number; readonly events: readonly GuardEvent[] };
 
 /**
- * Projects the parsed program onto the flat entry stream the path scanners read.
- * Word text keeps shell expansions inert (`$NAME` becomes `${NAME}`) so downstream variable
- * tracking sees one spelling, and heredoc bodies fed to inert data sinks stay out of the stream.
- * A nested program that runs in its own shell — a subshell group, `$( )`, backticks, a process
- * substitution — is bracketed by `scope` entries so a walker can restore its state where the
- * shell would; a brace group, a called function body and arithmetic run in the current shell and
- * open no scope.
+ * Reads the tree far enough to say whether the command is scannable, and remembers what it read
+ * so the guards' walks over the same syntax cost one read.
  */
-export function projectShellSyntax(source: string, program: CommandProgram): ShellSyntaxFacts {
+export function readGuardSyntax(source: string, program: CommandProgram): GuardSyntax {
   const suppressed =
     program.status === 'complete'
       ? new Set(collectDataSinkHeredocSpans(program))
       : new Set<CommandSpan>();
-  const masked = [...suppressed].reduce(
-    (text, span) =>
-      text.slice(0, span.start) + ' '.repeat(span.end - span.start) + text.slice(span.end),
-    source,
-  );
-  if (hasUnclosedQuotes(masked)) return freezeFacts('unclosed-quote', masked, EMPTY_ENTRIES);
-  const flags: ProjectionFlags = {
+  const masked = maskSpans(source, suppressed);
+  if (hasUnclosedQuotes(masked)) return freezeSyntax('unclosed-quote', masked, program);
+  const flags: ReadFlags = {
     invalid: false,
     limited: false,
     expansions: 0,
     assignmentFallbacks: [],
   };
-  const entries = projectProgram(program, {
+  const events = readProgram(program, {
     source: masked,
     suppressed,
     flags,
@@ -100,45 +154,214 @@ export function projectShellSyntax(source: string, program: CommandProgram): She
     functions: new Map(),
     powershell: program.dialect === 'powershell',
   });
-  if (flags.limited) return freezeFacts('structural-limit', masked, EMPTY_ENTRIES);
-  if (flags.invalid) return freezeFacts('invalid', masked, EMPTY_ENTRIES);
-  return freezeFacts('complete', masked, entries, flags.assignmentFallbacks);
+  if (flags.limited) return freezeSyntax('structural-limit', masked, program);
+  if (flags.invalid) return freezeSyntax('invalid', masked, program);
+  const syntax = freezeSyntax('complete', masked, program, flags.assignmentFallbacks);
+  READ_EVENTS.set(syntax, Object.freeze(events));
+  return syntax;
 }
 
-function freezeFacts(
-  status: ShellSyntaxFacts['status'],
+/**
+ * The linear walk itself: one segment at a time, with the directory state a `cd`, an assignment
+ * or a nested shell leaves behind. The first target a callback returns stops the walk, so the
+ * guards keep reporting the earliest operand that matched.
+ */
+export function walkGuardSyntax(
+  syntax: GuardSyntax,
+  cwd: string,
+  environment: EnvironmentContext,
+  budget: Budget,
+  visitor: GuardWalkVisitor,
+): string | null {
+  let state: ProtectedPathShellState = { cwd, variables: new Map(), previous: null };
+  let segment: string[] = [];
+  let pipeProducer: string[] | null = null;
+  const frames: {
+    readonly state: ProtectedPathShellState;
+    readonly segment: string[];
+    readonly pipeProducer: string[] | null;
+  }[] = [];
+  for (const event of guardEvents(syntax)) {
+    if (event.kind === 'scope') {
+      if (event.edge === 'enter') {
+        frames.push({ state, segment: [...segment], pipeProducer });
+        continue;
+      }
+      const target = visitor.segment(segment, state, pipeProducer, null);
+      if (target) return target;
+      const frame = frames.pop();
+      if (frame === undefined) throw new Error('scope exit without a matching enter');
+      state = frame.state;
+      segment = frame.segment;
+      pipeProducer = frame.pipeProducer;
+      continue;
+    }
+    if (event.kind === 'operator') {
+      if (!event.boundary) continue;
+      const target = visitor.segment(segment, state, pipeProducer, event.operator);
+      if (target) return target;
+      state = applyShellState(segment, state, environment, budget);
+      pipeProducer = segment.length > 0 && PIPE_OPERATORS.has(event.operator) ? segment : null;
+      segment = [];
+      continue;
+    }
+    if (event.kind === 'redirection') {
+      if (event.target === undefined) continue;
+      const outcome = visitor.redirection(
+        {
+          operator: event.operator,
+          role: event.role,
+          targetOrder: event.targetOrder,
+          target: event.target,
+        },
+        state,
+      );
+      if (outcome === ADOPT_AS_OPERAND) {
+        segment.push(visitor.word(event.target));
+        continue;
+      }
+      if (outcome) return outcome;
+      continue;
+    }
+    segment.push(visitor.word(event.text));
+  }
+  return visitor.segment(segment, state, pipeProducer, null);
+}
+
+/**
+ * The same read, flattened for the checks that only ask which words and boundaries a command
+ * carries — whether it is metadata-only, and whether a substitution decodes base64.
+ */
+export function readGuardTokens(syntax: GuardSyntax): readonly GuardToken[] {
+  return guardEvents(syntax).flatMap((event): GuardToken[] => {
+    if (event.kind === 'word') return [{ kind: 'word', text: event.text }];
+    if (event.kind === 'operator') return [{ kind: 'operator', boundary: event.boundary }];
+    if (event.kind === 'redirection') return [{ kind: 'redirection', target: event.target }];
+    return [];
+  });
+}
+
+export function expandTrackedShellVariables(
+  text: string,
+  variables: ReadonlyMap<string, string>,
+): string {
+  return text
+    .replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)(:?[-+])([^}]*)\}/g,
+      (match, name: string, operator: string, word: string) => {
+        const value = variables.get(name);
+        if (value === undefined) return match;
+        const usable = operator.startsWith(':') ? value !== '' : true;
+        if (operator.endsWith('-')) {
+          return usable ? value : expandTrackedShellVariables(word, variables);
+        }
+        return usable ? expandTrackedShellVariables(word, variables) : '';
+      },
+    )
+    .replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+      (match, name: string) => variables.get(name) ?? match,
+    )
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, name: string) => variables.get(name) ?? match);
+}
+
+export function isAssignmentOnlySegment(tokens: readonly string[]): boolean {
+  return tokens.length > 0 && tokens.every((token) => /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token));
+}
+
+/**
+ * One segment's effect on the tracked shell state: an assignment-only segment extends the
+ * variables, a `cd` after wrapper stripping moves the cwd and remembers where it came from,
+ * `cd -` returns to that directory, and a bare `cd` — or a `cd -` with nothing remembered —
+ * leaves the cwd where it was.
+ */
+function applyShellState(
+  segment: readonly string[],
+  state: ProtectedPathShellState,
+  environment: EnvironmentContext,
+  budget: Budget,
+): ProtectedPathShellState {
+  const variables = isAssignmentOnlySegment(segment)
+    ? new Map([...state.variables, ...extractShellAssignments(segment, state.variables)])
+    : state.variables;
+  const stripped = stripWrappers([...segment], environment);
+  const target = getBasename(stripped[0] ?? '').toLowerCase() === 'cd' ? stripped[1] : undefined;
+  if (!target) return { ...state, variables };
+  if (target === '-') {
+    if (state.previous === null) return { ...state, variables };
+    return { cwd: state.previous, variables, previous: state.cwd };
+  }
+  return {
+    cwd: normalizeProtectedPathCandidate(
+      expandTrackedShellVariables(target, variables),
+      state.cwd,
+      environment,
+      budget,
+    ),
+    variables,
+    previous: state.cwd,
+  };
+}
+
+function extractShellAssignments(
+  segment: readonly string[],
+  variables: ReadonlyMap<string, string>,
+): readonly [string, string][] {
+  return segment.flatMap((token): [string, string][] => {
+    const assignment = /^([A-Za-z_][A-Za-z0-9_]*)(.*)$/.exec(token);
+    const value = assignment?.[2]?.startsWith('=') ? assignment[2].slice(1) : undefined;
+    return assignment?.[1] !== undefined && value !== undefined
+      ? [[assignment[1], expandTrackedShellVariables(value, variables)]]
+      : [];
+  });
+}
+
+// What `readGuardSyntax` read, remembered per syntax. A syntax it could not take whole carries
+// nothing, which is why every guard decides on the status before it walks.
+function guardEvents(syntax: GuardSyntax): readonly GuardEvent[] {
+  return READ_EVENTS.get(syntax) ?? EMPTY_EVENTS;
+}
+
+function maskSpans(source: string, spans: ReadonlySet<CommandSpan>): string {
+  return [...spans].reduce(
+    (text, span) =>
+      text.slice(0, span.start) + ' '.repeat(span.end - span.start) + text.slice(span.end),
+    source,
+  );
+}
+
+function freezeSyntax(
+  status: GuardSyntax['status'],
   source: string,
-  entries: readonly ShellSyntaxEntry[],
+  program: CommandProgram,
   assignmentFallbacks: readonly string[] = EMPTY_STRINGS,
-): ShellSyntaxFacts {
+): GuardSyntax {
   return Object.freeze({
     status,
     source,
-    entries: Object.freeze(entries),
+    program,
     assignmentFallbacks: Object.freeze(assignmentFallbacks),
   });
 }
 
-function projectProgram(program: CommandProgram, context: ProjectionContext): ShellSyntaxEntry[] {
+function readProgram(program: CommandProgram, context: ReadContext): GuardEvent[] {
   return program.nodes
-    .flatMap((node, index) => projectNode(node, program, index, context))
+    .flatMap((node, index) => readNode(node, program, index, context))
     .sort((left, right) => left.start - right.start)
-    .flatMap((item) => [...item.entries]);
+    .flatMap((item) => [...item.events]);
 }
 
-function projectNode(
+function readNode(
   node: CommandNode,
   program: CommandProgram,
   index: number,
-  context: ProjectionContext,
-): PositionedEntries[] {
+  context: ReadContext,
+): PositionedEvents[] {
   if (node.kind === 'connector') {
-    return [
-      { start: node.span.start, entries: [operatorEntry(normalizeConnector(node.operator))] },
-    ];
+    return [{ start: node.span.start, events: [operatorEvent(normalizeConnector(node.operator))] }];
   }
   if (node.kind === 'unknown') {
-    return [{ start: node.span.start, entries: [operatorEntry(node.source)] }];
+    return [{ start: node.span.start, events: [operatorEvent(node.source)] }];
   }
   if (node.kind === 'function') {
     context.functions.set(node.name, node.body);
@@ -151,17 +374,17 @@ function projectNode(
     return [
       {
         start: node.span.start,
-        entries: brace
+        events: brace
           ? [
-              boundaryOperatorEntry('{'),
-              ...projectProgram(node.body, groupContext),
-              ...(closed ? [boundaryOperatorEntry('}')] : []),
+              boundaryOperatorEvent('{'),
+              ...readProgram(node.body, groupContext),
+              ...(closed ? [boundaryOperatorEvent('}')] : []),
             ]
           : [
               SCOPE_ENTER,
-              operatorEntry('('),
-              ...projectProgram(node.body, groupContext),
-              ...(closed ? [operatorEntry(')')] : []),
+              operatorEvent('('),
+              ...readProgram(node.body, groupContext),
+              ...(closed ? [operatorEvent(')')] : []),
               SCOPE_EXIT,
             ],
       },
@@ -179,52 +402,50 @@ function projectNode(
     return [
       {
         start: node.span.start,
-        entries: [
-          ...projectView(node, context),
-          boundaryOperatorEntry(';'),
-          ...projectProgram(functionBody, { ...context, depth: context.depth + 1 }),
-          boundaryOperatorEntry(';'),
+        events: [
+          ...readView(node, context),
+          boundaryOperatorEvent(';'),
+          ...readProgram(functionBody, { ...context, depth: context.depth + 1 }),
+          boundaryOperatorEvent(';'),
         ],
       },
-      ...projectHeredocs(node, program, index, context),
+      ...readHeredocs(node, program, index, context),
     ];
   }
   return [
-    { start: node.span.start, entries: projectView(node, context) },
-    ...projectHeredocs(node, program, index, context),
+    { start: node.span.start, events: readView(node, context) },
+    ...readHeredocs(node, program, index, context),
   ];
 }
 
-function projectView(view: CommandView, context: ProjectionContext): ShellSyntaxEntry[] {
+function readView(view: CommandView, context: ReadContext): GuardEvent[] {
   return [
     ...view.words.map((word) => ({
       start: word.span.start,
-      entries: projectWord(word, view, context, false),
+      events: readWord(word, view, context, false),
     })),
     ...view.redirections.map((redirection) => ({
       start: redirection.span.start,
-      entries: projectRedirection(redirection, view, context),
+      events: readRedirection(redirection, view, context),
     })),
   ]
     .sort((left, right) => left.start - right.start)
-    .flatMap((item) => item.entries);
+    .flatMap((item) => item.events);
 }
 
-function projectRedirection(
+function readRedirection(
   redirection: CommandRedirection,
   view: CommandView,
-  context: ProjectionContext,
-): ShellSyntaxEntry[] {
+  context: ReadContext,
+): GuardEvent[] {
   const operator = redirection.operator === '<<-' ? '<<' : redirection.operator;
-  const targetEntries = redirection.target
-    ? projectWord(redirection.target, view, context, true)
-    : [];
-  const first = targetEntries[0];
+  const targetEvents = redirection.target ? readWord(redirection.target, view, context, true) : [];
+  const first = targetEvents[0];
   const target = first?.kind === 'word' ? first.text : undefined;
   return [
-    // An explicit fd prefix (`2>&1`) is a word of its own in the entry stream, as the scanners
-    // have always seen it; folding it into the redirection would silently drop that token.
-    ...(redirection.fd === undefined ? [] : [wordEntry(String(redirection.fd))]),
+    // An explicit fd prefix (`2>&1`) is a word of its own in the stream, as the guards have
+    // always seen it; folding it into the redirection would silently drop that token.
+    ...(redirection.fd === undefined ? [] : [wordEvent(String(redirection.fd))]),
     Object.freeze({
       kind: 'redirection' as const,
       operator,
@@ -234,39 +455,39 @@ function projectRedirection(
         : ('immediate' as const),
       ...(target === undefined ? {} : { target }),
     }),
-    ...(target === undefined ? targetEntries : targetEntries.slice(1)),
+    ...(target === undefined ? targetEvents : targetEvents.slice(1)),
   ];
 }
 
-function projectHeredocs(
+function readHeredocs(
   view: CommandView,
   program: CommandProgram,
   index: number,
-  context: ProjectionContext,
-): PositionedEntries[] {
+  context: ReadContext,
+): PositionedEvents[] {
   const heredocs = view.redirections.filter(
     (redirection) => redirection.operator === '<<' || redirection.operator === '<<-',
   );
   return [
-    ...heredocs.flatMap((redirection): PositionedEntries[] => {
+    ...heredocs.flatMap((redirection): PositionedEvents[] => {
       const heredoc = redirection.heredoc;
       if (!heredoc) return [];
       // The newline that closes the terminator line separates the heredoc from what follows;
       // without it the next command would join this one's segment.
       const terminator = [
-        wordEntry(heredoc.delimiter),
+        wordEvent(heredoc.delimiter),
         ...(/[\r\n]/.test(context.source[heredoc.terminatorSpan.end] ?? '')
-          ? [operatorEntry(';')]
+          ? [operatorEvent(';')]
           : []),
       ];
       if (context.suppressed.has(heredoc.bodySpan)) {
-        return [{ start: heredoc.bodySpan.start, entries: terminator }];
+        return [{ start: heredoc.bodySpan.start, events: terminator }];
       }
       return [
         {
           start: heredoc.bodySpan.start,
-          entries: [
-            ...projectText(
+          events: [
+            ...readText(
               context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end),
               context,
             ),
@@ -278,31 +499,31 @@ function projectHeredocs(
     // A declared-but-never-terminated heredoc swallows the rest of the input; a heredoc with no
     // delimiter at all swallows nothing, so its trailing text is already an ordinary node.
     ...(heredocs.some((redirection) => !redirection.heredoc && redirection.target)
-      ? projectUnterminatedHeredoc(program, index, context)
+      ? readUnterminatedHeredoc(program, index, context)
       : []),
   ];
 }
 
 // An unterminated heredoc leaves its body outside the node tree: the parser stops at the
 // declaration. The body text still reaches the shell, so it stays scannable here.
-function projectUnterminatedHeredoc(
+function readUnterminatedHeredoc(
   program: CommandProgram,
   index: number,
-  context: ProjectionContext,
-): PositionedEntries[] {
+  context: ReadContext,
+): PositionedEvents[] {
   const connector = program.nodes.slice(index + 1).find((node) => node.kind === 'connector');
   if (!connector || connector.span.end >= program.span.end) return [];
   return [
     {
       start: connector.span.end,
-      entries: projectText(context.source.slice(connector.span.end, program.span.end), context),
+      events: readText(context.source.slice(connector.span.end, program.span.end), context),
     },
   ];
 }
 
 // Each re-parse resets the parser's own depth limit, so nesting across parses (heredoc bodies
 // declaring further heredocs) is bounded here to keep total recursion finite.
-function projectText(text: string, context: ProjectionContext): ShellSyntaxEntry[] {
+function readText(text: string, context: ReadContext): GuardEvent[] {
   if (context.depth >= DEFAULT_COMMAND_PARSER_LIMITS.maxDepth) {
     context.flags.limited = true;
     return [];
@@ -314,14 +535,14 @@ function projectText(text: string, context: ProjectionContext): ShellSyntaxEntry
   }
   // A body is often not shell at all (code, prose), so its invalid marks stay contained: an
   // unclosed `${` aborts a real shell before anything in the text it swallows runs, which keeps
-  // the surviving entries faithful without failing the whole command's projection.
-  const flags: ProjectionFlags = {
+  // the surviving events faithful without failing the whole command's read.
+  const flags: ReadFlags = {
     invalid: false,
     limited: false,
     expansions: context.flags.expansions,
     assignmentFallbacks: context.flags.assignmentFallbacks,
   };
-  const entries = projectProgram(program, {
+  const events = readProgram(program, {
     source: text,
     suppressed: new Set<CommandSpan>(),
     flags,
@@ -331,27 +552,27 @@ function projectText(text: string, context: ProjectionContext): ShellSyntaxEntry
   });
   context.flags.limited ||= flags.limited;
   context.flags.expansions = flags.expansions;
-  return entries;
+  return events;
 }
 
-function projectWord(
+function readWord(
   word: CommandWord,
   view: CommandView,
-  context: ProjectionContext,
+  context: ReadContext,
   keepGlobText: boolean,
-): ShellSyntaxEntry[] {
-  const entries: ShellSyntaxEntry[] = [];
+): GuardEvent[] {
+  const events: GuardEvent[] = [];
   const state: QuoteState = { single: false, double: false };
   let pending = '';
   let glob = false;
   const flush = () => {
-    const entry =
+    const event =
       glob && !keepGlobText
-        ? operatorEntry('glob')
-        : pending !== '' || (word.quoted && entries.length === 0)
-          ? wordEntry(pending)
+        ? operatorEvent('glob')
+        : pending !== '' || (word.quoted && events.length === 0)
+          ? wordEvent(pending)
           : undefined;
-    if (entry) entries.push(entry);
+    if (event) events.push(event);
     pending = '';
     glob = false;
   };
@@ -361,7 +582,7 @@ function projectWord(
       for (const run of scanWordText(part.raw, state, context.flags, context.powershell)) {
         if (typeof run === 'string') {
           flush();
-          entries.push(operatorEntry(run));
+          events.push(operatorEvent(run));
           continue;
         }
         pending += run.text;
@@ -386,18 +607,18 @@ function projectWord(
     const nested = view.nested.find(
       (program) => program.span.start >= part.span.start && program.span.end <= part.span.end,
     );
-    const inner = nested ? projectProgram(nested, context) : [];
+    const inner = nested ? readProgram(nested, context) : [];
     if (part.raw.startsWith('`')) {
       pending += '${}';
       flush();
-      entries.push(SCOPE_ENTER, ...inner, SCOPE_EXIT);
+      events.push(SCOPE_ENTER, ...inner, SCOPE_EXIT);
       continue;
     }
     if (part.raw.startsWith('<(') || part.raw.startsWith('>(')) {
       flush();
-      entries.push(
+      events.push(
         part.raw.startsWith('<(')
-          ? operatorEntry('<(')
+          ? operatorEvent('<(')
           : Object.freeze({
               kind: 'redirection' as const,
               operator: '>',
@@ -406,7 +627,7 @@ function projectWord(
             }),
         SCOPE_ENTER,
         ...inner,
-        ...(part.raw.endsWith(')') ? [operatorEntry(')')] : []),
+        ...(part.raw.endsWith(')') ? [operatorEvent(')')] : []),
         SCOPE_EXIT,
       );
       continue;
@@ -415,25 +636,24 @@ function projectWord(
     const frames = part.raw.startsWith('$((') ? 2 : 1;
     pending += '${}';
     flush();
-    entries.push(
-      ...Array.from({ length: frames }, () => operatorEntry('(')),
+    events.push(
+      ...Array.from({ length: frames }, () => operatorEvent('(')),
       ...(frames === 1 ? [SCOPE_ENTER] : []),
       ...inner,
       ...(part.raw.endsWith(')'.repeat(frames))
-        ? Array.from({ length: frames }, () => operatorEntry(')'))
+        ? Array.from({ length: frames }, () => operatorEvent(')'))
         : []),
       ...(frames === 1 ? [SCOPE_EXIT] : []),
     );
   }
   flush();
-  return entries;
+  return events;
 }
 
-// Reproduces the quoting, escaping and expansion rules of the token stream the scanners were
-// built against: quotes come off, `$NAME` normalizes to `${NAME}`, active assignment expansions
-// expose their fallback, and an unquoted `*`/`?` makes the whole word a glob whose text never
-// reaches a segment. An unquoted parenthesis ends the run it sits in, so `open('.env')` still
-// yields `.env` as a token of its own.
+// Reproduces the quoting, escaping and expansion rules the guards were built against: quotes come
+// off, `$NAME` normalizes to `${NAME}`, active assignment expansions expose their fallback, and an
+// unquoted `*`/`?` makes the whole word a glob whose text never reaches a segment. An unquoted
+// parenthesis ends the run it sits in, so `open('.env')` still yields `.env` as a token of its own.
 //
 // A PowerShell word follows PowerShell's rules instead: the escape character is a backtick, a
 // backslash is an ordinary path separator, and a variable name may carry a scope
@@ -441,7 +661,7 @@ function projectWord(
 function scanWordText(
   raw: string,
   state: QuoteState,
-  flags: ProjectionFlags,
+  flags: ReadFlags,
   powershell: boolean,
 ): ({ text: string; glob: boolean } | string)[] {
   const runs: ({ text: string; glob: boolean } | string)[] = [];
@@ -526,7 +746,7 @@ function readExpansion(
   raw: string,
   start: number,
   state: QuoteState,
-  flags: ProjectionFlags,
+  flags: ReadFlags,
   powershell: boolean,
 ) {
   const char = raw[start + 1];
@@ -551,7 +771,7 @@ function readExpansion(
 function collectAssignmentFallback(
   expansion: string,
   state: QuoteState,
-  flags: ProjectionFlags,
+  flags: ReadFlags,
   powershell: boolean,
 ): void {
   const content = expansion.slice(2, -1);
@@ -581,7 +801,7 @@ function normalizeConnector(operator: string): string {
   return /^[\r\n]+$/.test(operator) ? ';' : operator;
 }
 
-function operatorEntry(operator: string): ShellSyntaxEntry {
+function operatorEvent(operator: string): GuardEvent {
   return Object.freeze({
     kind: 'operator' as const,
     operator,
@@ -589,11 +809,11 @@ function operatorEntry(operator: string): ShellSyntaxEntry {
   });
 }
 
-function boundaryOperatorEntry(operator: string): ShellSyntaxEntry {
+function boundaryOperatorEvent(operator: string): GuardEvent {
   return Object.freeze({ kind: 'operator' as const, operator, boundary: true });
 }
 
-function wordEntry(text: string): ShellSyntaxEntry {
+function wordEvent(text: string): GuardEvent {
   return Object.freeze({ kind: 'word' as const, text });
 }
 
