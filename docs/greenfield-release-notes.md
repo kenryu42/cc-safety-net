@@ -89,9 +89,10 @@ Three duplications the rebuild had carried are gone:
   still never loads it.
 - One per-command dispatcher. `gate/analyzer/segment.ts` decides every command, and a child
   synthesized by `xargs`, `parallel`, a `find -exec` body or the unknown-head suffix scan enters it
-  as command words carrying a `ChildProvenance` instead of through a door of its own. Wrapper
-  peeling, custom-rule matching, built-in filtering, trace recording and budget accounting each
-  happen in one place.
+  as command words carrying a `ChildProvenance` instead of through a door of its own. Custom-rule
+  matching, built-in filtering, trace recording and budget accounting each happen in one place;
+  wrapper peeling shares one algorithm but still runs from two sites, the dispatcher for the
+  command as written and `normalizeChildCommands` for a synthesized child.
 - One guard walk. `gate/guards/guard-walk.ts` reads the parsed tree and replays it through a
   word/segment/redirection visitor; every pre-analysis guard, secret protection included, drives it,
   and the flat `core/shell/projection.ts` entry stream is deleted. The destructive analyzer keeps
