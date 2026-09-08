@@ -33,6 +33,24 @@ No policy change is needed; the rules, levels and `secretProtection` configurati
 The policy GUI reads Git facts fresh on every request, so a `.git` marker created or removed while
 the GUI is open changes its command tester's answer at once instead of at the next restart.
 
+## The hook's configuration warning names what it dropped
+
+When `policy.json` holds something the loader will not accept, the loader salvages the rest and the
+next user-visible denial carries a `Config warning:` line. That line now names the section or field
+that was dropped, in the loader's own plain wording, instead of repeating the schema's sentence. For
+a file with an unknown `tier` key and an unusable `safety.level`:
+
+- before: `invalid policy config: <path>: unknown field "tier"; <path>: safety.level must be
+  "standard", "strict", or "paranoid". …`
+- after: `invalid policy config: <path>: safety.level: not one of standard, strict, paranoid;
+  <path>: tier: unknown field. …`
+
+A file that is valid JSON but not an object reports `<path>: not a JSON object` where it used to
+report `<path>: Config must be an object`. Nothing else about the warning changes: which failures
+degrade the snapshot, which values survive salvage, and the audit `configFallback` flag are all as
+before, and `cc-safety-net doctor` and `cc-safety-net policy check` keep the schema wording they
+have always printed.
+
 ## Same contract, rebuilt implementation
 
 The hook, CLI, API, GUI and every host integration keep their behavior: the rebuild was verified
@@ -61,3 +79,20 @@ snapshots under `tests/cli/*/__snapshots__`. Beside them the gate's replay reads
 hand. The port-time digests and their recording switches are gone. A behavior change lands as a
 failing stated expectation first; a commit that re-records a snapshot or flips a table row names
 which entries changed and why.
+
+Three duplications the rebuild had carried are gone:
+
+- One policy validator. The salvage normalizer in `core/policy/store.ts` owns runtime acceptance of
+  `policy.json` and reports what it dropped; the hand-written mirror of the schema is deleted. The
+  schema library is imported only by the diagnostic surfaces — `doctor`, `policy check`, the GUI,
+  `diff.ts` and the legacy-config writer — and an architecture test lists them, so the hook path
+  still never loads it.
+- One per-command dispatcher. `gate/analyzer/segment.ts` decides every command, and a child
+  synthesized by `xargs`, `parallel`, a `find -exec` body or the unknown-head suffix scan enters it
+  as command words carrying a `ChildProvenance` instead of through a door of its own. Wrapper
+  peeling, custom-rule matching, built-in filtering, trace recording and budget accounting each
+  happen in one place.
+- One guard walk. `gate/guards/guard-walk.ts` reads the parsed tree and replays it through a
+  word/segment/redirection visitor; every pre-analysis guard, secret protection included, drives it,
+  and the flat `core/shell/projection.ts` entry stream is deleted. The destructive analyzer keeps
+  its own control-flow walk by design.

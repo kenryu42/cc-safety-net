@@ -767,8 +767,8 @@ now state what the shell does. The `pushd`/`popd` half of the carried item stays
 the creation or removal of a `.git` marker answers from current Git facts
 (`tests/gui/index-policy.test.ts`).
 
-Deferred, unchanged: the policy-validation duplication, the projection and dispatch consolidations,
-and audit retention.
+Deferred, unchanged: audit retention. The policy-validation duplication and the projection and
+dispatch consolidations shipped later the same day; see the next section.
 
 Verified 2026-09-08 through the real hook and a live GUI with Bun 1.4.2 (the pin above names 1.4.1;
 the installed toolchain is 1.4.2 and both sides of the startup comparison used it). Evidence —
@@ -778,3 +778,54 @@ sequence with a fresh-hook comparison, and the startup medians — is under
 18.5–21.2 ms over node's own on both 055fec14 and this branch, with and without a minimal policy
 file, against the test's node + 150 ms ceiling; the hook's static import closure grows 896 bytes to
 351,688, against the 400,000-byte cap.
+
+## Consolidations — 2026-09-08
+
+The three architecture consolidations this plan had deferred all shipped, in order, each behind its
+own gate before the next started:
+
+- `refactor(policy): make the salvage normalizer the single runtime validator` (40baa6d4). The
+  normalizer owns runtime acceptance of `policy.json` and reports a drop per rejected field or
+  section; `src/core/policy/validate.ts` and its string-parity test are deleted; the `rule.json` and
+  rulebook validators move unchanged to `rules-config.ts` and `rulebook.ts`, and the GUI's policy
+  read/preview/repair/write to `store-gui.ts`, so the schema library reaches only `doctor`,
+  `policy check`, the GUI, `diff.ts` and the legacy-config writer. The hook's configuration warning
+  now reads the normalizer's plain drop reasons; `doctor` and `policy check` keep the schema
+  wording. Three rows of `tests/core/policy/snapshot.test.ts` were restated for it, and
+  `tests/core/policy/hot-path.test.ts` changed on one line (the reached-set assertion names
+  `core/policy/rules-config.ts`).
+- `refactor(analyzer): dispatch synthesized children through the single per-command path` (76aaa684),
+  with the follow-up `fix(analyzer): dispatch an embedded find -exec body as the command as written`
+  (6cef30ce). `analyzeSegment` is the one dispatcher; children from `xargs`, `parallel`,
+  `find -exec` and the unknown-head suffix scan enter it as command words carrying a
+  `ChildProvenance`. `child-analyzer.ts` and the embedded door in `segment.ts` are gone. The fix
+  restored six embedded `find -exec` shapes the consolidation had turned from a denial into an
+  allow, and states the named flips inside a stream child, where a wrapper no longer hides the
+  command it runs (`xargs.shell-dynamic` → `git.reset-hard`).
+- `refactor(gate): run the pre-analysis guards over the parsed tree` (a30118a8).
+  `src/core/shell/projection.ts` and its test are deleted; `readGuardSyntax` reads the tree once and
+  `walkGuardSyntax` replays it through a word/segment/redirection visitor that every pre-analysis
+  guard, secret protection included, drives. The directory scope is exactly as commit b7a24e02 left
+  it, and the destructive analyzer's control-flow walk is untouched.
+
+Each batch was gated the same way. `tests/fixtures/gate/harvested-verdicts.jsonl` showed zero
+flipped rows and no `explain` or `doctor --json` snapshot entry changed in any of the four commits.
+A decision differential ran the pre-change commit in a scratch worktree against the change and
+compared decision, rule id, stage and evidence over every harvested literal plus seeded fuzz, at
+standard, strict and paranoid in a seeded temp home across a workspace and a git repository: for the
+policy commit, 6,964 literals plus one seed (0x9e3779b9) × 5,000 samples, 71,022 verdicts over
+11,837 sources, 0 differences; for each of the three analyzer and gate commits, 6,964 literals plus
+four seeds (0x9e3779b9, 0x9e3779ba, 0x9e3779bb, 0x9e3779bc) × 5,000 samples, 161,784 verdicts per
+tree and 156,018 compared after duplicate sources collapse, 0 differences. The gate commit's dump
+took 78.2 s before and 78.8 s after, so reading the tree per guard costs no measurable throughput.
+`bun run check` passed as the single final check per batch. `tests/e2e/hook-cold-start.test.ts` and
+`tests/core/policy/hot-path.test.ts` stayed passing, the latter with the one-line change named
+above; the hook's static import closure went 351,688 → 349,841 → 349,595 → 349,608 → 349,738 bytes
+across the four commits, against the 400,000-byte cap.
+
+After the gate commit the five secret-path rows of `tests/gate/secret-walk.test.ts` were confirmed
+through the real hook at standard, strict and paranoid — 15 drives, 15 pass, with the three denials
+carrying `secret.home.ssh` and the `.ssh/config` segment and every drive recording its audit entry
+in the isolated home. Evidence is under `artifacts/verify/verify-20260909-012604/`.
+
+Deferred still: audit retention, and the `pushd`/`popd` half of the guard-walk item.
