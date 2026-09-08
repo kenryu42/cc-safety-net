@@ -3,20 +3,16 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
- * The rebuild under `next/` is a second implementation of the same contract,
- * not a layer over the old one. Two rules keep it that way until cutover:
- * nothing under `next/` imports `src/`, and nothing under `next/` imports a
- * third-party package, except the files listed below — the schema validator,
- * which every other module reaches for diagnostics through `validate.ts` so the
- * loader never pulls it onto the hook's path, and the host layer, allowed here
- * per file when Phase 5 lands the first one.
+ * `src/` reaches for no third-party package, except the files listed below — the schema
+ * validator, which every other module reaches for diagnostics through `validate.ts` so the
+ * loader never pulls it onto the hook's path, and the host layer, allowed here per file.
  */
 
-const NEXT_ROOT = join(import.meta.dir, '..', 'src');
-const SCHEMA_MODULE = join(NEXT_ROOT, 'core', 'policy', 'schema.ts');
+const SOURCE_ROOT = join(import.meta.dir, '..', 'src');
+const SCHEMA_MODULE = join(SOURCE_ROOT, 'core', 'policy', 'schema.ts');
 /** The legacy `.safety-net.json` validator: a diagnostic-only module the hook path never loads,
  *  and the one place besides the schema itself that the schema library is reached from. */
-const LEGACY_CONFIG_VALIDATOR = join(NEXT_ROOT, 'core', 'policy', 'config-file.ts');
+const LEGACY_CONFIG_VALIDATOR = join(SOURCE_ROOT, 'core', 'policy', 'config-file.ts');
 
 const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
   'core/policy/schema.ts': ['zod'],
@@ -46,7 +42,7 @@ const CHILD_PROCESS_ALLOWANCES: readonly string[] = [
   'gui/choose-directory.ts',
 ];
 
-/** The one loopback listener under `next/`. */
+/** The one loopback listener under `src/`. */
 const NETWORK_ALLOWANCES: Record<string, readonly string[]> = { 'gui/index.ts': ['node:http'] };
 
 /** The layers a CLI command may reach for; `entries` is above it, and `cli` is its own. */
@@ -78,26 +74,26 @@ function importSpecifiers(source: string): string[] {
 }
 
 /** A file's path under `src/`, spelled with `/` as the allowance tables and the reports spell it. */
-const relativeToRoot = (file: string) => relative(NEXT_ROOT, file).split(sep).join('/');
+const relativeToRoot = (file: string) => relative(SOURCE_ROOT, file).split(sep).join('/');
 
 function isAllowed(specifier: string, file: string): boolean {
   if (specifier.startsWith('node:')) return true;
   if (specifier.startsWith('@/')) return true;
   if (specifier.startsWith('.')) {
-    return !relative(NEXT_ROOT, join(file, '..', specifier)).startsWith('..');
+    return !relative(SOURCE_ROOT, join(file, '..', specifier)).startsWith('..');
   }
   if (specifier === 'bun') return true;
   return (THIRD_PARTY_ALLOWANCES[relativeToRoot(file)] ?? []).includes(specifier);
 }
 
 /**
- * The top-level directory under `next/` a specifier resolves to, so the layering rule reads the
+ * The top-level directory under `src/` a specifier resolves to, so the layering rule reads the
  * layer rather than the spelling: `../audit/writer` and `@/audit/writer` are one violation.
  */
 function layerOf(specifier: string, file: string) {
   if (specifier.startsWith('@/')) return specifier.split('/')[1];
   if (!specifier.startsWith('.')) return undefined;
-  return relative(NEXT_ROOT, join(file, '..', specifier)).split(sep)[0];
+  return relative(SOURCE_ROOT, join(file, '..', specifier)).split(sep)[0];
 }
 
 function resolvesToSchemaModule(specifier: string, file: string): boolean {
@@ -197,7 +193,7 @@ function importedModules(file: string, source: string): string[] {
     const specifier = match[2];
     if (specifier === undefined || match[1]?.trimStart().startsWith('import type')) return [];
     const base = specifier.startsWith('@/')
-      ? join(NEXT_ROOT, specifier.slice('@/'.length))
+      ? join(SOURCE_ROOT, specifier.slice('@/'.length))
       : specifier.startsWith('.')
         ? join(file, '..', specifier)
         : undefined;
@@ -280,8 +276,8 @@ function dynamicImportBans(path: string, source: string): string[] {
   return matchedBans(path, source, [NON_LITERAL_IMPORT]);
 }
 
-describe('next/ architecture', () => {
-  const files = sourceFiles(NEXT_ROOT);
+describe('src/ architecture', () => {
+  const files = sourceFiles(SOURCE_ROOT);
 
   test('contains source files', () => {
     expect(files.length).toBeGreaterThan(0);
@@ -298,7 +294,7 @@ describe('next/ architecture', () => {
 
   test('audit sits under core, and neither core nor gate reaches back into it', () => {
     const violations = files.flatMap((file) => {
-      const path = relative(NEXT_ROOT, file);
+      const path = relative(SOURCE_ROOT, file);
       const specifiers = importSpecifiers(readFileSync(file, 'utf-8'));
       const offending = path.startsWith(`audit${sep}`)
         ? specifiers.filter(
@@ -317,7 +313,7 @@ describe('next/ architecture', () => {
     expect(violations).toEqual([]);
   });
 
-  test('the schema validator is imported by no module under next/ but the legacy config validator', () => {
+  test('the schema validator is imported by no module but the legacy config validator', () => {
     const violations = files
       .filter((file) => file !== SCHEMA_MODULE && file !== LEGACY_CONFIG_VALIDATOR)
       .flatMap((file) =>
@@ -335,7 +331,7 @@ describe('next/ architecture', () => {
   });
 
   test('the rule is falsifiable', () => {
-    const file = join(NEXT_ROOT, 'core', 'example.ts');
+    const file = join(SOURCE_ROOT, 'core', 'example.ts');
     const offending =
       "import y from 'zod';\nimport { z } from '../../tests/helpers';\nimport { ok } from './decision';\nimport { n } from 'node:fs';\nconst lazy = await import('@/core/decision');\nconst required = require('zod');\nconst lazily = createRequire(import.meta.url)('zod');\n";
     expect(importSpecifiers(offending).filter((specifier) => !isAllowed(specifier, file))).toEqual([
@@ -345,7 +341,7 @@ describe('next/ architecture', () => {
       'zod',
     ]);
 
-    const snapshot = join(NEXT_ROOT, 'core', 'policy', 'snapshot.ts');
+    const snapshot = join(SOURCE_ROOT, 'core', 'policy', 'snapshot.ts');
     expect(isAllowed('zod', SCHEMA_MODULE)).toBeTrue();
     expect(isAllowed('zod', snapshot)).toBeFalse();
     // The legacy validator reaches the schema module, never the package behind it.
@@ -354,15 +350,15 @@ describe('next/ architecture', () => {
     expect(resolvesToSchemaModule('@/core/policy/schema', snapshot)).toBeTrue();
     expect(resolvesToSchemaModule('./validate', snapshot)).toBeFalse();
 
-    const pipeline = join(NEXT_ROOT, 'gate', 'pipeline.ts');
+    const pipeline = join(SOURCE_ROOT, 'gate', 'pipeline.ts');
     expect(layerOf('../audit/writer', pipeline)).toBe('audit');
     expect(layerOf('@/audit/writer', pipeline)).toBe('audit');
-    expect(layerOf('../core/redaction', join(NEXT_ROOT, 'audit', 'display.ts'))).toBe('core');
+    expect(layerOf('../core/redaction', join(SOURCE_ROOT, 'audit', 'display.ts'))).toBe('core');
     expect(layerOf('node:fs', pipeline)).toBeUndefined();
 
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'hosts', 'example', 'hook.ts'),
+        join(SOURCE_ROOT, 'hosts', 'example', 'hook.ts'),
         "import { main } from '@/entries/bin';\nimport { request } from 'node:http';\nimport { spawn } from 'node:child_process';\n",
       ),
     ).toEqual([
@@ -372,44 +368,44 @@ describe('next/ architecture', () => {
     ]);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'cli', 'example.ts'),
+        join(SOURCE_ROOT, 'cli', 'example.ts'),
         "import { main } from '@/entries/bin';\nimport { parseCommandArgs } from '@/entries/args';\n",
       ),
     ).toEqual(['cli/example.ts imports @/entries/bin', 'cli/example.ts imports @/entries/args']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'cli', 'example.ts'),
+        join(SOURCE_ROOT, 'cli', 'example.ts'),
         "import { spawn } from 'node:child_process';\nimport { request } from 'node:http';\n",
       ),
     ).toEqual(['cli/example.ts imports node:child_process', 'cli/example.ts imports node:http']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'core', 'example.ts'),
+        join(SOURCE_ROOT, 'core', 'example.ts'),
         "import { writeGuardAudit } from '@/hosts/audit';\n",
       ),
     ).toEqual(['core/example.ts imports @/hosts/audit']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'core', 'example.ts'),
+        join(SOURCE_ROOT, 'core', 'example.ts'),
         "import { colorize } from '@/cli/utils/colors';\n",
       ),
     ).toEqual(['core/example.ts imports @/cli/utils/colors']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'core', 'example.ts'),
+        join(SOURCE_ROOT, 'core', 'example.ts'),
         "import { request } from 'node:https';\n",
       ),
     ).toEqual(['core/example.ts imports node:https']);
     const gateHelper = "import { analysisWordText } from '@/gate/analyzer/command-words';\n";
-    expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), gateHelper)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'core', 'example.ts'), gateHelper)).toEqual([
       'core/example.ts imports @/gate/analyzer/command-words',
     ]);
-    expect(layeringViolations(join(NEXT_ROOT, 'gate', 'rulebook-fixtures.ts'), gateHelper)).toEqual(
-      [],
-    );
+    expect(
+      layeringViolations(join(SOURCE_ROOT, 'gate', 'rulebook-fixtures.ts'), gateHelper),
+    ).toEqual([]);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'rules-manager', 'example.ts'),
+        join(SOURCE_ROOT, 'rules-manager', 'example.ts'),
         "import { runCli } from '@/cli/main';\nimport { request } from 'node:https';\nimport { spawn } from 'node:child_process';\n",
       ),
     ).toEqual([
@@ -418,39 +414,39 @@ describe('next/ architecture', () => {
       'rules-manager/example.ts imports node:child_process',
     ]);
     const managerHelper = "import { syncRulesConfig } from '@/rules-manager/sync';\n";
-    expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), managerHelper)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'core', 'example.ts'), managerHelper)).toEqual([
       'core/example.ts imports @/rules-manager/sync',
     ]);
-    expect(layeringViolations(join(NEXT_ROOT, 'gate', 'example.ts'), managerHelper)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'gate', 'example.ts'), managerHelper)).toEqual([
       'gate/example.ts imports @/rules-manager/sync',
     ]);
     expect(
-      layeringViolations(join(NEXT_ROOT, 'hosts', 'example', 'hook.ts'), managerHelper),
+      layeringViolations(join(SOURCE_ROOT, 'hosts', 'example', 'hook.ts'), managerHelper),
     ).toEqual(['hosts/example/hook.ts imports @/rules-manager/sync']);
-    expect(layeringViolations(join(NEXT_ROOT, 'cli', 'rule', 'index.ts'), managerHelper)).toEqual(
+    expect(layeringViolations(join(SOURCE_ROOT, 'cli', 'rule', 'index.ts'), managerHelper)).toEqual(
       [],
     );
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'rules-manager', 'sync.ts'),
+        join(SOURCE_ROOT, 'rules-manager', 'sync.ts'),
         "import { evaluateRulebookFixtures } from '@/gate/rulebook-fixtures';\nimport { getLocalRulebookPath } from '@/core/policy/paths';\n",
       ),
     ).toEqual([]);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'hosts', 'install', 'native.ts'),
+        join(SOURCE_ROOT, 'hosts', 'install', 'native.ts'),
         "import { spawn } from 'node:child_process';\n",
       ),
     ).toEqual([]);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'hosts', 'opencode', 'plugin.ts'),
+        join(SOURCE_ROOT, 'hosts', 'opencode', 'plugin.ts'),
         "import { Plugin } from '@opencode-ai/plugin';\n",
       ),
     ).toEqual(['hosts/opencode/plugin.ts imports @opencode-ai/plugin as a value']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'gui', 'activity.ts'),
+        join(SOURCE_ROOT, 'gui', 'activity.ts'),
         "import { createServer } from 'node:http';\nimport { spawn } from 'node:child_process';\nimport { main } from '@/entries/bin';\n",
       ),
     ).toEqual([
@@ -460,66 +456,68 @@ describe('next/ architecture', () => {
     ]);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'gui', 'index.ts'),
+        join(SOURCE_ROOT, 'gui', 'index.ts'),
         "import { createServer } from 'node:http';\nimport { spawn } from 'node:child_process';\nimport { runInstallCommand } from '@/cli/install/index';\nimport { request } from 'node:https';\n",
       ),
     ).toEqual(['gui/index.ts imports node:https']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'gui', 'index.ts'),
+        join(SOURCE_ROOT, 'gui', 'index.ts'),
         "import { createConnection } from 'node:net';\n",
       ),
     ).toEqual(['gui/index.ts imports node:net']);
     expect(
       layeringViolations(
-        join(NEXT_ROOT, 'gui', 'choose-directory.ts'),
+        join(SOURCE_ROOT, 'gui', 'choose-directory.ts'),
         "import { spawn } from 'node:child_process';\nimport { createServer } from 'node:http';\n",
       ),
     ).toEqual(['gui/choose-directory.ts imports node:http']);
     const guiEntry = "import { runGuiCommand } from '@/gui/index';\n";
-    expect(layeringViolations(join(NEXT_ROOT, 'cli', 'main.ts'), guiEntry)).toEqual([]);
-    expect(layeringViolations(join(NEXT_ROOT, 'cli', 'status.ts'), guiEntry)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'cli', 'main.ts'), guiEntry)).toEqual([]);
+    expect(layeringViolations(join(SOURCE_ROOT, 'cli', 'status.ts'), guiEntry)).toEqual([
       'cli/status.ts imports @/gui/index',
     ]);
     const guiHelper = "import { getActivityFeed } from '@/gui/activity';\n";
-    expect(layeringViolations(join(NEXT_ROOT, 'core', 'example.ts'), guiHelper)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'core', 'example.ts'), guiHelper)).toEqual([
       'core/example.ts imports @/gui/activity',
     ]);
-    expect(layeringViolations(join(NEXT_ROOT, 'gate', 'example.ts'), guiHelper)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'gate', 'example.ts'), guiHelper)).toEqual([
       'gate/example.ts imports @/gui/activity',
     ]);
-    expect(layeringViolations(join(NEXT_ROOT, 'audit', 'example.ts'), guiHelper)).toEqual([
+    expect(layeringViolations(join(SOURCE_ROOT, 'audit', 'example.ts'), guiHelper)).toEqual([
       'audit/example.ts imports @/gui/activity',
     ]);
-    expect(layeringViolations(join(NEXT_ROOT, 'hosts', 'example', 'hook.ts'), guiHelper)).toEqual([
-      'hosts/example/hook.ts imports @/gui/activity',
-    ]);
-    expect(layeringViolations(join(NEXT_ROOT, 'rules-manager', 'example.ts'), guiHelper)).toEqual([
-      'rules-manager/example.ts imports @/gui/activity',
-    ]);
+    expect(layeringViolations(join(SOURCE_ROOT, 'hosts', 'example', 'hook.ts'), guiHelper)).toEqual(
+      ['hosts/example/hook.ts imports @/gui/activity'],
+    );
+    expect(layeringViolations(join(SOURCE_ROOT, 'rules-manager', 'example.ts'), guiHelper)).toEqual(
+      ['rules-manager/example.ts imports @/gui/activity'],
+    );
   });
 
-  test('no module under next/ loads another in a cycle', () => {
+  test('no module under src/ loads another in a cycle', () => {
     const graph = new Map(
       files
-        .filter((file) => !relative(NEXT_ROOT, file).startsWith(join('gui', 'frontend')))
+        .filter((file) => !relative(SOURCE_ROOT, file).startsWith(join('gui', 'frontend')))
         .map((file) => [file, importedModules(file, readFileSync(file, 'utf-8'))] as const),
     );
     expect(
-      findImportCycles(graph).map((cycle) => cycle.map((file) => relative(NEXT_ROOT, file))),
+      findImportCycles(graph).map((cycle) => cycle.map((file) => relative(SOURCE_ROOT, file))),
     ).toEqual([]);
   });
 
   test('core, gate and audit reach neither the network, CommonJS nor an unnameable load', () => {
     expect(
-      files.flatMap((file) => lowLayerBans(relative(NEXT_ROOT, file), readFileSync(file, 'utf-8'))),
+      files.flatMap((file) =>
+        lowLayerBans(relative(SOURCE_ROOT, file), readFileSync(file, 'utf-8')),
+      ),
     ).toEqual([]);
   });
 
-  test('every dynamic import under next/ names its target as a literal', () => {
+  test('every dynamic import under src/ names its target as a literal', () => {
     expect(
       files.flatMap((file) =>
-        dynamicImportBans(relative(NEXT_ROOT, file), readFileSync(file, 'utf-8')),
+        dynamicImportBans(relative(SOURCE_ROOT, file), readFileSync(file, 'utf-8')),
       ),
     ).toEqual([]);
   });
@@ -545,7 +543,7 @@ describe('next/ architecture', () => {
     ).toEqual([]);
     expect(
       importedModules(
-        join(NEXT_ROOT, 'gate', 'pipeline.ts'),
+        join(SOURCE_ROOT, 'gate', 'pipeline.ts'),
         [
           "import type { Budget } from '@/core/budget';",
           "import { evaluateGuard } from './example-missing';",
@@ -553,8 +551,8 @@ describe('next/ architecture', () => {
         ].join('\n'),
       ),
     ).toEqual([
-      join(NEXT_ROOT, 'gate', 'example-missing', 'index.ts'),
-      join(NEXT_ROOT, 'core', 'redaction.ts'),
+      join(SOURCE_ROOT, 'gate', 'example-missing', 'index.ts'),
+      join(SOURCE_ROOT, 'core', 'redaction.ts'),
     ]);
 
     const banned = [

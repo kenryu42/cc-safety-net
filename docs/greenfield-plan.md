@@ -176,6 +176,9 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   demonstrated in 3b); the dead segment-scoped branch of the breach mapping (a verbatim carry of
   `src`); ten `src` tests that fail only as root and one `next/` differential that needs an
   explicit per-test timeout on slow runners.
+- Correction (2026-09-08): the `cd -` and subshell limits pinned above were repaired — see
+  "Follow-up — 2026-09-08" at the end of this document. The text above is kept as the record of
+  what Phase 3 shipped.
 
 ### Phase 4 — Audit (S) `[x]`
 
@@ -649,8 +652,10 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
   and per core corpus (parser programs, projections, tokens, sanitizers, validators) in
   `tests/next/fixtures/gate/harvested-digests.json` (173 keys); written only when
   absent and never under `CI`, re-recorded with `CC_SAFETY_NET_UPDATE_GOLDENS=1`, dumped with
-  `CC_SAFETY_NET_DUMP_VERDICTS=<dir>`. The harvested and fuzz batches run under a pinned
-  process environment (`HOME` and `TMPDIR` inside the fixture tree, fixed `USER`, `LOGNAME`,
+  `CC_SAFETY_NET_DUMP_VERDICTS=<dir>`. (2026-09-08: the digests, the fixture,
+  `CC_SAFETY_NET_UPDATE_GOLDENS` and `CC_SAFETY_NET_DUMP_VERDICTS` are retired; see the follow-up
+  section.) The harvested and fuzz batches run under a pinned process environment (`HOME` and
+  `TMPDIR` inside the fixture tree, fixed `USER`, `LOGNAME`,
   `SHELL`, `PATH`) on both sides, and the sensitive-text projection under a pinned `TMPDIR`
   with the other supported path variables unset, so a `$TMPDIR` literal decides the same
   whether or not the host exports it.
@@ -734,7 +739,42 @@ Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Complexity: S, M, L
    against every field fix).
 2. Read the phase status above; the status markers are the only record of progress.
 3. Run `CI=true bun test tests/gate/contract.test.ts tests/gate/harvested.test.ts` to confirm
-   the corpus and the recorded digests are intact before touching `src/`.
+   the corpus and the verdict table are intact before touching `src/`.
 4. Finish the phase, run `bun run check`, run the verify skill where the phase requires it,
    update the status marker here, commit, and push to `feat/greenfield` (the Branch rules say
    when the pre-push job needs `LEFTHOOK_EXCLUDE=check`).
+
+## Follow-up — 2026-09-08
+
+The port-time oracles are retired: `expectRecordedDigest`, `tests/fixtures/gate/harvested-digests.json`
+(173 keys), `CC_SAFETY_NET_DUMP_VERDICTS` and `CC_SAFETY_NET_UPDATE_GOLDENS` are gone. The 32 test
+files that carried digests state 10–15 literal rows per module, recovered from the legacy suites on
+`main` or from each module's documented contract. `explain` and `doctor --json` are bun snapshots
+under `tests/cli/*/__snapshots__`, byte-identical to the `.golden` files they replaced; the verdict
+table `tests/fixtures/gate/harvested-verdicts.jsonl` is a hand-edited JSONL file that a run without
+a table records once. No verdict row changed in the pass.
+
+The shared guard walk now carries directory scope. The projection brackets a subshell, `$( )`,
+backticks and process substitutions with `scope` entries; the scanner saves its state on enter and
+restores it on exit, tracks the previous directory so `cd -` swaps back, and lets brace groups and
+function bodies share the parent's state. A nested shell's words still join the segment around them,
+so every guard sees the token bag it saw before and no rule id, stage or reason moved.
+`tests/gate/secret-walk.test.ts` states the five reproduction rows and the controls at standard,
+strict and paranoid against a seeded disposable home; the two rows that pinned the leak as a limit
+now state what the shell does. The `pushd`/`popd` half of the carried item stays carried.
+
+`createPolicyGuiServer` takes an environment factory called once per request, so a GUI that outlives
+the creation or removal of a `.git` marker answers from current Git facts
+(`tests/gui/index-policy.test.ts`).
+
+Deferred, unchanged: the policy-validation duplication, the projection and dispatch consolidations,
+and audit retention.
+
+Verified 2026-09-08 through the real hook and a live GUI with Bun 1.4.2 (the pin above names 1.4.1;
+the installed toolchain is 1.4.2 and both sides of the startup comparison used it). Evidence —
+the fifteen secret-row decisions with their audit entries, the GUI allowed → blocked → allowed
+sequence with a fresh-hook comparison, and the startup medians — is under
+`artifacts/verify/<run-id>/`. Startup is unchanged within run-to-run noise: the hook's median stays
+18.5–21.2 ms over node's own on both 055fec14 and this branch, with and without a minimal policy
+file, against the test's node + 150 ms ceiling; the hook's static import closure grows 896 bytes to
+351,688, against the 400,000-byte cap.
