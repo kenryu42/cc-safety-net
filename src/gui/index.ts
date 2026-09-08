@@ -22,6 +22,7 @@ import {
 import { mergeProjectPolicy } from '@/core/policy/merge';
 import { getProjectPolicyPath, type RulesPolicyOptions } from '@/core/policy/paths';
 import { readRetentionDays } from '@/core/policy/retention';
+import { getUserPolicyDiagnostics } from '@/core/policy/schema';
 import { loadRulesPolicy } from '@/core/policy/scope-policy';
 import {
   createPolicySnapshot,
@@ -33,14 +34,15 @@ import {
   DEFAULT_GUI_POLICY,
   normalizeGuiPolicy,
   normalizeSafety,
-  previewUserPolicyForGui,
   projectPolicyProjection,
+  resolveSecretDisabledRules,
+} from '@/core/policy/store';
+import {
+  previewUserPolicyForGui,
   readUserPolicyForGui,
   repairUserPolicyForGui,
-  resolveSecretDisabledRules,
   writeUserPolicyFromGui,
-} from '@/core/policy/store';
-import { getUserPolicyDiagnostics } from '@/core/policy/validate';
+} from '@/core/policy/store-gui';
 import { DESTRUCTIVE_COMMAND_RULE_METADATA } from '@/core/rules/destructive';
 import { SECRET_PROTECTION_RULE_METADATA } from '@/core/rules/secret';
 import { type ExplainResult, explainCommand } from '@/gate/explain';

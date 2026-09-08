@@ -4,14 +4,23 @@ import { join, relative, sep } from 'node:path';
 
 /**
  * `src/` reaches for no third-party package, except the files listed below — the schema
- * validator, which every other module reaches for diagnostics through `validate.ts` so the
- * loader never pulls it onto the hook's path, and the host layer, allowed here per file.
+ * validator, which only the diagnostic surfaces reach so the loader never pulls it onto the
+ * hook's path, and the host layer, allowed here per file.
  */
 
 const SOURCE_ROOT = join(import.meta.dir, '..', 'src');
 const SCHEMA_MODULE = join(SOURCE_ROOT, 'core', 'policy', 'schema.ts');
-/** The legacy `.safety-net.json` validator: a diagnostic-only module the hook path never loads,
- *  and the one place besides the schema itself that the schema library is reached from. */
+/** The diagnostic surfaces: the modules that report a configuration to a human rather than
+ *  enforce one, and the only ones besides the schema itself that reach the schema module. */
+const SCHEMA_IMPORTERS = new Set(
+  [
+    'core/policy/config-file.ts',
+    'core/policy/diff.ts',
+    'core/policy/store-gui.ts',
+    'cli/policy/index.ts',
+    'gui/index.ts',
+  ].map((path) => join(SOURCE_ROOT, ...path.split('/'))),
+);
 const LEGACY_CONFIG_VALIDATOR = join(SOURCE_ROOT, 'core', 'policy', 'config-file.ts');
 
 const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
@@ -313,9 +322,9 @@ describe('src/ architecture', () => {
     expect(violations).toEqual([]);
   });
 
-  test('the schema validator is imported by no module but the legacy config validator', () => {
+  test('the schema validator is imported by no module but the diagnostic surfaces', () => {
     const violations = files
-      .filter((file) => file !== SCHEMA_MODULE && file !== LEGACY_CONFIG_VALIDATOR)
+      .filter((file) => file !== SCHEMA_MODULE && !SCHEMA_IMPORTERS.has(file))
       .flatMap((file) =>
         importSpecifiers(readFileSync(file, 'utf-8'))
           .filter((specifier) => resolvesToSchemaModule(specifier, file))
@@ -348,7 +357,7 @@ describe('src/ architecture', () => {
     expect(isAllowed('zod', LEGACY_CONFIG_VALIDATOR)).toBeFalse();
     expect(resolvesToSchemaModule('./schema', snapshot)).toBeTrue();
     expect(resolvesToSchemaModule('@/core/policy/schema', snapshot)).toBeTrue();
-    expect(resolvesToSchemaModule('./validate', snapshot)).toBeFalse();
+    expect(resolvesToSchemaModule('./store', snapshot)).toBeFalse();
 
     const pipeline = join(SOURCE_ROOT, 'gate', 'pipeline.ts');
     expect(layerOf('../audit/writer', pipeline)).toBe('audit');

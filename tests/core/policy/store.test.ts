@@ -9,8 +9,9 @@ import {
 } from '@/core/policy/audit-retention-days';
 import { mergeProjectPolicy } from '@/core/policy/merge';
 import { readRetentionDays } from '@/core/policy/retention';
+import { getUserPolicyDiagnostics } from '@/core/policy/schema';
 import * as ported from '@/core/policy/store';
-import { getUserPolicyDiagnostics } from '@/core/policy/validate';
+import { writeUserPolicyFromGui } from '@/core/policy/store-gui';
 import { DESTRUCTIVE_COMMAND_RULE_ID_SET } from '@/core/rules/destructive';
 import { SECRET_DEFAULT_OFF_RULE_ID_SET, SECRET_PROTECTION_RULE_ID_SET } from '@/core/rules/secret';
 import { snapshotTree } from '../../helpers/fixture-tree';
@@ -625,7 +626,7 @@ describe('writing the user policy from the GUI', () => {
 
   const write = (policy: unknown) => {
     const root = createTempRoot('gui-policy-write-');
-    const result = ported.writeUserPolicyFromGui(environment, policy, {
+    const result = writeUserPolicyFromGui(environment, policy, {
       userConfigDir: join(root, '.cc-safety-net', 'rules'),
     });
     return { result, tree: snapshotTree(root), root };

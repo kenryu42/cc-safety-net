@@ -1,6 +1,6 @@
 import type { Environment } from '@/core/environment';
 import { getUserPolicyPath, type UserScopeOptions } from './paths';
-import { normalizeGuiPolicy, readPolicyFile } from './store';
+import { readPolicyFile } from './store';
 
 /**
  * Read the configured retention window straight from the policy file rather
@@ -17,8 +17,6 @@ export function readRetentionDays(
   environment: Environment,
   options: UserScopeOptions = {},
 ): number {
-  return normalizeGuiPolicy(
-    readPolicyFile(getUserPolicyPath(environment, options), environment.home).parsed,
-    environment.home,
-  ).audit.retention_days;
+  return readPolicyFile(getUserPolicyPath(environment, options), environment.home).policy.audit
+    .retention_days;
 }

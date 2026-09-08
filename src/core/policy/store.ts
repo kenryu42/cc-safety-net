@@ -1,7 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import type { Environment } from '@/core/environment';
-import { bindDelegatedPolicyFilesystemTarget, writePolicyFileAtomic } from '@/core/io/safe-read';
 import { DESTRUCTIVE_COMMAND_RULE_ID_SET } from '@/core/rules/destructive';
 import { SECRET_DEFAULT_OFF_RULE_ID_SET, SECRET_PROTECTION_RULE_ID_SET } from '@/core/rules/secret';
 import {
@@ -9,16 +7,16 @@ import {
   getSecretAllowPathError,
   getSecretDenyPathError,
 } from './allow-paths';
-import { clampAuditRetentionDays, DEFAULT_AUDIT_RETENTION_DAYS } from './audit-retention-days';
+import {
+  clampAuditRetentionDays,
+  DEFAULT_AUDIT_RETENTION_DAYS,
+  MAX_AUDIT_RETENTION_DAYS,
+  MIN_AUDIT_RETENTION_DAYS,
+} from './audit-retention-days';
 import { resolveEffectiveDestructiveCommandRules } from './effective-rules';
 import { getCCSafetyNetEnvModes } from './env';
 import { mergeProjectPolicy, type ProjectPolicyProjection } from './merge';
-import {
-  getProjectPolicyPath,
-  getUserPolicyPath,
-  type RulesPolicyOptions,
-  type UserScopeOptions,
-} from './paths';
+import { getProjectPolicyPath, getUserPolicyPath, type RulesPolicyOptions } from './paths';
 import { SAFETY_OVERRIDE_KEYS } from './safety-level';
 import type {
   DestructiveCommandRuleOverride,
@@ -30,7 +28,6 @@ import type {
   PolicyScopes,
   SecretProtectionConfig,
 } from './types';
-import { getUserPolicyDiagnostics } from './validate';
 
 const SAFETY_LEVELS = new Set(['standard', 'strict', 'paranoid']);
 
@@ -156,28 +153,73 @@ export function projectPolicyProjection(
       ? { level: safety.level as PolicySafetyLevel }
       : {}),
     ...(isRecord(safety.overrides)
-      ? withPresentFields({ overrides: pickBooleans(safety.overrides, SAFETY_OVERRIDE_KEYS) })
+      ? withPresentFields({
+          overrides: pickBooleans(
+            safety.overrides,
+            SAFETY_OVERRIDE_KEYS,
+            'safety.overrides',
+            IGNORE_DROPS,
+          ),
+        })
       : {}),
   };
   const destructiveSection = {
     ...(typeof destructive.enabled === 'boolean' ? { enabled: destructive.enabled } : {}),
     ...(destructive.overrides !== undefined
-      ? { overrides: repairRuleOverrides(destructive.overrides, DESTRUCTIVE_COMMAND_RULE_ID_SET) }
+      ? {
+          overrides: repairRuleOverrides(
+            destructive.overrides,
+            DESTRUCTIVE_COMMAND_RULE_ID_SET,
+            'destructive_command_protection.overrides',
+            IGNORE_DROPS,
+          ),
+        }
       : {}),
     ...(destructive.allow_paths !== undefined
-      ? { allow_paths: repairAllowPaths(destructive.allow_paths, home) }
+      ? {
+          allow_paths: repairPaths(
+            destructive.allow_paths,
+            getDestructiveAllowPathError,
+            home,
+            'destructive_command_protection.allow_paths',
+            IGNORE_DROPS,
+          ),
+        }
       : {}),
   };
   const secretSection = {
     ...(typeof secret.enabled === 'boolean' ? { enabled: secret.enabled } : {}),
     ...(secret.overrides !== undefined
-      ? { overrides: repairRuleOverrides(secret.overrides, SECRET_PROTECTION_RULE_ID_SET) }
+      ? {
+          overrides: repairRuleOverrides(
+            secret.overrides,
+            SECRET_PROTECTION_RULE_ID_SET,
+            'secret_protection.overrides',
+            IGNORE_DROPS,
+          ),
+        }
       : {}),
     ...(secret.deny_paths !== undefined
-      ? { deny_paths: repairDenyPaths(secret.deny_paths, home) }
+      ? {
+          deny_paths: repairPaths(
+            secret.deny_paths,
+            getSecretDenyPathError,
+            home,
+            'secret_protection.deny_paths',
+            IGNORE_DROPS,
+          ),
+        }
       : {}),
     ...(secret.allow_paths !== undefined
-      ? { allow_paths: repairSecretAllowPaths(secret.allow_paths, home) }
+      ? {
+          allow_paths: repairPaths(
+            secret.allow_paths,
+            getSecretAllowPathError,
+            home,
+            'secret_protection.allow_paths',
+            IGNORE_DROPS,
+          ),
+        }
       : {}),
   };
   return {
@@ -194,9 +236,19 @@ export function projectPolicyProjection(
   };
 }
 
-function pickBooleans<K extends string>(source: Record<string, unknown>, keys: readonly K[]) {
+function pickBooleans<K extends string>(
+  source: Record<string, unknown>,
+  keys: readonly K[],
+  path: string,
+  drop: ReportDrop,
+) {
   return Object.fromEntries(
-    keys.flatMap((key) => (typeof source[key] === 'boolean' ? [[key, source[key]]] : [])),
+    keys.flatMap((key) => {
+      const value = source[key];
+      if (typeof value === 'boolean') return [[key, value]];
+      if (value !== undefined) drop(`${path}.${key}`, NOT_A_BOOLEAN);
+      return [];
+    }),
   ) as Partial<Record<K, boolean>>;
 }
 
@@ -207,6 +259,46 @@ function withPresentFields<T extends Record<string, object>>(sections: T): Parti
   ) as Partial<T>;
 }
 
+/** One field or section the salvage dropped, and the plain reason it was unusable. */
+type PolicyDrop = { readonly path: string; readonly reason: string };
+
+type ReportDrop = (path: string, reason: string) => void;
+
+/** The projections that answer with a policy alone report nothing. */
+const IGNORE_DROPS: ReportDrop = () => undefined;
+
+const NOT_A_BOOLEAN = 'not a boolean';
+const NOT_AN_OBJECT = 'not an object';
+const AUDIT_RETENTION_DROP = `not an integer between ${MIN_AUDIT_RETENTION_DAYS} and ${MAX_AUDIT_RETENTION_DAYS}`;
+const USER_POLICY_FIELDS = [
+  'version',
+  'safety',
+  'workflow',
+  'destructive_command_protection',
+  'secret_protection',
+  'audit',
+];
+
+/**
+ * The runtime's only acceptance of a policy document: every recognized valid field survives,
+ * everything else falls back to its protective default and is named in `drops`, which is what
+ * the degraded snapshot reports. The schema module answers the same question for the
+ * diagnostic surfaces, in its own wording; `tests/core/policy/store-parity.test.ts` holds the
+ * two to the same outcome, section for section.
+ *
+ * @internal
+ */
+export function salvageUserPolicy(
+  value: unknown,
+  home: string,
+): { policy: GuiPolicy; drops: PolicyDrop[] } {
+  const drops: PolicyDrop[] = [];
+  const policy = salvagePolicy(value, home, (path, reason) => {
+    drops.push({ path, reason });
+  });
+  return { policy, drops };
+}
+
 /**
  * The single normalizer from untrusted JSON to the canonical policy-file shape.
  * Schema-valid input passes through unchanged (every field satisfies the per-field
@@ -214,67 +306,197 @@ function withPresentFields<T extends Record<string, object>>(sections: T): Parti
  * protective default for the rest.
  */
 export function normalizeGuiPolicy(value: unknown, home: string): GuiPolicy {
-  if (!isRecord(value)) return createDefaultGuiPolicy();
+  return salvagePolicy(value, home, IGNORE_DROPS);
+}
 
-  const safety = isRecord(value.safety) ? value.safety : {};
-  const safetyOverrides = isRecord(safety.overrides) ? safety.overrides : {};
-  const workflow = isRecord(value.workflow) ? value.workflow : {};
-  const destructiveCommand = isRecord(value.destructive_command_protection)
-    ? value.destructive_command_protection
-    : {};
-  const secret = isRecord(value.secret_protection) ? value.secret_protection : {};
+function salvagePolicy(value: unknown, home: string, drop: ReportDrop): GuiPolicy {
+  if (!isRecord(value)) {
+    drop('', 'not a JSON object');
+    return createDefaultGuiPolicy();
+  }
+
+  if (value.version !== 1) drop('version', 'not 1');
+  const safety = readSection(value.safety, 'safety', ['level', 'overrides'], drop);
+  const safetyOverrides = readSection(
+    safety.overrides,
+    'safety.overrides',
+    SAFETY_OVERRIDE_KEYS,
+    drop,
+  );
+  const workflow = readSection(value.workflow, 'workflow', ['worktree_mode'], drop);
+  const destructiveCommand = readSection(
+    value.destructive_command_protection,
+    'destructive_command_protection',
+    ['enabled', 'overrides', 'allow_paths'],
+    drop,
+  );
+  const secret = readSection(
+    value.secret_protection,
+    'secret_protection',
+    ['enabled', 'overrides', 'deny_paths', 'allow_paths'],
+    drop,
+  );
+  const audit = readSection(value.audit, 'audit', ['retention_days'], drop);
+  // A root field the loader does not know is reported after the sections it sits beside,
+  // so the warning reads down the document.
+  reportUnknownFields(value, USER_POLICY_FIELDS, '', drop);
   return {
     version: 1,
     safety: {
-      level: SAFETY_LEVELS.has(safety.level as string)
-        ? (safety.level as PolicySafetyLevel)
-        : 'standard',
-      overrides: pickBooleans(safetyOverrides, SAFETY_OVERRIDE_KEYS),
+      level: readSafetyLevel(safety.level, drop),
+      overrides: pickBooleans(safetyOverrides, SAFETY_OVERRIDE_KEYS, 'safety.overrides', drop),
     },
     workflow: {
-      worktree_mode: typeof workflow.worktree_mode === 'boolean' ? workflow.worktree_mode : false,
+      worktree_mode: readBoolean(workflow.worktree_mode, 'workflow.worktree_mode', false, drop),
     },
     destructive_command_protection: {
-      enabled: typeof destructiveCommand.enabled === 'boolean' ? destructiveCommand.enabled : true,
-      overrides: repairRuleOverrides(destructiveCommand.overrides, DESTRUCTIVE_COMMAND_RULE_ID_SET),
-      allow_paths: repairAllowPaths(destructiveCommand.allow_paths, home),
-    },
-    secret_protection: {
-      enabled: typeof secret.enabled === 'boolean' ? secret.enabled : true,
-      overrides: repairRuleOverrides(secret.overrides, SECRET_PROTECTION_RULE_ID_SET),
-      deny_paths: repairDenyPaths(secret.deny_paths, home),
-      allow_paths: repairSecretAllowPaths(secret.allow_paths, home),
-    },
-    audit: {
-      retention_days: clampAuditRetentionDays(
-        isRecord(value.audit) ? value.audit.retention_days : undefined,
+      enabled: readBoolean(
+        destructiveCommand.enabled,
+        'destructive_command_protection.enabled',
+        true,
+        drop,
+      ),
+      overrides: repairRuleOverrides(
+        destructiveCommand.overrides,
+        DESTRUCTIVE_COMMAND_RULE_ID_SET,
+        'destructive_command_protection.overrides',
+        drop,
+      ),
+      allow_paths: repairPaths(
+        destructiveCommand.allow_paths,
+        getDestructiveAllowPathError,
+        home,
+        'destructive_command_protection.allow_paths',
+        drop,
       ),
     },
+    secret_protection: {
+      enabled: readBoolean(secret.enabled, 'secret_protection.enabled', true, drop),
+      overrides: repairRuleOverrides(
+        secret.overrides,
+        SECRET_PROTECTION_RULE_ID_SET,
+        'secret_protection.overrides',
+        drop,
+      ),
+      deny_paths: repairPaths(
+        secret.deny_paths,
+        getSecretDenyPathError,
+        home,
+        'secret_protection.deny_paths',
+        drop,
+      ),
+      allow_paths: repairPaths(
+        secret.allow_paths,
+        getSecretAllowPathError,
+        home,
+        'secret_protection.allow_paths',
+        drop,
+      ),
+    },
+    audit: { retention_days: readAuditRetentionDays(audit.retention_days, drop) },
   };
 }
 
-function repairRuleOverrides(value: unknown, knownRuleIds: ReadonlySet<string>) {
-  if (!isRecord(value)) return {};
+/**
+ * One section of the document: absent stays absent, a value that is not an object drops
+ * whole without reading anything under it, and a field the section does not declare drops
+ * on its own.
+ */
+function readSection(
+  value: unknown,
+  path: string,
+  known: readonly string[],
+  drop: ReportDrop,
+): Record<string, unknown> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    drop(path, NOT_AN_OBJECT);
+    return {};
+  }
+  reportUnknownFields(value, known, path, drop);
+  return value;
+}
+
+function reportUnknownFields(
+  record: Record<string, unknown>,
+  known: readonly string[],
+  path: string,
+  drop: ReportDrop,
+): void {
+  for (const key of Object.keys(record).filter((candidate) => !known.includes(candidate))) {
+    drop(path === '' ? key : `${path}.${key}`, 'unknown field');
+  }
+}
+
+function readSafetyLevel(value: unknown, drop: ReportDrop): PolicySafetyLevel {
+  if (value === undefined) return 'standard';
+  if (SAFETY_LEVELS.has(value as string)) return value as PolicySafetyLevel;
+  drop('safety.level', 'not one of standard, strict, paranoid');
+  return 'standard';
+}
+
+function readBoolean(value: unknown, path: string, fallback: boolean, drop: ReportDrop): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value !== undefined) drop(path, NOT_A_BOOLEAN);
+  return fallback;
+}
+
+function readAuditRetentionDays(value: unknown, drop: ReportDrop): number {
+  const usable =
+    value === undefined ||
+    (typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value >= MIN_AUDIT_RETENTION_DAYS &&
+      value <= MAX_AUDIT_RETENTION_DAYS);
+  // The one field a drop does not replace with its default: an out-of-range window clamps
+  // into range, which is what the sweep has always enforced.
+  if (!usable) drop('audit.retention_days', AUDIT_RETENTION_DROP);
+  return clampAuditRetentionDays(value);
+}
+
+function repairRuleOverrides(
+  value: unknown,
+  knownRuleIds: ReadonlySet<string>,
+  path: string,
+  drop: ReportDrop,
+) {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    drop(path, NOT_AN_OBJECT);
+    return {};
+  }
   return Object.fromEntries(
-    Object.entries(value).flatMap(([id, override]) =>
-      knownRuleIds.has(id) && (override === 'on' || override === 'off') ? [[id, override]] : [],
-    ),
+    Object.entries(value).flatMap(([id, override]) => {
+      if (!knownRuleIds.has(id)) {
+        drop(`${path}.${id}`, 'unknown rule id');
+        return [];
+      }
+      if (override === 'on' || override === 'off') return [[id, override]];
+      drop(`${path}.${id}`, 'not "on" or "off"');
+      return [];
+    }),
   ) as Record<string, 'on' | 'off'>;
 }
 
-function repairDenyPaths(value: unknown, home: string): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((path): path is string => getSecretDenyPathError(path, home) === null);
-}
-
-function repairAllowPaths(value: unknown, home: string): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((path): path is string => getDestructiveAllowPathError(path, home) === null);
-}
-
-function repairSecretAllowPaths(value: unknown, home: string): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((path): path is string => getSecretAllowPathError(path, home) === null);
+/** Each entry is judged by the same path validator the diagnostics report with. */
+function repairPaths(
+  value: unknown,
+  getPathError: (value: unknown, home: string) => string | null,
+  home: string,
+  path: string,
+  drop: ReportDrop,
+): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    drop(path, 'not an array');
+    return [];
+  }
+  return value.flatMap((entry, index) => {
+    const error = getPathError(entry, home);
+    if (error === null) return [entry as string];
+    drop(`${path}[${index}]`, error);
+    return [];
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -283,16 +505,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 // Callers mutate the result, so every call needs its own containers rather than
 // references into the shared DEFAULT_GUI_POLICY.
-function createDefaultGuiPolicy(): GuiPolicy {
+export function createDefaultGuiPolicy(): GuiPolicy {
   return structuredClone(DEFAULT_GUI_POLICY);
-}
-
-export interface GuiPolicyReadResult {
-  path: string;
-  exists: boolean;
-  raw: string;
-  policy: GuiPolicy;
-  errors: string[];
 }
 
 export interface PolicyPreview {
@@ -304,101 +518,6 @@ export interface PolicyPreview {
     enabled: number;
     disabled: number;
     effectiveCustomizations: number;
-  };
-}
-
-export interface GuiPolicyWriteResult {
-  path: string;
-  policy: GuiPolicy;
-  errors: string[];
-}
-
-export function readUserPolicyForGui(
-  environment: Environment,
-  options: UserScopeOptions = {},
-): GuiPolicyReadResult {
-  const path = getUserPolicyPath(environment, options);
-  if (!existsSync(path)) {
-    return {
-      path,
-      exists: false,
-      raw: '',
-      policy: createDefaultGuiPolicy(),
-      errors: [],
-    };
-  }
-
-  const raw = readFileSync(path, 'utf-8');
-  if (!raw.trim()) {
-    return {
-      path,
-      exists: true,
-      raw,
-      policy: createDefaultGuiPolicy(),
-      errors: ['Config file is empty'],
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    const errors = getUserPolicyDiagnostics(parsed, environment.home);
-    // The GUI displays the same salvaged projection the engine enforces and repair would
-    // write, so a partially invalid file cannot show one policy while another is in force.
-    return {
-      path,
-      exists: true,
-      raw,
-      policy: normalizeGuiPolicy(parsed, environment.home),
-      errors,
-    };
-  } catch (error) {
-    return {
-      path,
-      exists: true,
-      raw,
-      policy: createDefaultGuiPolicy(),
-      errors: [`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`],
-    };
-  }
-}
-
-// The write goes straight through the atomic writer rather than `config-file.ts`'s
-// `writeJsonAtomic`: that module loads the schema library, and the hook path imports this one.
-export function writeUserPolicyFromGui(
-  environment: Environment,
-  policy: unknown,
-  options: UserScopeOptions = {},
-): GuiPolicyWriteResult {
-  const path = getUserPolicyPath(environment, options);
-  const errors = getUserPolicyDiagnostics(policy, environment.home);
-  const normalizedPolicy =
-    errors.length > 0 ? createDefaultGuiPolicy() : normalizeGuiPolicy(policy, environment.home);
-  if (errors.length > 0) {
-    return { path, policy: normalizedPolicy, errors };
-  }
-
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writePolicyFileAtomic(
-    bindDelegatedPolicyFilesystemTarget(path),
-    `${JSON.stringify(normalizedPolicy, null, 2)}\n`,
-    0o600,
-  );
-  chmodSync(path, 0o600);
-  return { path, policy: normalizedPolicy, errors: [] };
-}
-
-export function previewUserPolicyForGui(
-  environment: Environment,
-  policy: unknown,
-): {
-  preview?: PolicyPreview;
-  errors: string[];
-} {
-  const errors = getUserPolicyDiagnostics(policy, environment.home);
-  if (errors.length > 0) return { errors };
-  return {
-    preview: createPolicyPreview(normalizeGuiPolicy(policy, environment.home), environment.env),
-    errors: [],
   };
 }
 
@@ -431,30 +550,10 @@ export function createPolicyPreview(
   };
 }
 
-export function repairUserPolicyForGui(
-  environment: Environment,
-  options: UserScopeOptions = {},
-): GuiPolicyWriteResult {
-  const path = getUserPolicyPath(environment, options);
-  if (!existsSync(path)) return writeUserPolicyFromGui(environment, DEFAULT_GUI_POLICY, options);
-
-  const raw = readFileSync(path, 'utf-8');
-  if (!raw.trim()) return writeUserPolicyFromGui(environment, DEFAULT_GUI_POLICY, options);
-
-  try {
-    return writeUserPolicyFromGui(
-      environment,
-      normalizeGuiPolicy(JSON.parse(raw) as unknown, environment.home),
-      options,
-    );
-  } catch {
-    return writeUserPolicyFromGui(environment, DEFAULT_GUI_POLICY, options);
-  }
-}
-
 /**
- * Reads and validates one policy file, in either scope. `parsed` is the file's JSON
- * whenever there was any to read; the caller decides what shape to project it onto.
+ * Reads and salvages one policy file, in either scope. `parsed` is the file's JSON whenever
+ * there was any to read and `policy` is what that file leaves in force, so the drops the
+ * salvage reported are the file's diagnostics.
  */
 export function readPolicyFile(
   path: string,
@@ -462,23 +561,32 @@ export function readPolicyFile(
 ): {
   exists: boolean;
   parsed?: unknown;
+  policy: GuiPolicy;
   errors: string[];
   fallback?: PolicyFallback;
 } {
-  if (!existsSync(path)) return { exists: false, errors: [] };
+  if (!existsSync(path)) return { exists: false, policy: createDefaultGuiPolicy(), errors: [] };
 
   try {
     const content = readFileSync(path, 'utf-8');
     if (!content.trim()) {
-      return { exists: true, errors: [`${path}: Config file is empty`], fallback: 'defaults' };
+      return {
+        exists: true,
+        policy: createDefaultGuiPolicy(),
+        errors: [`${path}: Config file is empty`],
+        fallback: 'defaults',
+      };
     }
     const parsed = JSON.parse(content) as unknown;
-    const errors = getUserPolicyDiagnostics(parsed, home);
-    if (errors.length === 0) return { exists: true, parsed, errors: [] };
+    const salvaged = salvageUserPolicy(parsed, home);
+    if (salvaged.drops.length === 0) {
+      return { exists: true, parsed, policy: salvaged.policy, errors: [] };
+    }
     return {
       exists: true,
       parsed,
-      errors: errors.map((error) => `${path}: ${error}`),
+      policy: salvaged.policy,
+      errors: salvaged.drops.map((drop) => `${path}: ${renderPolicyDrop(drop)}`),
       fallback: isRecord(parsed) ? 'salvaged' : 'defaults',
     };
   } catch (error) {
@@ -486,10 +594,16 @@ export function readPolicyFile(
     const message = error instanceof Error ? error.message : String(error);
     return {
       exists: true,
+      policy: createDefaultGuiPolicy(),
       errors: [`${path}: ${error instanceof SyntaxError ? 'Invalid JSON' : message}`],
       fallback: 'defaults',
     };
   }
+}
+
+/** A whole-document drop is the document's own reason; a field drop names its path first. */
+function renderPolicyDrop(drop: PolicyDrop): string {
+  return drop.path === '' ? drop.reason : `${drop.path}: ${drop.reason}`;
 }
 
 function readPolicyConfig(
@@ -527,13 +641,12 @@ function readPolicyConfig(
       ...(file.fallback ? { fallback: file.fallback } : {}),
     };
   }
-  // Field-level normalization keeps every recognized valid section active and
-  // substitutes protective defaults for the rest, so one bad field cannot
-  // drop protections the rest of the file still configures.
-  const gui = normalizeGuiPolicy(file.parsed, home);
+  // Field-level salvage keeps every recognized valid section active and substitutes
+  // protective defaults for the rest, so one bad field cannot drop protections the rest
+  // of the file still configures.
   return {
-    policy: normalizePolicyConfig(gui),
-    gui,
+    policy: normalizePolicyConfig(file.policy),
+    gui: file.policy,
     errors: file.errors,
     ...(file.fallback ? { fallback: file.fallback } : {}),
     levelPresent: hasOwnSafetyLevel(file.parsed),

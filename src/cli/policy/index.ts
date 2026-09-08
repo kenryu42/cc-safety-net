@@ -26,13 +26,10 @@ import {
 } from '@/core/policy/diff';
 import { mergeProjectPolicy } from '@/core/policy/merge';
 import { getProjectPolicyPath, getUserPolicyPath } from '@/core/policy/paths';
-import {
-  normalizeGuiPolicy,
-  projectPolicyProjection,
-  writeUserPolicyFromGui,
-} from '@/core/policy/store';
+import { getUserPolicyDiagnostics } from '@/core/policy/schema';
+import { normalizeGuiPolicy, projectPolicyProjection } from '@/core/policy/store';
+import { writeUserPolicyFromGui } from '@/core/policy/store-gui';
 import type { GuiPolicy } from '@/core/policy/types';
-import { getUserPolicyDiagnostics } from '@/core/policy/validate';
 
 type PolicyCommandOptions = {
   cwd?: string;

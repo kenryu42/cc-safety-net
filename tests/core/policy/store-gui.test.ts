@@ -3,8 +3,9 @@ import { lstatSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTestEnvironment } from '@/core/environment';
 import { deriveEffectiveSafetyLevel } from '@/core/policy/env';
+import { getUserPolicyDiagnostics } from '@/core/policy/schema';
 import * as ported from '@/core/policy/store';
-import { getUserPolicyDiagnostics } from '@/core/policy/validate';
+import * as gui from '@/core/policy/store-gui';
 import { DESTRUCTIVE_COMMAND_RULE_METADATA } from '@/core/rules/destructive';
 import { snapshotTree } from '../../helpers/fixture-tree';
 import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
@@ -90,7 +91,7 @@ const ENV_MAPS: readonly {
 
 describe('previewing a proposed policy document', () => {
   test('a valid document is previewed at the level it selects', () => {
-    const result = ported.previewUserPolicyForGui(environmentWith({}), {
+    const result = gui.previewUserPolicyForGui(environmentWith({}), {
       version: 1,
       safety: { level: 'strict' },
     });
@@ -101,7 +102,7 @@ describe('previewing a proposed policy document', () => {
 
   test('a document the schema rejects is not previewed at all, only reported', () => {
     expect(
-      ported.previewUserPolicyForGui(environmentWith({}), {
+      gui.previewUserPolicyForGui(environmentWith({}), {
         version: 1,
         safety: { level: 'bogus' },
         secret_protection: { enabled: 'yes' },
@@ -115,7 +116,7 @@ describe('previewing a proposed policy document', () => {
   });
 
   test('the built-in default document previews cleanly', () => {
-    const result = ported.previewUserPolicyForGui(environmentWith({}), ported.DEFAULT_GUI_POLICY);
+    const result = gui.previewUserPolicyForGui(environmentWith({}), ported.DEFAULT_GUI_POLICY);
     expect(result.errors).toEqual([]);
     expect(result.preview?.selectedPreset).toBe('standard');
   });
@@ -124,14 +125,14 @@ describe('previewing a proposed policy document', () => {
 describe('properties every proposed document must satisfy', () => {
   test('a document is either previewed or reported, never both and never neither', () => {
     for (const document of DOCUMENTS) {
-      const result = ported.previewUserPolicyForGui(environmentWith({}), document);
+      const result = gui.previewUserPolicyForGui(environmentWith({}), document);
       expect(result.preview !== undefined).toBe(result.errors.length === 0);
     }
   });
 
   test('a previewed document is one the salvage would have left untouched', () => {
     for (const document of DOCUMENTS) {
-      const result = ported.previewUserPolicyForGui(environmentWith({}), document);
+      const result = gui.previewUserPolicyForGui(environmentWith({}), document);
       if (result.preview === undefined) continue;
       expect(result.preview.selectedPreset).toBe(
         ported.normalizeGuiPolicy(document, HOME).safety.level,
@@ -307,7 +308,7 @@ describe('reading the user policy file for the GUI', () => {
 
   test.each(FILE_STATES.map((row) => [row.behavior, row] as const))('%s', (_behavior, row) => {
     const home = seedHome(row.file);
-    const read = ported.readUserPolicyForGui(home.environment);
+    const read = gui.readUserPolicyForGui(home.environment);
 
     expect(read.path).toBe(join(home.root, '.cc-safety-net', 'policy.json'));
     expect(read.exists).toBe(row.exists);
@@ -330,7 +331,7 @@ describe('repairing the user policy file', () => {
     FILE_STATES.map((row) => [row.behavior, row] as const),
   )('repair rewrites the canonical document — %s', (_behavior, row) => {
     const home = seedHome(row.file);
-    const repaired = ported.repairUserPolicyForGui(home.environment);
+    const repaired = gui.repairUserPolicyForGui(home.environment);
 
     expect(repaired.errors).toEqual([]);
     expect(repaired.policy.audit.retention_days).toBe(row.repairedRetentionDays);
@@ -354,7 +355,7 @@ describe('repairing the user policy file', () => {
 
   test('a file nothing could be salvaged from is replaced with the defaults', () => {
     const home = seedHome('{ not json');
-    expect(ported.repairUserPolicyForGui(home.environment).policy).toStrictEqual(
+    expect(gui.repairUserPolicyForGui(home.environment).policy).toStrictEqual(
       ported.DEFAULT_GUI_POLICY,
     );
   });

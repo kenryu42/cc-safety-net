@@ -10,9 +10,9 @@ import {
 } from './allow-paths';
 import { MAX_AUDIT_RETENTION_DAYS, MIN_AUDIT_RETENTION_DAYS } from './audit-retention-days';
 import { RULE_SOURCE_LIMIT, RULE_SOURCE_LIMIT_ERROR } from './resource-limits';
+import { collectValidSources, renderIssuePath, sortIssues } from './rules-config';
 import { getRulebookSourceSyntaxError, NAME_PATTERN } from './source-syntax';
 import { isReservedTransparentWrapper } from './transparent-wrappers';
-import { collectValidSources, renderIssuePath, sortIssues } from './validate';
 
 let schemas: ReturnType<typeof createSchemas> | undefined;
 const OVER_LIMIT_RULE_SOURCES = Array(RULE_SOURCE_LIMIT + 1).fill('over-limit');
@@ -195,7 +195,7 @@ function createSchemas() {
     });
   };
   // The custom rules a legacy config carries inline. Rulebooks accept the same rules
-  // with their own wording, which `validate.ts` reports without the schema library.
+  // with their own wording, which `rulebook.ts` reports without the schema library.
   const commandPatternError = 'must match pattern (letters, numbers, hyphens, underscores)';
   const customRuleObjectSchema = z.looseObject(
     {
@@ -341,11 +341,6 @@ export function getLegacyConfigSchema() {
 }
 
 /** @internal */
-export function getRulesConfigDiagnostics(config: unknown): string[] {
-  return getRulesConfigValidation(config).errors;
-}
-
-/** @internal */
 export function getRulesConfigValidation(config: unknown): {
   errors: string[];
   sources: Set<string>;
@@ -360,7 +355,6 @@ export function getRulesConfigValidation(config: unknown): {
   };
 }
 
-/** @internal */
 export function getUserPolicyDiagnostics(config: unknown, home: string): string[] {
   const parsed = getUserPolicySchema(home).safeParse(config);
   if (parsed.success) return [];

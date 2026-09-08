@@ -173,6 +173,8 @@ const ROWS: readonly Row[] = [
     tree: { [USER_POLICY]: json({ version: 1, tier: 'gold', safety: { level: 'strict' } }) },
     check: (snapshot) => {
       expect(reasonOf(snapshot)).toContain('the salvaged policy with protective defaults');
+      // The warning names the dropped field in the loader's own wording.
+      expect(reasonOf(snapshot)).toContain('policy.json: tier: unknown field');
       expect(snapshot.policy.safety.level).toBe('strict');
     },
   },
@@ -196,6 +198,12 @@ const ROWS: readonly Row[] = [
     },
     check: (snapshot) => {
       expect(reasonOf(snapshot)).toContain('the salvaged policy with protective defaults');
+      expect(reasonOf(snapshot)).toContain(
+        'policy.json: safety.level: not one of standard, strict, paranoid',
+      );
+      expect(reasonOf(snapshot)).toContain(
+        'policy.json: audit.retention_days: not an integer between 1 and 365',
+      );
       expect(snapshot.policy.safety.level).toBe('standard');
       expect(snapshot.policy.destructiveCommandProtectionEnabled).toBeTrue();
       expect(snapshot.policy.destructiveCommandAllowPaths).toEqual([]);
@@ -227,6 +235,7 @@ const ROWS: readonly Row[] = [
     name: 'a user policy holding a JSON array',
     tree: { [USER_POLICY]: '[]\n' },
     check: (snapshot) => {
+      expect(reasonOf(snapshot)).toContain('policy.json: not a JSON object');
       expect(reasonOf(snapshot)).toContain('Enforcing built-in protective defaults');
       expect(snapshot.policy.safety).toEqual({ level: 'standard' });
     },

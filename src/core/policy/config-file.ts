@@ -16,8 +16,9 @@ import {
   writePolicyFileAtomic,
 } from '@/core/io/safe-read';
 import { getUserRulesDir, type UserScopeOptions } from './paths';
+import { collectCustomRuleNames } from './rulebook';
+import { getRulesConfigValidation } from './rules-config';
 import { formatSchemaIssues, getLegacyConfigSchema } from './schema';
-import { collectCustomRuleNames, getRulesConfigValidation } from './validate';
 
 const LEGACY_RULES_CONFIG_FILE = 'config.json';
 

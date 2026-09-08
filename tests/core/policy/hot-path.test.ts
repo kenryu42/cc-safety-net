@@ -66,7 +66,7 @@ describe('the policy snapshot never pulls the schema library onto the hook path'
       .map((file) => relative(NEXT, file).split(sep).join('/'))
       .sort();
     expect(reached).toContain('core/policy/store.ts');
-    expect(reached).toContain('core/policy/validate.ts');
+    expect(reached).toContain('core/policy/rules-config.ts');
     expect(reached).toContain('core/policy/scope-policy.ts');
   });
 

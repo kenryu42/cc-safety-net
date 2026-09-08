@@ -1,141 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { assertValidRulebook } from '@/core/policy/rulebook';
-import * as schema from '@/core/policy/schema';
-import * as validate from '@/core/policy/validate';
+import {
+  assertValidRulebook,
+  collectCustomRuleNames,
+  validateRulebook,
+} from '@/core/policy/rulebook';
 import { describeOutcome } from '../../helpers/fixture-tree';
-import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
-import { mutate, RULEBOOK_VALUES, RULES_CONFIG_VALUES, USER_POLICY_VALUES } from './policy-values';
+import { named, RULEBOOK_VALUES, samples } from './policy-values';
 
 /**
- * The hand-written validators exist so the loader never pulls the schema library onto the hook's
- * path. They are only worth having if every diagnostic they produce is the one the schema
- * produces, so each fixture document and a seeded mutation of it goes through both. That
- * agreement is the whole property: a second implementation that answers differently is the one
- * failure this file exists to catch.
+ * Rulebook acceptance has no schema counterpart to answer to: a rulebook is loaded on the hook's
+ * path and the wording here is the wording its author reads. The rows below are what each
+ * diagnostic says, and the property at the end is that no document — fixture or seeded mutation
+ * — can make the validator throw or exceed its own diagnostic budget.
  */
-
-const HOME = '/srv/home/tester';
-const MUTATIONS_PER_VALUE = 300;
-
-function samples(values: readonly unknown[]): unknown[] {
-  const random = createSeededRandom(FUZZ_SEED);
-  return values.flatMap((value) => [
-    value,
-    ...Array.from({ length: MUTATIONS_PER_VALUE }, () => mutate(value, random)),
-  ]);
-}
-
-/** The document, trimmed, so a disagreement names the input that produced it. */
-const named = (value: unknown) => String(JSON.stringify(value)).slice(0, 300);
-
-describe('user policy diagnostics', () => {
-  test.each([
-    ['the minimal document is accepted', { version: 1 }, []],
-    ['a missing version is the first thing reported', {}, ['version must be 1']],
-    ['a document that is not an object is rejected whole', 'policy', ['Config must be an object']],
-    [
-      'an unrecognized top-level field is named',
-      { version: 1, tier: 'gold' },
-      ['unknown field "tier"'],
-    ],
-    [
-      'an unrecognized level lists the levels that exist',
-      { version: 1, safety: { level: 'lenient' } },
-      ['safety.level must be "standard", "strict", or "paranoid"'],
-    ],
-    [
-      'a capability override must be a boolean',
-      { version: 1, safety: { level: 'strict', overrides: { fail_closed: 'yes' } } },
-      ['safety.overrides.fail_closed must be a boolean'],
-    ],
-    [
-      'every rejected allow path is reported at its own index',
-      { version: 1, destructive_command_protection: { allow_paths: ['relative/dir', 42] } },
-      [
-        'destructive_command_protection.allow_paths[0] must be an absolute path or start with ~/',
-        'destructive_command_protection.allow_paths[1] must be a non-empty path string',
-      ],
-    ],
-    [
-      'the secret lists report the reason each entry was refused',
-      { version: 1, secret_protection: { deny_paths: ['~'], allow_paths: ['~/**/x'] } },
-      [
-        'secret_protection.deny_paths[0] cannot be the home directory or a path above it (this would block every command the agent runs)',
-        'secret_protection.allow_paths[0] cannot contain glob characters (* or ?); list the exact file or directory',
-      ],
-    ],
-    [
-      'a retention window out of range names the range',
-      { version: 1, audit: { retention_days: 0 } },
-      ['audit.retention_days must be an integer between 1 and 365'],
-    ],
-    [
-      'an override naming no built-in rule names the id it could not find',
-      { version: 1, destructive_command_protection: { overrides: { 'git.no-such-rule': 'on' } } },
-      ['unknown destructive command rule id "git.no-such-rule"'],
-    ],
-  ] as const)('%s', (_behavior, document, expected) => {
-    expect(validate.getUserPolicyDiagnostics(document, HOME)).toEqual([...expected]);
-  });
-});
-
-describe('rules config diagnostics', () => {
-  test.each([
-    ['a config with no sources is accepted', { version: 1 }, [], []],
-    [
-      'both source spellings are accepted and reported as usable',
-      { version: 1, rules: ['infra-rules', 'acme/guardrails#main/deploy-rules'] },
-      [],
-      ['infra-rules', 'acme/guardrails#main/deploy-rules'],
-    ],
-    [
-      'a source that is not a name reports the syntax rule it broke',
-      { version: 1, rules: ['not a source!'] },
-      [
-        'rules[0]: Local rulebook sources must be bare names matching /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/: not a source!',
-      ],
-      [],
-    ],
-    [
-      'a repeated source is reported at the repeat, and the first claim stays usable',
-      { version: 1, rules: ['infra-rules', 'infra-rules'] },
-      ['rules[1]: duplicate rulebook source "infra-rules"'],
-      ['infra-rules'],
-    ],
-    [
-      'a wrapper naming a command the analyzer inspects itself is refused',
-      { version: 1, transparent_wrappers: ['git', 'rtk'] },
-      ['transparent_wrappers[0]: reserved command "git" cannot be a wrapper'],
-      [],
-    ],
-    [
-      'an override key must name a rulebook and a rule',
-      { version: 1, overrides: { plain: 'off' } },
-      ['overrides.plain: must use <rulebook-name>/<rule-name>'],
-      [],
-    ],
-    [
-      'an override that rewrites a reason needs one',
-      { version: 1, overrides: { 'a/b': { reason: '' } } },
-      ['overrides.a/b.reason: required non-empty string'],
-      [],
-    ],
-    ['a config that is not an object is rejected whole', null, ['Config must be an object'], []],
-  ] as const)('%s', (_behavior, document, errors, sources) => {
-    const result = validate.getRulesConfigValidation(document);
-    expect(result.errors).toEqual([...errors]);
-    expect([...result.sources]).toEqual([...sources]);
-  });
-
-  test('a config over the source limit is refused as a whole rather than per source', () => {
-    expect(
-      validate.getRulesConfigValidation({
-        version: 1,
-        rules: Array.from({ length: 65 }, (_unused, index) => `bulk-${index}`),
-      }).errors,
-    ).toEqual(["Rule config exceeds CC Safety Net's safe source limit."]);
-  });
-});
 
 const VALID_RULEBOOK = {
   rulebook_version: 1,
@@ -401,13 +278,13 @@ describe('rulebook diagnostics', () => {
       [],
     ],
   ] as const)('%s', (_behavior, rulebook, errors, names) => {
-    const result = validate.validateRulebook(rulebook);
+    const result = validateRulebook(rulebook);
     expect(result.errors).toEqual([...errors]);
     expect([...result.ruleNames]).toEqual([...names]);
   });
 
   test('rule names collide case-insensitively, and the later claim is the one reported', () => {
-    const result = validate.validateRulebook({
+    const result = validateRulebook({
       ...VALID_RULEBOOK,
       rules: [
         { ...VALID_RULEBOOK.rules[0], name: 'dup' },
@@ -419,7 +296,7 @@ describe('rulebook diagnostics', () => {
   });
 
   test('past the diagnostic budget the list is cut short and says so', () => {
-    const errors = validate.validateRulebook({
+    const errors = validateRulebook({
       ...VALID_RULEBOOK,
       rules: Array.from({ length: 70 }, (_unused, index) => index),
     }).errors;
@@ -431,55 +308,16 @@ describe('rulebook diagnostics', () => {
 
   test('a rulebook over the acceptance limits is refused before any field is read', () => {
     expect(
-      validate.validateRulebook({
+      validateRulebook({
         ...VALID_RULEBOOK,
         rules: Array.from({ length: 1_025 }, () => ({})),
       }).errors,
     ).toEqual(["Rulebook exceeds CC Safety Net's safe validation limits."]);
   });
-});
-
-/**
- * Every fixture document and 300 seeded mutations of it, through both implementations. Nothing is
- * recorded: the schema module is the oracle, and the property is that the two never disagree.
- */
-describe('the hand-written validators agree with the schema on every document', () => {
-  test('user policy diagnostics are identical, message for message and in order', () => {
-    for (const value of samples(USER_POLICY_VALUES)) {
-      expect(validate.getUserPolicyDiagnostics(value, HOME), named(value)).toStrictEqual(
-        schema.getUserPolicyDiagnostics(value, HOME),
-      );
-    }
-  }, 60_000);
-
-  test('a user policy is accepted by the schema exactly when it has no diagnostics', () => {
-    for (const value of samples(USER_POLICY_VALUES)) {
-      expect(schema.getUserPolicySchema(HOME).safeParse(value).success, named(value)).toBe(
-        validate.getUserPolicyDiagnostics(value, HOME).length === 0,
-      );
-    }
-  }, 60_000);
-
-  test('rules config diagnostics and usable sources are identical', () => {
-    for (const value of samples(RULES_CONFIG_VALUES)) {
-      const read = validate.getRulesConfigValidation(value);
-      const oracle = schema.getRulesConfigValidation(value);
-      expect(read.errors, named(value)).toStrictEqual(oracle.errors);
-      expect([...read.sources], named(value)).toStrictEqual([...oracle.sources]);
-    }
-  }, 60_000);
-
-  test('a rules config is accepted by the schema exactly when it has no diagnostics', () => {
-    for (const value of samples(RULES_CONFIG_VALUES)) {
-      expect(schema.getRulesConfigSchema().safeParse(value).success, named(value)).toBe(
-        validate.getRulesConfigValidation(value).errors.length === 0,
-      );
-    }
-  }, 60_000);
 
   test('rulebook validation answers every document with usable diagnostics and never throws', () => {
     for (const value of samples(RULEBOOK_VALUES)) {
-      const result = validate.validateRulebook(value);
+      const result = validateRulebook(value);
       // Every diagnostic is something a rulebook author can read and act on, and the list
       // stays inside the budget the truncation message announces.
       expect(
@@ -490,7 +328,7 @@ describe('the hand-written validators agree with the schema on every document', 
       // A reported rule name was written in the document; the set is what overrides resolve against.
       expect(
         [...result.ruleNames].every((name) =>
-          validate.collectCustomRuleNames(value).some((written) => written.toLowerCase() === name),
+          collectCustomRuleNames(value).some((written) => written.toLowerCase() === name),
         ),
         named(value),
       ).toBe(true);

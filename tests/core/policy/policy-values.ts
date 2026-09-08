@@ -5,7 +5,26 @@
  * which write the same documents to disk.
  */
 
+import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
+
 const LONG_REASON = 'r'.repeat(257);
+
+const MUTATIONS_PER_VALUE = 300;
+
+/**
+ * Each fixture document and 300 seeded mutations of it, which is the corpus every validator
+ * property runs over. One generator per call, so the corpus is the same in every file.
+ */
+export function samples(values: readonly unknown[]): unknown[] {
+  const random = createSeededRandom(FUZZ_SEED);
+  return values.flatMap((value) => [
+    value,
+    ...Array.from({ length: MUTATIONS_PER_VALUE }, () => mutate(value, random)),
+  ]);
+}
+
+/** The document, trimmed, so a disagreement names the input that produced it. */
+export const named = (value: unknown) => String(JSON.stringify(value)).slice(0, 300);
 
 export const USER_POLICY_VALUES: readonly unknown[] = [
   { version: 1 },
