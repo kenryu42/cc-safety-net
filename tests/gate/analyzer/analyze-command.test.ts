@@ -279,6 +279,77 @@ describe('analyzeCommand', () => {
     expect(decision('unknown-head -x terraform destroy -auto-approve', standard)).toBeNull();
   });
 
+  test('an embedded find -exec body is analyzed as the command as written', () => {
+    const rows: readonly {
+      readonly command: string;
+      readonly ruleId?: string;
+      readonly intent:
+        | 'hard_stop'
+        | 'manual_only'
+        | 'scope_down'
+        | 'stop_and_explain'
+        | 'use_alternative';
+      readonly segment: string;
+    }[] = [
+      {
+        command: 'custom-tool -x find . -exec python3 -c \'import os; os.system("rm -rf /")\' ;',
+        ruleId: 'interpreter.dangerous-command',
+        intent: 'use_alternative',
+        segment: 'custom-tool -x find . -exec python3 -c import os; os.system("rm -rf /")',
+      },
+      {
+        command: 'custom-tool -x find . -exec dd of=/dev/sda ;',
+        ruleId: 'dd.device-write',
+        intent: 'manual_only',
+        segment: 'custom-tool -x find . -exec dd of=/dev/sda',
+      },
+      {
+        command: 'custom-tool -x find . -exec awk \'BEGIN{system("rm -rf /")}\' ;',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        segment: 'custom-tool -x find . -exec awk BEGIN{system("rm -rf /")}',
+      },
+      {
+        command: "custom-tool -x find . -exec eval 'rm -rf /' ;",
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        segment: 'custom-tool -x find . -exec eval rm -rf /',
+      },
+      {
+        command: 'custom-tool -x find . -exec xargs rm -rf ;',
+        ruleId: 'xargs.rm-recursive-force-dynamic',
+        intent: 'scope_down',
+        segment: 'custom-tool -x find . -exec xargs rm -rf',
+      },
+      // No rule owns an unverifiable shell source; the reason stands on its own.
+      {
+        command: "foo find . -exec sh -c 'exec $X' ;",
+        intent: 'stop_and_explain',
+        segment: 'foo find . -exec sh -c exec $X',
+      },
+    ];
+    for (const row of rows) {
+      const decided = decision(row.command, standard);
+      expect(decided?.ruleId, row.command).toBe(row.ruleId);
+      expect(decided?.intent, row.command).toBe(row.intent);
+      expect(decided?.evidence, row.command).toStrictEqual([
+        { kind: 'command', command: row.command, segment: row.segment },
+      ]);
+    }
+  });
+
+  test('a wrapper inside a stream child find -exec body does not hide the command', () => {
+    const rows: readonly string[] = [
+      'echo x | xargs find . -exec sudo git reset --hard {} ;',
+      'echo x | xargs find . -exec env FOO=1 git reset --hard {} ;',
+      'echo x | xargs find . -exec FOO=1 git reset --hard {} ;',
+      'echo x | xargs find . -exec busybox git reset --hard {} ;',
+    ];
+    for (const command of rows) {
+      expect(decision(command, standard)?.ruleId, command).toBe('git.reset-hard');
+    }
+  });
+
   test('a command that only names a destructive one is allowed', () => {
     const rows: readonly string[] = [
       '',

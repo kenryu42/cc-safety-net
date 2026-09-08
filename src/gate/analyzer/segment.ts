@@ -594,6 +594,8 @@ export function analyzeSegment(
         : (matchFromBlockResult(
             analyzeSegment(textCommandWords(childTokens), depth + 1, {
               ...analyzerOptions,
+              // An embedded child's body is a command as written, not another embedded child.
+              child: undefined,
               commandView: undefined,
               effectiveCwd: childCwd,
               envAssignments,
