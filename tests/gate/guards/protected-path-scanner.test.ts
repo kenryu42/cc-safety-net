@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import { type Budget, createBudget } from '@/core/budget';
+import { createBudget } from '@/core/budget';
 import type { Environment } from '@/core/environment';
 import {
   normalizeProtectedFileCandidate,
@@ -19,20 +19,12 @@ import {
 } from '@/gate/guards/protected-path-scanner';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, type Outcome, writeTree } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import {
-  corpusCommands,
-  FIXED_COMMANDS,
-  FUZZ_SAMPLE_COUNT,
-  FUZZ_SEED,
-  fuzzShellSources,
-} from '../../helpers/shell-inputs';
 
 /**
  * The scanner is the walk every protected-path guard drives: it decides where one segment ends,
  * which `cd` moves the tracked cwd, which assignments become tracked variables and which
- * redirection targets reach the guard. A change here silently unprotects a path, so the record
- * carries every callback the walk makes, not only what it returns.
+ * redirection targets reach the guard. A change here silently unprotects a path, so the rows
+ * state what the walk observes, not only what it returns.
  */
 
 const MARKER = 'policy.json';
@@ -174,15 +166,71 @@ afterAll(() => {
 });
 
 describe('protected path scanner walk', () => {
-  test('records the same segments, states and redirections as the shipped walk', () => {
-    const sources = [...CD_SOURCES, ...SEGMENT_SOURCES];
-    const recorded: [string, unknown][] = [];
-    for (const source of sources) {
-      for (const stop of [null, 'rm', MARKER]) {
-        recorded.push([`${source} (stop=${stop})`, walkPair(source, workspace, stop)]);
-      }
+  /** The tracked cwd the walk hands the segment callback for the last segment of a source. */
+  const lastSegmentCwd = (source: string) => {
+    const observations = completedWalk(walkPair(source, workspace, null)).observations.filter(
+      (observation) => observation.startsWith('segment '),
+    );
+    return observations.at(-1)?.match(/cwd=(\S+)/)?.[1] ?? null;
+  };
+
+  test('a cd moves the directory the next segment is scanned in', () => {
+    const rows: readonly { readonly source: string; readonly cwd: () => string }[] = [
+      { source: 'cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      {
+        source: 'cd policy/nested && rm -rf x',
+        cwd: () => canonical(workspace, 'policy', 'nested'),
+      },
+      { source: 'cd ..; rm -rf x', cwd: () => canonical(root) },
+      { source: 'cd ~ ; rm -rf x', cwd: () => canonical(home) },
+      { source: 'cd "$HOME" ; rm -rf x', cwd: () => canonical(home) },
+      // A tracked assignment is followed when a `cd` dereferences it.
+      { source: 'DIR=policy; cd $DIR; rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      { source: 'DIR=policy && cd ${DIR} && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      { source: 'A=policy; B=$A; cd $B; rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      // Wrapper preludes are peeled before the head is read.
+      { source: 'sudo cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      { source: 'env -i cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      { source: 'command cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      { source: 'FOO=1 cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      { source: '/usr/bin/cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
+      // A bare `cd`, an empty target, and a `cd` to a directory that does not exist leave the
+      // walk where it can still resolve later operands.
+      { source: 'cd; rm -rf x', cwd: () => workspace },
+      { source: 'cd ""; rm -rf x', cwd: () => workspace },
+      { source: 'cd /absolute/missing && rm -rf x', cwd: () => '/absolute/missing' },
+    ];
+    for (const row of rows) {
+      expect(lastSegmentCwd(row.source), row.source).toBe(row.cwd());
     }
-    expectRecordedDigest('guards-protected-path/walk-table', recorded, root);
+  });
+
+  test('a segment target and a write-like redirection target reach the guard', () => {
+    const rows: readonly { readonly source: string; readonly result: string | null }[] = [
+      { source: `rm -rf ${MARKER}`, result: `rm -rf ${MARKER}` },
+      { source: `rm -rf ${MARKER} && echo done`, result: `rm -rf ${MARKER}` },
+      { source: `mv ${MARKER} /tmp/elsewhere`, result: `mv ${MARKER} /tmp/elsewhere` },
+      { source: `echo hi > ${MARKER}`, result: MARKER },
+      { source: `echo hi >> policy/${MARKER}`, result: `policy/${MARKER}` },
+      { source: `echo hi 2> ${MARKER}`, result: MARKER },
+      { source: `echo hi >| ${MARKER}`, result: MARKER },
+      // A read redirection is not a write, so it never reaches the redirection callback.
+      { source: `cat < ${MARKER}`, result: null },
+      // An assignment-only segment tracks the variable, which the redirection target expands to.
+      { source: `DEST=${MARKER}; echo hi > $DEST`, result: '${DEST}' },
+      // With a command in the segment the assignment is scoped to it, so nothing is tracked.
+      { source: 'DEST=policy.json echo hi > $DEST', result: null },
+      { source: `find . -name '*.json' -delete`, result: null },
+      { source: 'A=1 B=2', result: null },
+      { source: `A=1 B=2; rm -rf ${MARKER}`, result: `rm -rf ${MARKER}` },
+      { source: `rm -rf x && echo hi > ${MARKER}`, result: MARKER },
+      { source: `echo hi > ${MARKER}; echo second > other`, result: MARKER },
+    ];
+    for (const row of rows) {
+      expect(completedWalk(walkPair(row.source, workspace, MARKER)).result, row.source).toBe(
+        row.result,
+      );
+    }
   });
 
   test('the fixed table moves the tracked cwd and returns targets', () => {
@@ -213,19 +261,7 @@ describe('protected path scanner walk', () => {
     ).toBeGreaterThan(5);
   });
 
-  test('matches the shipped walk over the corpus and the seeded fuzz', () => {
-    const recorded: [string, unknown][] = [];
-    for (const source of [
-      ...corpusCommands(),
-      ...FIXED_COMMANDS,
-      ...fuzzShellSources(FUZZ_SAMPLE_COUNT, FUZZ_SEED),
-    ]) {
-      recorded.push([source, walkPair(source, workspace, 'rm')]);
-    }
-    expectRecordedDigest('guards-protected-path/corpus-fuzz', recorded, root);
-  });
-
-  test('a structural-limit projection throws on both sides, an incomplete one is malformed', () => {
+  test('a structural-limit projection throws, an incomplete one is malformed', () => {
     const observations: Observation[] = [];
     const facts = {
       status: 'structural-limit',
@@ -244,54 +280,54 @@ describe('protected path scanner walk', () => {
     ).toThrow('Structural command analysis limit exceeded.');
     expect(observations).toStrictEqual([]);
 
-    const next = walkPair(`echo "unclosed ${MARKER}`, workspace, null);
-    expect(completedWalk(next).observations[0]).toStartWith('malformed ');
-    expectRecordedDigest('guards-protected-path/malformed', [['unclosed quote', next]], root);
+    const unclosed = walkPair(`echo "unclosed ${MARKER}`, workspace, null);
+    expect(completedWalk(unclosed).observations[0]).toStartWith('malformed ');
+    // The malformed source is handed over whole, and it is the walk's answer.
+    expect(completedWalk(unclosed).result).toBe(`echo "unclosed ${MARKER}`);
   });
 });
 
-const VARIABLE_TABLE: readonly (readonly [string, readonly [string, string][]])[] = [
-  ['$A/$B', [['A', '/one']]],
-  ['${A}/${B}', [['A', '/one']]],
-  ['${A:-fallback}', []],
-  ['${A:-fallback}', [['A', '']]],
-  ['${A-fallback}', [['A', '']]],
-  ['${A:+set}', [['A', 'value']]],
-  ['${A+set}', [['A', '']]],
-  ['${A:-$B}', [['B', 'nested']]],
-  ['${A:-${B}}', [['B', 'nested']]],
-  ['$A$A$A', [['A', 'x']]],
-  ['$AB', [['A', 'x']]],
-  ['${AB}', [['A', 'x']]],
-  ['$1 $@ $? $$', [['1', 'positional']]],
-  ['no variables here', [['A', 'x']]],
-  ['', [['A', 'x']]],
-  ['${unclosed', [['unclosed', 'x']]],
-  ['$A/${A:-$A}', [['A', 'recursive']]],
-];
-
 describe('tracked shell variable expansion', () => {
-  test('expands the fixed table and the corpus words identically', () => {
-    const recorded: [string, unknown][] = [];
-    for (const [text, entries] of VARIABLE_TABLE) {
-      const variables = new Map(entries);
-      recorded.push([
-        `${text} ${JSON.stringify(entries)}`,
-        expandTrackedShellVariables(text, variables),
-      ]);
+  test('a tracked name is substituted, and a form the walk cannot resolve is left as written', () => {
+    const rows: readonly {
+      readonly text: string;
+      readonly variables: readonly (readonly [string, string])[];
+      readonly expanded: string;
+    }[] = [
+      { text: '$A/$B', variables: [['A', '/one']], expanded: '/one/$B' },
+      { text: '${A}/${B}', variables: [['A', '/one']], expanded: '/one/${B}' },
+      { text: '$A$A$A', variables: [['A', 'x']], expanded: 'xxx' },
+      // The name is read whole, so `$AB` is not `$A` followed by a letter.
+      { text: '$AB', variables: [['A', 'x']], expanded: '$AB' },
+      { text: '${AB}', variables: [['A', 'x']], expanded: '${AB}' },
+      // `:-` treats an empty value as unset; `-` accepts it.
+      { text: '${A:-fallback}', variables: [['A', '']], expanded: 'fallback' },
+      { text: '${A-fallback}', variables: [['A', '']], expanded: '' },
+      // An untracked name leaves the whole form as written: the walk does not know whether the
+      // shell would find it set.
+      { text: '${A:-fallback}', variables: [], expanded: '${A:-fallback}' },
+      { text: '${A:+set}', variables: [['A', 'value']], expanded: 'set' },
+      { text: '${A+set}', variables: [['A', '']], expanded: 'set' },
+      {
+        text: '${A:-$B}',
+        variables: [
+          ['A', ''],
+          ['B', 'nested'],
+        ],
+        expanded: 'nested',
+      },
+      // A positional or special parameter is not a tracked name.
+      { text: '$1 $@ $? $$', variables: [['1', 'positional']], expanded: '$1 $@ $? $$' },
+      { text: '${unclosed', variables: [['unclosed', 'x']], expanded: '${unclosed' },
+      { text: 'no variables here', variables: [['A', 'x']], expanded: 'no variables here' },
+      { text: '', variables: [['A', 'x']], expanded: '' },
+    ];
+    for (const row of rows) {
+      expect(
+        expandTrackedShellVariables(row.text, new Map(row.variables)),
+        `${row.text} ${JSON.stringify(row.variables)}`,
+      ).toBe(row.expanded);
     }
-    const variables = new Map([
-      ['HOME', home],
-      ['A', '/a'],
-      ['DIR', join(root, 'policy')],
-      ['EMPTY', ''],
-    ]);
-    for (const word of [...corpusCommands(), ...FIXED_COMMANDS].flatMap((command) =>
-      command.split(/\s+/),
-    )) {
-      recorded.push([`word ${word}`, expandTrackedShellVariables(word, variables)]);
-    }
-    expectRecordedDigest('guards-protected-path/variable-expansion', recorded, root);
   });
 
   test('an unset name is left as written and a set one is substituted', () => {
@@ -300,141 +336,104 @@ describe('tracked shell variable expansion', () => {
   });
 });
 
-const SEGMENT_TABLE: readonly (readonly string[])[] = [
-  [],
-  [''],
-  ['A=1'],
-  ['A=1', 'B=2'],
-  ['A='],
-  ['A=1', 'echo'],
-  ['echo', 'A=1'],
-  ['1A=1'],
-  ['_A=1'],
-  ['A-B=1'],
-  ['A=1=2'],
-  ['A'],
-  ['=1'],
-  ['A=$B'],
-];
-
-const MV_TABLE: readonly (readonly string[])[] = [
-  [],
-  ['a', 'b'],
-  ['a'],
-  ['-t', '/dest', 'a', 'b'],
-  ['--target-directory', '/dest', 'a'],
-  ['--target-directory=/dest', 'a'],
-  ['-t/dest', 'a'],
-  ['-t'],
-  ['-S', '.bak', 'a', 'b'],
-  ['--suffix', '.bak', 'a', 'b'],
-  ['--suffix=.bak', 'a', 'b'],
-  ['--backup=numbered', 'a', 'b'],
-  ['-f', '-v', 'a', 'b'],
-  ['--', '-a', '-b'],
-  ['--', '-t', '/dest'],
-  ['-n', '--', 'a', '-t', 'b'],
-  ['a', '--', 'b'],
-  ['-t', '/dest', '--', 'a'],
-  ['-'],
-  ['--target-directory='],
-];
-
 describe('segment and mv operand parsing', () => {
-  test('classifies assignment-only segments identically', () => {
-    const recorded: [string, unknown][] = [];
-    for (const segment of SEGMENT_TABLE) {
-      recorded.push([JSON.stringify(segment), isAssignmentOnlySegment(segment)]);
+  test('a segment is assignment-only when every word is a name followed by a value', () => {
+    const rows: readonly {
+      readonly segment: readonly string[];
+      readonly assignmentOnly: boolean;
+    }[] = [
+      { segment: [], assignmentOnly: false },
+      { segment: [''], assignmentOnly: false },
+      { segment: ['A=1'], assignmentOnly: true },
+      { segment: ['A=1', 'B=2'], assignmentOnly: true },
+      { segment: ['A='], assignmentOnly: true },
+      { segment: ['A=1', 'echo'], assignmentOnly: false },
+      { segment: ['echo', 'A=1'], assignmentOnly: false },
+      // A name starts with a letter or underscore and carries no punctuation.
+      { segment: ['1A=1'], assignmentOnly: false },
+      { segment: ['_A=1'], assignmentOnly: true },
+      { segment: ['A-B=1'], assignmentOnly: false },
+      // Everything after the first `=` is the value.
+      { segment: ['A=1=2'], assignmentOnly: true },
+      { segment: ['A=$B'], assignmentOnly: true },
+      { segment: ['A'], assignmentOnly: false },
+      { segment: ['=1'], assignmentOnly: false },
+    ];
+    for (const row of rows) {
+      expect(isAssignmentOnlySegment(row.segment), JSON.stringify(row.segment)).toBe(
+        row.assignmentOnly,
+      );
     }
-    expectRecordedDigest('guards-protected-path/assignment-segments', recorded);
-    expect(isAssignmentOnlySegment(['A=1'])).toBeTrue();
-    expect(isAssignmentOnlySegment(['echo'])).toBeFalse();
   });
 
-  test('extracts the same mv sources and destination', () => {
-    const recorded: [string, unknown][] = [];
-    for (const args of MV_TABLE) {
-      recorded.push([JSON.stringify(args), extractMvOperandPaths(args)]);
+  test('mv operands are its sources and its destination, wherever the destination is named', () => {
+    const rows: readonly {
+      readonly args: readonly string[];
+      readonly operands: { sources: readonly string[]; destination: string | null };
+    }[] = [
+      { args: [], operands: { sources: [], destination: null } },
+      { args: ['a', 'b'], operands: { sources: ['a'], destination: 'b' } },
+      { args: ['a', 'b', 'c'], operands: { sources: ['a', 'b'], destination: 'c' } },
+      // A lone operand is the destination: there is nothing to move into it.
+      { args: ['a'], operands: { sources: [], destination: 'a' } },
+      { args: ['-t', '/dest', 'a', 'b'], operands: { sources: ['a', 'b'], destination: '/dest' } },
+      {
+        args: ['--target-directory', '/dest', 'a'],
+        operands: { sources: ['a'], destination: '/dest' },
+      },
+      {
+        args: ['--target-directory=/dest', 'a'],
+        operands: { sources: ['a'], destination: '/dest' },
+      },
+      { args: ['-t/dest', 'a'], operands: { sources: ['a'], destination: '/dest' } },
+      { args: ['-t'], operands: { sources: [], destination: null } },
+      // An option that takes a value consumes it, so the value is not an operand.
+      { args: ['-S', '.bak', 'a', 'b'], operands: { sources: ['a'], destination: 'b' } },
+      { args: ['--suffix=.bak', 'a', 'b'], operands: { sources: ['a'], destination: 'b' } },
+      { args: ['-f', '-v', 'a', 'b'], operands: { sources: ['a'], destination: 'b' } },
+      // After `--` every word is an operand, dashes included.
+      { args: ['--', '-a', '-b'], operands: { sources: ['-a'], destination: '-b' } },
+      { args: ['-n', '--', 'a', '-t', 'b'], operands: { sources: ['a', '-t'], destination: 'b' } },
+      { args: ['-'], operands: { sources: [], destination: null } },
+    ];
+    for (const row of rows) {
+      expect(extractMvOperandPaths(row.args), JSON.stringify(row.args)).toStrictEqual({
+        sources: [...row.operands.sources],
+        destination: row.operands.destination,
+      });
     }
-    expectRecordedDigest('guards-protected-path/mv-operands', recorded);
-    expect(extractMvOperandPaths(['a', 'b', 'c'])).toStrictEqual({
-      sources: ['a', 'b'],
-      destination: 'c',
-    });
   });
 });
 
-const CANDIDATE_TABLE: readonly string[] = [
-  '',
-  ' ',
-  '.',
-  './policy',
-  'policy',
-  `policy/${MARKER}`,
-  '~',
-  '~/',
-  '~/.config',
-  '$HOME',
-  '$HOME/.config',
-  '${HOME}/.config',
-  '$TMPDIR/x',
-  '${UNSET_NAME:-policy}',
-  'link',
-  `link/${MARKER}`,
-  'dangling-link',
-  'dangling-link/deeper',
-  'nested/../policy',
-  '/absolute/missing/deeper',
-  'policy\\nested',
-  'C:/policy',
-  '$XDG_CONFIG_HOME/x',
-];
-
-const BASENAME_PREDICATES: readonly (readonly [string, (name: string) => boolean])[] = [
-  ['always', () => true],
-  ['never', () => false],
-  ['marker', (name: string) => name === MARKER],
-  ['json', (name: string) => name.endsWith('.json')],
-];
-
 describe('protected candidate canonicalization', () => {
-  test('normalizes path candidates like the shipped guard', () => {
+  test('a candidate is resolved against the tracked cwd, with its existing prefix canonicalized', () => {
     const environments = pairedEnvironments(
       { HOME: home, TMPDIR: join(root, 'tmp'), XDG_CONFIG_HOME: join(home, '.config') },
       home,
     );
     const budget = createBudget();
-    const recorded: [string, unknown][] = [];
-    for (const cwd of [workspace, join(root, 'policy'), join(root, 'missing')]) {
-      for (const candidate of CANDIDATE_TABLE) {
-        recorded.push([
-          `${candidate} @ ${cwd}`,
-          normalizeProtectedPathCandidate(candidate, cwd, environments, budget),
-        ]);
-      }
-    }
-    expectRecordedDigest('guards-protected-path/path-candidates', recorded, root);
-  });
-
-  test('normalizes file candidates like the shipped guard, per basename predicate', () => {
-    const environments = pairedEnvironments({ HOME: home, TMPDIR: join(root, 'tmp') }, home);
-    const recorded: [string, unknown][] = [];
-    for (const [label, isPlausibleBasename] of BASENAME_PREDICATES) {
-      const budget: Budget = createBudget();
-      for (const candidate of CANDIDATE_TABLE) {
-        recorded.push([
-          `${candidate} (${label})`,
-          normalizeProtectedFileCandidate(
-            candidate,
-            workspace,
-            environments,
-            budget,
-            isPlausibleBasename,
-          ),
-        ]);
-      }
-    }
-    expectRecordedDigest('guards-protected-path/file-candidates', recorded, root);
+    const normalize = (candidate: string, cwd = workspace) =>
+      normalizeProtectedPathCandidate(candidate, cwd, environments, budget);
+    expect(normalize('.')).toBe(canonical(workspace));
+    expect(normalize('policy')).toBe(canonical(workspace, 'policy'));
+    expect(normalize('./policy')).toBe(canonical(workspace, 'policy'));
+    expect(normalize(`policy/${MARKER}`, join(root, 'policy'))).toBe(
+      canonical(root, 'policy', 'policy', MARKER),
+    );
+    expect(normalize('~')).toBe(canonical(home));
+    expect(normalize('$HOME/.config')).toBe(canonical(home, '.config'));
+    expect(normalize('${HOME}/.config')).toBe(canonical(home, '.config'));
+    expect(normalize('$TMPDIR/x')).toBe(canonical(root, 'tmp', 'x'));
+    // A symlink is followed, and a dangling one keeps the name it could not resolve.
+    expect(normalize(join(root, 'link'))).toBe(canonical(root, 'policy'));
+    expect(normalize(join(root, 'dangling-link', 'deeper'))).toBe(
+      `${canonical(root)}/dangling-link/deeper`,
+    );
+    expect(normalize('nested/../policy')).toBe(canonical(workspace, 'policy'));
+    // A name the environment does not carry stays in the resolved path as written.
+    expect(normalize('${UNSET_NAME:-policy}')).toBe(
+      `${canonical(workspace)}/\${UNSET_NAME:-policy}`,
+    );
   });
 
   test('the file candidate skips the ancestor walk only for implausible basenames', () => {

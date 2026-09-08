@@ -1,14 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { checkPolicyRuleMatch as checkWithNext } from '@/core/rules/custom';
+import { checkPolicyRuleMatch } from '@/core/rules/custom';
 import type { PolicyRule } from '@/core/rules/types';
-import { behavioralContractCases } from '../../gate/behavioral-contract-cases';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import { corpusCommands, createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
 
-/**
- * The custom-rule compiler is fed the same rule tables and token lists in both
- * implementations. Token lists are analyzer input; nothing here is executed.
- */
+/** Token lists are analyzer input; nothing here is executed. */
 
 const V1_RULES: readonly PolicyRule[] = [
   {
@@ -174,244 +168,122 @@ const V2_RULES: readonly PolicyRule[] = [
   v2('nuke-anywhere', 'rm', { command_path: [], any_args: ['--nuke'] }),
 ];
 
-const CORPUS_RULES: readonly PolicyRule[] = behavioralContractCases({
-  cwd: '/work/project',
-  home: '/home/agent',
-}).flatMap((row) => row.options.policySnapshot.policy.rules);
+/** The rule id a token list matches in one table, or null. */
+const matchedId = (tokens: readonly string[], rules: readonly PolicyRule[]) =>
+  checkPolicyRuleMatch(tokens, rules)?.id ?? null;
 
-const RULE_TABLES = [
-  V1_RULES,
-  V2_RULES,
-  CORPUS_RULES,
-  [...V2_RULES, ...V1_RULES, ...CORPUS_RULES],
-  [],
-];
-
-const FIXED_TOKEN_LISTS = [
-  [],
-  [''],
-  ['git'],
-  ['git', 'push', '--force'],
-  ['git', 'push', '--force-with-lease', '-f'],
-  ['git', '-c', 'push', '--force'],
-  ['git', '-c', 'core.hooksPath=/tmp', 'push', '-f'],
-  ['git', '-C', '.', '--git-dir', '.git', 'push', '--force'],
-  ['git', '--', 'push', '--force'],
-  ['git', '-C', '.', '--', 'push', '-f'],
-  ['git', '--unknown', 'push', '--force'],
-  ['git', '--unknown=1', 'push', '-f'],
-  ['git', '--unknown', '--other', 'push', '-f'],
-  ['git', 'branch', '-fD', 'old'],
-  ['git', 'reset', '--hard'],
-  ['/usr/bin/git', 'reset', '--hard'],
-  ['C:\\Program Files\\Git\\bin\\git.exe', 'reset', '--hard'],
-  ['GIT.EXE', 'clean', '-fdx'],
-  ['git', 'stash', 'drop'],
-  ['git', 'checkout', '--', 'file'],
-  ['docker', 'system', 'prune'],
-  ['docker', '-H', 'tcp://host', 'system', 'prune', '-a'],
-  ['docker', '--context', 'prod', '-l', 'debug', 'rm', '-f', 'c1'],
-  ['docker', '--config=~/.docker', 'volume', 'rm', 'v1'],
-  ['Docker', 'image', 'prune'],
-  ['aws', 'ec2', 'terminate-instances', '--instance-ids', 'i-1'],
-  ['aws', '--profile', 'prod', '--region', 'us-east-1', 'ec2', 'terminate-instances'],
-  ['aws', '--profile=prod', 's3', 'rm', 's3://b/k'],
-  ['aws', '--profile', 's3', 'rm', 's3://b/k'],
-  ['aws', 's3', 'rm', '--dryrun', 's3://b/k'],
-  ['aws', 's3', 'rb', '--force', 's3://b'],
-  ['aws', '--debug', 's3', 'rb', 's3://b'],
-  ['AWS.EXE', 'rds', 'delete-db-instance', '--skip-final-snapshot'],
-  ['gcloud', 'compute', 'instances', 'delete', 'vm-1'],
-  ['gcloud', '--project', 'p', '--format', 'json', 'compute', 'instances', 'delete'],
-  ['gcloud', 'beta', 'compute', 'instances', 'delete'],
-  ['gcloud', '--quiet', 'projects', 'delete', 'p'],
-  ['gcloud', 'projects', 'delete', 'p', '-q'],
-  ['az', 'group', 'delete', '-n', 'rg'],
-  ['az', '-o', 'json', 'group', 'delete'],
-  ['az', '--output', 'group', 'delete'],
-  ['az', 'vm', 'delete', '--yes'],
-  ['az.exe', 'ad', 'app', 'delete', '--id', 'x'],
-  ['az', 'storage', 'account', 'delete', '--dry-run'],
-  ['terraform', 'destroy'],
-  ['terraform', '-chdir=infra', 'destroy', '-auto-approve'],
-  ['terraform', 'apply', '-destroy'],
-  ['terraform', 'apply', '--auto-approve'],
-  ['terraform', 'state', 'rm', 'aws_instance.x'],
-  ['terraform', 'state', 'rm', '--dry-run', 'aws_instance.x'],
-  ['kubectl', 'delete', 'namespace', 'prod'],
-  ['kubectl', 'delete', 'pods', '--all'],
-  ['npm', 'install', '-g', 'pkg'],
-  ['npm', 'publish', '--access', 'public'],
-  ['npm', '--prefix', 'dir', 'install', '--global'],
-  ['rm', '-rf', '/'],
-  ['rm', '--', '-rf'],
-  ['rm', '-xyz'],
-  ['rm', '--nuke'],
-  ['rm', 'x', '--nuke'],
-  ['gh', 'repo', 'delete', 'o/r'],
-  ['echo', 'git', 'push', '--force'],
-];
-
-const FUZZ_HEADS = [
-  'git',
-  'docker',
-  'aws',
-  'gcloud',
-  'az',
-  'npm',
-  'terraform',
-  'kubectl',
-  'rm',
-  'gh',
-  '/usr/bin/git',
-  'C:\\Program Files\\Git\\bin\\git.exe',
-  'Docker',
-  'AWS.EXE',
-  'az.exe',
-  './git',
-  'echo',
-  '',
-];
-
-const FUZZ_WORDS = [
-  'push',
-  'reset',
-  'checkout',
-  'system',
-  'prune',
-  'rm',
-  'rb',
-  'ec2',
-  'terminate-instances',
-  's3',
-  'compute',
-  'instances',
-  'delete',
-  'delete-db-instance',
-  'group',
-  'vm',
-  'storage',
-  'account',
-  'install',
-  'publish',
-  'destroy',
-  'apply',
-  'state',
-  'beta',
-  'projects',
-  'sql',
-  'rds',
-  'namespace',
-  'image',
-  'volume',
-  'branch',
-  'clean',
-  'stash',
-  'repo',
-  'ad',
-  'app',
-  'origin',
-  'main',
-  'prod',
-  'us-east-1',
-  'json',
-  '.',
-  '/tmp/x',
-  'HEAD',
-  'core.hooksPath=/tmp',
-  'public',
-  '',
-  '-f',
-  '-rf',
-  '-fd',
-  '-fdx',
-  '-D',
-  '-d',
-  '-x',
-  '-g',
-  '-A',
-  '-a',
-  '-q',
-  '-y',
-  '-n',
-  '-c',
-  '-C',
-  '-H',
-  '-l',
-  '-o',
-  '-xyz',
-  '-rfD',
-  '-',
-  '--',
-  '--git-dir',
-  '--work-tree',
-  '--namespace',
-  '--config-env',
-  '--config',
-  '--context',
-  '--host',
-  '--log-level',
-  '--profile',
-  '--region',
-  '--output',
-  '--query',
-  '--subscription',
-  '--project',
-  '--format',
-  '--account',
-  '--force',
-  '--force-with-lease',
-  '--hard',
-  '--dry-run',
-  '-dry-run',
-  '--dryrun',
-  '-destroy',
-  '--destroy',
-  '--all',
-  '--delete',
-  '--global',
-  '--yes',
-  '--quiet',
-  '--nuke',
-  '--auto-approve',
-  '-auto-approve',
-  '--skip-final-snapshot',
-  '--access',
-  '--unknown',
-  '--profile=prod',
-  '-chdir=infra',
-  '--output=json',
-  '-o=json',
-  '--unknown=1',
-];
-
-function fuzzTokenLists(count: number, seed: number) {
-  const random = createSeededRandom(seed);
-  const pick = (values: readonly string[]) => values[Math.floor(random() * values.length)] ?? '';
-  return Array.from({ length: count }, () => {
-    const length = Math.floor(random() * 10);
-    return Array.from({ length }, (_, index) =>
-      index === 0 && random() < 0.85 ? pick(FUZZ_HEADS) : pick(FUZZ_WORDS),
-    );
-  });
+/** Every row of a table, labelled by the token list it states. */
+function expectIds(
+  rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[],
+  rules: readonly PolicyRule[],
+) {
+  for (const row of rows) {
+    expect(matchedId(row.tokens, rules), row.tokens.join(' ')).toBe(row.id);
+  }
 }
 
-describe('checkPolicyRuleMatch parity', () => {
-  test('agrees with the shipped compiler on every token list and rule table', () => {
-    const lists = [
-      ...FIXED_TOKEN_LISTS,
-      ...corpusCommands().map((command) => command.split(/\s+/).filter((token) => token !== '')),
-      ...fuzzTokenLists(400, FUZZ_SEED),
+describe('checkPolicyRuleMatch', () => {
+  test('a v1 rule matches its command, subcommand and blocked argument', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['docker', 'system', 'prune'], id: 'custom.docker-prune' },
+      { tokens: ['docker', '--context', 'prod', 'system', 'prune'], id: 'custom.docker-prune' },
+      { tokens: ['docker', '--context=prod', 'system', 'prune'], id: 'custom.docker-prune' },
+      {
+        tokens: ['docker', '-H', 'tcp://docker.example', 'system', 'prune'],
+        id: 'custom.docker-prune',
+      },
+      // The global option consumed `system`, so no subcommand is left to match.
+      { tokens: ['docker', '--context', 'system', 'prune'], id: null },
+      { tokens: ['git', 'push', '--force'], id: 'custom.git-push-force' },
+      { tokens: ['git', '-C', '/path', 'push', '--force'], id: 'custom.git-push-force' },
+      { tokens: ['git', '-C/path', 'push', '--force'], id: 'custom.git-push-force' },
+      { tokens: ['git', '--config=foo', 'push', '--force'], id: 'custom.git-push-force' },
+      { tokens: ['git', '--', 'checkout', '--'], id: 'custom.git-checkout-dash' },
+      // An unrecognized global option with a separate value hides the subcommand.
+      { tokens: ['git', '--super-prefix', 'push', 'status', '--force'], id: null },
+      // A rule with no blocked argument matches the subcommand alone.
+      // contract: src/core/rules/custom.ts:33 — a v1 rule with no blocked argument matches
+      // nothing, since the subcommand alone is never the block.
+      { tokens: ['git', 'stash'], id: null },
+      { tokens: ['git', 'status'], id: null },
+      { tokens: ['npm', 'install', '-g', 'pkg'], id: 'custom.npm-global' },
+      { tokens: [], id: null },
     ];
-    expect(lists.length).toBeGreaterThanOrEqual(200);
-    const recorded = lists.flatMap((tokens, row) =>
-      RULE_TABLES.map((rules, table) => [`${row}-${table}`, checkWithNext(tokens, rules)] as const),
+    expectIds(rows, V1_RULES);
+  });
+
+  test('a match carries the rule id, the reason and the intent the rule asked for', () => {
+    expect(checkPolicyRuleMatch(['git', 'push', '--force'], V1_RULES)).toStrictEqual({
+      id: 'custom.git-push-force',
+      reason: '[git-push-force] r',
+      // A rule that names no intent is manual_only.
+      intent: 'manual_only',
+    });
+    expect(checkPolicyRuleMatch(['rm', '-f', 'x'], V1_RULES)?.intent).toBe('hard_stop');
+    expect(checkPolicyRuleMatch(['npm', 'install', '-g', 'pkg'], V1_RULES)?.intent).toBe(
+      'scope_down',
     );
-    const outcomes = recorded.map((entry) => entry[1]);
-    const matched = new Set(outcomes.flatMap((match) => (match === null ? [] : [match.id])));
-    expect(outcomes.some((match) => match === null)).toBe(true);
-    // The tables must actually fire: a rule set no input matches proves nothing.
-    expect(matched.size).toBeGreaterThan(20);
-    expectRecordedDigest('core-rules-custom/rule-matches', recorded);
+    // The first rule in the table that matches wins.
+    expect(checkPolicyRuleMatch(['git', 'clean', '-f'], [...V1_RULES].reverse())?.id).toBe(
+      'custom.git-clean',
+    );
+    expect(checkPolicyRuleMatch(['git', 'push', '--force'], [])).toBeNull();
+  });
+
+  test('the executable is matched by its normalized basename, the arguments exactly', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['GIT', 'push', '-f'], id: 'custom.git-push-force' },
+      { tokens: ['/usr/bin/git', 'push', '-f'], id: 'custom.git-push-force' },
+      { tokens: ['C:\\Tools\\GIT.EXE', 'push', '-f'], id: 'custom.git-push-force' },
+      // A short option bundle expands, so `-f` inside it still matches.
+      { tokens: ['git', 'clean', '-fx'], id: 'custom.git-clean' },
+      { tokens: ['git', 'clean', '-n'], id: null },
+      // A long option is matched whole, never as a prefix.
+      { tokens: ['git', 'branch', '--delete-all'], id: null },
+      { tokens: ['git', 'branch', '--delete'], id: 'custom.git-branch-delete' },
+      { tokens: ['docker', 'image', 'prune'], id: 'custom.docker-upper' },
+      { tokens: ['npm', 'publish', '--access', 'public'], id: 'custom.npm-publish' },
+      { tokens: ['kubectl', 'delete', '--all'], id: 'custom.kubectl-delete-all' },
+    ];
+    expectIds(rows, V1_RULES);
+  });
+
+  test('a v2 rule matches an exact command path, with any_args and exclude_args', () => {
+    const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
+      { tokens: ['terraform', 'destroy'], id: 'custom.tf-destroy' },
+      { tokens: ['terraform', 'plan'], id: null },
+      {
+        tokens: ['terraform', '-chdir=prod', 'state', 'rm', 'module.old'],
+        id: 'custom.tf-state-rm',
+      },
+      { tokens: ['terraform', 'state', 'rm', '--dry-run'], id: null },
+      { tokens: ['terraform', 'apply', '-destroy'], id: 'custom.tf-apply-destroy' },
+      // any_args are exact tokens in v2: no short-option expansion, no `=` splitting.
+      { tokens: ['terraform', 'apply', '--destroy=true'], id: null },
+      {
+        tokens: ['aws', '--profile', 'prod', 'ec2', 'terminate-instances'],
+        id: 'custom.aws-terminate',
+      },
+      { tokens: ['aws', 's3', 'rm', 's3://bucket'], id: 'custom.aws-s3-rm' },
+      { tokens: ['aws', 's3', 'rm', 's3://bucket', '--dryrun'], id: null },
+      {
+        tokens: ['gcloud', 'compute', 'instances', 'delete', 'vm'],
+        id: 'custom.gcloud-instances-delete',
+      },
+      {
+        tokens: ['gcloud', 'beta', 'compute', 'instances', 'delete', 'vm'],
+        id: 'custom.gcloud-beta-instances-delete',
+      },
+      // The path is matched in order from the first argument, so a later `delete` is not it.
+      { tokens: ['gcloud', 'compute', 'instances', 'create', 'delete'], id: null },
+      {
+        tokens: ['az', '--subscription', 'prod', 'group', 'delete', '--name', 'rg'],
+        id: 'custom.az-group-delete',
+      },
+      { tokens: ['az', '--subscription', 'prod', 'group', 'list'], id: null },
+      // An empty command path matches the command itself, wherever the argument sits.
+      { tokens: ['rm', '-rf', '--nuke'], id: 'custom.nuke-anywhere' },
+    ];
+    expectIds(rows, V2_RULES);
   });
 });

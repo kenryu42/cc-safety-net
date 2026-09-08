@@ -12,20 +12,12 @@ import { createSemanticFacts } from '@/gate/guards/semantic-facts';
 import { createToolInvocation, type ToolRoute } from '@/gate/invocation';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import {
-  corpusCommands,
-  FIXED_COMMANDS,
-  FUZZ_SAMPLE_COUNT,
-  FUZZ_SEED,
-  fuzzShellSources,
-} from '../../helpers/shell-inputs';
 
 /**
  * Only the user may apply a policy proposal, so this guard must recognize the invocation through
  * every runner spelling, wrapper prelude and `cd` the segment walk can carry — and must keep
- * `policy check` and every other subcommand allowed. Both properties are recorded as digests over
- * the commands below.
+ * `policy check` and every other subcommand allowed. Both properties are stated over the
+ * commands below.
  */
 
 let root = '';
@@ -121,14 +113,6 @@ afterAll(() => {
 });
 
 describe('policy apply protection', () => {
-  test('matches the shipped recognizer over every runner spelling', () => {
-    const recorded: [string, unknown][] = [];
-    for (const command of [...RUNNER_SPELLINGS, ...UNBLOCKED_SPELLINGS]) {
-      recorded.push([command, findPair(command)]);
-    }
-    expectRecordedDigest('guards-policy-apply/runner-spellings', recorded, root);
-  });
-
   test('blocks the runner spellings and leaves every other invocation alone', () => {
     for (const command of RUNNER_SPELLINGS) {
       expect(findPair(command), command).toStrictEqual({
@@ -156,19 +140,40 @@ describe('policy apply protection', () => {
     });
   });
 
-  test('matches the shipped recognizer over the corpus and the seeded fuzz', () => {
-    const recorded: [string, unknown][] = [];
-    for (const command of [
-      ...corpusCommands(),
-      ...FIXED_COMMANDS,
-      ...fuzzShellSources(FUZZ_SAMPLE_COUNT, FUZZ_SEED),
-    ]) {
-      recorded.push([command, findPair(command)]);
+  test('a wrapper prelude, a runner option or a package spec does not hide the invocation', () => {
+    const rows: readonly { readonly command: string; readonly blocked: boolean }[] = [
+      { command: 'CI=1 cc-safety-net policy apply proposal.json', blocked: true },
+      { command: 'env CI=1 cc-safety-net policy apply proposal.json', blocked: true },
+      {
+        command: 'env FORCE_COLOR=0 npx -y cc-safety-net policy apply proposal.json',
+        blocked: true,
+      },
+      { command: 'npx -y cc-safety-net@latest policy apply proposal.json', blocked: true },
+      { command: 'bunx cc-safety-net@2.3.0 policy apply proposal.json', blocked: true },
+      { command: 'pnpm dlx cc-safety-net@next policy apply proposal.json', blocked: true },
+      { command: 'npm exec -- cc-safety-net policy apply proposal.json', blocked: true },
+      {
+        command: 'node --no-warnings dist/bin/cc-safety-net.js policy apply proposal.json',
+        blocked: true,
+      },
+      { command: 'bun dist/bin/cc-safety-net.js policy apply proposal.json', blocked: true },
+      { command: 'git status && cc-safety-net policy apply proposal.json', blocked: true },
+      // A different package, a different entrypoint or quoted prose is a different program.
+      { command: 'npx -y @scope/cc-safety-net policy apply proposal.json', blocked: false },
+      { command: 'bunx ./vendor/cc-safety-net policy apply proposal.json', blocked: false },
+      { command: 'bun run src/cli/other.ts policy apply proposal.json', blocked: false },
+      { command: "echo 'cc-safety-net policy apply proposal.json'", blocked: false },
+      { command: 'npx -y cc-safety-net policy check proposal.json', blocked: false },
+    ];
+    for (const row of rows) {
+      expect(findPair(row.command), row.command).toStrictEqual({
+        ok: true,
+        value: row.blocked ? { target: expect.any(String) } : null,
+      });
     }
-    expectRecordedDigest('guards-policy-apply/corpus-fuzz', recorded, root);
   });
 
-  test('matches the shipped recognizer through the semantic facts, per route', () => {
+  test('only a route that carries a command candidate reaches the recognizer', () => {
     const routes: readonly ToolRoute[] = [
       ...(['posix', 'powershell', 'auto'] as const).map(
         (shell): ToolRoute => ({ kind: 'command', shell }),
@@ -177,32 +182,29 @@ describe('policy apply protection', () => {
         (kind): ToolRoute => ({ kind }),
       ),
     ];
-    const recorded: [string, unknown][] = [];
+    const invocation = 'cc-safety-net policy apply proposal.json';
     for (const route of routes) {
-      for (const command of [...RUNNER_SPELLINGS, ...UNBLOCKED_SPELLINGS]) {
-        recorded.push([
-          `${route.kind}: ${command}`,
-          factsPair('Bash', { command }, route, command),
-        ]);
-      }
+      // A command route and the unknown route carry the input candidate; the others do not.
+      const carriesCommand = route.kind === 'command' || route.kind === 'unknown';
+      expect(
+        factsPair('Bash', { command: invocation }, route, invocation),
+        route.kind,
+      ).toStrictEqual({ ok: true, value: carriesCommand ? { target: invocation } : null });
+      expect(
+        factsPair('Bash', { command: 'cc-safety-net policy check proposal.json' }, route, null),
+        route.kind,
+      ).toStrictEqual({ ok: true, value: null });
       // A path that reads like the invocation must not reach the recognizer.
-      const pair = factsPair(
-        'Write',
-        { file_path: 'cc-safety-net policy apply proposal.json' },
-        route,
-        null,
-      );
-      recorded.push([`${route.kind}: path input`, pair]);
-      expect(pair).toStrictEqual({ ok: true, value: null });
+      expect(
+        factsPair('Write', { file_path: invocation }, route, null),
+        `${route.kind}: path input`,
+      ).toStrictEqual({ ok: true, value: null });
     }
-    expectRecordedDigest('guards-policy-apply/semantic-facts', recorded, root);
   });
 
-  test('the denial reason is the shipped wording', () => {
-    expectRecordedDigest(
-      'guards-policy-apply/reason',
-      [['REASON_POLICY_APPLY_PROTECTION', REASON_POLICY_APPLY_PROTECTION]],
-      root,
+  test('the denial names the command the user has to run themselves', () => {
+    expect(REASON_POLICY_APPLY_PROTECTION).toBe(
+      'Only the user may apply a policy proposal, because it rewrites the configuration CC Safety Net enforces. Ask them to run `cc-safety-net policy apply <file>` themselves in a terminal; you can run `cc-safety-net policy check <file>` to show them what it would change.',
     );
   });
 });

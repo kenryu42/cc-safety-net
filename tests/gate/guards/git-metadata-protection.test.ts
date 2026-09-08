@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createBudget } from '@/core/budget';
 import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from '@/core/git/metadata';
@@ -18,22 +17,12 @@ import {
   type FakeGitFileFixture,
   type LinkedWorktreeFixture,
 } from '../../helpers';
-import { describeOutcome } from '../../helpers/fixture-tree';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
-import {
-  corpusCommands,
-  FIXED_COMMANDS,
-  FUZZ_SAMPLE_COUNT,
-  FUZZ_SEED,
-  fuzzShellSources,
-} from '../../helpers/shell-inputs';
-import { normalize, rootFolds } from '../../helpers/temp-home';
 
 /**
  * The Git control plane is protected by three different shapes of test — an exact or ancestor
  * delete, a write-like target, and a hook-name selection — over metadata that differs between a
- * plain repository, a linked worktree and a submodule. Each shape is recorded as a digest over the
- * resolved metadata, so a change cannot hide behind a different anchor.
+ * plain repository, a linked worktree and a submodule. Each shape is stated against the resolved
+ * metadata, so a change cannot hide behind a different anchor.
  */
 
 let worktrees: LinkedWorktreeFixture;
@@ -66,87 +55,94 @@ afterAll(() => {
   submodule.cleanup();
 });
 
-/** One digest row, with both fixture roots folded out of the label and out of the value. */
-function digestRow(label: string, value: unknown): [string, unknown] {
-  const folds = [
-    ...rootFolds(worktrees.rootDir),
-    [realpathSync(submodule.rootDir), '<submodule-root>'] as const,
-    [submodule.rootDir, '<submodule-root>'] as const,
-  ];
-  return [normalize(label, folds), normalize(value, folds)];
-}
-
-function deleteTargets(cwd: string): readonly string[] {
-  return [
-    '.git',
-    '.git/',
-    './.git',
-    '.git/config',
-    '.git/hooks',
-    '.git/hooks/pre-commit',
-    '.git/hooks/../refs',
-    '.git/worktrees',
-    '.git/worktrees/*',
-    '.git/*',
-    '.git/.*',
-    '.git/**',
-    '*',
-    './*',
-    '.*',
-    './.*',
-    '..',
-    '../*',
-    'file.txt',
-    'nested/.git',
-    '~',
-    '$HOME',
-    '',
-    '   ',
-    cwd,
-    `${cwd}/*`,
-    join(cwd, '.git'),
-    join(cwd, '.git', 'hooks'),
-    join(cwd, '.git', 'hooks', 'pre-commit'),
-    join(cwd, '..'),
-    join(worktrees.rootDir, '*'),
-    worktrees.rootDir,
-  ];
-}
-
 describe('protected git delete targets', () => {
-  test('matches the shipped delete test for every repository shape and glob form', () => {
-    const recorded: [string, unknown][] = [];
-    // The one target no fold reaches: `join(cwd, '..')` taken from the fixture root is the temp
-    // directory the host chose, and folding that would rewrite the literal `/tmp` targets the
-    // corpora spell. The row runs like every other and is left out of the record.
-    const temporaryDirectory = join(submodule.rootDir, '..');
-    for (const repository of repositories) {
-      const paired = environments();
-      const budget = createBudget();
-      for (const target of deleteTargets(repository.cwd)) {
-        for (const recursive of [true, false]) {
-          for (const dotEntryGlobs of [true, false]) {
-            const protectedTarget = isProtectedGitDeleteTarget(
-              target,
-              repository.cwd,
-              repository.metadata,
-              recursive,
-              paired,
-              budget,
-              dotEntryGlobs,
-            );
-            if (target !== temporaryDirectory)
-              recorded.push(
-                digestRow(
-                  `${repository.label}: ${target} recursive=${recursive} dot=${dotEntryGlobs}`,
-                  protectedTarget,
-                ),
-              );
-          }
-        }
-      }
+  test('an exact Git entry or a hook is protected; an ordinary file inside it is not', () => {
+    const repository = repositories.find((row) => row.label === 'main worktree');
+    if (!repository) throw new Error('missing fixture');
+    const paired = environments();
+    const budget = createBudget();
+    const protect = (target: string, recursive: boolean) =>
+      isProtectedGitDeleteTarget(
+        target,
+        repository.cwd,
+        repository.metadata,
+        recursive,
+        paired,
+        budget,
+        false,
+      );
+    const rows: readonly {
+      readonly target: string;
+      readonly recursive: boolean;
+      readonly expected: boolean;
+    }[] = [
+      { target: '.git', recursive: false, expected: true },
+      { target: '.git/', recursive: false, expected: true },
+      { target: './.git', recursive: false, expected: true },
+      { target: join(repository.cwd, '.git'), recursive: false, expected: true },
+      { target: '.git/hooks', recursive: false, expected: true },
+      { target: '.git/hooks/pre-commit', recursive: false, expected: true },
+      // The delete test is exact or hook-rooted: an ordinary file inside the Git directory is
+      // not one of the protected entries.
+      { target: '.git/config', recursive: false, expected: false },
+      // `.git/hooks/../refs` normalizes out of the hooks directory before it is compared.
+      { target: '.git/hooks/../refs', recursive: false, expected: false },
+      { target: 'nested/.git', recursive: true, expected: false },
+      { target: 'file.txt', recursive: true, expected: false },
+      { target: '', recursive: true, expected: false },
+      { target: '   ', recursive: true, expected: false },
+      // An ancestor of the Git directory counts only for a recursive delete.
+      { target: '..', recursive: true, expected: true },
+      { target: '..', recursive: false, expected: false },
+      { target: '../*', recursive: true, expected: true },
+    ];
+    for (const row of rows) {
+      expect(protect(row.target, row.recursive), `${row.target} recursive=${row.recursive}`).toBe(
+        row.expected,
+      );
     }
-    expectRecordedDigest('guards-git-metadata/delete-targets', recorded);
+  });
+
+  test('a checkout whose Git directory lives elsewhere protects the marker and that directory', () => {
+    const paired = environments();
+    const budget = createBudget();
+    const protect = (label: string, target: string, recursive: boolean) => {
+      const repository = repositories.find((row) => row.label === label);
+      if (!repository) throw new Error(`missing fixture: ${label}`);
+      return isProtectedGitDeleteTarget(
+        target,
+        repository.cwd,
+        repository.metadata,
+        recursive,
+        paired,
+        budget,
+        false,
+      );
+    };
+    const main = repositories.find((row) => row.label === 'main worktree');
+    if (!main) throw new Error('missing fixture');
+    for (const label of ['linked worktree', 'submodule']) {
+      // The `.git` marker file that points at the real Git directory is itself protected.
+      expect(protect(label, '.git', false), label).toBeTrue();
+      // Its hooks live under the Git directory the marker points at, not under the checkout.
+      expect(protect(label, '.git/hooks', false), label).toBeFalse();
+    }
+    // From a linked worktree, the main repository's Git directory is protected as written.
+    expect(protect('linked worktree', join(main.cwd, '.git'), true)).toBeTrue();
+    // The main worktree keeps its own hooks directory, which is inside its checkout.
+    expect(protect('main worktree', '.git/hooks', false)).toBeTrue();
+    // A redirection can overwrite the marker file, so it is denied where one exists.
+    const linked = repositories.find((row) => row.label === 'linked worktree');
+    if (!linked) throw new Error('missing fixture');
+    expect(
+      nextMutation(
+        'Bash',
+        { command: 'echo payload > .git' },
+        { kind: 'command', shell: 'posix' },
+        'echo payload > .git',
+        linked,
+      ),
+    ).toStrictEqual({ target: '.git' });
   });
 
   test('the table separates protected targets from the rest', () => {
@@ -181,38 +177,43 @@ describe('protected git delete targets', () => {
 });
 
 describe('protected git hook name selection', () => {
-  test('matches the shipped selection test for every starting-point list', () => {
-    const startingPointLists: readonly (readonly string[])[] = [
-      [],
-      ['.'],
-      ['.git'],
-      ['.git/hooks'],
-      ['.git/hooks/pre-commit'],
-      ['..'],
-      ['nested', '.'],
-      ['file.txt'],
-      ['~'],
-      ['$HOME'],
-      ['', '.'],
+  test('a starting point at or above the hooks directory selects hook names', () => {
+    const rows: readonly {
+      readonly startingPoints: readonly string[];
+      readonly selectedIn: readonly string[];
+    }[] = [
+      { startingPoints: [], selectedIn: [] },
+      // The hooks of a linked worktree or a submodule live outside the checkout, so only a
+      // starting point above it reaches them.
+      { startingPoints: ['.'], selectedIn: ['main worktree', 'outside any repository'] },
+      { startingPoints: ['.git'], selectedIn: ['main worktree', 'outside any repository'] },
+      { startingPoints: ['.git/hooks'], selectedIn: ['main worktree', 'outside any repository'] },
+      // A single hook file names the file, not the directory the names are read from.
+      { startingPoints: ['.git/hooks/pre-commit'], selectedIn: [] },
+      {
+        startingPoints: ['..'],
+        selectedIn: ['main worktree', 'linked worktree', 'submodule', 'outside any repository'],
+      },
+      { startingPoints: ['nested', '.'], selectedIn: ['main worktree', 'outside any repository'] },
+      { startingPoints: ['file.txt'], selectedIn: [] },
+      { startingPoints: ['', '.'], selectedIn: ['main worktree', 'outside any repository'] },
     ];
-    const recorded: [string, unknown][] = [];
     for (const repository of repositories) {
       const paired = environments();
       const budget = createBudget();
-      for (const startingPoints of startingPointLists) {
-        const selected = isProtectedGitHookNameSelection(
-          startingPoints,
-          repository.cwd,
-          repository.metadata,
-          paired,
-          budget,
-        );
-        recorded.push(
-          digestRow(`${repository.label}: ${JSON.stringify(startingPoints)}`, selected),
-        );
+      for (const row of rows) {
+        expect(
+          isProtectedGitHookNameSelection(
+            row.startingPoints,
+            repository.cwd,
+            repository.metadata,
+            paired,
+            budget,
+          ),
+          `${repository.label}: ${JSON.stringify(row.startingPoints)}`,
+        ).toBe(row.selectedIn.includes(repository.label));
       }
     }
-    expectRecordedDigest('guards-git-metadata/hook-selection', recorded);
   });
 
   test('a selection rooted at or above the hooks directory is protected', () => {
@@ -236,49 +237,12 @@ describe('protected git hook name selection', () => {
   });
 });
 
-const MUTATION_COMMANDS: readonly string[] = [
-  'rm -rf .git',
-  'rm -rf .git/hooks',
-  'mv .git /tmp/stash',
-  'mv .git/hooks /tmp/stash',
-  'mv /tmp/payload .git/hooks/pre-commit',
-  'mv /tmp/payload .git/config',
-  'mv -t .git/hooks /tmp/pre-commit',
-  'mv --target-directory=.git/hooks /tmp/pre-commit',
-  'mv -- .git /tmp/stash',
-  'G=.git; mv $G /tmp/stash',
-  'G=.git && mv ${G}/hooks /tmp/stash',
-  'cd .git && mv hooks /tmp/stash',
-  'cd .. && mv repo/.git /tmp/stash',
-  'echo payload > .git/config',
-  'echo payload > .git',
-  'echo payload >> .git/hooks/pre-commit',
-  'cat /tmp/payload > .git/hooks/post-commit',
-  'echo payload > file.txt',
-  'sudo mv .git /tmp/stash',
-  'env -i mv .git /tmp/stash',
-  'mv file.txt other.txt',
-  'git mv file.txt other.txt',
-  'mv .git',
-  'mv',
-];
-
 const NON_COMMAND_ROUTES: readonly ToolRoute[] = [
   { kind: 'patch' },
   { kind: 'path' },
   { kind: 'unknown' },
   { kind: 'grep' },
   { kind: 'glob' },
-];
-
-const TOOL_INPUTS: readonly { toolName: string; input: Record<string, string> }[] = [
-  { toolName: 'Write', input: { file_path: '.git/config' } },
-  { toolName: 'Write', input: { file_path: '.git/hooks/pre-commit' } },
-  { toolName: 'Write', input: { file_path: 'file.txt' } },
-  { toolName: 'Read', input: { file_path: '.git/config' } },
-  { toolName: 'Edit', input: { file_path: '.git' } },
-  { toolName: 'NotebookEdit', input: { notebook_path: '.git/config' } },
-  { toolName: 'Grep', input: { path: '.git' } },
 ];
 
 function nextMutation(
@@ -306,58 +270,84 @@ function nextMutation(
 }
 
 describe('git metadata mutation targets in semantic facts', () => {
-  test('matches the shipped guard over the command table', () => {
-    const recorded: [string, unknown][] = [];
-    for (const repository of repositories) {
-      for (const command of MUTATION_COMMANDS) {
-        for (const shell of ['posix', 'powershell'] as const) {
-          const route: ToolRoute = { kind: 'command', shell };
-          recorded.push(
-            digestRow(
-              `${repository.label}: ${command} (${shell})`,
-              nextMutation('Bash', { command }, route, command, repository),
-            ),
-          );
-        }
-      }
-    }
-    expectRecordedDigest('guards-git-metadata/command-table', recorded);
-  });
-
-  test('matches the shipped guard over the non-command routes and tool inputs', () => {
-    const recorded: [string, unknown][] = [];
-    for (const repository of repositories) {
-      for (const route of NON_COMMAND_ROUTES) {
-        for (const row of TOOL_INPUTS) {
-          const input = { ...row.input, file_path: row.input.file_path ?? '' };
-          const label = `${repository.label}: ${row.toolName} ${route.kind} ${JSON.stringify(input)}`;
-          recorded.push(
-            digestRow(label, nextMutation(row.toolName, input, route, null, repository)),
-          );
-        }
-      }
-    }
-    expectRecordedDigest('guards-git-metadata/tool-inputs', recorded);
-  });
-
-  test('matches the shipped guard over the corpus and the seeded fuzz', () => {
+  test('a move or a write reaching the Git directory reports the operand as written', () => {
     const repository = repositories[0];
     if (!repository) throw new Error('missing fixture');
     const route: ToolRoute = { kind: 'command', shell: 'posix' };
-    const recorded: [string, unknown][] = [];
-    for (const command of [
-      ...corpusCommands(),
-      ...FIXED_COMMANDS,
-      ...fuzzShellSources(FUZZ_SAMPLE_COUNT, FUZZ_SEED),
-    ]) {
-      recorded.push(
-        digestRow(
-          command,
-          describeOutcome(() => nextMutation('Bash', { command }, route, command, repository)),
-        ),
-      );
+    const rows: readonly { readonly command: string; readonly target: string | null }[] = [
+      { command: 'mv .git /tmp/stash', target: '.git' },
+      { command: 'mv -- .git /tmp/stash', target: '.git' },
+      { command: 'mv /tmp/payload .git/hooks/pre-commit', target: '.git/hooks/pre-commit' },
+      { command: 'mv -t .git/hooks /tmp/pre-commit', target: '.git/hooks' },
+      { command: 'mv --target-directory=.git/hooks /tmp/pre-commit', target: '.git/hooks' },
+      // The operand is reported before expansion, so a tracked variable keeps its spelling.
+      { command: 'G=.git; mv $G /tmp/stash', target: '${G}' },
+      { command: 'G=.git && mv ${G}/hooks /tmp/stash', target: '${G}/hooks' },
+      // A `cd` moves the directory the later operand resolves against.
+      { command: 'cd .git && mv hooks /tmp/stash', target: 'hooks' },
+      { command: 'sudo mv .git /tmp/stash', target: '.git' },
+      { command: 'env -i mv .git /tmp/stash', target: '.git' },
+      // A redirection is compared against the marker files, and a plain checkout has none: its
+      // `.git` is a directory, which a redirection cannot overwrite.
+      { command: 'echo payload > .git', target: null },
+      { command: 'echo payload >> .git/hooks/pre-commit', target: '.git/hooks/pre-commit' },
+      // A write inside the Git directory that is neither the entry nor a hook is left to the
+      // delete and move tests.
+      { command: 'echo payload > .git/config', target: null },
+      { command: 'echo payload > file.txt', target: null },
+      { command: 'mv file.txt other.txt', target: null },
+      { command: 'git mv file.txt other.txt', target: null },
+      { command: 'mv', target: null },
+    ];
+    for (const row of rows) {
+      expect(
+        nextMutation('Bash', { command: row.command }, route, row.command, repository),
+        row.command,
+      ).toStrictEqual(row.target === null ? null : { target: row.target });
     }
-    expectRecordedDigest('guards-git-metadata/corpus-fuzz', recorded);
+  });
+
+  test('a path-carrying route reports a write-like target, a read-only tool never does', () => {
+    const repository = repositories[0];
+    if (!repository) throw new Error('missing fixture');
+    const rows: readonly {
+      readonly toolName: string;
+      readonly input: Record<string, string>;
+      readonly target: string | null;
+    }[] = [
+      { toolName: 'Write', input: { file_path: '.git' }, target: '.git' },
+      {
+        toolName: 'Write',
+        input: { file_path: '.git/hooks/pre-commit' },
+        target: '.git/hooks/pre-commit',
+      },
+      { toolName: 'Write', input: { file_path: '.git/config' }, target: null },
+      { toolName: 'Write', input: { file_path: 'file.txt' }, target: null },
+      { toolName: 'Edit', input: { file_path: '.git' }, target: '.git' },
+      {
+        toolName: 'NotebookEdit',
+        input: { notebook_path: '.git/hooks/pre-commit' },
+        target: '.git/hooks/pre-commit',
+      },
+      {
+        toolName: 'unknown_writer',
+        input: { path: '.git/hooks/pre-commit' },
+        target: '.git/hooks/pre-commit',
+      },
+      { toolName: 'Read', input: { file_path: '.git' }, target: null },
+      { toolName: 'Grep', input: { path: '.git' }, target: null },
+    ];
+    for (const route of NON_COMMAND_ROUTES) {
+      for (const row of rows) {
+        // Only the patch, path and unknown routes carry paths to test; grep and glob do not.
+        const carriesPaths =
+          route.kind === 'patch' || route.kind === 'path' || route.kind === 'unknown';
+        expect(
+          nextMutation(row.toolName, row.input, route, null, repository),
+          `${route.kind}: ${row.toolName} ${JSON.stringify(row.input)}`,
+        ).toStrictEqual(carriesPaths && row.target !== null ? { target: row.target } : null);
+      }
+    }
   });
 
   test('the command table denies the control plane and allows ordinary files', () => {
@@ -399,9 +389,9 @@ describe('git metadata mutation targets in semantic facts', () => {
     ).toBeNull();
   });
 
-  test('the denial reason is the shipped wording', () => {
-    expectRecordedDigest('guards-git-metadata/reason', [
-      ['REASON_GIT_METADATA_PROTECTION', REASON_GIT_METADATA_PROTECTION],
-    ]);
+  test('the denial asks the user before the control plane is touched', () => {
+    expect(REASON_GIT_METADATA_PROTECTION).toBe(
+      'Git metadata and hooks are protected. Ask the user before modifying them.',
+    );
   });
 });

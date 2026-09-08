@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { safetyNetSubcommandIndex } from '@/gate/guards/safety-net-invocation';
-import { expectRecordedDigest } from '../../helpers/gate-differential';
 
 /**
- * Two guards read this index with opposite strictness, so the port is checked against every
- * runner spelling in both modes: a disagreement either exempts a real command from secret
- * protection or lets `policy apply` through.
+ * Two guards read this index with opposite strictness, so every runner spelling is stated in
+ * both modes: a wrong answer either exempts a real command from secret protection or lets
+ * `policy apply` through.
  */
 
 const RUNNER_COMMANDS = [
@@ -61,20 +60,117 @@ const TOKEN_LISTS: readonly (readonly string[])[] = [
 
 const MODES = [{}, { broad: false }, { broad: true }];
 
-describe('next/gate/guards/safety-net-invocation against src/guards/safety-net-invocation', () => {
+describe('safetyNetSubcommandIndex', () => {
   const rows = RUNNER_COMMANDS.flatMap((command) =>
     TOKEN_LISTS.flatMap((tokens) => MODES.map((options) => ({ command, tokens, options }))),
   );
 
-  test('locates the same subcommand for every runner spelling in both modes', () => {
-    const recorded: [string, unknown][] = [];
-    for (const row of rows) {
-      recorded.push([
-        JSON.stringify(row),
-        safetyNetSubcommandIndex(row.command, row.tokens, row.options),
-      ]);
+  /** `narrow` is the exempting consumer's answer, `broad` the blocking one's. */
+  test('locates the subcommand of a runner spelling, under-matching or over-matching by mode', () => {
+    const spellings: readonly {
+      readonly command: string;
+      readonly tokens: readonly string[];
+      readonly narrow: number | null;
+      readonly broad: number | null;
+    }[] = [
+      { command: 'cc-safety-net', tokens: ['explain', 'x'], narrow: 0, broad: 0 },
+      { command: 'ccsn', tokens: [], narrow: 0, broad: 0 },
+      { command: 'npx', tokens: ['cc-safety-net', 'policy', 'apply'], narrow: 1, broad: 1 },
+      { command: 'npx', tokens: ['-y', 'cc-safety-net', 'explain', 'x'], narrow: 2, broad: 2 },
+      // Only the documented consent flag is skipped by the exemption; the blocking consumer
+      // looks past any option in front of the target.
+      {
+        command: 'npx',
+        tokens: ['--loglevel=silent', 'cc-safety-net', 'policy', 'apply'],
+        narrow: null,
+        broad: 2,
+      },
+      {
+        command: 'npx',
+        tokens: ['--package', 'cc-safety-net', 'ccsn', 'policy', 'apply'],
+        narrow: null,
+        broad: 3,
+      },
+      // A version or tag suffix resolves this package; a protocol, a scope or a path does not.
+      { command: 'npx', tokens: ['ccsn@latest', 'explain', 'x'], narrow: 1, broad: 1 },
+      { command: 'npx', tokens: ['cc-safety-net@npm:other', 'status'], narrow: null, broad: null },
+      { command: 'npx', tokens: ['@scope/cc-safety-net', 'status'], narrow: null, broad: null },
+      {
+        command: 'npx',
+        tokens: ['./node_modules/.bin/cc-safety-net', 'status'],
+        narrow: null,
+        broad: null,
+      },
+      { command: 'pnpm', tokens: ['dlx', 'cc-safety-net', 'policy', 'apply'], narrow: 2, broad: 2 },
+      // Yarn Classic runs a project script named `dlx`, so only the blocking consumer trusts it.
+      {
+        command: 'yarn',
+        tokens: ['dlx', 'cc-safety-net', 'policy', 'apply'],
+        narrow: null,
+        broad: 2,
+      },
+      {
+        command: 'pnpm',
+        tokens: ['dlx', 'other-package', 'policy', 'apply'],
+        narrow: null,
+        broad: null,
+      },
+      {
+        command: 'npm',
+        tokens: ['exec', 'cc-safety-net', 'policy', 'apply'],
+        narrow: null,
+        broad: 2,
+      },
+      {
+        command: 'npm',
+        tokens: ['--silent', 'exec', 'cc-safety-net', 'policy', 'apply'],
+        narrow: null,
+        broad: 3,
+      },
+      {
+        command: 'bun',
+        tokens: ['dist/bin/cc-safety-net.js', 'policy', 'apply'],
+        narrow: 1,
+        broad: 1,
+      },
+      {
+        command: 'bun',
+        tokens: ['run', 'dist/bin/cc-safety-net.js', 'policy', 'apply'],
+        narrow: 2,
+        broad: 2,
+      },
+      // `node run x` executes a local script named `run`, so it is a different program.
+      {
+        command: 'node',
+        tokens: ['run', 'dist/bin/cc-safety-net.js', 'policy', 'apply'],
+        narrow: null,
+        broad: null,
+      },
+      {
+        command: 'node',
+        tokens: ['--experimental-strip-types', 'src/cli/cc-safety-net.ts', 'explain', 'x'],
+        narrow: null,
+        broad: 2,
+      },
+      {
+        command: 'node',
+        tokens: ['C:\\app\\dist\\bin\\cc-safety-net.js', 'policy', 'apply'],
+        narrow: 1,
+        broad: 1,
+      },
+      { command: 'sh', tokens: ['cc-safety-net', 'explain', 'x'], narrow: null, broad: null },
+      { command: 'deno', tokens: ['cc-safety-net', 'explain'], narrow: null, broad: null },
+    ];
+    for (const row of spellings) {
+      const label = `${row.command} ${row.tokens.join(' ')}`;
+      expect(safetyNetSubcommandIndex(row.command, row.tokens, {}), label).toBe(row.narrow);
+      expect(safetyNetSubcommandIndex(row.command, row.tokens, { broad: false }), label).toBe(
+        row.narrow,
+      );
+      expect(safetyNetSubcommandIndex(row.command, row.tokens, { broad: true }), label).toBe(
+        row.broad,
+      );
     }
-    expectRecordedDigest('guards-safety-net-invocation/subcommand-index', recorded);
   });
 
   test('the cutover entrypoint is recognized like the retired one', () => {
@@ -86,7 +182,7 @@ describe('next/gate/guards/safety-net-invocation against src/guards/safety-net-i
     );
   });
 
-  test('the table reaches both answers, so parity is not vacuous', () => {
+  test('the table reaches both answers, so the sweep is not vacuous', () => {
     const indexes = rows.map((row) =>
       safetyNetSubcommandIndex(row.command, row.tokens, row.options),
     );

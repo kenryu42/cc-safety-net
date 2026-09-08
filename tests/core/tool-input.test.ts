@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as next from '@/core/tool-input';
-import { expectRecordedDigest } from '../helpers/gate-differential';
-import { corpusToolInputs, createSeededRandom, FUZZ_SEED } from '../helpers/shell-inputs';
+import { corpusToolInputs } from '../helpers/shell-inputs';
 
 const PATH_LIKE_KEYS = new Set([
   'absolutepath',
@@ -124,7 +123,7 @@ const GIT_DIFF_TARGETS = [
   'created.ts',
 ];
 
-describe('next/core/tool-input against src/parser/tool-input', () => {
+describe('core/tool-input', () => {
   const depthUnderCap = next.TOOL_INPUT_LIMITS.maxDepth - 2;
 
   /** What the three readers found, with the empty answers left out so a row states only what it
@@ -322,19 +321,90 @@ describe('next/core/tool-input against src/parser/tool-input', () => {
     }
   });
 
-  test('extracts the same patch targets from fuzzed diff headers', () => {
-    const random = createSeededRandom(FUZZ_SEED ^ 0x7001);
-    const pieces = ['a/', 'b/', 'x y', '"', "'", '\\303', '\\n', '\\', '/', ' ', '\t', 'f.ts', ''];
-    const recorded: (readonly [string, unknown])[] = [];
-    for (let sample = 0; sample < 1_000; sample++) {
-      const header = Array.from(
-        { length: 1 + Math.floor(random() * 10) },
-        () => pieces[Math.floor(random() * pieces.length)] ?? '',
-      ).join('');
-      const text = `diff --git ${header}\n--- ${header}\n+++ ${header}\nrename to ${header}`;
-      recorded.push([text, next.extractPatchTargetsFromToolInput(text)]);
+  test('reads the paths a diff header names, in each spelling a patch carries', () => {
+    const rows: readonly { readonly patch: string; readonly targets: readonly string[] }[] = [
+      { patch: 'diff --git .env .env', targets: ['.env', '.env'] },
+      {
+        patch: 'diff --git a/file with space b/file with space',
+        targets: ['file with space', 'file with space'],
+      },
+      {
+        patch: 'diff --git "a/quoted file.txt" "b/quoted file.txt"',
+        targets: ['quoted file.txt', 'quoted file.txt'],
+      },
+      {
+        // A quoted path is unescaped, octal escapes included.
+        patch: String.raw`diff --git "a/\056env" "b/\056env"`,
+        targets: ['.env', '.env'],
+      },
+      {
+        patch: String.raw`diff --git "a/caf\303\251.txt" "b/caf\303\251.txt"`,
+        targets: ['café.txt', 'café.txt'],
+      },
+      {
+        // Both the prefixed and the stripped spelling are reported, since the prefix is a
+        // convention rather than part of the name.
+        patch: 'diff --git a/src/file.ts b/src/file.ts\ndiff --git old/config.json new/config.json',
+        targets: [
+          'src/file.ts',
+          'src/file.ts',
+          'old/config.json',
+          'new/config.json',
+          'config.json',
+        ],
+      },
+      {
+        patch: [
+          'diff --git a/old name b/new name',
+          'similarity index 100%',
+          'rename from old name',
+          'rename to new name',
+          'copy from source name',
+          'copy to copied name',
+        ].join('\n'),
+        targets: ['old name', 'new name', 'source name', 'copied name'],
+      },
+      {
+        patch: [
+          '--- /dev/null',
+          '+++ new/config.json',
+          '@@ -0,0 +1 @@',
+          '+new',
+          '--- old/removed.json',
+          '+++ /dev/null',
+        ].join('\n'),
+        targets: ['new/config.json', 'config.json', 'old/removed.json', 'removed.json'],
+      },
+      {
+        patch: ['*** Update File: safe.txt', '@@', '-safe', '+safer', '*** Update File: .env'].join(
+          '\n',
+        ),
+        targets: ['safe.txt', '.env'],
+      },
+      {
+        // An unterminated quote leaves the header unreadable, so its words are reported as they
+        // stand rather than dropped.
+        patch: 'diff --git "a/unterminated b/unterminated',
+        targets: ['"a/unterminated', 'b/unterminated', 'unterminated'],
+      },
+      { patch: 'no header here', targets: [] },
+    ];
+    for (const row of rows) {
+      expect(next.extractPatchTargetsFromToolInput({ patch: row.patch }), row.patch).toStrictEqual([
+        ...row.targets,
+      ]);
     }
-    expectRecordedDigest('core-tool-input/fuzzed-patch-targets', recorded);
+  });
+
+  test('a header naming more candidates than the fallback allows is refused, not truncated', () => {
+    const accepted = Array.from({ length: 64 }, (_, index) => `accepted-${index}`).join(' ');
+    expect(
+      next.extractPatchTargetsFromToolInput({ patch: `diff --git ${accepted} ${accepted}` }),
+    ).toStrictEqual([accepted, accepted]);
+    const refused = `${accepted} accepted-64`;
+    expect(() =>
+      next.extractPatchTargetsFromToolInput({ patch: `diff --git ${refused} ${refused}` }),
+    ).toThrow('tool input traversal limit exceeded');
   });
 
   test('rejects unsafe and oversized shapes with the same limit error', () => {

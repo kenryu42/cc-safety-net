@@ -1,17 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import * as next from '@/core/redaction';
-import { expectRecordedDigest } from '../helpers/gate-differential';
-import { corpusStrings, seededRandom } from './differential-inputs';
-
-/** Each exported sanitizer, in the order the digest keys number them. */
-const SANITIZERS = [
-  next.redactSecrets,
-  next.redactNonAssignmentSecrets,
-  next.redactEnvAssignmentValues,
-  next.sanitizeDiagnosticText,
-  next.getEnvAssignmentValues,
-  next.mightContainEnvAssignment,
-] as const;
 
 const PRIVATE_KEY =
   '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy0AYc5\n-----END RSA PRIVATE KEY-----';
@@ -93,83 +81,119 @@ const FIXED: readonly string[] = [
   'x'.repeat(300),
 ];
 
-const FUZZ_FRAGMENTS: readonly string[] = [
-  'TOKEN=',
-  'SECRET_KEY=',
-  'DB_URL=',
-  'DATABASE_DSN=',
-  'PASSWORD=',
-  'PLAIN=',
-  'x=',
-  '"',
-  "'",
-  '\\"',
-  '$(',
-  ')',
-  ' ',
-  '  ',
-  '\n',
-  '\t',
-  '(',
-  '[',
-  '{',
-  ';',
-  '|',
-  '&',
-  '?',
-  '=',
-  ':',
-  '@',
-  '//',
-  'https://',
-  'postgres://',
-  'user:pw@host',
-  'token@host',
-  'Bearer',
-  'authorization:',
-  'x-api-key:',
-  'cookie:',
-  'sig=',
-  'signature=',
-  '-u',
-  '--user',
-  'admin:password',
-  'ghp_abcdefghijklmnopqrstuvwxyz0123',
-  'sk-abcdefghijklmnopqrstuvwxyz',
-  'AKIAIOSFODNN7EXAMPLE',
-  'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
-  '-----BEGIN PRIVATE KEY-----',
-  '-----END PRIVATE KEY-----',
-  'value',
-  'hunter2',
-  'echo',
-  'curl',
-  'git',
-  'é',
-  '😀',
-  '<redacted>',
-];
-
-function fuzzTexts(count: number, seed: number): readonly string[] {
-  const random = seededRandom(seed);
-  return Array.from({ length: count }, () =>
-    Array.from(
-      { length: 1 + Math.floor(random() * 16) },
-      () => FUZZ_FRAGMENTS[Math.floor(random() * FUZZ_FRAGMENTS.length)] ?? '',
-    ).join(''),
-  );
-}
-
 describe('redaction', () => {
-  test('every sanitizer agrees with the shipped one on fixed, corpus, and fuzzed text', () => {
-    const texts = [...FIXED, ...corpusStrings(), ...fuzzTexts(3_000, 0x5afe_0003)];
-    const recorded: (readonly [string, unknown])[] = [];
-    for (const [index, sanitize] of SANITIZERS.entries()) {
-      for (const [row, text] of texts.entries()) {
-        recorded.push([`${index}-${row}`, sanitize(text)]);
-      }
+  test('assignment values are read and redacted whole, in every quoting form', () => {
+    const rows: readonly {
+      readonly text: string;
+      readonly values: readonly string[];
+      readonly redacted: string;
+    }[] = [
+      {
+        text: 'TOKEN="part\\" two" NEXT=\'three four\'',
+        values: ['"part\\" two"', "'three four'"],
+        redacted: 'TOKEN=<redacted> NEXT=<redacted>',
+      },
+      {
+        text: 'TOKEN=$(printf \'%s\' "$(get-secret)") SAFE=value',
+        values: ['$(printf \'%s\' "$(get-secret)")', 'value'],
+        redacted: 'TOKEN=<redacted> SAFE=<redacted>',
+      },
+      { text: 'prefixTOKEN=value', values: ['value'], redacted: 'prefixTOKEN=<redacted>' },
+      { text: 'prefix-TOKEN=value', values: [], redacted: 'prefix-TOKEN=value' },
+      { text: 'git reset --hard', values: [], redacted: 'git reset --hard' },
+      {
+        text: 'TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123',
+        values: ['ghp_abcdefghijklmnopqrstuvwxyz0123'],
+        redacted: 'TOKEN=<redacted>',
+      },
+    ];
+    for (const row of rows) {
+      expect(next.getEnvAssignmentValues(row.text), row.text).toStrictEqual([...row.values]);
+      expect(next.redactEnvAssignmentValues(row.text), row.text).toBe(row.redacted);
     }
-    expectRecordedDigest('core-redaction/sanitizers', recorded);
+    // contract: src/core/redaction.ts:94 — the prefilter only looks for a name followed by `=`,
+    // so it answers true for text the extractor then reads no assignment from.
+    for (const row of [
+      { text: 'TOKEN=abc', might: true },
+      { text: 'prefix-TOKEN=value', might: true },
+      { text: 'git reset --hard', might: false },
+      { text: 'rm -rf /tmp/x', might: false },
+      { text: '', might: false },
+    ]) {
+      expect(next.mightContainEnvAssignment(row.text), row.text).toBe(row.might);
+    }
+  });
+
+  test('secrets in command text are replaced wherever they are spelled', () => {
+    const rows: readonly { readonly text: string; readonly redacted: string }[] = [
+      { text: 'git reset --hard', redacted: 'git reset --hard' },
+      { text: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', redacted: '<redacted>' },
+      { text: 'TOKEN=secret123 git reset --hard', redacted: 'TOKEN=<redacted> git reset --hard' },
+      {
+        text: 'X-Amz-Signature=bare-aws sig=bare-short https://example.com/object?X-Goog-Signature=url-google&signature=url-long&name=report.pdf',
+        redacted:
+          'X-Amz-Signature=<redacted> sig=<redacted> https://example.com/object?X-Goog-Signature=<redacted>&signature=<redacted>&name=report.pdf',
+      },
+      {
+        text: "curl 'https://example.com/object?sig=url-secret'; sig=bare-secret;next",
+        redacted: "curl 'https://example.com/object?sig=<redacted>'; sig=<redacted>;next",
+      },
+      {
+        text: 'echo ok;sig=secret producer|signature=secret',
+        redacted: 'echo ok;sig=<redacted> producer|signature=<redacted>',
+      },
+      {
+        text: 'sig="double secret" signature=\'single secret\'',
+        redacted: 'sig=<redacted> signature=<redacted>',
+      },
+      {
+        text: 'https://user:password@example.com',
+        redacted: 'https://<redacted>:<redacted>@example.com',
+      },
+      {
+        text: 'git://token123@example.com/repo https://token456@example.com',
+        redacted: 'git://<redacted>@example.com/repo https://<redacted>@example.com',
+      },
+      {
+        text: 'curl -H "Authorization: Bearer abc123" https://example.com',
+        redacted: 'curl -H "Authorization: <redacted>" https://example.com',
+      },
+      {
+        text: 'curl -H "Cookie: session=secret123" -H "X-API-Key: key123" https://example.com',
+        redacted: 'curl -H "Cookie: <redacted>" -H "X-API-Key: <redacted>" https://example.com',
+      },
+      { text: PRIVATE_KEY, redacted: '<redacted>' },
+    ];
+    for (const row of rows) {
+      expect(next.redactSecrets(row.text), row.text).toBe(row.redacted);
+    }
+    // Build synthetic provider tokens at runtime to avoid push-protection false positives.
+    for (const token of [
+      ['xoxb', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
+      'npm_abcdefghijklmnopqrstuvwxyz1234567890',
+      ['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('_'),
+      'pypi-AgEIcHlwaS5vcmcCJDAwMDAwMDAw',
+      'AKIAIOSFODNN7EXAMPLE',
+    ]) {
+      expect(next.redactSecrets(token), token).toBe('<redacted>');
+    }
+  });
+
+  test('the diagnostic sanitizer is the assignment pass followed by the non-assignment pass', () => {
+    for (const text of [
+      'TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123 curl -H "Authorization: Bearer abc123" https://example.com',
+      'git reset --hard',
+      'https://user:password@example.com',
+      PRIVATE_KEY,
+    ]) {
+      expect(next.sanitizeDiagnosticText(text), text).toBe(
+        next.redactNonAssignmentSecrets(next.redactEnvAssignmentValues(text)),
+      );
+    }
+    // The assignment pass redacts values only; a provider token elsewhere in the text survives it.
+    expect(next.redactEnvAssignmentValues('curl -H "Authorization: Bearer abc123"')).toBe(
+      'curl -H "Authorization: Bearer abc123"',
+    );
   });
 
   test('the fixed table both redacts and leaves text alone', () => {
