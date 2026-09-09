@@ -270,13 +270,17 @@ describe('linked worktree facts', () => {
     },
   );
 
-  test('gives up without relaxation when git hangs past the timeout', () => {
-    // Between the 100ms cap and the 1s the fake sleeps: a run that waited for the fake fails
-    // here, and the margin above the cap is the process teardown a loaded machine adds to it.
-    const started = performance.now();
-    expect(resolveWorktreeFacts(fixture.linkedWorktree, fakeGit('sleep 1'), 100)).toBeNull();
-    const elapsed = performance.now() - started;
-    expect(elapsed).toBeGreaterThanOrEqual(100);
-    expect(elapsed).toBeLessThan(900);
-  });
+  // Same fake-git script as above: on Windows the spawn fails before the timeout can matter.
+  test.skipIf(process.platform === 'win32')(
+    'gives up without relaxation when git hangs past the timeout',
+    () => {
+      // Between the 100ms cap and the 1s the fake sleeps: a run that waited for the fake fails
+      // here, and the margin above the cap is the process teardown a loaded machine adds to it.
+      const started = performance.now();
+      expect(resolveWorktreeFacts(fixture.linkedWorktree, fakeGit('sleep 1'), 100)).toBeNull();
+      const elapsed = performance.now() - started;
+      expect(elapsed).toBeGreaterThanOrEqual(100);
+      expect(elapsed).toBeLessThan(900);
+    },
+  );
 });
