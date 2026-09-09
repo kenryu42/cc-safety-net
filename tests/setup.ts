@@ -2,6 +2,7 @@ import { afterAll } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { removeCanonicalStub } from './helpers/fake-bin';
 
 const testHome = mkdtempSync(
   join(process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(), 'cc-safety-net-test-home-'),
@@ -40,4 +41,7 @@ delete process.env.OPENCLAW_CONFIG_PATH;
 delete process.env.XDG_CONFIG_HOME;
 delete process.env.XDG_CACHE_HOME;
 
-afterAll(() => rmSync(testHome, { recursive: true, force: true }));
+afterAll(() => {
+  removeCanonicalStub();
+  rmSync(testHome, { recursive: true, force: true });
+});

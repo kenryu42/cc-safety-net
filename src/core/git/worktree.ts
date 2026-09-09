@@ -30,15 +30,21 @@ const GIT_CONFIG_TIMEOUT_MS = 5000;
  * Null when `cwd` is not a directory, not a verified linked worktree, or the effective
  * `submodule.recurse` setting could not be read (a failed or timed-out `git config` spawn):
  * every one of those means no relaxation.
- * `gitBinary` is exposed so a test can point the spawn at a fake executable.
+ * `gitBinary` is exposed so a test can point the spawn at a fake executable, and `timeoutMs` for
+ * the same reason: so a test can cap the wait without sleeping through the shipped one.
  */
 export function resolveWorktreeFacts(
   cwd: string,
   gitBinary: string | null = getTrustedGitBinary(),
+  timeoutMs = GIT_CONFIG_TIMEOUT_MS,
 ): WorktreeFacts | null {
   const gitCwd = resolveDirectory(cwd);
   if (gitCwd === null || !isLinkedWorktree(gitCwd)) return null;
-  const recursiveSubmodules = effectiveGitConfigEnablesRecursiveSubmodules(gitCwd, gitBinary);
+  const recursiveSubmodules = effectiveGitConfigEnablesRecursiveSubmodules(
+    gitCwd,
+    gitBinary,
+    timeoutMs,
+  );
   return recursiveSubmodules === null ? null : { recursiveSubmodules };
 }
 
@@ -262,6 +268,7 @@ export function findDotGitInAncestors(cwd: string): string | null {
 function effectiveGitConfigEnablesRecursiveSubmodules(
   cwd: string,
   gitBinary: string | null,
+  timeoutMs: number,
 ): boolean | null {
   const localConfigResult = localGitConfigEnablesRecursiveSubmodules(cwd);
   if (localConfigResult === null || localConfigResult) {
@@ -277,7 +284,7 @@ function effectiveGitConfigEnablesRecursiveSubmodules(
     encoding: 'utf8',
     env: withoutGitConfigEnv(process.env),
     stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: GIT_CONFIG_TIMEOUT_MS,
+    timeout: timeoutMs,
   });
   // `git config --get` exits 1 when the key is unset; anything but that or success is a failure.
   if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) return null;

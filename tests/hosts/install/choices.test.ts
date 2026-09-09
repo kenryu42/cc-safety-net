@@ -14,15 +14,15 @@ import { createTempRoot, removeTempRoots, withProcessEnv } from '../../helpers/t
 
 /**
  * The rows the install picker offers. A host counts as present only when its CLI answers
- * `--version` with a clean exit inside five seconds, and what the picker says about a row that
- * cannot be chosen ("CLI not installed", "already installed", "not installed") is what the user
- * reads, so the probe result and the reason are both stated here.
+ * `--version` with a clean exit inside the probe cap (five seconds in production), and what the
+ * picker says about a row that cannot be chosen ("CLI not installed", "already installed", "not
+ * installed") is what the user reads, so the probe result and the reason are both stated here.
  */
 
 const SCRIPT: readonly FakeScriptEntry[] = [
   { command: 'present', stdout: '1.0.0\n' },
   { command: 'broken', exit: 1 },
-  { command: 'stalled', delayMs: 10_000 },
+  { command: 'stalled', delayMs: 1000 },
 ];
 
 const CONFIGURED: readonly InstallTarget[] = ['cursor', 'pi'];
@@ -58,21 +58,21 @@ describe('probing a host CLI', () => {
       ['absent', '--version'],
     ];
     const ported = await withProcessEnv(bin.env, () =>
-      Promise.all(commands.map(probeInstallTarget)),
+      Promise.all(commands.map((command) => probeInstallTarget(command))),
     );
     expect(ported).toEqual([true, false, false]);
   });
 
-  test('a CLI that never answers is unavailable once the five-second probe expires', async () => {
+  test('a CLI that never answers is unavailable once the probe cap expires', async () => {
     const bin = createFakeBin(join(createTempRoot('next-probe-'), 'fake'), SCRIPT);
     const stalled: NativeCommand = ['stalled', '--version'];
     const started = Date.now();
-    const probed = await withProcessEnv(bin.env, () => probeInstallTarget(stalled));
+    const probed = await withProcessEnv(bin.env, () => probeInstallTarget(stalled, 100));
     const elapsed = Date.now() - started;
     expect(probed).toBe(false);
-    expect(elapsed).toBeGreaterThanOrEqual(4900);
-    expect(elapsed).toBeLessThan(8000);
-  }, 20_000);
+    expect(elapsed).toBeGreaterThanOrEqual(100);
+    expect(elapsed).toBeLessThan(900);
+  });
 });
 
 describe('the install picker rows', () => {

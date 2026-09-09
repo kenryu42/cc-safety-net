@@ -27,7 +27,10 @@ export type BuildInstallTargetChoicesOptions = {
 // contention) must not be misreported as missing. Absent binaries still fail fast on spawn error.
 const PROBE_TIMEOUT_MS = 5000;
 
-export function probeInstallTarget(command: NativeCommand): Promise<boolean> {
+export function probeInstallTarget(
+  command: NativeCommand,
+  timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const spawnCommand = getSpawnCommand([...command], process.env);
     const proc = spawn(spawnCommand.cmd, spawnCommand.args, {
@@ -46,7 +49,7 @@ export function probeInstallTarget(command: NativeCommand): Promise<boolean> {
     const timeoutId = setTimeout(() => {
       proc.kill();
       finish(false);
-    }, PROBE_TIMEOUT_MS);
+    }, timeoutMs);
 
     proc.on('error', () => finish(false));
     proc.on('close', (code) => finish(code === 0));
