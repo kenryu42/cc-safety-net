@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTestEnvironment, type Environment } from '@/core/environment';
+import { createTestEnvironment, type Environment, type PathResolver } from '@/core/environment';
 import { createToolInvocation, type ToolInvocation, type ToolRoute } from '@/gate/invocation';
 import {
   type GuardEvaluation,
@@ -45,6 +45,33 @@ export function createGateTree(prefix: string) {
     workspace: join(root, 'workspace'),
     home: join(root, 'home'),
     remove: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+/**
+ * A resolver that asks the filesystem once per path. The gate caches realpath results only for the
+ * life of one decision, so a replay that decides tens of thousands of commands against a fixture
+ * tree that never changes re-resolves the same cwd, home, policy and coding-CLI roots every time;
+ * that lookup was 43% of the replay's CPU. Sound only while nothing under the tree moves.
+ */
+export function memoizedPaths(paths: PathResolver): PathResolver {
+  const realpaths = new Map<string, string | null>();
+  const kinds = new Map<string, ReturnType<PathResolver['entryKind']>>();
+  return {
+    ...paths,
+    realpath: (path) => {
+      if (realpaths.has(path)) return realpaths.get(path) ?? null;
+      const resolved = paths.realpath(path);
+      realpaths.set(path, resolved);
+      return resolved;
+    },
+    entryKind: (path) => {
+      const cached = kinds.get(path);
+      if (cached !== undefined) return cached;
+      const kind = paths.entryKind(path);
+      kinds.set(path, kind);
+      return kind;
+    },
   };
 }
 

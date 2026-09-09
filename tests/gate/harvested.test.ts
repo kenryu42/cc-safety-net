@@ -6,6 +6,7 @@ import {
   bashCall,
   createGateTree,
   type GateVerdict,
+  memoizedPaths,
   portedVerdict,
 } from '../helpers/gate-differential';
 import { HARVESTED_LITERAL_COUNT, HARVESTED_LITERALS } from '../helpers/harvested-literals';
@@ -61,9 +62,15 @@ const PINNED_PROCESS = {
   USER: 'agent',
 };
 
-/** One batch over the pinned process, with the gate's snapshot taken inside the pinned window. */
+/**
+ * One batch over the pinned process, with the gate's snapshot taken inside the pinned window. The
+ * fixture tree is static for the whole run, so one batch shares its path lookups.
+ */
 const withPinnedProcess = <T>(batch: (environment: Environment) => T): T =>
-  withProcessEnv(PINNED_PROCESS, () => batch(createProcessEnvironment()));
+  withProcessEnv(PINNED_PROCESS, () => {
+    const environment = createProcessEnvironment();
+    return batch({ ...environment, paths: memoizedPaths(environment.paths) });
+  });
 
 /**
  * Both directories are real, so a relative operand resolves; only one of them is a repository.

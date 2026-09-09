@@ -2054,6 +2054,13 @@ function matchesCodingCliPath(
   );
 }
 
+/**
+ * The coding-CLI roots one decision has already normalized. Every candidate path is matched
+ * against all of them, so without this each candidate re-derived the same twenty-odd roots
+ * from scratch; that work was half of the gate's CPU on a replay.
+ */
+const codingCliRoots = new WeakMap<Budget, Map<string, string>>();
+
 function codingCliRoot(
   envValue: string | undefined,
   fallback: string,
@@ -2061,7 +2068,19 @@ function codingCliRoot(
   environment: EnvironmentContext,
   budget: Budget,
 ): string {
-  return normalizeCandidatePath(envValue?.trim() ? envValue : fallback, cwd, environment, budget);
+  const roots = codingCliRoots.get(budget) ?? new Map<string, string>();
+  codingCliRoots.set(budget, roots);
+  const key = `${cwd}\0${envValue ?? ''}\0${fallback}`;
+  const cached = roots.get(key);
+  if (cached !== undefined) return cached;
+  const root = normalizeCandidatePath(
+    envValue?.trim() ? envValue : fallback,
+    cwd,
+    environment,
+    budget,
+  );
+  roots.set(key, root);
+  return root;
 }
 
 function matchesFileInRoot(normalized: string, root: string, files: readonly string[]): boolean {
@@ -2345,7 +2364,13 @@ function usesBackslashSeparators(value: string): boolean {
 
 function normalizePathText(value: string): string {
   const trimmed = value.trim();
-  const normalized = (usesBackslashSeparators(trimmed) ? trimmed.replace(/\\/g, '/') : trimmed)
+  // `win32.parse` is the costly step here, and it only matters when there is a backslash to
+  // rewrite; most candidates carry none.
+  const normalized = (
+    trimmed.includes('\\') && usesBackslashSeparators(trimmed)
+      ? trimmed.replace(/\\/g, '/')
+      : trimmed
+  )
     .replace(/\/{2,}/g, '/')
     .replace(/^\.\//, '');
   if (normalized === '/') {
