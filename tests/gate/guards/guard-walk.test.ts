@@ -90,7 +90,7 @@ describe('gate/guards/guard-walk', () => {
     // An explicit fd prefix stays a word of its own.
     expect(observe('cmd 2>&1').observations).toStrictEqual([
       'redirect >& file-write immediate 1',
-      'segment ["cmd","2"] cwd=' + workspace + ' pipe=null boundary=null',
+      `segment ["cmd","2"] cwd=${workspace} pipe=null boundary=null`,
     ]);
     // A redirection target keeps its glob text where a plain word would be dropped.
     expect(observe('echo a > *.log').observations).toContain(
