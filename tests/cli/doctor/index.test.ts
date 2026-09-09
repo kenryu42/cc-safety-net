@@ -2,12 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { encodeCwdForLogDirname, getAuditLogsDir } from '@/audit/writer';
+import { runDoctor } from '@/cli/doctor/index';
 import { installCursor } from '@/hosts/cursor/install';
 import type { DoctorReport } from '@/hosts/doctor-types';
 import {
   type CliOutcome,
   type CliRow,
   type CliSide,
+  runCliCommand,
   runCliDifferential,
   seedFiles,
 } from '../../helpers/cli-differential';
@@ -32,10 +34,13 @@ afterEach(() => {
 });
 
 async function runDoctorJson(slug: string, row: Omit<CliRow, 'args'>) {
-  const result = await runCliDifferential({
-    args: ['doctor', '--json', '--skip-update-check'],
-    ...row,
-  });
+  const result = await runCliCommand(
+    {
+      args: ['doctor', '--json', '--skip-update-check'],
+      ...row,
+    },
+    (environment) => runDoctor(environment, { json: true, skipUpdateCheck: true }),
+  );
   const outcome = { ...result, stdout: foldWindowsPosture(result.stdout) };
   expect(normalizeDoctorJson(outcome.stdout)).toMatchSnapshot(slug);
   return { outcome, report: JSON.parse(outcome.stdout) as DoctorReport };

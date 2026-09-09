@@ -9,6 +9,7 @@ import {
   type CliOutcome,
   type CliRow,
   type CliSide,
+  runCliCommand,
   runCliDifferential,
   seedFiles,
 } from '../helpers/cli-differential';
@@ -187,7 +188,11 @@ const foldProjectDir = (outcome: CliOutcome): CliOutcome => ({
 });
 
 async function runLogs(args: readonly string[], row: Omit<CliRow, 'args'> = {}) {
-  return foldProjectDir(await runCliDifferential({ args: ['logs', ...args], ...row }));
+  return foldProjectDir(
+    await runCliCommand({ args: ['logs', ...args], ...row }, (environment) =>
+      portedRunLogsCommand(environment, [...args]),
+    ),
+  );
 }
 
 /** The same rows against the seeded tree; the clock is read once so the fixture is fixed. */

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { posix } from 'node:path';
-import { type CliRow, runCliDifferential, seedFiles } from '../helpers/cli-differential';
+import { printStatus } from '@/cli/status';
+import {
+  type CliRow,
+  runCliCommand,
+  runCliDifferential,
+  seedFiles,
+} from '../helpers/cli-differential';
 import {
   json,
   PLUGIN_SETTINGS,
@@ -25,7 +31,11 @@ afterEach(() => {
 
 const statusRow = (row: Omit<CliRow, 'args'>): CliRow => ({ args: ['status'], ...row });
 
-const runStatus = async (row: Omit<CliRow, 'args'>) => await runCliDifferential(statusRow(row));
+const runStatus = (row: Omit<CliRow, 'args'>) =>
+  runCliCommand(statusRow(row), (environment) => {
+    printStatus(environment);
+    return 0;
+  });
 
 describe('status', () => {
   test('a fresh home reports the disabled plugin and points at doctor', async () => {
@@ -36,6 +46,7 @@ describe('status', () => {
       'plugin cc-safety-net@cc-marketplace is disabled in Claude Code',
     );
     expect(outcome.stdout).toContain('  Full report: cc-safety-net doctor');
+    expect(outcome).toEqual(runCliDifferential(statusRow({})));
   }, 60_000);
 
   test('an enabled plugin leaves nothing inactive', async () => {

@@ -5,7 +5,6 @@ import { resolveProtectedGitMetadata } from '@/core/git/metadata';
 import {
   bashCall,
   createGateTree,
-  type GateVerdict,
   memoizedPaths,
   portedVerdict,
 } from '../helpers/gate-differential';
@@ -110,6 +109,8 @@ const PARANOID_LEVELS = [
 ] as const;
 
 const home = homedir();
+// The fixture does not move: canonicalizing its root for every verdict repeats filesystem work.
+const folds = rootFolds(tree.root);
 
 /**
  * The recorded shape of a verdict. Home text reaches one only through a `~` or `$HOME` expansion
@@ -117,11 +118,8 @@ const home = homedir();
  * sandbox whose home is `/root` must keep a literal `/root` in an input the way every other
  * machine sees it.
  */
-const folded = (input: string, verdict: GateVerdict) =>
-  normalize(verdict, [
-    ...rootFolds(tree.root),
-    ...(input.includes(home) ? [] : [[home, '<home>'] as const]),
-  ]);
+const folded = <T>(input: string, verdict: T): T =>
+  normalize(verdict, [...folds, ...(input.includes(home) ? [] : [[home, '<home>'] as const])]);
 
 const recorded = loadHarvestedVerdicts();
 
@@ -153,20 +151,21 @@ function decide(input: string, index: number, environment: Environment) {
   const levels = index % 10 === 0 ? [...LEVELS, ...PARANOID_LEVELS] : LEVELS;
   const decided = PLACES.flatMap((place) =>
     levels.map((entry) => {
-      const ported = folded(
-        input,
-        portedVerdict(bashCall(input, place.cwd), environment, {
-          loadPolicySnapshot: () => entry.snapshot,
-          resolveGitMetadata: () => place.metadata,
-        }),
-      );
+      const ported = portedVerdict(bashCall(input, place.cwd), environment, {
+        loadPolicySnapshot: () => entry.snapshot,
+        resolveGitMetadata: () => place.metadata,
+      });
       reached.add(`${ported.outcome} ${String(ported.stage)} ${ported.ruleId ?? ''}`.trim());
       return { column: `${place.where}/${entry.level}`, verdict: ported };
     }),
   );
   const row = {
     literal: input,
-    ...Object.fromEntries(decided.map((cell) => [cell.column, harvestedVerdictCell(cell.verdict)])),
+    // The table records cells, not evidence trees. Normalize only what is compared here; fuzz
+    // below still normalizes and compares the entire verdict on both executions.
+    ...Object.fromEntries(
+      decided.map((cell) => [cell.column, folded(input, harvestedVerdictCell(cell.verdict))]),
+    ),
   };
   rows.push(row);
   return { row, verdicts: decided.map((cell) => cell.verdict) };

@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { runExplain } from '@/cli/explain/run';
 import type { ExplainResult } from '@/gate/explain';
 import type { TraceStep } from '@/gate/trace';
-import { type CliRow, runCliDifferential, seedFiles } from '../../helpers/cli-differential';
+import {
+  type CliRow,
+  runCliCommand,
+  runCliDifferential,
+  seedFiles,
+} from '../../helpers/cli-differential';
 import { EXPLAIN_CASES, LIMIT_MESSAGES, LIMIT_SLUGS } from '../../helpers/explain-cases';
 import { removeTempRoots } from '../../helpers/temp-home';
 
@@ -18,6 +24,9 @@ import { removeTempRoots } from '../../helpers/temp-home';
 afterEach(() => {
   removeTempRoots();
 });
+
+const explain = (row: CliRow) =>
+  runCliCommand(row, (environment) => runExplain(environment, row.args.slice(1)));
 
 const isParseStep = (step: TraceStep): step is Extract<TraceStep, { type: 'parse' }> =>
   step.type === 'parse';
@@ -215,7 +224,7 @@ function rowFor(slug: string, extra: Partial<CliRow>): CliRow {
 describe('explain renders the same trace from both bins', () => {
   for (const explainCase of EXPLAIN_CASES.filter((entry) => !LIMIT_SLUGS.includes(entry.slug))) {
     test(explainCase.slug, async () => {
-      const asJson = await runCliDifferential(
+      const asJson = await explain(
         rowFor(explainCase.slug, { args: ['explain', '--json', explainCase.command] }),
       );
       const outcome = asJson;
@@ -225,7 +234,7 @@ describe('explain renders the same trace from both bins', () => {
         PINS[explainCase.slug] as ReturnType<typeof reportFacts>,
       );
 
-      const asHuman = await runCliDifferential(
+      const asHuman = await explain(
         rowFor(explainCase.slug, { args: ['explain', explainCase.command] }),
       );
       expect(asHuman.exitCode).toBe(0);
@@ -238,7 +247,7 @@ describe('explain reports an analysis budget breach as bounded output', () => {
   for (const [index, slug] of LIMIT_SLUGS.entries()) {
     test(slug, async () => {
       const message = LIMIT_MESSAGES[index] as string;
-      const asJson = await runCliDifferential(
+      const asJson = await explain(
         rowFor(slug, {
           args: ['explain', '--json', EXPLAIN_CASES.find((e) => e.slug === slug)?.command ?? ''],
         }),
@@ -250,7 +259,7 @@ describe('explain reports an analysis budget breach as bounded output', () => {
 
       // The human form writes the message to stderr and leaves stdout empty, so there is
       // nothing to pin as a rendering.
-      const asHuman = await runCliDifferential(
+      const asHuman = await explain(
         rowFor(slug, {
           args: ['explain', EXPLAIN_CASES.find((e) => e.slug === slug)?.command ?? ''],
         }),
@@ -326,7 +335,7 @@ const KNOWN_GAPS = [
 describe('explain diverges from the shipped CLI only where the design says it must', () => {
   for (const gap of KNOWN_GAPS) {
     test(gap.name, async () => {
-      const result = await runCliDifferential({ args: ['explain', '--json', gap.command] });
+      const result = await explain({ args: ['explain', '--json', gap.command] });
       const document = JSON.parse(result.stdout) as ExplainResult;
       expect({ result: document.result, ruleId: document.ruleId }).toEqual(gap.ported);
     }, 30_000);
@@ -339,18 +348,28 @@ describe('explain diverges from the shipped CLI only where the design says it mu
     'Get-ChildItem . -Recurse | Remove-Item -Force',
   ]) {
     test(`agrees on ${command}`, async () => {
-      const outcome = await runCliDifferential({ args: ['explain', '--json', command] });
+      const outcome = await explain({ args: ['explain', '--json', command] });
       expect(outcome.exitCode).toBe(0);
     }, 30_000);
   }
 
   // In strict mode the partial program is unparseable, and the trace says so.
   test('strict mode answers a partial program identically', async () => {
-    const outcome = await runCliDifferential({
+    const outcome = await explain({
       args: ['explain', '--json', "git reset --hard 'unterminated"],
       env: { CC_SAFETY_NET_LEVEL: 'strict' },
     });
     const document = JSON.parse(outcome.stdout) as ExplainResult;
     expect(document.trace.steps.map((step) => step.type)).toEqual(['parse', 'strict-unparseable']);
   }, 30_000);
+});
+
+test('the CLI flushes a large JSON trace to a pipe before exiting', async () => {
+  const command = Array.from({ length: 200 }, (_, i) => `echo step-${i}`).join(' && ');
+  const row = { args: ['explain', '--json', command] };
+  const child = runCliDifferential(row);
+  expect(child.exitCode).toBe(0);
+  expect(Buffer.byteLength(child.stdout)).toBeGreaterThan(65_536);
+  expect(JSON.parse(child.stdout).trace.segments).toHaveLength(200);
+  expect(child).toEqual(await explain(row));
 });

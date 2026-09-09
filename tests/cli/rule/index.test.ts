@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { posix } from 'node:path';
 import { RULE_DOC } from '@/cli/rule/doc';
-import { type CliOutcome, runCliDifferential, seedFiles } from '../../helpers/cli-differential';
+import { runRuleCommand } from '@/cli/rule/index';
+import { type CliOutcome, runCliCommand, seedFiles } from '../../helpers/cli-differential';
 import type { TreeSpec } from '../../helpers/fixture-tree';
 import {
   json,
@@ -17,10 +18,10 @@ import {
 import { removeTempRoots } from '../../helpers/temp-home';
 
 /**
- * The whole `rule` verb through both bins. Every row is one argument vector over one seeded scope,
+ * The whole `rule` handler. Every row is one argument vector over one seeded scope,
  * and what is compared is what a user and their editor see: the stdout bytes, the stderr bytes,
  * the exit code and the tree the run left behind. The pin behind each row names the line or the
- * file that carries the meaning, so a run where both bins go silent together still fails.
+ * file that carries the meaning, so a run that goes silent still fails.
  *
  * No row reaches the network: `rule add owner/repo` would fetch, so the repository forms live in
  * the in-process differential under tests/rules-manager instead, and only the flag errors
@@ -36,11 +37,14 @@ const U = 'home/.cc-safety-net/rules';
 
 /** The update check is off for every row: `rule doc` would otherwise probe the registry. */
 const rule = async (args: readonly string[], files: TreeSpec = {}) =>
-  await runCliDifferential({
-    args: ['rule', ...args],
-    seed: (side) => seedFiles(side, files),
-    env: { CC_SAFETY_NET_NO_UPDATE_CHECK: '1' },
-  });
+  await runCliCommand(
+    {
+      args: ['rule', ...args],
+      seed: (side) => seedFiles(side, files),
+      env: { CC_SAFETY_NET_NO_UPDATE_CHECK: '1' },
+    },
+    (environment) => runRuleCommand(environment, args),
+  );
 
 const fileAt = (outcome: CliOutcome, path: string) =>
   outcome.tree.find((entry) => entry.path === path)?.content;

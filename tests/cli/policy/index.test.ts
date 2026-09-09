@@ -3,7 +3,12 @@ import { lstatSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { runPolicyCommand as portedPolicyCommand } from '@/cli/policy/index';
-import { runCliDifferential, seedFiles } from '../../helpers/cli-differential';
+import {
+  type CliRow,
+  runCliCommand,
+  runCliDifferential,
+  seedFiles,
+} from '../../helpers/cli-differential';
 import { json, PROJECT_POLICY, USER_POLICY } from '../../helpers/cli-fixtures';
 import { createFakeOutput } from '../../helpers/fake-tty';
 import { snapshotTree, writeTree } from '../../helpers/fixture-tree';
@@ -32,10 +37,13 @@ const STANDARD_PROPOSAL = json({ version: 1, safety: { level: 'standard' } });
 const PROPOSAL_FILE = 'project/prop.json';
 
 async function runPolicy(args: readonly string[], files: Record<string, string> = {}) {
-  return await runCliDifferential({
+  const row: CliRow = {
     args: ['policy', ...args],
     seed: (side) => seedFiles(side, files),
-  });
+  };
+  // These cases verify refusal of a real piped stdin, not just a handler return value.
+  if (args[0] === 'apply') return runCliDifferential(row);
+  return runCliCommand(row, (environment) => portedPolicyCommand(environment, [...args]));
 }
 
 describe('policy check', () => {
