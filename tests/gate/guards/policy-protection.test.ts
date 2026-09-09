@@ -109,7 +109,7 @@ describe('policy config protection through the shell', () => {
       { command: `rm -f ${sh(projectPolicy)}`, blocked: true },
       // A recursive delete of an ancestor takes the policy file with it.
       { command: `rm -r ${sh(home)}`, blocked: true },
-      { command: `rm -rf ${join(workspace, '.cc-safety-net')}`, blocked: true },
+      { command: `rm -rf ${sh(join(workspace, '.cc-safety-net'))}`, blocked: true },
       // The project root itself is not the policy directory, so deleting it is left to the
       // destructive-command rules.
       { command: `rm -rf ${sh(workspace)}`, blocked: false },

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { createBudget } from '@/core/budget';
 import type { Environment } from '@/core/environment';
 import {
@@ -200,7 +200,11 @@ describe('protected path scanner walk', () => {
       // walk where it can still resolve later operands.
       { source: 'cd; rm -rf x', cwd: () => workspace },
       { source: 'cd ""; rm -rf x', cwd: () => workspace },
-      { source: 'cd /absolute/missing && rm -rf x', cwd: () => '/absolute/missing' },
+      // A rooted target is spelled against the process drive on Windows, as the walk reports it.
+      {
+        source: 'cd /absolute/missing && rm -rf x',
+        cwd: () => resolve('/absolute/missing').split(sep).join('/'),
+      },
       // A nested shell walks with its own copy of the state and hands the parent's back.
       { source: '(cd policy) && rm -rf x', cwd: () => workspace },
       { source: 'rm -rf $(cd policy; pwd)/x', cwd: () => workspace },

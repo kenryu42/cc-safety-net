@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { createBudget } from '@/core/budget';
 import { parseCommand } from '@/core/shell/parse';
 import {
@@ -38,6 +38,12 @@ afterAll(() => {
 });
 
 const environment = () => environmentFor(home, { HOME: home, TMPDIR: join(root, 'tmp') });
+
+/** The directory a tracked `cd` lands in, as the walk reports it: real, and spelled with `/`. */
+const canonical = (...parts: string[]) =>
+  join(realpathSync(root), ...parts)
+    .split(sep)
+    .join('/');
 
 const read = (source: string, dialect: 'posix' | 'powershell' = 'posix') =>
   readGuardSyntax(source, parseCommand(source, dialect));
@@ -166,7 +172,7 @@ describe('gate/guards/guard-walk', () => {
       'cd sub && ls',
       'X=$((1 + 2)); cd sub; ls',
     ]) {
-      expect(cwdOf(source), source).toBe(join(workspace, 'sub'));
+      expect(cwdOf(source), source).toBe(canonical('work', 'sub'));
     }
     // `cd -` returns to where the last `cd` came from, and does nothing with nothing remembered.
     expect(cwdOf('cd sub && cd - && ls')).toBe(workspace);
@@ -257,7 +263,7 @@ describe('gate/guards/guard-walk', () => {
     const mapped = observe('cd SUB && ls', { word: (text) => text.toLowerCase() });
     expect(mapped.observations).toStrictEqual([
       `segment ["cd","sub"] cwd=${workspace} pipe=null boundary=&&`,
-      `segment ["ls"] cwd=${join(workspace, 'sub')} pipe=null boundary=null`,
+      `segment ["ls"] cwd=${canonical('work', 'sub')} pipe=null boundary=null`,
     ]);
   });
 

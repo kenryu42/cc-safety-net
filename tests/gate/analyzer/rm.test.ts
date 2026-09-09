@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import type { ProtectedGitMetadata } from '@/core/git/metadata';
 import type { EffectiveDestructiveCommandRuleState } from '@/core/policy/types';
 import { parseCommand } from '@/core/shell/parse';
@@ -38,11 +38,18 @@ beforeAll(() => {
     allowed: null,
     scratch: null,
   });
+  // Spelled as the metadata resolver reports it: with `/`, and case-folded on Windows.
+  const compared = (...parts: string[]) => {
+    const path = join(workspace, ...parts)
+      .split(sep)
+      .join('/');
+    return process.platform === 'win32' ? path.toLowerCase() : path;
+  };
   gitMetadata = {
-    entries: [join(workspace, '.git')],
-    markerFiles: [join(workspace, '.git', 'HEAD')],
-    directories: [join(workspace, '.git')],
-    hooksDirectories: [join(workspace, '.git', 'hooks')],
+    entries: [compared('.git')],
+    markerFiles: [compared('.git', 'HEAD')],
+    directories: [compared('.git')],
+    hooksDirectories: [compared('.git', 'hooks')],
   };
 });
 
