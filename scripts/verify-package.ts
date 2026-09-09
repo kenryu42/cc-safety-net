@@ -20,12 +20,11 @@ import { verifyBuildArtifacts } from './verify-build';
 const PACKAGE_ROOT_FILES = [
   'package/LICENSE',
   'package/README.md',
-  'package/THIRD_PARTY_LICENSES.txt',
   'package/package.json',
 ] as const;
-// The four Node entries share their code through chunks rather than through the bin, and the
-// CLI chunk carries a trimmed zod, so the tarball is materially larger than the entries alone.
-// Current size is 449,053 bytes; the cap leaves ~111 KB of headroom.
+// The four Node entries share their code through chunks rather than through the bin, so the
+// tarball is materially larger than the entries alone.
+// Current size is 433,762 bytes; the cap leaves ~123 KB of headroom.
 const MAX_TARBALL_BYTES = 560_000;
 
 interface PackResult {
@@ -286,7 +285,7 @@ export async function verifyPackage(): Promise<void> {
       const require = createRequire(import.meta.url);
       const packageRoot = dirname(require.resolve('cc-safety-net/package.json'));
       const manifest = require(resolve(packageRoot, 'package.json'));
-      if (JSON.stringify(manifest.dependencies) !== JSON.stringify({ zod: '4.3.5' })) process.exit(4);
+      if (manifest.dependencies !== undefined) process.exit(4);
       if (manifest.peerDependencies['@opencode-ai/plugin'] !== '^1.18.3') process.exit(5);
       if (!manifest.peerDependenciesMeta['@opencode-ai/plugin'].optional) process.exit(6);
       const extension = manifest.pi.extensions[0];
@@ -615,7 +614,6 @@ export async function buildPackageTarball(options: BuildPackageTarballOptions) {
   try {
     cpSync('README.md', join(stagingDirectory, 'README.md'));
     cpSync('LICENSE', join(stagingDirectory, 'LICENSE'));
-    cpSync('THIRD_PARTY_LICENSES.txt', join(stagingDirectory, 'THIRD_PARTY_LICENSES.txt'));
     cpSync('dist', join(stagingDirectory, 'dist'), { recursive: true });
     chmodSync(join(stagingDirectory, 'dist', 'bin', 'cc-safety-net.js'), 0o755);
     const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as Record<string, unknown>;

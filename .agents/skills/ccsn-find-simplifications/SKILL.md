@@ -20,7 +20,7 @@ Over-engineering is this repo's documented dominant failure mode (see Scope Disc
 
 - The per-tool integrations in `src/hosts` (Claude Code, OpenCode, Codex, Copilot CLI, Cursor, Amp, Pi, Kimi Code, Gemini CLI, OpenClaw, Antigravity, Hermes, …). Each exists because a real host tool needs it; propose deleting one only if the user says the tool is dropped. Removing an unused hook or method *inside* one is still fair game.
 - The residual-risk registry pair (`docs/residual-risk-registry.json` + `docs/residual-risk.md`) and the strict/paranoid fail-closed fixtures that back its families.
-- The single-runtime-dependency posture (`zod` only). Hand-rolled shell parsing is the product, not a hand-rolling smell — this is a security hook with a deliberately minimal supply chain. Do not propose swapping the parser or a guard for an npm package; a new dependency is a maintainer decision to propose separately, never a "low effort" cleanup.
+- The zero-runtime-dependency posture. Hand-rolled shell parsing is the product, not a hand-rolling smell — this is a security hook with a deliberately minimal supply chain. Do not propose swapping the parser or a guard for an npm package; a new dependency is a maintainer decision to propose separately, never a "low effort" cleanup.
 - Adversarial-looking strings in tests are analyzer input data, never executed. Do not propose removing them as dangerous or redundant without checking which contract or residual-risk family they pin.
 
 ## What Counts As A Strong Candidate

@@ -9,6 +9,7 @@ import {
 } from './rulebook-limits';
 import {
   custom,
+  duplicateRuleNameIssues,
   formatIssues,
   INTENT_ERROR,
   type Issue,
@@ -58,9 +59,9 @@ const TOKEN_LIST_ERROR = 'must be a non-empty array of unique non-empty strings'
 const COMMAND_PATH_ERROR = 'required non-empty array of non-empty strings';
 
 /**
- * Rulebook acceptance, in the wording rulebook authors read. The schema module carries no
- * counterpart: a rulebook is loaded on the hook's path, and the legacy `.safety-net.json`
- * inline rules it resembles are validated there under their own wording.
+ * Rulebook acceptance, in the wording rulebook authors read. A rulebook is loaded on the
+ * hook's path; the legacy `.safety-net.json` inline rules it resembles are validated in
+ * `config-file.ts` under their own wording.
  *
  * @internal
  */
@@ -134,21 +135,12 @@ function allowedCommandIssues(commands: unknown): Issue[] {
 
 function rulebookRuleIssues(rules: unknown, v2: boolean): Issue[] {
   if (!Array.isArray(rules)) return [typed(['rules'], 'required array')];
-  const names = new Set<string>();
   return [
     ...rules.flatMap((rule, index) => {
       if (!isRecord(rule)) return [typed(['rules', index], 'must be an object')];
       return v2 ? v2RuleIssues(rule, ['rules', index]) : v1RuleIssues(rule, ['rules', index]);
     }),
-    ...rules.flatMap((rule, index) => {
-      const name = isRecord(rule) ? rule.name : undefined;
-      if (typeof name !== 'string') return [];
-      if (names.has(name.toLowerCase())) {
-        return [custom(['rules', index, 'name'], `duplicate rule name "${name}"`)];
-      }
-      names.add(name.toLowerCase());
-      return [];
-    }),
+    ...duplicateRuleNameIssues(rules),
   ];
 }
 

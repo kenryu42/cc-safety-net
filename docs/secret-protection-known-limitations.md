@@ -82,7 +82,7 @@ command in every workspace under the home directory: home itself, any path
 above it, and `/`, in their `~`, `$HOME`, and `${HOME}` spellings too
 (`getSecretDenyPathError` in `src/policy/allow-paths.ts`). The check
 runs at the same save-time sites as the allow-path home guard — the policy
-schema and diagnostics in `src/policy/schema.ts`, the salvage repair in
+diagnostics in `src/core/policy/user-policy-diagnostics.ts`, the salvage repair in
 `src/policy/store.ts`, which drops rejected entries and reports them, and the
 GUI deny-path list, which posts the candidate policy to `/api/policy/preview`
 and surfaces the rejection inline before the entry is added.

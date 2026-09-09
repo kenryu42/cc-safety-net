@@ -61,9 +61,11 @@ was removed, and the expectations that comparison established are now stated in 
   node itself 30 ms, the hook 99 ms median over seven interleaved runs on the verification
   sandbox, with a test that fails if the hook exceeds node's startup by more than 150 ms or if
   the hook's static import closure exceeds 400,000 bytes (measured 344,139).
-- Package: `dist/vendor/zod.cjs` is gone; zod is bundled where the CLI needs it and never loaded
-  on the hook path. Packed tarball measured under the 560,000-byte cap the package verification
-  enforces.
+- Package: zod is gone entirely. The user-policy and legacy-config diagnostics are hand-written
+  issue lists beside the `rule.json` one, `assets/cc-safety-net.schema.json` is a hand-maintained
+  asset held to the validator by a test, and the published manifest declares no dependencies at all
+  (package verification fails if one reappears). Packed tarball measured under the 560,000-byte cap
+  the package verification enforces.
 - Diagnostics: `doctor --json` keeps its shape; `explain`, `status`, `logs` and the rules manager
   print the same text.
 
@@ -84,9 +86,9 @@ Three duplications the rebuild had carried are gone:
 
 - One policy validator. The salvage normalizer in `core/policy/store.ts` owns runtime acceptance of
   `policy.json` and reports what it dropped; the hand-written mirror of the schema is deleted. The
-  schema library is imported only by the diagnostic surfaces — `doctor`, `policy check`, the GUI,
-  `diff.ts` and the legacy-config writer — and an architecture test lists them, so the hook path
-  still never loads it.
+  diagnostic surfaces — `doctor`, `policy check`, the GUI, `diff.ts` and the legacy-config writer —
+  share one issue list in `core/policy/user-policy-diagnostics.ts`, and no schema library is
+  involved.
 - One per-command dispatcher. `gate/analyzer/segment.ts` decides every command, and a child
   synthesized by `xargs`, `parallel`, a `find -exec` body or the unknown-head suffix scan enters it
   as command words carrying a `ChildProvenance` instead of through a door of its own. Custom-rule

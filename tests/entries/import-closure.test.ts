@@ -6,7 +6,7 @@ import { dirname, join, relative, sep } from 'node:path';
  * Two budgets on the hook entry, both read off its transitive static import closure. Cold start:
  * the modules a hook call cannot avoid loading are the gate, the audit writer and the nine stdin
  * adapters, and nothing else the CLI carries — an installer, a detector, doctor, the GUI, the
- * rulebook manager, the zod policy schema or an in-process entry pulled in by a stray import is a
+ * rulebook manager or an in-process entry pulled in by a stray import is a
  * regression the hook path pays for on every tool call. Git-checkout mode: the same closure names
  * no package, so the plugin runs from a checkout with no `node_modules`.
  */
@@ -69,7 +69,7 @@ function closureOf(entryFile: string) {
 // modules and `hosts/system-info.ts` (which spawns a host CLI) are the CLI's, as is every file
 // under `cli/`.
 const OFF_THE_HOOK_PATH =
-  /(^|\/)(install|detect|doctor|system-info)|^cli\/|(^|\/)gui\/|rules-manager\/|^core\/policy\/schema\.ts$/;
+  /(^|\/)(install|detect|doctor|system-info)|^cli\/|(^|\/)gui\/|rules-manager\//;
 const IN_PROCESS_ENTRIES = [
   'hosts/openclaw/',
   'hosts/opencode/',
@@ -128,9 +128,9 @@ describe('the hook entry closure', () => {
 
   test('the predicates are falsifiable', () => {
     const source =
-      "import { a } from '@/core/policy/schema'; import z from 'zod'; import { b } from './x'; import { c } from '@/hosts/system-info';";
+      "import { a } from '@/cli/main'; import z from 'zod'; import { b } from './x'; import { c } from '@/hosts/system-info';";
     const specifiers = staticSpecifiers(source);
-    expect(specifiers).toEqual(['@/core/policy/schema', 'zod', './x', '@/hosts/system-info']);
+    expect(specifiers).toEqual(['@/cli/main', 'zod', './x', '@/hosts/system-info']);
 
     const resolved = specifiers.map((specifier) => resolveSpecifier(specifier, HOOK_ENTRY));
     expect(
@@ -138,7 +138,7 @@ describe('the hook entry closure', () => {
         .filter((file) => file !== undefined)
         .map(relativeToRoot)
         .filter(offTheHookPath),
-    ).toEqual(['core/policy/schema.ts', 'hosts/system-info.ts']);
+    ).toEqual(['cli/main.ts', 'hosts/system-info.ts']);
     expect(
       specifiers.filter((_, index) => resolved[index] === undefined).filter(offTheCheckout),
     ).toEqual(['zod']);

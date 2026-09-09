@@ -12,9 +12,6 @@ import {
 } from '../../scripts/build-runtime';
 import { verifyBuildArtifacts } from '../../scripts/verify-build';
 
-// zod names its error class with a string literal minification cannot rewrite, so the
-// marker is present exactly where zod itself was bundled.
-const ZOD_MARKER = 'ZodError';
 const STATIC_SPECIFIER = /\b(?:from|import)\s*["']([^"']+)["']/g;
 const DYNAMIC_SPECIFIER = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -98,18 +95,11 @@ describe('the build', () => {
     expect(readFileSync(bin, 'utf8').startsWith('#!/usr/bin/env node\n')).toBeTrue();
   });
 
-  test('reaches zod only through the CLI chunk the bin imports dynamically', () => {
-    // A static import of the CLI or of the policy schema from the bin puts zod on the
-    // hook path; a build that stopped bundling zod would leave the CLI chunk without it.
+  test('imports the CLI chunk through exactly one dynamic import', () => {
+    // The bin loads the whole CLI lazily, so the hook path pays for nothing the CLI needs.
     const dynamic = readSpecifiers(readFileSync(bin, 'utf8'), DYNAMIC_SPECIFIER);
 
-    expect(readStaticClosure(bin).some((source) => source.includes(ZOD_MARKER))).toBeFalse();
     expect(dynamic).toEqual([expect.stringMatching(/^\.\.\/chunks\/[A-Za-z0-9_-]+\.js$/)]);
-    expect(
-      dynamic
-        .flatMap((specifier) => readStaticClosure(resolve(dirname(bin), specifier)))
-        .some((source) => source.includes(ZOD_MARKER)),
-    ).toBeTrue();
   });
 
   test('replaces the version define and keeps the internal sync field out', () => {

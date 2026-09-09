@@ -106,15 +106,14 @@ function toTarget(path: string | PolicyFilesystemTarget): PolicyFilesystemTarget
 }
 
 /**
- * `rule.json` acceptance without the schema library: the loader runs on the hook's hot path
- * and may not pay for it, so this reader decides which config the runtime enforces and
- * `schema.ts` reports the same document for `doctor`, `explain` and the published JSON Schema.
- * Every message, and the order the messages come out in, mirrors the schema exactly.
+ * `rule.json` acceptance: the loader runs this on the hook's hot path, `doctor` and `explain`
+ * report the same document through it, and `tests/core/policy/schema-asset.test.ts` holds the
+ * published JSON Schema asset to the fields, limits and patterns it accepts.
  *
- * An issue is emitted where the schema would raise it, in the schema's own traversal order,
- * and carries the kind the renderer needs: a `typed` or `custom` reason, the `unknownKeys` of a
- * strict object (one issue per key), a record `key` error that already names its key, or a
- * whole-document `limit`. Rulebook validation shares the renderer from `rulebook.ts`.
+ * An issue is emitted in document order and carries the kind the renderer needs: a `typed` or
+ * `custom` reason, the `unknownKeys` of a strict object (one issue per key), a record `key` error
+ * that already names its key, or a whole-document `limit`. Rulebook validation shares the
+ * renderer from `rulebook.ts`.
  */
 export type Issue = {
   path: readonly PropertyKey[];
@@ -134,9 +133,28 @@ export const custom = (path: readonly PropertyKey[], message: string): Issue => 
   kind: 'custom',
 });
 
+/**
+ * Inline rules clash by name case-insensitively, in both a rulebook and a version-0 config.
+ * A rule whose name is missing or misspelled still clashes with a later copy of it.
+ */
+export function duplicateRuleNameIssues(rules: readonly unknown[]): Issue[] {
+  const names = new Set<string>();
+  return rules.flatMap((rule, index) => {
+    const name = isRecord(rule) ? rule.name : undefined;
+    if (typeof name !== 'string') return [];
+    if (names.has(name.toLowerCase())) {
+      return [custom(['rules', index, 'name'], `duplicate rule name "${name}"`)];
+    }
+    names.add(name.toLowerCase());
+    return [];
+  });
+}
+
 export const INTENT_ERROR = `must be one of ${BLOCK_INTENTS.join(', ')}`;
-const RULE_OVERRIDE_KEY_PATTERN = /^[^/]+\/[^/]+$/;
-const RULES_CONFIG_FIELDS = ['version', 'rules', 'overrides', 'transparent_wrappers'];
+/** @internal */
+export const RULE_OVERRIDE_KEY_PATTERN = /^[^/]+\/[^/]+$/;
+/** @internal */
+export const RULES_CONFIG_FIELDS = ['version', 'rules', 'overrides', 'transparent_wrappers'];
 
 export function getRulesConfigValidation(config: unknown): {
   errors: string[];
@@ -313,7 +331,7 @@ function reservedWrapperIssues(wrappers: unknown): Issue[] {
  * Sources that carry no issue of their own stay usable even when the rest of the
  * config is rejected; an over-limit or non-array `rules` field yields none.
  */
-export function collectValidSources(
+function collectValidSources(
   config: unknown,
   issues: readonly { path: readonly PropertyKey[] }[],
 ): Set<string> {
@@ -335,8 +353,7 @@ export function collectValidSources(
 }
 
 /**
- * The schema reports issues in declaration order and appends refinement issues last,
- * so group them back into the field order the diagnostics have always used.
+ * Issues are reported grouped by top-level field in the order the diagnostics have always used.
  */
 export function sortIssues<T extends { path: readonly PropertyKey[] }>(
   issues: readonly T[],
@@ -386,7 +403,7 @@ export function formatIssues(
   ];
 }
 
-export function renderIssuePath(path: readonly PropertyKey[]): string {
+function renderIssuePath(path: readonly PropertyKey[]): string {
   return path
     .map((segment, index) => {
       if (typeof segment === 'number') return `[${segment}]`;

@@ -1,40 +1,244 @@
 import { describe, expect, test } from 'bun:test';
 import { clampAuditRetentionDays } from '@/core/policy/audit-retention-days';
-import { renderIssuePath } from '@/core/policy/rules-config';
-import { getUserPolicySchema } from '@/core/policy/schema';
 import {
   DEFAULT_GUI_POLICY,
   projectPolicyProjection,
   salvageUserPolicy,
 } from '@/core/policy/store';
+import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics';
 import { named, samples, USER_POLICY_VALUES } from './policy-values';
 
 /**
- * The salvage normalizer is the runtime's only acceptance of `policy.json`, and the schema is
- * what `doctor` and `policy check` report with. The two must agree on the outcome — which
+ * The salvage normalizer is the runtime's only acceptance of `policy.json`, and the diagnostics
+ * are what `doctor` and `policy check` report with. The two must agree on the outcome — which
  * document is acceptable and which fields it loses — even though they word it differently, so
- * every fixture document and a seeded mutation of it is judged by both. The empty and malformed
- * files of `docs/config-recovery.md` never reach either one and are pinned in `snapshot.test.ts`.
+ * every fixture document states both verdicts below and a seeded mutation of each is held to the
+ * salvage invariants. The empty and malformed files of `docs/config-recovery.md` never reach
+ * either one and are pinned in `snapshot.test.ts`.
  */
 
 const HOME = '/srv/home/tester';
 const DOCUMENTS = samples(USER_POLICY_VALUES);
 
+/** A document that is not a JSON object: one diagnostic, and the whole file replaced. */
+const NOT_A_JSON_OBJECT: [readonly string[], readonly string[]] = [
+  ['Config must be an object'],
+  [''],
+];
+
+/**
+ * What each fixture document earns: the diagnostics reported for it and the paths salvage drops
+ * from it, stated in the order `USER_POLICY_VALUES` lists the documents. A new fixture without a
+ * verdict beside it fails the count below.
+ */
+const VERDICTS: readonly [readonly string[], readonly string[]][] = [
+  [[], []],
+  [[], []],
+  [[], []],
+  [[], []],
+  [['version must be 1'], ['version']],
+  [['version must be 1'], ['version']],
+  [['version must be 1'], ['version']],
+  [['version must be 1'], ['version']],
+  [['safety must be an object if provided'], ['safety']],
+  [['safety must be an object if provided'], ['safety']],
+  [['safety must be an object if provided'], ['safety']],
+  [['safety.level must be "standard", "strict", or "paranoid"'], ['safety.level']],
+  [
+    [
+      'safety.level must be "standard", "strict", or "paranoid"',
+      'safety.overrides must be an object if provided',
+    ],
+    ['safety.overrides', 'safety.level'],
+  ],
+  [['safety.overrides must be an object if provided'], ['safety.overrides']],
+  [['safety.overrides.fail_closed must be a boolean'], ['safety.overrides.fail_closed']],
+  [
+    [
+      'safety.overrides.paranoid_rm must be a boolean',
+      'safety.overrides.paranoid_interpreters must be a boolean',
+      'safety.overrides.unknown field "tighten"',
+    ],
+    [
+      'safety.overrides.tighten',
+      'safety.overrides.paranoid_rm',
+      'safety.overrides.paranoid_interpreters',
+    ],
+  ],
+  [['safety.unknown field "tier"'], ['safety.tier']],
+  [['workflow must be an object if provided'], ['workflow']],
+  [['workflow must be an object if provided'], ['workflow']],
+  [
+    ['workflow.unknown field "branch"', 'workflow.worktree_mode must be a boolean'],
+    ['workflow.branch', 'workflow.worktree_mode'],
+  ],
+  [
+    ['destructive_command_protection must be an object if provided'],
+    ['destructive_command_protection'],
+  ],
+  [
+    ['destructive_command_protection must be an object if provided'],
+    ['destructive_command_protection'],
+  ],
+  [
+    ['destructive_command_protection.enabled must be a boolean'],
+    ['destructive_command_protection.enabled'],
+  ],
+  [
+    ['destructive_command_protection.overrides must be an object if provided'],
+    ['destructive_command_protection.overrides'],
+  ],
+  [
+    [
+      'unknown destructive command rule id "git.no-such-rule"',
+      'destructive_command_protection.overrides.git.alias-config must be "on" or "off"',
+    ],
+    [
+      'destructive_command_protection.overrides.git.no-such-rule',
+      'destructive_command_protection.overrides.git.alias-config',
+    ],
+  ],
+  [
+    ['destructive_command_protection.allow_paths must be an array of paths'],
+    ['destructive_command_protection.allow_paths'],
+  ],
+  [
+    [
+      'destructive_command_protection.allow_paths[0] must be a non-empty path string',
+      'destructive_command_protection.allow_paths[2] must be an absolute path or start with ~/',
+      'destructive_command_protection.allow_paths[3] cannot be the home directory',
+      'destructive_command_protection.allow_paths[4] cannot contain the home directory',
+      'destructive_command_protection.allow_paths[1] must be a non-empty path string',
+    ],
+    [
+      'destructive_command_protection.allow_paths[0]',
+      'destructive_command_protection.allow_paths[1]',
+      'destructive_command_protection.allow_paths[2]',
+      'destructive_command_protection.allow_paths[3]',
+      'destructive_command_protection.allow_paths[4]',
+    ],
+  ],
+  [
+    [
+      'destructive_command_protection.unknown field "keep"',
+      'destructive_command_protection.allow_paths[0] must be an absolute path or start with ~/',
+    ],
+    ['destructive_command_protection.keep', 'destructive_command_protection.allow_paths[0]'],
+  ],
+  [['secret_protection must be an object if provided'], ['secret_protection']],
+  [['secret_protection must be an object if provided'], ['secret_protection']],
+  [
+    [
+      'secret_protection.enabled must be a boolean',
+      'secret_protection.overrides must be an object if provided',
+    ],
+    ['secret_protection.enabled', 'secret_protection.overrides'],
+  ],
+  [
+    [
+      'unknown secret protection rule id "secret.nope"',
+      'secret_protection.overrides.secret.basename.env must be "on" or "off"',
+    ],
+    ['secret_protection.overrides.secret.nope', 'secret_protection.overrides.secret.basename.env'],
+  ],
+  [['secret_protection.deny_paths must be an array of paths'], ['secret_protection.deny_paths']],
+  [
+    [
+      'secret_protection.deny_paths[0] cannot be the home directory or a path above it (this would block every command the agent runs)',
+      'secret_protection.deny_paths[1] cannot be the home directory or a path above it (this would block every command the agent runs)',
+      'secret_protection.deny_paths[2] cannot be the home directory or a path above it (this would block every command the agent runs)',
+      'secret_protection.deny_paths[3] must be a non-empty path string',
+      'secret_protection.deny_paths[4] must be a non-empty path string',
+    ],
+    [
+      'secret_protection.deny_paths[0]',
+      'secret_protection.deny_paths[1]',
+      'secret_protection.deny_paths[2]',
+      'secret_protection.deny_paths[3]',
+      'secret_protection.deny_paths[4]',
+    ],
+  ],
+  [
+    [
+      'secret_protection.allow_paths[0] cannot contain glob characters (* or ?); list the exact file or directory',
+      "secret_protection.allow_paths[1] cannot cover the guard's own configuration",
+    ],
+    ['secret_protection.allow_paths[0]', 'secret_protection.allow_paths[1]'],
+  ],
+  [
+    [
+      'secret_protection.allow_paths[0] cannot cover the home directory or a path above it (this would disable secret protection everywhere)',
+    ],
+    ['secret_protection.allow_paths[0]'],
+  ],
+  [['audit must be an object if provided'], ['audit']],
+  [['audit must be an object if provided'], ['audit']],
+  [['audit.retention_days must be an integer between 1 and 365'], ['audit.retention_days']],
+  [[], []],
+  [[], []],
+  [['audit.retention_days must be an integer between 1 and 365'], ['audit.retention_days']],
+  [['audit.retention_days must be an integer between 1 and 365'], ['audit.retention_days']],
+  [['audit.retention_days must be an integer between 1 and 365'], ['audit.retention_days']],
+  [['audit.retention_days must be an integer between 1 and 365'], ['audit.retention_days']],
+  [['audit.unknown field "scope"'], ['audit.scope']],
+  [
+    ['unknown field "telemetry"', 'unknown field "notes"'],
+    ['telemetry', 'notes'],
+  ],
+  [
+    [
+      'destructive_command_protection.overrides.git.checkout-force must be "on" or "off"',
+      'destructive_command_protection.allow_paths[0] must be an absolute path or start with ~/',
+      'secret_protection.unknown field "extra"',
+      'secret_protection.allow_paths[0] must be a non-empty path string',
+      'secret_protection.enabled must be a boolean',
+      'secret_protection.deny_paths[0] cannot be the home directory or a path above it (this would block every command the agent runs)',
+    ],
+    [
+      'secret_protection.extra',
+      'destructive_command_protection.overrides.git.checkout-force',
+      'destructive_command_protection.allow_paths[0]',
+      'secret_protection.enabled',
+      'secret_protection.deny_paths[0]',
+      'secret_protection.allow_paths[0]',
+    ],
+  ],
+  [
+    [
+      'unknown field "stray"',
+      'version must be 1',
+      'safety.level must be "standard", "strict", or "paranoid"',
+      'safety.overrides.fail_closed must be a boolean',
+      'workflow.worktree_mode must be a boolean',
+      'destructive_command_protection.enabled must be a boolean',
+      'destructive_command_protection.allow_paths[0] must be a non-empty path string',
+      'secret_protection.enabled must be a boolean',
+      'secret_protection.deny_paths must be an array of paths',
+      'audit.retention_days must be an integer between 1 and 365',
+    ],
+    [
+      'version',
+      'stray',
+      'safety.level',
+      'safety.overrides.fail_closed',
+      'workflow.worktree_mode',
+      'destructive_command_protection.enabled',
+      'destructive_command_protection.allow_paths[0]',
+      'secret_protection.enabled',
+      'secret_protection.deny_paths',
+      'audit.retention_days',
+    ],
+  ],
+  NOT_A_JSON_OBJECT,
+  NOT_A_JSON_OBJECT,
+  NOT_A_JSON_OBJECT,
+  NOT_A_JSON_OBJECT,
+  NOT_A_JSON_OBJECT,
+  NOT_A_JSON_OBJECT,
+];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-/** The field paths the schema refuses, spelled the way the drop report spells them. */
-function schemaRejectedPaths(value: unknown): Set<string> {
-  const parsed = getUserPolicySchema(HOME).safeParse(value);
-  if (parsed.success) return new Set();
-  return new Set(
-    parsed.error.issues.flatMap((issue) =>
-      issue.code === 'unrecognized_keys'
-        ? issue.keys.map((key) => renderIssuePath([...issue.path, key]))
-        : [renderIssuePath(issue.path)],
-    ),
-  );
 }
 
 function valueAt(document: unknown, path: string): unknown {
@@ -72,22 +276,22 @@ const ARRAY_FIELDS = [
   'secret_protection.allow_paths',
 ];
 
-describe('the salvage normalizer accepts exactly what the schema accepts', () => {
-  test('a document is schema-valid exactly when nothing was dropped', () => {
-    for (const document of DOCUMENTS) {
-      expect(getUserPolicySchema(HOME).safeParse(document).success, named(document)).toBe(
-        salvageUserPolicy(document, HOME).drops.length === 0,
-      );
-    }
-  }, 60_000);
+describe('the salvage normalizer and the diagnostics judge each document alike', () => {
+  test('every fixture document has a stated verdict', () => {
+    expect(VERDICTS.length).toBe(USER_POLICY_VALUES.length);
+  });
 
-  test('the dropped paths are the paths the schema rejects, each named once', () => {
-    for (const document of DOCUMENTS) {
-      const paths = salvageUserPolicy(document, HOME).drops.map((drop) => drop.path);
-      expect(new Set(paths).size, named(document)).toBe(paths.length);
-      expect(new Set(paths), named(document)).toEqual(schemaRejectedPaths(document));
-    }
-  }, 60_000);
+  test.each(
+    VERDICTS.map(
+      (verdict, index) =>
+        [named(USER_POLICY_VALUES[index]), USER_POLICY_VALUES[index], ...verdict] as const,
+    ),
+  )('%s', (_name, document, diagnostics, dropPaths) => {
+    expect(getUserPolicyDiagnostics(document, HOME)).toEqual([...diagnostics]);
+    expect(salvageUserPolicy(document, HOME).drops.map((drop) => drop.path)).toEqual([
+      ...dropPaths,
+    ]);
+  });
 
   test('a dropped field falls back to its default and every other field survives', () => {
     for (const document of DOCUMENTS) {

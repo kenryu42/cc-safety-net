@@ -9,9 +9,9 @@ import {
 } from '@/core/policy/audit-retention-days';
 import { mergeProjectPolicy } from '@/core/policy/merge';
 import { readRetentionDays } from '@/core/policy/retention';
-import { getUserPolicyDiagnostics } from '@/core/policy/schema';
 import * as ported from '@/core/policy/store';
 import { writeUserPolicyFromGui } from '@/core/policy/store-gui';
+import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics';
 import { DESTRUCTIVE_COMMAND_RULE_ID_SET } from '@/core/rules/destructive';
 import { SECRET_DEFAULT_OFF_RULE_ID_SET, SECRET_PROTECTION_RULE_ID_SET } from '@/core/rules/secret';
 import { snapshotTree } from '../../helpers/fixture-tree';

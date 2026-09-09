@@ -32,7 +32,7 @@ export function getRuntimeImportSpecifiers(source: string): string[] {
 }
 
 // A self-contained artifact may only import Node built-ins; any other specifier
-// (zod, a repository `@/` alias, a shared `./chunks/` file, `@ampcode/plugin`) means
+// (a repository `@/` alias, a shared `./chunks/` file, `@ampcode/plugin`) means
 // a runtime dependency leaked into the bundle.
 /** @internal */
 export function unbundledRuntimeImports(source: string): string[] {

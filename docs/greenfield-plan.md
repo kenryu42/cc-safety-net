@@ -829,3 +829,23 @@ carrying `secret.home.ssh` and the `.ssh/config` segment and every drive recordi
 in the isolated home. Evidence is under `artifacts/verify/verify-20260909-012604/`.
 
 Deferred still: audit retention, and the `pushd`/`popd` half of the guard-walk item.
+
+## Dependency removal — 2026-09-09
+
+zod is gone from the tree. `src/core/policy/schema.ts` was the only importer, and it served three
+consumers: the user-policy diagnostics, the legacy-config validator, and the JSON Schema generator
+behind `assets/cc-safety-net.schema.json`. The first two are now hand-written issue lists in the
+`core/policy/rules-config.ts` style — `core/policy/user-policy-diagnostics.ts` and the
+`legacyConfigIssues` walk inside `core/policy/config-file.ts` — each proven against a recording of
+the zod oracle over the seeded corpus (16,555 user-policy and 3,311 legacy inputs, 0 mismatches)
+before the library was removed. Every diagnostic string is byte-identical; no snapshot was
+re-recorded. `assets/cc-safety-net.schema.json` is a hand-maintained asset, held to the `rule.json`
+validator's fields, limits, patterns and enums by `tests/core/policy/schema-asset.test.ts`, and
+`scripts/build-schema.ts` is deleted.
+
+The machinery that existed only to contain the library went with it: the `zodModuleStubs` bundler
+plugin, `scripts/generate-third-party-licenses.ts` with `THIRD_PARTY_LICENSES.txt` and its packaging
+and CI wiring, the hot-path probe that asserted the library never loads on a hook call, and the
+architecture, build-closure and import-closure rules that named it. The published manifest declares
+no dependencies and no devDependency on zod; the CLI chunk went 521,947 → 455,222 bytes and the
+packed tarball 449,053 → 433,762, against the unchanged 560,000-byte cap.

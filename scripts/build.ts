@@ -9,11 +9,9 @@ import { join } from 'node:path';
 import { AMP_PLUGIN_ENTRY } from '../src/hosts/amp/artifact';
 import { getBundledOutputs, isPublicDeclarationOutput } from './build-output';
 import { buildAmpBundle, buildOpenClawBundle, buildRuntimeBundles } from './build-runtime';
-import { generateThirdPartyLicenses } from './generate-third-party-licenses';
 import { formatSubprocessFailure } from './subprocess-output';
 import { verifyBuildArtifacts } from './verify-build';
 
-generateThirdPartyLicenses();
 const result = await buildRuntimeBundles('dist');
 
 if (!result.success) {
@@ -42,7 +40,7 @@ if (!openClawResult.success) {
   process.exit(1);
 }
 
-// Run build:types and build:schema
+// Run build:types
 const typesResult = Bun.spawnSync(['bun', 'run', 'build:types']);
 if (typesResult.exitCode !== 0) {
   console.error(formatSubprocessFailure('build:types', typesResult));
@@ -56,12 +54,6 @@ for await (const path of new Bun.Glob('dist/**/*.d.ts').scan('.')) {
 // lives in a subdirectory is emitted into one; the package exposes both at the outdir root.
 for (const name of ['index', 'api']) {
   renameSync(join('dist', 'entries', `${name}.d.ts`), join('dist', `${name}.d.ts`));
-}
-
-const schemaResult = Bun.spawnSync(['bun', 'run', 'build:schema']);
-if (schemaResult.exitCode !== 0) {
-  console.error(formatSubprocessFailure('build:schema', schemaResult));
-  process.exit(1);
 }
 
 await Bun.$`chmod 755 dist/bin/cc-safety-net.js`;

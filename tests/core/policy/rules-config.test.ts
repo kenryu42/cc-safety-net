@@ -1,14 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { getRulesConfigValidation } from '@/core/policy/rules-config';
-import * as schema from '@/core/policy/schema';
-import { named, RULES_CONFIG_VALUES, samples } from './policy-values';
 
 /**
- * `rule.json` keeps two implementations: this one, which the loader runs on the hook's path
- * without the schema library, and the schema, which renders the published JSON Schema asset and
- * answers `doctor`. They are only worth having if every diagnostic they produce is the same one,
- * so each fixture document and 300 seeded mutations of it go through both. Nothing is recorded:
- * the schema module is the oracle, and the property is that the two never disagree.
+ * `rule.json` has one validator: the loader runs it on the hook's path, and `doctor` and
+ * `explain` report the same document through it. The table below states the diagnostics and the
+ * usable sources each document must produce; `schema-asset.test.ts` holds the published JSON
+ * Schema to the same acceptance decisions.
  */
 
 describe('rules config diagnostics', () => {
@@ -67,23 +64,4 @@ describe('rules config diagnostics', () => {
       }).errors,
     ).toEqual(["Rule config exceeds CC Safety Net's safe source limit."]);
   });
-});
-
-describe('the hand-written rules config validator agrees with the schema', () => {
-  test('rules config diagnostics and usable sources are identical', () => {
-    for (const value of samples(RULES_CONFIG_VALUES)) {
-      const read = getRulesConfigValidation(value);
-      const oracle = schema.getRulesConfigValidation(value);
-      expect(read.errors, named(value)).toStrictEqual(oracle.errors);
-      expect([...read.sources], named(value)).toStrictEqual([...oracle.sources]);
-    }
-  }, 60_000);
-
-  test('a rules config is accepted by the schema exactly when it has no diagnostics', () => {
-    for (const value of samples(RULES_CONFIG_VALUES)) {
-      expect(schema.getRulesConfigSchema().safeParse(value).success, named(value)).toBe(
-        getRulesConfigValidation(value).errors.length === 0,
-      );
-    }
-  }, 60_000);
 });

@@ -282,9 +282,9 @@ const USER_POLICY_FIELDS = [
 /**
  * The runtime's only acceptance of a policy document: every recognized valid field survives,
  * everything else falls back to its protective default and is named in `drops`, which is what
- * the degraded snapshot reports. The schema module answers the same question for the
- * diagnostic surfaces, in its own wording; `tests/core/policy/store-parity.test.ts` holds the
- * two to the same outcome, section for section.
+ * the degraded snapshot reports. `user-policy-diagnostics.ts` answers the same question for the
+ * diagnostic surfaces, in its own wording; `tests/core/policy/store-parity.test.ts` states both
+ * verdicts for every fixture document.
  *
  * @internal
  */

@@ -1,7 +1,7 @@
 /**
  * The user policy file as the GUI and `policy apply` see it: read, preview, repair, write.
- * Every one of them reports the schema diagnostics beside the salvaged document, so this
- * module loads the schema library and nothing the hook path imports may import it.
+ * Every one of them reports the user-policy diagnostics beside the salvaged document; the
+ * diagnostics live in `user-policy-diagnostics.ts` and this module stays off the hook path.
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -9,7 +9,6 @@ import { dirname } from 'node:path';
 import type { Environment } from '@/core/environment';
 import { bindDelegatedPolicyFilesystemTarget, writePolicyFileAtomic } from '@/core/io/safe-read';
 import { getUserPolicyPath, type UserScopeOptions } from './paths';
-import { getUserPolicyDiagnostics } from './schema';
 import {
   createDefaultGuiPolicy,
   createPolicyPreview,
@@ -18,6 +17,7 @@ import {
   type PolicyPreview,
 } from './store';
 import type { GuiPolicy } from './types';
+import { getUserPolicyDiagnostics } from './user-policy-diagnostics';
 
 export interface GuiPolicyReadResult {
   path: string;

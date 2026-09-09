@@ -77,7 +77,7 @@ jobs:
           bun install --frozen-lockfile
           bun run check:ci
           bun run build
-          git diff --exit-code -- dist assets/cc-safety-net.schema.json THIRD_PARTY_LICENSES.txt
+          git diff --exit-code -- dist
           bun run verify:repository-plugin
           bun run verify:package
           printf '%s\n' "$BASE" > "$RUNNER_TEMP/prepared-release.base"

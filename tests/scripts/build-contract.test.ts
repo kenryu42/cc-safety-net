@@ -61,7 +61,6 @@ describe('generated artifact contract', () => {
 
       expect(result.success).toBeTrue();
       expect(artifact.startsWith(buildAmpArtifactHeader(pkg.version))).toBeTrue();
-      expect(artifact).not.toContain('ZodError');
       expect(unbundledRuntimeImports(artifact)).toEqual([]);
     });
   });
@@ -74,7 +73,6 @@ describe('generated artifact contract', () => {
 
       expect(result.success).toBeTrue();
       expect(artifact.startsWith(buildOpenClawArtifactHeader(pkg.version))).toBeTrue();
-      expect(artifact).not.toContain('ZodError');
       expect(unbundledRuntimeImports(artifact)).toEqual([]);
       expect(JSON.parse(readFileSync(join(pluginDir, 'openclaw.plugin.json'), 'utf8')).id).toBe(
         'cc-safety-net',
@@ -188,7 +186,6 @@ describe('generated artifact contract', () => {
     expect(() => verifyManagedArtifact('Amp', AMP_MANAGED_HEADER, artifact)).not.toThrow();
     expect(artifact.startsWith(AMP_MANAGED_HEADER)).toBeTrue();
     expect(artifact).toContain(`// version: ${pkg.version}`);
-    expect(artifact).not.toContain('ZodError');
     expect(unbundledRuntimeImports(artifact)).toEqual([]);
   });
 

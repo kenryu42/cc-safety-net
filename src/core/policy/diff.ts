@@ -9,9 +9,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import type { Environment } from '@/core/environment';
 import { getUserPolicyPath, type UserScopeOptions } from './paths';
-import { getUserPolicyDiagnostics } from './schema';
 import { normalizeGuiPolicy } from './store';
 import type { GuiPolicy } from './types';
+import { getUserPolicyDiagnostics } from './user-policy-diagnostics';
 
 /** One changed field; an absent side means the field is not present in that policy. */
 export type PolicyDiffRow = { field: string; before?: string; after?: string };

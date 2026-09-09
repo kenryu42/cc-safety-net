@@ -3,28 +3,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
- * `src/` reaches for no third-party package, except the files listed below — the schema
- * validator, which only the diagnostic surfaces reach so the loader never pulls it onto the
- * hook's path, and the host layer, allowed here per file.
+ * `src/` reaches for no third-party package except the host SDK types listed below, allowed
+ * here per file.
  */
 
 const SOURCE_ROOT = join(import.meta.dir, '..', 'src');
-const SCHEMA_MODULE = join(SOURCE_ROOT, 'core', 'policy', 'schema.ts');
-/** The diagnostic surfaces: the modules that report a configuration to a human rather than
- *  enforce one, and the only ones besides the schema itself that reach the schema module. */
-const SCHEMA_IMPORTERS = new Set(
-  [
-    'core/policy/config-file.ts',
-    'core/policy/diff.ts',
-    'core/policy/store-gui.ts',
-    'cli/policy/index.ts',
-    'gui/index.ts',
-  ].map((path) => join(SOURCE_ROOT, ...path.split('/'))),
-);
-const LEGACY_CONFIG_VALIDATOR = join(SOURCE_ROOT, 'core', 'policy', 'config-file.ts');
 
 const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
-  'core/policy/schema.ts': ['zod'],
   // The two hosts whose SDK types are the host's own parameter shapes: an `import type` is erased,
   // so neither the cold-start closure nor a git checkout without `node_modules` ever sees them.
   'hosts/opencode/plugin.ts': ['@opencode-ai/plugin'],
@@ -70,8 +55,8 @@ function sourceFiles(dir: string): string[] {
     .map((entry) => join(dir, entry));
 }
 
-// The third alternative is `createRequire`: the schema module reaches its validator
-// that way, so that line would otherwise name a package no static import mentions.
+// The third alternative is `createRequire`: a package reached that way would otherwise be
+// named by no static import.
 const IMPORT_SPECIFIER =
   /(?:^|\n)\s*(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)|\w*[rR]equire\s*\((?:[^()'"]*\)\s*\()?\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -103,13 +88,6 @@ function layerOf(specifier: string, file: string) {
   if (specifier.startsWith('@/')) return specifier.split('/')[1];
   if (!specifier.startsWith('.')) return undefined;
   return relative(SOURCE_ROOT, join(file, '..', specifier)).split(sep)[0];
-}
-
-function resolvesToSchemaModule(specifier: string, file: string): boolean {
-  if (specifier === '@/core/policy/schema') return true;
-  if (!specifier.startsWith('.')) return false;
-  const resolved = join(file, '..', specifier);
-  return resolved === SCHEMA_MODULE || `${resolved}.ts` === SCHEMA_MODULE;
 }
 
 /** The specifiers a file imports as types only, which are erased before anything runs. */
@@ -322,17 +300,6 @@ describe('src/ architecture', () => {
     expect(violations).toEqual([]);
   });
 
-  test('the schema validator is imported by no module but the diagnostic surfaces', () => {
-    const violations = files
-      .filter((file) => file !== SCHEMA_MODULE && !SCHEMA_IMPORTERS.has(file))
-      .flatMap((file) =>
-        importSpecifiers(readFileSync(file, 'utf-8'))
-          .filter((specifier) => resolvesToSchemaModule(specifier, file))
-          .map((specifier) => `${relativeToRoot(file)} imports ${specifier}`),
-      );
-    expect(violations).toEqual([]);
-  });
-
   test('hosts import gate, core and audit; entries import anything below; nothing reaches up', () => {
     expect(files.flatMap((file) => layeringViolations(file, readFileSync(file, 'utf-8')))).toEqual(
       [],
@@ -351,13 +318,7 @@ describe('src/ architecture', () => {
     ]);
 
     const snapshot = join(SOURCE_ROOT, 'core', 'policy', 'snapshot.ts');
-    expect(isAllowed('zod', SCHEMA_MODULE)).toBeTrue();
     expect(isAllowed('zod', snapshot)).toBeFalse();
-    // The legacy validator reaches the schema module, never the package behind it.
-    expect(isAllowed('zod', LEGACY_CONFIG_VALIDATOR)).toBeFalse();
-    expect(resolvesToSchemaModule('./schema', snapshot)).toBeTrue();
-    expect(resolvesToSchemaModule('@/core/policy/schema', snapshot)).toBeTrue();
-    expect(resolvesToSchemaModule('./store', snapshot)).toBeFalse();
 
     const pipeline = join(SOURCE_ROOT, 'gate', 'pipeline.ts');
     expect(layerOf('../audit/writer', pipeline)).toBe('audit');
