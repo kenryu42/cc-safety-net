@@ -3,6 +3,7 @@ import type { KnipConfig } from 'knip';
 const config: KnipConfig = {
   entry: [
     'src/entries/bin.ts!',
+    'src/entries/cli.ts!',
     'src/entries/index.ts!',
     'src/entries/api.ts!',
     'src/entries/pi.ts!',

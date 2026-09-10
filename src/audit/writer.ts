@@ -1,10 +1,10 @@
-import { randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { AuditErrorCode, AuditFailureStage, AuditLogEntry } from '@/core/audit';
 import type { BlockIntent } from '@/core/decision';
 import type { Environment } from '@/core/environment';
 import type { EffectiveSafetyLevel } from '@/core/policy/types';
+import { randomHex16 } from '@/core/random-hex';
 import { redactSecrets } from '@/core/redaction';
 import { pruneExpiredAuditLogs } from './retention';
 
@@ -107,7 +107,7 @@ export function writeAuditLog(
     const logFile = join(sessionDir, `${ts.slice(0, 10)}-${safeSessionId}.jsonl`);
     const entry: AuditLogEntry = {
       ts,
-      id: (options.createId ?? (() => randomBytes(8).toString('hex')))(),
+      id: (options.createId ?? randomHex16)(),
       v: AUDIT_LOG_VERSION,
       sessionId: safeSessionId,
       decision: options.decision ?? 'deny',

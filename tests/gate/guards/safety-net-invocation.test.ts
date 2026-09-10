@@ -158,6 +158,13 @@ describe('safetyNetSubcommandIndex', () => {
         narrow: 1,
         broad: 1,
       },
+      // The bundle the bin loads dispatches every verb itself, so running it is running the CLI.
+      {
+        command: 'node',
+        tokens: ['dist/bin/hook.js', 'policy', 'apply'],
+        narrow: 1,
+        broad: 1,
+      },
       { command: 'sh', tokens: ['cc-safety-net', 'explain', 'x'], narrow: null, broad: null },
       { command: 'deno', tokens: ['cc-safety-net', 'explain'], narrow: null, broad: null },
     ];

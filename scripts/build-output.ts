@@ -8,7 +8,7 @@ export function getBundledOutputs(outputs: BuildOutput[]) {
     indexOutput: outputs.find((output) =>
       normalizeBuildPath(output.path).endsWith('dist/index.js'),
     ),
-    binOutput: outputs.find((output) => normalizeBuildPath(output.path).endsWith('dist/bin.js')),
+    cliOutput: outputs.find((output) => normalizeBuildPath(output.path).endsWith('dist/cli.js')),
     piOutput: outputs.find((output) => normalizeBuildPath(output.path).endsWith('dist/pi.js')),
   };
 }

@@ -37,7 +37,7 @@ export async function buildRuntimeBundles(outdir: string) {
     entrypoints: [
       'src/entries/index.ts',
       'src/entries/api.ts',
-      'src/entries/bin.ts',
+      'src/entries/cli.ts',
       'src/entries/pi.ts',
     ],
     outdir,
@@ -55,16 +55,12 @@ export async function buildRuntimeBundles(outdir: string) {
   });
   if (!result.success) return result;
   // Bun names a split entry after its path below the entries' common root, so
-  // the CLI and Pi entries land at the outdir root as bin.js and pi.js. Their
-  // published locations are fixed by package.json `bin`, package.json
-  // `pi.extensions`, and hooks/hooks.json, so both are moved back. A move that changes an entry's
+  // the Pi entry lands at the outdir root as pi.js. Its published location is
+  // fixed by package.json `pi.extensions`, so it is moved back. A move that changes an entry's
   // depth invalidates its relative shared-chunk specifiers; the rewrite is
   // anchored on the opening quote so `./chunks/` never matches inside
   // `../chunks/`, and it is a no-op for an entry that keeps its depth.
-  const moves = [
-    ['bin.js', 'bin/cc-safety-net.js'],
-    ['pi.js', 'pi/index.js'],
-  ] as const;
+  const moves = [['pi.js', 'pi/index.js']] as const;
   await Promise.all(
     moves.map(async ([from, to]) => {
       const emitted = Bun.file(join(outdir, from));
@@ -75,9 +71,9 @@ export async function buildRuntimeBundles(outdir: string) {
       await emitted.delete();
     }),
   );
-  // Bun hoists the code the bin shares with the CLI it imports dynamically into the bin entry
-  // itself, so the emitted chunk imports those symbols back from `../bin.js`; a move that
-  // renames an entry leaves those references dangling and the published bin fails to load.
+  // Bun may hoist code an entry shares with a chunk into the entry itself, so the chunk imports
+  // those symbols back from `../pi.js`; a move that renames an entry leaves those references
+  // dangling and the published entry fails to load.
   await Promise.all(
     result.outputs
       .filter((output) => output.kind === 'chunk')
@@ -92,6 +88,79 @@ export async function buildRuntimeBundles(outdir: string) {
         );
       }),
   );
+  const bin = await buildBinBundle(outdir);
+  return bin.success ? result : bin;
+}
+
+/** The hook bundle's file name beside the bin, and the CLI entry the bundle loads for any other verb. */
+const BIN_HOOK_BUNDLE = 'hook.js';
+const BIN_CLI_SPECIFIER = '../cli.js';
+
+/**
+ * The published bin: a CommonJS loader plus the hook bundle it requires, both under a
+ * `package.json` that marks the directory CommonJS inside an ESM package, so the pinned path
+ * `dist/bin/cc-safety-net.js` keeps its name. The hook runs as a fresh Node process per tool call
+ * and CommonJS skips the ES module loader's resolve, link and async-evaluate steps, which cost
+ * more than a hook's own work. The bundle is self-contained: everything it reaches statically is
+ * inlined, and the CLI stays behind its one dynamic import as the ESM `dist/cli.js` entry.
+ *
+ * The loader exists for Node's compile cache: bytecode is cached only for modules compiled after
+ * `enableCompileCache` runs, so the module that calls it cannot be the bundle. The cache lives
+ * under the user's CC Safety Net home rather than the shared temp directory, since it is executable
+ * bytecode the hook trusts on the next run; a Node without the API, or an unwritable home, runs
+ * uncached.
+ */
+async function buildBinBundle(outdir: string) {
+  const result = await Bun.build({
+    entrypoints: ['src/entries/bin.ts'],
+    target: 'node',
+    format: 'cjs',
+    splitting: false,
+    minify: true,
+    define: {
+      __PKG_VERSION__: JSON.stringify(pkg.version),
+    },
+    plugins: [
+      {
+        name: 'cli-entry',
+        setup(build) {
+          build.onResolve({ filter: /^@\/cli\/main$/ }, () => ({
+            path: BIN_CLI_SPECIFIER,
+            external: true,
+          }));
+        },
+      },
+      aliasPlugin,
+    ],
+  });
+  if (!result.success) return result;
+  const artifact = result.outputs[0];
+  if (!artifact) throw new Error('Bin bundle produced no output');
+  const directory = join(outdir, 'bin');
+  mkdirSync(directory, { recursive: true });
+  await Promise.all([
+    Bun.write(join(directory, BIN_HOOK_BUNDLE), await artifact.text()),
+    Bun.write(join(directory, 'package.json'), `${JSON.stringify({ type: 'commonjs' })}\n`),
+    Bun.write(
+      join(directory, 'cc-safety-net.js'),
+      [
+        '#!/usr/bin/env node',
+        "'use strict';",
+        "const { enableCompileCache } = require('node:module');",
+        'if (enableCompileCache !== undefined) {',
+        "  const { join } = require('node:path');",
+        '  enableCompileCache(',
+        '    join(',
+        "      process.env.CC_SAFETY_NET_HOME || join(require('node:os').homedir(), '.cc-safety-net'),",
+        "      'compile-cache',",
+        '    ),',
+        '  );',
+        '}',
+        `require('./${BIN_HOOK_BUNDLE}');`,
+        '',
+      ].join('\n'),
+    ),
+  ]);
   return result;
 }
 

@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import {
   closeSync,
   constants,
@@ -17,6 +16,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
+import { randomHex16 } from '@/core/random-hex';
 
 /**
  * Policy files are reached only through a bound scope. Every path component under the root must
@@ -132,7 +132,7 @@ export function writePolicyFileAtomic(
   mode = 0o600,
   afterRename?: (path: string) => void,
 ): void {
-  const tempPath = `${target.path}.${randomBytes(8).toString('hex')}.tmp`;
+  const tempPath = `${target.path}.${randomHex16()}.tmp`;
   guarded(
     target.scope.label,
     () => {

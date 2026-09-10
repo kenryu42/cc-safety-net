@@ -126,6 +126,13 @@ describe('the hook entry closure', () => {
     expect([...closure.bare].filter(offTheCheckout)).toEqual([]);
   });
 
+  test('cold-start budget: the closure loads no crypto at import', () => {
+    // `node:crypto` costs about as much to initialize as the hook's own work, and the two names
+    // that drew on it — the audit id and the policy temp-file suffix — need uniqueness, not
+    // unpredictability, so the module stays off the static closure.
+    expect([...closure.bare].filter((specifier) => specifier === 'node:crypto')).toEqual([]);
+  });
+
   test('the predicates are falsifiable', () => {
     const source =
       "import { a } from '@/cli/main'; import z from 'zod'; import { b } from './x'; import { c } from '@/hosts/system-info';";

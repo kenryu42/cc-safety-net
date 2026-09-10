@@ -119,7 +119,8 @@ export async function verifyPackage(): Promise<void> {
     const packageVerificationEnv = getPackageVerificationEnv(directory);
     for (const bundle of [
       'dist/index.js',
-      'dist/bin/cc-safety-net.js',
+      'dist/cli.js',
+      'dist/bin/hook.js',
       'dist/pi/index.js',
       `dist/amp/${AMP_PLUGIN_ENTRY}`,
     ]) {

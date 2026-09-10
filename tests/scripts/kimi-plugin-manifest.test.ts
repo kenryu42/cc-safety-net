@@ -42,15 +42,20 @@ describe('Kimi Code plugin manifest', () => {
     expect(hooks[0]?.timeout).toBe(30);
   });
 
-  test('targets a bundle whose required chunks are present', () => {
+  test('targets a loader whose hook bundle is present', () => {
     const target = readManifest().hooks[0]?.command.split(' ')[1] ?? '';
     expect(existsSync(target)).toBeTrue();
-    const chunks = getRuntimeImportSpecifiers(readFileSync(target, 'utf8')).filter((specifier) =>
-      specifier.startsWith('../chunks/'),
+    // The bin is a loader over one self-contained CommonJS bundle, so the only relative
+    // specifier it names is that bundle, and the bundle names no chunk of its own.
+    const bundles = getRuntimeImportSpecifiers(readFileSync(target, 'utf8')).filter((specifier) =>
+      specifier.startsWith('.'),
     );
-    expect(chunks.length).toBeGreaterThan(0);
-    chunks.forEach((specifier) => {
-      expect(existsSync(join('dist/bin', specifier))).toBeTrue();
-    });
+    expect(bundles).toEqual(['./hook.js']);
+    expect(existsSync(join('dist/bin', './hook.js'))).toBeTrue();
+    expect(
+      getRuntimeImportSpecifiers(readFileSync('dist/bin/hook.js', 'utf8')).filter((specifier) =>
+        specifier.startsWith('../chunks/'),
+      ),
+    ).toEqual([]);
   });
 });

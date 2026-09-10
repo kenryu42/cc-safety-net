@@ -43,11 +43,11 @@ afterAll(() => {
   removeTempRoots();
 });
 
-const STATIC_SPECIFIER = /\b(?:from|import)\s*["']([^"']+)["']/g;
+const STATIC_SPECIFIER = /\b(?:from|import|require\s*\()\s*["']([^"']+)["']/g;
 
-// The quote has to follow `from` or `import` directly, so `import(` never matches and the walk
-// never crosses the bin's one dynamic import into the CLI chunk. Only relative specifiers are
-// followed: a minified string literal can look like a bare one.
+// The quote has to follow `from`, `import` or `require(` directly, so `import(` never matches and
+// the walk never crosses the hook bundle's one dynamic import into the CLI entry. Only relative
+// specifiers are followed: a minified string literal can look like a bare one.
 function staticClosure(path: string, seen = new Set<string>()): string[] {
   if (seen.has(path)) return [];
   seen.add(path);
@@ -64,7 +64,7 @@ test('the hook closure stays under 400,000 bytes', () => {
   const files = staticClosure(bin);
   const bytes = files.reduce((total, file) => total + Buffer.byteLength(readFileSync(file)), 0);
 
-  // A walk that resolved no chunk at all would pass the byte budget on the 7 KB bin alone.
+  // A walk that resolved no bundle at all would pass the byte budget on the loader alone.
   expect(files.length).toBeGreaterThan(1);
   expect(bytes, `hook closure: ${bytes} bytes over ${files.length} files`).toBeLessThanOrEqual(
     400_000,

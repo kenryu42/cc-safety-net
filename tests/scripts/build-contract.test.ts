@@ -30,9 +30,12 @@ function writeBuildFixture(directory: string) {
   mkdirSync(join(directory, 'dist', 'openclaw', 'cc-safety-net'), { recursive: true });
   writeFileSync(
     join(directory, 'dist', 'bin', 'cc-safety-net.js'),
-    '#!/usr/bin/env node\nimport "../chunks/index-fixture.js";\n',
+    '#!/usr/bin/env node\nrequire("./hook.js");\n',
   );
   chmodSync(join(directory, 'dist', 'bin', 'cc-safety-net.js'), 0o755);
+  writeFileSync(join(directory, 'dist', 'bin', 'hook.js'), 'import("../cli.js");\n');
+  writeFileSync(join(directory, 'dist', 'bin', 'package.json'), '{"type":"commonjs"}\n');
+  writeFileSync(join(directory, 'dist', 'cli.js'), 'import "./chunks/index-fixture.js";\n');
   writeFileSync(join(directory, 'dist', 'chunks', 'index-fixture.js'), 'export {};\n');
   writeFileSync(join(directory, 'dist', 'api.d.ts'), 'export {};\n');
   writeFileSync(join(directory, 'dist', 'api.js'), 'export {};\n');
@@ -146,6 +149,9 @@ describe('generated artifact contract', () => {
     expect(files).toContain('dist/api.d.ts');
     expect(files).toContain('dist/api.js');
     expect(files).toContain('dist/bin/cc-safety-net.js');
+    expect(files).toContain('dist/bin/hook.js');
+    expect(files).toContain('dist/bin/package.json');
+    expect(files).toContain('dist/cli.js');
     expect(files).toContain('dist/index.d.ts');
     expect(files).toContain('dist/index.js');
     expect(files).toContain('dist/pi/index.js');

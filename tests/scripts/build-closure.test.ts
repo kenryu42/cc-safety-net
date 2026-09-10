@@ -12,7 +12,8 @@ import {
 } from '../../scripts/build-runtime';
 import { verifyBuildArtifacts } from '../../scripts/verify-build';
 
-const STATIC_SPECIFIER = /\b(?:from|import)\s*["']([^"']+)["']/g;
+// The bin is CommonJS, so the walk follows `require` as well as `from`/`import`.
+const STATIC_SPECIFIER = /\b(?:from|import|require\s*\()\s*["']([^"']+)["']/g;
 const DYNAMIC_SPECIFIER = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 function readSpecifiers(source: string, pattern: RegExp): string[] {
@@ -48,6 +49,7 @@ describe('the build', () => {
   );
   const outdir = join(root, 'dist');
   const bin = join(outdir, 'bin', 'cc-safety-net.js');
+  const hook = join(outdir, 'bin', 'hook.js');
   const originalCwd = process.cwd();
   const listOutputs = (pattern: string) =>
     [...new Bun.Glob(pattern).scanSync({ cwd: outdir, onlyFiles: true })]
@@ -80,6 +82,9 @@ describe('the build', () => {
       'api.d.ts',
       'api.js',
       'bin/cc-safety-net.js',
+      'bin/hook.js',
+      'bin/package.json',
+      'cli.js',
       'index.d.ts',
       'index.js',
       'openclaw/cc-safety-net/index.js',
@@ -95,11 +100,28 @@ describe('the build', () => {
     expect(readFileSync(bin, 'utf8').startsWith('#!/usr/bin/env node\n')).toBeTrue();
   });
 
-  test('imports the CLI chunk through exactly one dynamic import', () => {
-    // The bin loads the whole CLI lazily, so the hook path pays for nothing the CLI needs.
-    const dynamic = readSpecifiers(readFileSync(bin, 'utf8'), DYNAMIC_SPECIFIER);
+  test('ships the bin as CommonJS: a loader over the hook bundle, marked by its own package.json', () => {
+    // Under the package's `"type": "module"` a `.js` bin would be ESM; the directory manifest
+    // makes it CommonJS so the hook skips the ES module loader while keeping its pinned name. The
+    // loader requires the bundle rather than being it, so the bundle's compile is cacheable.
+    expect(JSON.parse(readFileSync(join(outdir, 'bin', 'package.json'), 'utf8'))).toEqual({
+      type: 'commonjs',
+    });
+    expect(readSpecifiers(readFileSync(bin, 'utf8'), STATIC_SPECIFIER)).toEqual([
+      'node:module',
+      'node:path',
+      'node:os',
+      './hook.js',
+    ]);
+    expect(readSpecifiers(readFileSync(hook, 'utf8'), STATIC_SPECIFIER)).not.toContain(
+      expect.stringMatching(/^\./),
+    );
+  });
 
-    expect(dynamic).toEqual([expect.stringMatching(/^\.\.\/chunks\/[A-Za-z0-9_-]+\.js$/)]);
+  test('imports the CLI entry through exactly one dynamic import', () => {
+    // The bin loads the whole CLI lazily, so the hook path pays for nothing the CLI needs.
+    expect(readSpecifiers(readFileSync(bin, 'utf8'), DYNAMIC_SPECIFIER)).toEqual([]);
+    expect(readSpecifiers(readFileSync(hook, 'utf8'), DYNAMIC_SPECIFIER)).toEqual(['../cli.js']);
   });
 
   test('replaces the version define and keeps the internal sync field out', () => {

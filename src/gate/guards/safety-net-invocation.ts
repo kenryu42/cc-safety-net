@@ -9,6 +9,9 @@ const CC_SAFETY_NET_ENTRYPOINTS = new Set([
   'src/entries/bin.ts',
   'src/cli/cc-safety-net.ts',
   'dist/bin/cc-safety-net.js',
+  // The bundle the published bin loads; it dispatches every verb, so running it directly is
+  // running the CLI.
+  'dist/bin/hook.js',
 ]);
 // Both published bin names, the runners that resolve a package by name, the
 // runners that do it through a `dlx` subcommand, and the runtimes that execute
