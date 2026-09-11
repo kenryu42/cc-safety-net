@@ -8,7 +8,6 @@ import {
 import { parseEnvAssignment } from './wrapper-prelude';
 
 export interface ShellGitContextEnvState {
-  /** Inherited process environment the shell starts from. */
   env: ReadonlyMap<string, string>;
   effectiveEnvAssignments?: ReadonlyMap<string, string>;
   shellAssignments: Map<string, string>;
@@ -20,7 +19,6 @@ interface GitContextAssignment {
 }
 
 interface SegmentGitContextAssignment extends GitContextAssignment {
-  /** False for assignments that only prefix a command word, which a shell scopes to it. */
   persists: boolean;
 }
 
@@ -28,9 +26,9 @@ const TMPDIR_ENV_NAME = 'TMPDIR';
 const IFS_ENV_NAME = 'IFS';
 const ENV_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-/** Builtins that can publish an already declared name to later commands. */
+
 const EXPORT_BUILTINS = new Set(['export', 'typeset', 'declare', 'readonly']);
-/** Prefixes that invoke a shell builtin, so the builtin's operands still declare names. */
+
 const BUILTIN_CALL_PREFIXES = new Set(['builtin', 'command', 'time']);
 
 export function createShellGitContextEnvState(
@@ -56,12 +54,6 @@ export function cloneShellGitContextEnvState(
   };
 }
 
-/**
- * A recognized assignment is effective for later segments unless it merely prefixes a
- * command word, which scopes it to that command. An export-family builtin naming a
- * tracked variable publishes it too. Exotic export-state manipulation is not emulated:
- * it can only withhold the worktree relaxation.
- */
 export function applyShellGitContextEnvSegment(
   tokens: readonly string[],
   state: ShellGitContextEnvState,
@@ -113,12 +105,6 @@ export function getSegmentGitContextEnvAssignments(
   return nextEnvAssignments;
 }
 
-/**
- * Assignments before the command word set the environment; a `NAME=value` token after
- * it is a command argument, unless an export-family builtin declares its operands.
- * Worktree override names count wherever they appear, so their presence alone keeps
- * the relaxation withheld.
- */
 function collectSegmentEnvAssignments(
   tokens: readonly string[],
   state: ShellGitContextEnvState,
@@ -154,13 +140,11 @@ function collectSegmentEnvAssignments(
   return { assignments, commandIndex };
 }
 
-/** Skips `builtin`/`command`/`time` prefixes and their options to the word they invoke. */
 function resolveInvokedWordIndex(tokens: readonly string[], commandIndex: number): number {
   let index = commandIndex;
   while (BUILTIN_CALL_PREFIXES.has(tokens[index] ?? '')) {
     index += 1;
     while (tokens[index]?.startsWith('-')) {
-      // `command -v`/`-V` only reports availability; nothing is invoked.
       if (/^-p*[vV][pvV]*$/.test(tokens[index] ?? '')) {
         return commandIndex;
       }

@@ -77,7 +77,7 @@ export function isProtectedGitDeleteTarget(
   const globBase = candidate.replace(/(\/\.?\*+)+$/, '');
   if (globBase !== candidate && globBase !== '') {
     if (isProtectedExactOrHookTarget(globBase, metadata)) return true;
-    // POSIX `*` skips dot entries; `.*` globs and PowerShell wildcards do not.
+
     const matchesHidden = dotEntryGlobs || candidate.slice(globBase.length).includes('/.');
     const covers = (path: string) =>
       matchesHidden ? isEqualOrWithin(path, globBase) : isGlobVisibleDescendant(path, globBase);
@@ -88,10 +88,6 @@ export function isProtectedGitDeleteTarget(
   return recursive && protectedRoots(metadata).some((path) => isEqualOrWithin(path, candidate));
 }
 
-// A trailing all-star glob deletes the base's children, but `*` does not match
-// dot-entries, so a protected root is only covered when its first path segment
-// below the base is not hidden (e.g. `.git/worktrees/*` covers a linked gitdir
-// while `./*` at the repository root does not cover `.git`).
 function isGlobVisibleDescendant(target: string, base: string): boolean {
   const path = relative(base, target);
   if (path === '' || path.startsWith('..') || isAbsolute(path)) return false;
@@ -165,8 +161,6 @@ function isProtectedHookTarget(candidate: string, metadata: ProtectedGitMetadata
 }
 
 function protectedRoots(metadata: ProtectedGitMetadata): readonly string[] {
-  // Hooks directories can be symlinked outside the Git directory, so ancestor
-  // deletion must also cover their canonical targets.
   return [...metadata.entries, ...metadata.directories, ...metadata.hooksDirectories];
 }
 

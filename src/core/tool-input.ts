@@ -1,6 +1,5 @@
 import { types as utilTypes } from 'node:util';
 
-/** The non-shell routes a host tool input can take; the shell route carries a command instead. */
 export type NonCommandToolInputKind = 'patch' | 'path' | 'grep' | 'glob' | 'unknown';
 
 const PATCH_TOOL_NAMES = new Set(['applypatch', 'patch']);

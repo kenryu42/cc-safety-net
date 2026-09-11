@@ -56,7 +56,6 @@ export function analyzeXargs(
   words: readonly CommandWord[],
   context: XargsAnalyzeContext,
 ): DestructiveCommandRuleMatch | null {
-  // xargs options, the replacement token and the child command all match on text only.
   const tokens = words.map(analysisWordText);
   const { childStart, replacementToken } = extractXargsChildCommandWithInfo(tokens);
   const rawChildTokens = tokens.slice(childStart);
@@ -139,7 +138,6 @@ export function analyzeXargs(
   return null;
 }
 
-/** What the dispatch needs to know about a child this xargs synthesized from its arguments. */
 function childProvenance(
   childCommand: NormalizedChildCommand,
   context: XargsAnalyzeContext,
@@ -467,7 +465,6 @@ function findInputCanChangeExecutedSource(
   scanWork: { units: number } | undefined,
   environment: EnvironmentContext,
 ): boolean {
-  // Appended stdin can always extend a find expression (-delete, -exec, etc.).
   if (replacementToken === null) return true;
 
   let inExpression = false;
@@ -533,13 +530,11 @@ function findInputCanChangeExecutedSource(
 }
 
 interface XargsParseResult {
-  /** Index the child command starts at, so word-based callers can slice the same position. */
   childStart: number;
   replacementToken: string | null;
 }
 
 export function extractXargsChildCommandWithInfo(tokens: readonly string[]): XargsParseResult {
-  // Options that take a value as the next token
   const xargsOptsWithValue = new Set([
     '-L',
     '-n',
@@ -577,48 +572,37 @@ export function extractXargsChildCommandWithInfo(tokens: readonly string[]): Xar
       return { childStart: i, replacementToken };
     }
 
-    // Handle -I (replacement option)
     if (token === '-I') {
-      // -I TOKEN - next arg is the token
       replacementToken = (tokens[i + 1] as string | undefined) ?? '{}';
       i += 2;
       continue;
     }
     if (token.startsWith('-I') && token.length > 2) {
-      // -ITOKEN - token is attached
       replacementToken = token.slice(2);
       i++;
       continue;
     }
 
-    // Handle --replace option
-    // In GNU xargs, --replace takes an optional argument via =
-    // --replace alone uses {}, --replace=FOO uses FOO
     if (token === '--replace') {
-      // --replace (defaults to {})
       replacementToken = '{}';
       i++;
       continue;
     }
     if (token.startsWith('--replace=')) {
-      // --replace=TOKEN or --replace= (empty defaults to {})
       const value = token.slice('--replace='.length);
       replacementToken = value === '' ? '{}' : value;
       i++;
       continue;
     }
 
-    // Handle -J (macOS xargs replacement, consumes value)
     if (token === '-J') {
       replacementToken = (tokens[i + 1] as string | undefined) ?? '{}';
       i += 2;
       continue;
     }
 
-    // Attached-value options like -n5 or --opt=v and unknown options occupy one token.
     i += xargsOptsWithValue.has(token) ? 2 : 1;
   }
 
-  // No child command: the scan ran out of tokens, or stopped on an empty one.
   return { childStart: tokens.length, replacementToken };
 }

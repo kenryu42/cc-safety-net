@@ -11,7 +11,6 @@ import {
   hasCopilotSafetyNetPlugin,
 } from '@/hosts/copilot-cli/plugin-id';
 
-/** `copilot plugin list` lines, including one the host painted green. */
 const OUTPUTS: readonly (string | null)[] = [
   'cc-safety-net@cc-marketplace',
   'x cc-safety-net@cc-marketplace y',
@@ -30,8 +29,6 @@ const readAll = (
 
 describe('the Copilot plugin identifiers', () => {
   test('match on a token boundary, so a longer identifier never counts as a hit', () => {
-    // Columns: plugin, marketplace, legacy plugin, pre-rename plugin. The pre-rename id is a tail
-    // of the current one, and `ccc-marketplace` a head-extension of the marketplace id.
     expect(
       readAll([
         hasCopilotSafetyNetPlugin,
@@ -52,7 +49,6 @@ describe('the Copilot plugin identifiers', () => {
   });
 
   test('name the same plugin, marketplace and checkout directories', () => {
-    // A plugin id is `<plugin>@<marketplace>`; a directory is the pair the checkout nests under.
     expect(COPILOT_PLUGIN_ID).toBe('cc-safety-net@cc-marketplace');
     expect(COPILOT_PLUGIN_DIR).toEqual(['cc-marketplace', 'cc-safety-net']);
     expect(COPILOT_LEGACY_PLUGIN_DIR).toEqual(['_direct', 'copilot-safety-net']);

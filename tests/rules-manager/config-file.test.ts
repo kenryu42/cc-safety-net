@@ -10,14 +10,6 @@ import {
 import { snapshotTree, type TreeSpec, writeTree } from '../helpers/fixture-tree';
 import { createTempRoot, removeTempRoots } from '../helpers/temp-home';
 
-/**
- * Every rule command starts by reading its scope's config and several end by writing one, so a
- * refusal that stops naming its reason silently turns a broken config into an empty one, and a
- * starter file that drifts by a byte changes what `rule init --example` ships. Each read row is
- * resolved over its own copy of the tree; each write row writes into its own root and states the
- * tree it leaves, contents and modes included.
- */
-
 const OVER_LIMIT_SOURCES = Array.from({ length: 65 }, (_unused, index) => `book-${index}`);
 
 const TREE: TreeSpec = {
@@ -30,7 +22,6 @@ const TREE: TreeSpec = {
 
 afterEach(removeTempRoots);
 
-/** The read fixture under its own root, so nothing outside it is in reach. */
 function readBoth(file: string) {
   const portedRoot = createTempRoot('scope-config-read-ported-');
   writeTree(portedRoot, TREE);
@@ -109,11 +100,6 @@ const WRITES = [
   },
 ];
 
-/**
- * What `rule init --example` ships is a rulebook the loader accepts whose worked example holds
- * together: docker allowed, one rule against it, and one test naming that rule. Only the
- * scope-dependent fields are handed back for the row to state.
- */
 function starterExample(written: unknown) {
   const rulebook = assertValidRulebook(written);
   expect(rulebook.allowed_commands).toEqual(['docker']);
@@ -132,15 +118,12 @@ describe('writing a scope file leaves what the shipped writer leaves', () => {
     const tree = snapshotTree(portedRoot);
     const written: unknown = JSON.parse(tree.at(-1)?.content ?? 'null');
     row.states(written);
-    // The file is JSON a person can read and edit, so it is written indented and newline-ended.
     expect(tree.at(-1)?.content).toBe(`${JSON.stringify(written, null, 2)}\n`);
-    // The write is owner-only inside owner-only directories, and leaves no temp file behind.
     expect(tree.map((entry) => ({ path: entry.path, kind: entry.kind }))).toEqual([
       { path: 'scope', kind: 'directory' },
       { path: 'scope/rules', kind: 'directory' },
       { path: target, kind: 'file' },
     ]);
-    // Windows has no POSIX mode to assert.
     if (process.platform === 'win32') return;
     expect(
       tree.map((entry) => (lstatSync(join(portedRoot, entry.path)).mode & 0o777).toString(8)),

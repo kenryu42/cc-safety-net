@@ -9,13 +9,6 @@ import {
   snapshotHome,
 } from '../helpers/temp-home';
 
-/**
- * `doctor` exits 1 when this suite fails, so the three verdicts and the rule ids behind them are
- * contract. The suite hands the audit writer no session id, so it also has to leave nothing
- * behind: the port moved its working directory from `os.tmpdir()` onto the environment, and a
- * directory or an audit home that drifted would show up as a file under the isolated home.
- */
-
 describe('the engine self-test', () => {
   afterEach(removeTempRoots);
 
@@ -55,7 +48,6 @@ describe('the engine self-test', () => {
           reason:
             'rm -rf targeting root or home directory is extremely dangerous and always blocked.',
         },
-        // An allowed command is answered by no rule, so it carries neither an id nor a reason.
         {
           description: 'rm in cwd (safe)',
           command: 'rm -rf ./node_modules',

@@ -70,15 +70,10 @@ afterAll(() => {
 });
 
 describe('protected git metadata', () => {
-  /**
-   * The resolver answers with the paths it compares: canonical, and on Windows lower-cased and
-   * spelled with `/`, so every expected path is spelled through `realpath` and folded the same way.
-   */
   const fold = (path: string) =>
     process.platform === 'win32' ? path.replaceAll('\\', '/').toLowerCase() : path;
   const compared = (...parts: string[]) => fold(join(realpathSync(root), ...parts));
 
-  /** The repository at `main`, whichever directory inside it the call was made from. */
   const mainRepository = () => ({
     directories: [compared('main', '.git')],
     entries: [compared('main', '.git')],
@@ -86,11 +81,6 @@ describe('protected git metadata', () => {
     markerFiles: [],
   });
 
-  /**
-   * A linked worktree protects its own git directory and the common one behind it. Both are read
-   * out of the `.git` file git wrote, because that spelling is the one the resolver reports: on
-   * Windows git records the temp root in its long form where `realpath` keeps the 8.3 short one.
-   */
   const linkedWorktree = () => {
     const gitDir = fold(
       realpathSync(
@@ -104,7 +94,6 @@ describe('protected git metadata', () => {
       directories: [gitDir, commonDir],
       entries: [compared('linked', '.git')],
       hooksDirectories: [`${gitDir}/hooks`, `${commonDir}/hooks`],
-      // The `.git` of a linked worktree is a file naming those directories, so it is protected too.
       markerFiles: [compared('linked', '.git')],
     };
   };
@@ -123,7 +112,6 @@ describe('protected git metadata', () => {
     {
       name: 'a submodule checkout',
       cwd: () => join(root, 'main', 'vendor', 'sub'),
-      // A submodule keeps its git directory in the superproject and its `.git` is a file naming it.
       expected: () => ({
         directories: [compared('main', '.git', 'modules', 'vendor', 'sub')],
         entries: [compared('main', 'vendor', 'sub', '.git')],
@@ -160,8 +148,6 @@ describe('protected git metadata', () => {
     {
       name: 'a working tree whose git directory is a symlink out of it',
       cwd: () => join(root, 'external'),
-      // Both spellings of the git directory are protected, and so is the directory its `hooks`
-      // link points at — otherwise a write through the link would install a hook unnoticed.
       expected: () => ({
         directories: [compared('external', '.git'), compared('external-gitdir')],
         entries: [compared('external-gitdir')],
@@ -174,7 +160,6 @@ describe('protected git metadata', () => {
       }),
     },
     {
-      // A git directory with no working tree beside it is not a repository to enter.
       name: 'a git directory standing on its own',
       cwd: () => join(root, 'external-gitdir'),
       expected: () => null,

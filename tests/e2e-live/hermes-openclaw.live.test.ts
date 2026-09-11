@@ -1,24 +1,3 @@
-/**
- * Real-host tests for the Hermes Agent and OpenClaw integrations. Every case here boots a host
- * binary, which costs minutes rather than seconds, so they are opt-in: `bun run test:e2e:live`
- * with `hermes` and `openclaw` on PATH. A case whose binary is absent skips.
- *
- * What these prove, and what the packaged suite in `tests/e2e/hermes-openclaw.test.ts` cannot:
- *
- * - Hermes: the real `hermes` binary is driven end to end through `hermes hooks test`, which
- *   serialises the payload with Hermes' own `_serialize_payload` and parses the reply with its
- *   own `_parse_response`, and the real `hermes plugins` CLI discovers the plugin our installer
- *   writes and loses it again on uninstall. The dispatch through Hermes' own PluginManager is
- *   still NOT covered: it only happens inside an agent turn, which needs a model and network.
- * - OpenClaw: the real `openclaw` binary is driven end to end. Our own CLI installs the built
- *   plugin through OpenClaw's `plugins` CLI, the host reports it `loaded` with the
- *   `before_tool_call` hook registered, and a real gateway agent turn puts a real `exec` tool
- *   call through that hook — an allowed command runs, `git reset --hard` is blocked before it can
- *   touch the workspace. The model is a loopback stub so no turn needs network or an API key;
- *   OpenClaw's own agent runtime, tool construction, and hook dispatch are the real ones.
- *   Still UNPROVEN, and not to be cited from here: Codex-native relay, and the sandbox and
- *   remote-node execution hosts.
- */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -51,15 +30,12 @@ import {
   writeOpenClawConfig,
 } from './openclaw-host';
 
-// Live tests drive real host binaries and take minutes, so they are opt-in:
-// `bun run test:e2e:live`.
 const liveEnabled = process.env.CC_SAFETY_NET_E2E_LIVE === '1';
 const hermesBin = Bun.which('hermes');
 const openClawBin = Bun.which('openclaw');
 const skipHermes = !liveEnabled || hermesBin === null;
 const skipOpenClaw = !liveEnabled || openClawBin === null;
 
-/** A cold gateway compiles its plugin bundles on first boot, and a turn waits on that. */
 const GATEWAY_READY_TIMEOUT_MS = 180_000;
 const AGENT_TURN_TIMEOUT_MS = 120_000;
 const OPENCLAW_CLI_TIMEOUT_MS = 60_000;
@@ -81,7 +57,6 @@ afterAll(() => {
   if (buildRoot) rmSync(buildRoot, { recursive: true, force: true });
 });
 
-// The real `hermes` binary dispatching a configured pre_tool_call shell hook at the built CLI.
 const hermesBinaryGate = {
   agent: 'hermes-agent',
   async run(command: string, cwd: string, home: string, sessionId: string, action: () => void) {
@@ -109,7 +84,6 @@ const hermesBinaryGate = {
       cwd,
       home,
     );
-    // Hermes reports what the hook wrote and what its dispatcher made of it.
     expect(stdout).toContain('exit=0');
     expect(stdout).not.toContain('stderr:');
     const directive = /parsed \(Hermes wire shape\): (.+)$/m.exec(stdout);
@@ -148,7 +122,6 @@ describe.skipIf(skipHermes)('packaged Hermes Agent plugin under the real hermes 
 
 async function listRealHermesPlugins(cwd: string, home: string) {
   const { stdout } = await runCommand(['hermes', 'plugins', 'list'], '', cwd, home, {
-    // Rich wraps the table to the terminal width, which would split the description mid-word.
     env: { COLUMNS: '400' },
   });
   return stdout
@@ -167,14 +140,11 @@ describe.skipIf(skipOpenClaw)('packaged OpenClaw plugin under the real openclaw 
         });
 
         expect(await listRealOpenClawPlugins(cwd, home)).toContain(OPENCLAW_PLUGIN_ID);
-        // The registration the hook depends on: an enabled plugin whose runtime imported
-        // cleanly and whose before_tool_call hook the host actually holds.
         expect(await inspectRealOpenClawPlugin(cwd, home)).toMatchObject({
           plugin: { id: OPENCLAW_PLUGIN_ID, enabled: true, status: 'loaded' },
           typedHooks: [{ name: 'before_tool_call', priority: 50 }],
         });
 
-        // `--force` is required: uninstall otherwise waits for a TTY confirmation.
         await runOpenClawChecked(
           ['plugins', 'uninstall', OPENCLAW_PLUGIN_ID, '--force'],
           cwd,
@@ -196,7 +166,6 @@ describe.skipIf(skipOpenClaw)('packaged OpenClaw plugin under the real openclaw 
 describe.skipIf(skipOpenClaw)(
   'packaged OpenClaw protection through a real gateway agent turn',
   () => {
-    // One gateway serves both cases: a boot costs more than the turns it hosts.
     let context: Awaited<ReturnType<typeof startRealOpenClawGateway>> | undefined;
 
     beforeAll(async () => {
@@ -226,8 +195,6 @@ describe.skipIf(skipOpenClaw)(
       'blocks git reset --hard before the real host can run it',
       async () => {
         const gateway = requireGateway(context);
-        // The sentinel is a tracked file with an uncommitted edit: only a `git reset --hard` that
-        // actually ran would restore the committed contents.
         const sentinel = join(gateway.workspace, 'sentinel.txt');
         writeFileSync(sentinel, 'uncommitted');
         gateway.stub.armExec('git reset --hard');
@@ -244,11 +211,6 @@ describe.skipIf(skipOpenClaw)(
   },
 );
 
-/**
- * Bring up an isolated OpenClaw installation: the built plugin installed through our own CLI, a
- * loopback stub model, and a gateway bound to a free port. The workspace is a git repository so
- * the `git reset --hard` case has something real to destroy.
- */
 async function startRealOpenClawGateway() {
   const root = mkdtempSync(join(tmpdir(), 'cc-safety-net-openclaw-'));
   const home = join(root, 'home');
@@ -268,7 +230,6 @@ async function startRealOpenClawGateway() {
   });
 
   writeFileSync(join(workspace, 'sentinel.txt'), 'committed');
-  // `-b main` keeps git from printing its default-branch advice on stderr.
   for (const args of [
     ['init', '-q', '-b', 'main'],
     ['config', 'user.email', 'test@example.com'],
@@ -328,11 +289,6 @@ function requireGateway<T>(context: T | undefined): T {
   return context;
 }
 
-/**
- * Every deny CC Safety Net wrote for one command under the isolated home. Scoping by command
- * rather than by session keeps each case independent of the order the suite runs them in: the
- * gateway is shared, so the log is too.
- */
 function readOpenClawDenials(home: string, command: string) {
   return listAuditLogFiles(join(home, '.cc-safety-net', 'logs'))
     .flatMap((file) => readAuditLogEntries(file))

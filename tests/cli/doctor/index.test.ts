@@ -17,18 +17,6 @@ import { json } from '../../helpers/cli-fixtures';
 import { foldWindowsPosture, normalizeDoctorJson } from '../../helpers/doctor-json';
 import { environmentFor, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * `doctor` is the widest projection of one policy resolution, so each row seeds the single fact
- * a finding rule reads and pins the finding it produces. The JSON form is also pinned as a
- * snapshot, which guards the document shape on its own.
- *
- * The run is read raw: every byte a doctor document carries, down to which entry it calls the
- * oldest and which version it reports, is pinned. Only the snapshot is normalized, because what
- * the normalizer folds is exactly what a pinned document cannot hold across machines: the rendered
- * relative times, the package version (`dev` in a checkout, a real number in a tarball) and the
- * platform.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -46,8 +34,6 @@ async function runDoctorJson(slug: string, row: Omit<CliRow, 'args'>) {
   return { outcome, report: JSON.parse(outcome.stdout) as DoctorReport };
 }
 
-/** A directory the posture check reads has to be created 0700, or the runner's umask makes it
- *  a `permissions` finding and the row stops describing what it seeds. */
 const mkdirPrivate = (path: string) => mkdirSync(path, { recursive: true, mode: 0o700 });
 
 const HOUR = 60 * 60 * 1000;
@@ -55,9 +41,6 @@ const DAY = 24 * HOUR;
 
 type AuditFixtureEntry = Record<string, unknown>;
 
-/** The working directory the entries record. A temp root would encode into a directory name the
- *  harness cannot spell as `<root>`, so the two sides would disagree on the tree; nothing opens
- *  this path, it is only the key the writer's layout is derived from. */
 const RECORDED_CWD = '/home/agent/project';
 
 function seedAuditLog(side: CliSide, session: string, entries: readonly AuditFixtureEntry[]): void {
@@ -74,8 +57,6 @@ function seedAuditLog(side: CliSide, session: string, entries: readonly AuditFix
   writeFileSync(file, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(''));
 }
 
-/** Three denials and one allow, each far enough from an hour or day boundary that the relative
- *  time both bins render is the same string. */
 function auditFixture(session: string) {
   const now = Date.now();
   const at = (ago: number) => new Date(now - ago).toISOString();
@@ -233,10 +214,6 @@ describe('doctor --json', () => {
   }, 120_000);
 });
 
-/**
- * A table's column widths follow its widest cell, and the platform cell (`darwin arm64`, `linux
- * x64`) is the host's, so the record keeps one border dash and one space of padding per cell.
- */
 const foldTableWidths = (outcome: CliOutcome): CliOutcome => ({
   ...outcome,
   stdout: outcome.stdout.replace(/─+/g, '─').replace(/ +│/g, ' │'),

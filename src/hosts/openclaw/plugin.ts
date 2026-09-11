@@ -13,16 +13,8 @@ import { type GuardDependencies, GuardEvaluationError } from '@/gate/pipeline';
 import { writeIntegrationDenialAudit } from '@/hosts/audit';
 import { evaluateRuntimeGuard } from '@/hosts/runtime';
 
-/** Canonical OpenClaw shell tool. Only this tool has a proven parameter and workspace mapping. */
 const OPENCLAW_EXEC_TOOL = 'exec';
 
-/**
- * `exec.host` values analyzed against the local Gateway host, the only host whose paths the agent
- * workspace describes. `gateway` is proven local; `auto` is accepted because an absent host is the
- * default shape on an install without a sandbox, though a sandbox-configured host resolves `auto`
- * to the sandbox instead (residual documented in SECURITY.md). `sandbox`, `node`, and unknown
- * values run somewhere else.
- */
 const PROVEN_EXEC_HOSTS = new Set(['auto', 'gateway']);
 
 type OpenClawToolContext = {
@@ -39,7 +31,6 @@ type OpenClawBeforeToolCallEvent = {
   toolKind?: unknown;
 };
 
-/** OpenClaw treats a missing result as "no decision" and never rewrites params on our behalf. */
 type OpenClawBeforeToolCallResult = { block: true; blockReason: string } | undefined;
 
 type OpenClawPluginApi = {
@@ -91,8 +82,7 @@ function handleOpenClawBeforeToolCall(
   options: { guardDependencies?: Partial<GuardDependencies> },
 ): OpenClawBeforeToolCallResult {
   const environment = createProcessEnvironment();
-  // OpenClaw stops waiting for this hook when the tool call is cancelled, so spending the
-  // analysis budget on a call that can no longer run only risks allowing it after the fact.
+
   if (ctx.abortSignal?.aborted) return blockOpenClawToolCall(createFailedClosedDenial());
 
   const toolCall = getOpenClawToolCall(event, ctx, api, environment.paths);
@@ -139,11 +129,9 @@ function getOpenClawToolCall(
   if (typeof toolName !== 'string' || toolName.trim() === '') {
     return malformedOpenClawToolCall(null);
   }
-  // Only `exec` has a proven parameter and execution-directory mapping.
+
   if (toolName !== OPENCLAW_EXEC_TOOL) return undefined;
-  // OpenClaw stamps `toolKind` on tools that intentionally share a name — Code Mode's JavaScript
-  // `exec` mirrors its code into `command` — and omits it entirely on the plain shell tool. Only
-  // the untagged tool has a proven parameter mapping, so a tagged event gets no decision.
+
   if ((event as OpenClawBeforeToolCallEvent).toolKind !== undefined) return undefined;
 
   const params = (event as OpenClawBeforeToolCallEvent).params;
@@ -176,7 +164,7 @@ function getOpenClawToolCall(
   return createToolInvocation(
     toolName,
     execParams,
-    // OpenClaw exec runs the host shell: POSIX shells on Unix, PowerShell on Windows.
+
     { kind: 'command', shell: 'auto' },
     { configCwd: workspace, executionCwd },
     command,

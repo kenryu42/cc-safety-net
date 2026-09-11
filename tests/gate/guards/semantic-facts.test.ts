@@ -11,14 +11,8 @@ import {
 import type { ToolRoute } from '@/gate/invocation';
 import { createToolInvocation } from '@/gate/invocation';
 
-/**
- * Every guard reads the call through these facts, so a wrong answer here moves a decision even
- * when the parser and the rule catalog agree.
- */
-
 const CONTEXT = { configCwd: '/work/project', executionCwd: '/work/project/repo' };
 
-/** One call's facts, from the raw input a host would deliver. */
 function facts(toolName: string, input: unknown, route: ToolRoute, command: string | null = null) {
   return createSemanticFacts(createToolInvocation(toolName, input, route, CONTEXT, command));
 }
@@ -38,7 +32,6 @@ describe('gate/guards/semantic-facts', () => {
           ['declared-command', 'git status'],
         ],
       },
-      // The same text from both sources is one fact carrying both usages.
       {
         route: { kind: 'command', shell: 'posix' },
         command: 'cat .env',
@@ -52,7 +45,6 @@ describe('gate/guards/semantic-facts', () => {
         command: null,
         sources: [['input-candidate', 'cat .env']],
       },
-      // The unknown route carries the input candidate but never a declared command.
       {
         route: { kind: 'unknown' },
         command: 'git status',
@@ -91,7 +83,6 @@ describe('gate/guards/semantic-facts', () => {
         route: { kind: 'path' },
         paths: ['/home/agent/.config'],
       },
-      // A grep route adds `glob` to the path keys, and a glob route adds `pattern` as well.
       {
         toolName: 'Grep',
         input: { pattern: 'key', path: '/etc', glob: '*.txt' },
@@ -104,14 +95,12 @@ describe('gate/guards/semantic-facts', () => {
         route: { kind: 'glob' },
         paths: ['**/*.env', '/srv'],
       },
-      // A key is folded before it is looked up, so three spellings are three paths.
       {
         toolName: 'Write',
         input: { targetFile: '/x', TargetFile: '/y', 'target-file': '/z' },
         route: { kind: 'path' },
         paths: ['/x', '/y', '/z'],
       },
-      // A patch route reads the files the patch names instead.
       {
         toolName: 'ApplyPatch',
         input: { patch: '*** Begin Patch\n*** Update File: README.md\n' },
@@ -150,7 +139,6 @@ describe('gate/guards/semantic-facts', () => {
     );
     expect(powershell.commands[0]?.program.dialect).toBe('powershell');
     expect(powershell.commands[0]?.shell.program).toBe(powershell.commands[0]?.program);
-    // A source the walk cannot read whole is reported as such rather than as a readable one.
     expect(
       facts('Bash', { command: 'echo "x' }, { kind: 'command', shell: 'posix' }).commands[0]?.shell
         .status,
@@ -165,7 +153,6 @@ describe('gate/guards/semantic-facts', () => {
     const store = createSemanticFactStore();
     const program = store.getCommandProgram('rm -rf /tmp/x', 'posix');
     expect(store.getCommandProgram('rm -rf /tmp/x', 'posix')).toBe(program);
-    // A different dialect is a different program, cached under its own key.
     expect(store.getCommandProgram('rm -rf /tmp/x', 'powershell')).not.toBe(program);
     expect(store.getShellSyntax('rm -rf /tmp/x')).toBe(
       store.getShellSyntax('rm -rf /tmp/x', program),
@@ -221,8 +208,6 @@ describe('gate/guards/semantic-facts', () => {
       { word: '$HOME/.config', projected: '/home/agent/.config' },
       { word: '${HOME}/.config', projected: '/home/agent/.config' },
       { word: '$TMPDIR/x', projected: '/tmp/x' },
-      // A variable the projection does not support, or one the environment does not carry, is
-      // left as written.
       { word: '$XDG_CONFIG_HOME/y', projected: '$XDG_CONFIG_HOME/y' },
       { word: '$UNSUPPORTED/z', projected: '$UNSUPPORTED/z' },
       { word: '$', projected: '$' },

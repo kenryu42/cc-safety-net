@@ -11,10 +11,6 @@ import type { CommandToolKind, ToolCallContext } from '@/gate/invocation';
 import { runConfiguredHookAdapter } from '@/hosts/hook/common';
 import { HERMES_AGENT_HOOK_EVENT } from '@/hosts/hook/constants';
 
-/**
- * Hermes Agent `pre_tool_call` payload (`agent/shell_hooks.py` `_serialize_payload`).
- * `tool_input` is the tool's `args` object, or null when Hermes had no dict to send.
- */
 interface HermesAgentHookInput {
   hook_event_name: string;
   tool_name?: unknown;
@@ -23,14 +19,12 @@ interface HermesAgentHookInput {
   cwd?: string;
 }
 
-/** `terminal` is the only Hermes tool that carries a shell command. */
 const HERMES_AGENT_COMMAND_TOOLS = new Map<string, CommandToolKind>([['terminal', 'posix']]);
 
 export async function runHermesAgentHook(): Promise<void> {
   await runConfiguredHookAdapter<HermesAgentHookInput>({
     agent: 'hermes-agent',
-    // Hermes reads `{"action":"block","message":...}` as the tool result the model sees, and
-    // treats empty stdout as "no directive", so an allowed call prints nothing.
+
     createDenyOutput: (message) => ({ action: 'block', message }),
     isSupported: (input) => input.hook_event_name === HERMES_AGENT_HOOK_EVENT,
     getToolName: (input) => input.tool_name,
@@ -44,11 +38,6 @@ export async function runHermesAgentHook(): Promise<void> {
   });
 }
 
-/**
- * `terminal` runs the command in its own `workdir` when the model supplies one, so relative paths
- * must be resolved there rather than in the session cwd. The session cwd stays the config cwd; an
- * unusable `workdir` fails closed because the analyzed directory would not be the executed one.
- */
 function resolveHermesAgentContext(
   input: HermesAgentHookInput,
   toolInput: unknown,

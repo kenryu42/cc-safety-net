@@ -94,7 +94,7 @@ const PARALLEL_REMOTE_OPTIONS = new Set(['-S', '--sshlogin', '--slf', '--sshlogi
 const PARALLEL_WORKDIR_OPTIONS = new Set(['--workdir', '--wd']);
 const PARALLEL_APPENDED_SOURCE = '__CC_SAFETY_NET_PARALLEL_SOURCE__';
 const UTF8_ENCODER = new TextEncoder();
-// Each replacement has two fragment boundaries, each overcounted by two bytes when it forms a pair.
+
 const MAX_EXPANDED_BYTE_OVERCOUNT =
   LIMITS.parallelDerivedBytes.cap + 4 * LIMITS.parallelPlaceholderReplacements.cap;
 
@@ -120,10 +120,6 @@ function firstMatch<T>(
   return null;
 }
 
-// The coarse dynamic-parallel rules are policy-filterable, but recognizable destructive text in an
-// env value feeding the jobs must stay denied in every configuration, so this scan is never passed
-// through filterDestructiveCommandMatch. Placeholder-free values are scanned too: the job shell
-// expands them just the same, so narrowing the scan would let a literal payload reach the jobs.
 function dangerousParallelEnvValue(
   values: Iterable<string>,
   context: ParallelAnalyzeContext,
@@ -135,7 +131,6 @@ export function analyzeParallel(
   words: readonly CommandWord[],
   context: ParallelAnalyzeContext,
 ): DestructiveCommandRuleMatch | null {
-  // parallel options, replacement strings and the command template all match on text only.
   const tokens = words.map(analysisWordText);
   const ambientOptions = context.envAssignments?.has('PARALLEL')
     ? context.envAssignments.get('PARALLEL')
@@ -199,8 +194,7 @@ export function analyzeParallel(
       const reason = parallelUnsupportedReason(context);
       if (reason) return reason;
     }
-    // parallel ::: 'cmd1' 'cmd2' - commands mode
-    // Analyze each arg as a command
+
     const commands = jobs.map((job) => job[0] ?? '');
     reserveParallelAnalysis(context.budget, commandsModeWork(commands));
     const nestedOverrides = buildNestedOverrides(
@@ -240,7 +234,6 @@ function analyzeParallelChildCommand(
     runsRemotely || hasDynamicStdinPlaceholder,
   );
 
-  // Check for shell wrapper with -c
   if (SHELL_WRAPPERS.has(childCommand.head)) {
     const analyzeExpandedShellArgv = () => {
       if (!templateHasPlaceholder || jobs.length === 0) return null;
@@ -255,7 +248,6 @@ function analyzeParallelChildCommand(
     if (isShellSyntaxCheck(childTokens)) return analyzeExpandedShellArgv();
     const dashCArg = extractDashCArg(childTokens);
     if (dashCArg) {
-      // If script IS just the placeholder, stdin provides entire script - dangerous
       if (isOnlyParallelPlaceholder(dashCArg)) {
         const reason = parallelShellDynamicReason(context);
         if (reason) return reason;
@@ -265,17 +257,15 @@ function analyzeParallelChildCommand(
           context.analyzeNested(replaceParallelJobPlaceholder(dashCArg, job), nestedOverrides),
         );
       }
-      // If script contains placeholder
+
       if (hasParallelPlaceholder(dashCArg)) {
         if (jobs.length > 0) {
-          // Expand with actual args and analyze
           reserveParallelAnalysis(context.budget, expandedStringJobWork(dashCArg, jobs));
           return firstMatch(jobs, (job) =>
             context.analyzeNested(replaceParallelJobPlaceholder(dashCArg, job), nestedOverrides),
           );
         }
-        // Stdin mode with placeholder - analyze the script template
-        // Check if the script pattern is dangerous (e.g., rm -rf {})
+
         reserveParallelAnalysis(context.budget, staticStringWork(dashCArg));
         const scriptTokens = parseSimpleWords(dashCArg);
         if (
@@ -307,7 +297,7 @@ function analyzeParallelChildCommand(
         }
         return context.analyzeNested(dashCArg, nestedOverrides);
       }
-      // Script doesn't have placeholder - analyze it directly
+
       const positionalSources =
         !envHasPlaceholder && (!templateHasPlaceholder || jobs.length > 0)
           ? (jobs.length > 0 ? jobs : [undefined]).map((job) =>
@@ -345,8 +335,7 @@ function analyzeParallelChildCommand(
       if (reason) {
         return reason;
       }
-      // If there's a placeholder in the shell wrapper args (not script),
-      // it's still dangerous
+
       if (hasPlaceholder) {
         return parallelShellDynamicReason(context);
       }
@@ -363,10 +352,7 @@ function analyzeParallelChildCommand(
     }
     if (scriptSource.kind === 'literal') return analyzeExpandedShellArgv();
 
-    // bash -c without script argument
-    // If there are args from :::, those become the scripts - dangerous pattern
     if (jobs.length > 0) {
-      // The pattern of passing scripts via ::: to bash -c is inherently dangerous
       const reason = parallelShellDynamicReason(context);
       if (reason) return reason;
       const expandedArgvReason = analyzeExpandedShellArgv();
@@ -376,7 +362,7 @@ function analyzeParallelChildCommand(
       reserveParallelAnalysis(context.budget, commandsModeWork(sources));
       return firstMatch(sources, (source) => context.analyzeNested(source, nestedOverrides));
     }
-    // Stdin provides the script - dangerous
+
     if (hasPlaceholder || usesStdin) {
       const reason = parallelShellDynamicReason(context);
       return reason ?? analyzeExpandedShellArgv();
@@ -384,10 +370,8 @@ function analyzeParallelChildCommand(
     return null;
   }
 
-  // For rm -rf, expand with actual args and analyze each expansion
   if (childCommand.head === 'rm' && hasRecursiveForceFlags(childTokens)) {
     if (templateHasPlaceholder && jobs.length > 0) {
-      // Expand template with each arg and analyze
       reserveParallelAnalysis(context.budget, expandedTokenJobWork(childTokens, jobs, 'rm'));
       return firstMatch(jobs, (job) =>
         analyzeParallelRmExpansion(
@@ -397,8 +381,7 @@ function analyzeParallelChildCommand(
         ),
       );
     }
-    // No placeholder or no args - analyze template as-is
-    // If there are args (from :::), they get appended, analyze each expansion
+
     if (jobs.length > 0) {
       reserveParallelAnalysis(context.budget, appendedTokenJobWork(childTokens, jobs));
       return firstMatch(jobs, (job) =>
@@ -475,8 +458,7 @@ function analyzeParallelChildCommand(
         REASON_PARALLEL_RM,
       ),
     });
-    // Prefer the parallel dynamic-source rule when stdin/placeholders can change executable
-    // source selection, even if a nested analyzer (e.g. awk.system-dynamic) also matches.
+
     if (dynamicSourceInput) {
       const parallelDynamic = filterDestructiveCommandMatch(shellDynamicMatch, context.policy);
       if (parallelDynamic) return parallelDynamic;
@@ -487,7 +469,6 @@ function analyzeParallelChildCommand(
   });
 }
 
-/** What the dispatch needs to know about a child this parallel synthesized from its template. */
 function childProvenance(
   childCommand: NormalizedChildCommand,
   executionContext: ParallelAnalyzeContext,
@@ -1047,7 +1028,7 @@ function buildNestedOverrides(
 interface ParallelParseResult {
   template: string[];
   jobs: ParallelJob[];
-  /** Index the child command starts at, so word-based callers can slice the same position. */
+
   childStart: number;
   templateHasPlaceholder: boolean;
   runsRemotely: boolean;
@@ -1111,7 +1092,7 @@ function isOnlyParallelPlaceholder(token: string): boolean {
 function parseParallelCommand(tokens: readonly string[]): ParallelParseResult {
   let i = 1;
   const templateTokens: string[] = [];
-  // No child command until the scan finds one; the empty slice then starts past the last token.
+
   let childStart = tokens.length;
   let markerIndex = -1;
   let runsRemotely = false;
@@ -1122,7 +1103,6 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult {
     (token) => token === '::::' || token === '::::+' || token === ':::+',
   );
 
-  // First pass: find the ::: marker and extract template
   while (i < tokens.length) {
     const token = tokens[i];
     if (token === undefined) break;
@@ -1133,7 +1113,6 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult {
     }
 
     if (token === '--') {
-      // Everything after -- until ::: is the template
       const template = collectCommandTemplate(tokens, i + 1);
       templateTokens.push(...template.templateTokens);
       childStart = i + 1;
@@ -1186,7 +1165,6 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult {
       continue;
     }
     if (optionName === '--env') {
-      // Selected environment values are supplied at run time, so the job text cannot be verified.
       unsupported = true;
       i += attachedValue === undefined ? 2 : 1;
       continue;
@@ -1232,7 +1210,6 @@ function parseParallelCommand(tokens: readonly string[]): ParallelParseResult {
     dryRun ? hasExecutableParallelPlaceholder : hasUnsupportedParallelPlaceholder,
   );
 
-  // Extract argument sources after ::: and generate their Cartesian product.
   const argumentGroups: string[][] = [];
   if (markerIndex !== -1) {
     let group: string[] = [];
@@ -1315,7 +1292,6 @@ function expandParallelJobs(argumentGroups: readonly (readonly string[])[]): Par
   return jobs;
 }
 
-/** Index the child command starts at, so the dynamic-structure scan can slice the words there. */
 export function extractParallelChildStart(tokens: readonly string[]): number {
   return parseParallelCommand(tokens).childStart;
 }

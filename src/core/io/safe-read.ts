@@ -18,15 +18,6 @@ import {
 import { isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import { randomHex16 } from '@/core/random-hex';
 
-/**
- * Policy files are reached only through a bound scope. Every path component under the root must
- * be a regular directory or file that canonicalizes inside the root (never a symlink); a read
- * goes through a descriptor opened `O_NOFOLLOW` and is compared with the path's identity after
- * the bytes are in, so a file swapped between open and read is refused; a write goes through an
- * exclusive sibling temp file, fsync and rename. Every failure, Node's own errors included,
- * surfaces as one fixed diagnostic per scope so the caller learns nothing about the filesystem.
- */
-
 const POLICY_FILESYSTEM_SCOPE = Symbol('PolicyFilesystemScope');
 const POLICY_FILESYSTEM_TARGET = Symbol('PolicyFilesystemTarget');
 const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
@@ -83,7 +74,6 @@ export function getPolicyFilesystemTarget(
   };
 }
 
-/** Binds an already-derived absolute path to an existing capability. */
 export function getPolicyFilesystemTargetForPath(
   scope: PolicyFilesystemScope,
   path: string,
@@ -212,7 +202,6 @@ export function removePolicyFile(target: PolicyFilesystemTarget): void {
   });
 }
 
-/** Removes a validated directory tree; the migration command prunes the v2 cache with it. */
 export function removePolicyDirectory(target: PolicyFilesystemTarget): void {
   guarded(target.scope.label, () => {
     if (!validatePolicyDirectoryRemoval(target)) return;
@@ -221,8 +210,6 @@ export function removePolicyDirectory(target: PolicyFilesystemTarget): void {
   });
 }
 
-// rmdirSync refuses a non-empty directory, so contents another process adds
-// concurrently survive instead of being swept into a recursive delete.
 export function removeEmptyPolicyDirectory(target: PolicyFilesystemTarget): void {
   guarded(target.scope.label, () => {
     if (!validateTarget(target, 'directory')) return;
@@ -240,7 +227,6 @@ export function validatePolicyDirectoryRemoval(target: PolicyFilesystemTarget): 
   });
 }
 
-/** Runs one filesystem step; any failure, Node's own errors included, becomes the fixed diagnostic. */
 function guarded<T>(label: PolicyFilesystemLabel, run: () => T, onFailure?: () => void): T {
   try {
     return run();
@@ -259,7 +245,6 @@ function withDescriptor<T>(descriptor: number, run: () => T): T {
   }
 }
 
-/** Whether every component under the root exists as the expected regular entry inside the root. */
 function validateTarget(
   target: PolicyFilesystemTarget,
   leafType: 'file' | 'directory' = 'file',

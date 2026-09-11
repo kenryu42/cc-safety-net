@@ -40,11 +40,6 @@ export const hookIntegrations: readonly HookIntegration[] = runtimeHookIntegrati
   }),
 );
 
-/**
- * Resolve the one integration the `hook` arguments name. Anything else — no flag,
- * two integrations, a stray option or argument — resolves to nothing, because the
- * hook command runs exactly one integration or none.
- */
 export function findHookIntegrationByFlag(args: readonly string[]): HookIntegration | undefined {
   const parsed = parseCommandArgs(
     {

@@ -68,16 +68,6 @@ export async function resolveRulebookSource(
   return resolveLocalRulebook(spec, configDir, filesystemScope);
 }
 
-/**
- * Fetching is deliberate: a remote source is re-fetched only when the caller asks for it
- * (`rule update`) or when nothing is vendored yet. Every other run reads the vendored file, so
- * no machine other than the one that ran `add` or `update` ever touches the network.
- * In non-refresh runs the nothing-vendored fallback covers unselected sources on purpose: the
- * post-sync runtime verification requires the whole scope to load cleanly, so skipping a
- * missing sibling would fail unrelated commands instead of healing them. A selective
- * `rule update <source>` is the exception — its unselected siblings must stay off the
- * network entirely, so a missing one is reported rather than fetched.
- */
 export async function resolveRulebookSourceForSync(
   spec: string,
   configDir: string,
@@ -235,10 +225,6 @@ async function resolveGitHubRulebook(
   return { spec, rulebook, content };
 }
 
-/**
- * Validation for freshly fetched or authored content. Fixtures run here only: a rulebook already
- * vendored on disk was fixture-checked when it was fetched, so reading it never re-evaluates them.
- */
 function assertValidSyncedRulebook(value: unknown): Rulebook {
   const rulebook = assertValidRulebook(value);
   const failures = evaluateRulebookFixtures(rulebook);

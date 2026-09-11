@@ -21,11 +21,6 @@ export function getDestructiveAllowPathError(value: unknown, home: string): stri
   return getAllowPathHomeConflictError(expanded, home);
 }
 
-// Deny entries may be relative (they resolve against each session's config cwd,
-// which is unknowable at save time), so only absolute and home-anchored entries
-// are judged here. The rejected class — home, anything above it, `/` — has no
-// legitimate reading and blocks essentially every command in every workspace
-// under home.
 export function getSecretDenyPathError(value: unknown, home: string): string | null {
   const expanded = expandSecretPolicyEntry(value, home);
   if (expanded === null) return 'must be a non-empty path string';
@@ -38,21 +33,11 @@ const SECRET_ALLOW_DISABLES_EVERYTHING =
   'cannot cover the home directory or a path above it (this would disable secret protection everywhere)';
 const SECRET_ALLOW_GUARD_CONFIG = "cannot cover the guard's own configuration";
 
-// Shared entry preparation for the secret policy validators: trim, rewrite
-// $HOME/${HOME} to ~, expand against home. Null means not a usable path string.
 function expandSecretPolicyEntry(value: unknown, home: string): string | null {
   if (typeof value !== 'string' || value.trim() === '') return null;
   return expandAllowPathHome(value.trim().replace(/^\$(?:\{HOME\}|HOME(?=\/|$))/, '~'), home);
 }
 
-// Allow entries vouch for paths the user manages themselves (a repo's
-// .env.test, a fixtures directory). Entries are literal only: a wildcard can
-// reach around its own root — `~/**/.ssh/config` covers `~/.ssh/config` while
-// its literal prefix looks harmless — so no prefix test can bound what a glob
-// vouches for, and glob characters are rejected outright. Entries that would
-// vouch for everything (home, anything above it) or for the guard's own
-// config are rejected too. Relative entries resolve against each session's
-// config cwd and cannot be judged at save time.
 export function getSecretAllowPathError(value: unknown, home: string): string | null {
   const expanded = expandSecretPolicyEntry(value, home);
   if (expanded === null) return 'must be a non-empty path string';

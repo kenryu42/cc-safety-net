@@ -1,7 +1,3 @@
-/**
- * Kimi Code hook detection.
- */
-
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';

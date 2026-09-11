@@ -1,31 +1,23 @@
-/**
- * Low-level formatting utilities for explain command output.
- */
-
 import { colorizeToken } from '@/cli/utils/colors';
 import { ENV_FLAGS } from '@/core/policy/env';
 import type { TraceStep } from '@/gate/trace';
 
-/**
- * Box drawing characters for formatting
- */
 export interface BoxChars {
-  // Double-line box (header)
-  dh: string; // horizontal
-  dv: string; // vertical
-  dtl: string; // top-left
-  dtr: string; // top-right
-  dbl: string; // bottom-left
-  dbr: string; // bottom-right
-  // Single-line box (recursion)
+  dh: string;
+  dv: string;
+  dtl: string;
+  dtr: string;
+  dbl: string;
+  dbr: string;
+
   h: string;
   v: string;
   tl: string;
   tr: string;
   bl: string;
   br: string;
-  // Segment separator
-  sh: string; // heavy horizontal
+
+  sh: string;
 }
 
 export function getBoxChars(asciiOnly: boolean): BoxChars {
@@ -77,10 +69,6 @@ function formatTokenArray(tokens: readonly string[]): string {
   return JSON.stringify(tokens);
 }
 
-/**
- * Format a token array with each token in a unique distinct color.
- * Uses a curated palette for maximum visual distinction.
- */
 export function formatColoredTokenArray(tokens: readonly string[], seed = 0): string {
   const coloredTokens = tokens.map((token, index) => colorizeToken(token, index, seed));
   return `[${coloredTokens.join(',')}]`;
@@ -92,8 +80,6 @@ export function wrapReason(reason: string, indent: string, maxWidth = 70): strin
   let current = '';
 
   for (const word of words) {
-    // A word wider than the budget still starts the line it belongs to, rather
-    // than pushing an empty line ahead of itself.
     if (current && current.length + word.length + 1 > maxWidth) {
       lines.push(current);
       current = word;
@@ -120,7 +106,6 @@ export function formatStepStyleD(
 
   switch (step.type) {
     case 'parse':
-      // Handled separately in main function
       return null;
 
     case 'env-strip': {
@@ -174,7 +159,6 @@ export function formatStepStyleD(
     }
 
     case 'recurse':
-      // Handled specially in main function to open recursion box
       return { lines: [], incrementStep: false };
 
     case 'rule-check': {
@@ -199,7 +183,6 @@ export function formatStepStyleD(
     }
 
     case 'tmpdir-check':
-      // This is internal detail, skip in Style D output
       return null;
 
     case 'fallback-scan': {
@@ -227,7 +210,6 @@ export function formatStepStyleD(
     }
 
     case 'cwd-change':
-      // Internal detail, skip
       return null;
 
     case 'dangerous-text': {
@@ -250,7 +232,6 @@ export function formatStepStyleD(
     }
 
     case 'segment-skipped':
-      // Handled in main function
       return null;
 
     case 'error': {

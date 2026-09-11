@@ -88,9 +88,7 @@ export function analyzeSegment(
   const dialect = options.commandView?.dialect ?? 'posix';
   const texts = (candidates: readonly CommandWord[]) =>
     candidates.map((word) => (dialect === 'posix' ? analysisWordText(word) : word.text));
-  // A child a producer synthesized enters here as text words carrying its provenance. Every
-  // point below where such a child differs from the command as written reads it, and nothing
-  // else does. A child arrives already peeled, so the prelude walk below is a no-op on it.
+
   const child = options.child;
   const stream = child !== undefined && child.producer !== 'unknown-head';
   const embedded = child?.producer === 'unknown-head';
@@ -116,11 +114,7 @@ export function analyzeSegment(
     baseCwdForRm,
     new Map([...(options.envAssignments ?? []), ...leading.envAssignments]),
   );
-  // The `env -S` split-string language is not emulated: env splices the split words ahead of the
-  // retained operands, so the reconstructed text owns the linear dangerous-text scan
-  // unconditionally, and strict mode refuses the unverified execution source outright. Standard
-  // mode splices inert values ahead of the operands and analyzes that reconstruction as the real
-  // command line; an allow still falls through to analyzing the operands on their own.
+
   const envSplitValues = prelude.envSplitValues ?? [];
   if (envSplitValues.length > 0) {
     const splitCommandText = [...envSplitValues, ...texts(prelude.words)].join(' ');
@@ -151,7 +145,7 @@ export function analyzeSegment(
       if (splicedResult) return splicedResult;
     }
   }
-  // Words the prelude rewrote carry no parser facts, so the whole command analyzes as text.
+
   const words = prelude.rewritten
     ? textCommandWords(texts(prelude.words))
     : analyzedViewWords(dialect, prelude.words);
@@ -186,12 +180,11 @@ export function analyzeSegment(
   const cwdForRm = prelude.cwd === null ? undefined : (prelude.cwd ?? baseCwdForRm);
   const originalCwdForRm = prelude.cwd === null ? undefined : originalCwd;
   const nestedEffectiveCwd = prelude.cwd === undefined ? options.effectiveCwd : prelude.cwd;
-  // The producer already read the environment it hands the child.
+
   const allowTmpdirVar = child
     ? child.allowTmpdirVar
     : !isTmpdirOverriddenToNonTemp(envAssignments, options.environment);
 
-  // Reads the parsed words: PowerShell stand-ins would report every head as dynamic.
   const dynamicCommandMatch = analyzeDynamicCommandStructure(
     dialect,
     prelude.words,
@@ -233,8 +226,6 @@ export function analyzeSegment(
     return null;
   }
 
-  // An embedded candidate is a suffix of another command, not a builtin the shell would run,
-  // and a stream child installs no trap.
   const shellBuiltinSource = embedded
     ? undefined
     : normalizedHead === 'eval'
@@ -270,7 +261,7 @@ export function analyzeSegment(
       innerCommand: shellBuiltinSource.source,
       depth: depth + 1,
     });
-    // eval and trap run their source in this shell, which still holds the caller's functions.
+
     const result = options.analyzeNested(shellBuiltinSource.source, {
       effectiveCwd: nestedEffectiveCwd,
       envAssignments,
@@ -279,15 +270,12 @@ export function analyzeSegment(
     if (result) return result;
   }
 
-  // A stream child's head is the executable the producer hands the kernel, never a shell
-  // variable the caller wrote.
   const shellWrapperHead = stream
     ? SHELL_WRAPPERS.has(normalizedHead)
     : isShellWrapperCommand(head, normalizedHead);
   if (shellWrapperHead) {
     if (isShellSyntaxCheck(stripped)) return null;
     if (stream && child) {
-      // The producer owns the reason: its stream can spell the script the shell would run.
       const streamDashCArg = extractDashCArg(stripped);
       if (streamDashCArg) {
         if (child.dynamicSourceInput ?? child.dynamicInput) {
@@ -313,8 +301,6 @@ export function analyzeSegment(
         : null;
     }
     if (embedded) {
-      // An embedded shell is read from the script it spells out; anything else it might run is
-      // named in a file this analysis cannot see.
       const embeddedDashCArg = extractDashCArg(stripped);
       const embeddedResult = embeddedDashCArg
         ? options.analyzeNested(embeddedDashCArg, {
@@ -398,7 +384,6 @@ export function analyzeSegment(
     }
   }
 
-  // A child names no file the caller's shell would source.
   if (!child && (normalizedHead === 'source' || normalizedHead === '.')) {
     const sourceSearchPathIndex = stripped[1] === '-p' ? 2 : null;
     if (sourceSearchPathIndex !== null) {
@@ -552,7 +537,6 @@ export function analyzeSegment(
     });
   }
 
-  // A device rule reads the command as written; the producers report their own dynamic input.
   const filteredDeviceMatch = child
     ? null
     : filterDestructiveCommandMatch(
@@ -583,8 +567,6 @@ export function analyzeSegment(
     effectiveCwd: nestedEffectiveCwd,
     options: analyzerOptions,
     analyzeChildTokens: (childTokens, childCwd) =>
-      // A child of a child stays the producer's child: the stream that completes the outer
-      // command completes this one too.
       stream && child
         ? analyzeChildCommand(childTokens, depth, analyzerOptions, {
             ...child,
@@ -594,7 +576,7 @@ export function analyzeSegment(
         : (matchFromBlockResult(
             analyzeSegment(textCommandWords(childTokens), depth + 1, {
               ...analyzerOptions,
-              // An embedded child's body is a command as written, not another embedded child.
+
               child: undefined,
               commandView: undefined,
               effectiveCwd: childCwd,
@@ -604,8 +586,7 @@ export function analyzeSegment(
     analyzeChild: (childTokens, childProvenance) =>
       analyzeChildCommand(childTokens, depth, analyzerOptions, childProvenance),
   };
-  // A synthesized child never re-enters a producer: xargs and parallel read a stream this
-  // analysis cannot see, so their rules stay with the command as written.
+
   const commandAnalyzer =
     child && (normalizedHead === 'xargs' || normalizedHead === 'parallel')
       ? undefined
@@ -633,8 +614,6 @@ export function analyzeSegment(
     return blockResultFromMatch(commandResult);
   }
 
-  // Appended input can still complete an rm the child spells only partly, and the producer owns
-  // that reason. It answers alone: a child rm reaches no other rule.
   if (stream && child && (normalizedHead === 'rm' || normalizedHead === 'rmdir')) {
     const dynamicRmPolicyApplies =
       normalizedHead === 'rm' && (hasRecursiveForceFlags(stripped) || child.dynamicRmInput);
@@ -647,12 +626,6 @@ export function analyzeSegment(
 
   const matchedKnown = commandAnalyzer !== undefined;
 
-  // Fallback: scan tokens for embedded git/rm/find commands
-  // This catches cases like "command -px git reset --hard" where the head
-  // token is not a known command but contains dangerous commands later
-  // Skip for display-only commands that don't execute their arguments
-  // A child was synthesized from arguments the producer already read; only the command as
-  // written hides a command in its own suffix.
   const scansForEmbedded = !child && !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead);
   const tokensScanned: string[] | undefined = trace && scansForEmbedded ? [] : undefined;
   if (scansForEmbedded) {
@@ -686,9 +659,6 @@ export function analyzeSegment(
   }
   trace?.recordSegment({ type: 'fallback-scan', tokensScanned: tokensScanned ?? [] });
 
-  // An embedded candidate is only a command the caller named, so it reaches the custom rules
-  // just when a transparent wrapper says the caller meant to run it. A stream child always asks
-  // them: nothing else answers for the command a producer hands the kernel.
   if (embedded && child && !child.wrappedByTransparent) return null;
   if (!child && depth !== 0 && matchedKnown) {
     trace?.recordSegment({
@@ -713,10 +683,6 @@ export function analyzeSegment(
   return stream && child ? childDynamicSourceResult(child, options.policy) : null;
 }
 
-/**
- * Analyzes a child a producer synthesized from its own arguments through the same per-command
- * path, with the parent's budget, policy and environment and the producer's provenance.
- */
 /** @internal */
 export function analyzeChildCommand(
   tokens: readonly string[],
@@ -727,7 +693,7 @@ export function analyzeChildCommand(
   return matchFromBlockResult(
     analyzeSegment(textCommandWords(tokens), depth + 1, {
       ...options,
-      // A child runs on its own: no parent redirections, pipeline input or shell functions.
+
       trace: undefined,
       commandView: undefined,
       hasPipelineInput: undefined,
@@ -743,7 +709,6 @@ export function analyzeChildCommand(
   );
 }
 
-/** The first candidate a command's own suffix normalizes to, analyzed as an embedded child. */
 function analyzeEmbeddedSuffix(
   tokens: readonly string[],
   index: number,
@@ -779,7 +744,7 @@ function analyzeEmbeddedSuffix(
         childCommand.envAssignments,
         options.environment,
       ),
-      // A command the caller only named cannot claim the worktree relaxation.
+
       worktreeMode: false,
       wrappedByTransparent: childCommand.wrappedByTransparent,
     });
@@ -788,7 +753,6 @@ function analyzeEmbeddedSuffix(
   return null;
 }
 
-/** The interpreter branch for a child whose producer owns the unverifiable-source reason. */
 function analyzeStreamInterpreterChild(
   normalizedHead: string,
   codeArg: string | null | undefined,
@@ -832,7 +796,6 @@ function analyzeStreamInterpreterChild(
   return childDynamicSourceResult(child, options.policy);
 }
 
-/** The producer's reason for a shell whose script its own stream can spell. */
 function childShellDynamicResult(
   child: ChildProvenance,
   policy: CommandAnalysisPolicy,
@@ -843,7 +806,6 @@ function childShellDynamicResult(
   return match ? blockResultFromMatch(match) : null;
 }
 
-/** The producer's reason for input that can change which source the child executes. */
 function childDynamicSourceResult(
   child: ChildProvenance,
   policy: CommandAnalysisPolicy,
@@ -855,7 +817,6 @@ function childDynamicSourceResult(
   return match ? blockResultFromMatch(match) : null;
 }
 
-/** The producer's reason for input that can complete a recursive, forced delete. */
 function childDynamicRmResult(
   child: ChildProvenance,
   policy: CommandAnalysisPolicy,
@@ -989,7 +950,6 @@ function dynamicShellSourceMatch(): DestructiveCommandRuleMatch {
 }
 
 function isShellWrapperCommand(head: string, normalizedHead: string): boolean {
-  // Dynamic shell variables stay unresolved; keep the basename fallback for explicit shell paths.
   return (
     SHELL_WRAPPERS.has(normalizedHead) ||
     head === '$SHELL' ||
@@ -1002,8 +962,6 @@ function filterBuiltInCommandMatch(
   match: DestructiveCommandRuleMatch | null,
   policy: CommandAnalysisPolicy,
 ): DestructiveCommandRuleMatch | null {
-  // Raw-text matches reaching this path are minted unfiltered on purpose (recognizable destructive
-  // text must stay denied in every configuration); nested analyses filter theirs before returning.
   return match?.id.startsWith('custom.') || match?.id === 'raw-text.dangerous-command'
     ? match
     : filterDestructiveCommandMatch(match, policy);

@@ -5,12 +5,6 @@ import { describeOutcome } from '../../helpers/fixture-tree';
 import { differential, expectRow, fileAt, hostRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Grok Build reads a file cc-safety-net names but the user may extend, and skips the file whole
- * when it does not parse. So install repairs unusable content, both directions touch only entries
- * carrying the managed command, and the file disappears only when nothing but ours was left.
- */
-
 const HOOKS = '.grok/hooks/cc-safety-net.json';
 const HOOKS_PATH = `<home>/${HOOKS}`;
 const MANAGED = 'npx -y cc-safety-net hook --grok-build';

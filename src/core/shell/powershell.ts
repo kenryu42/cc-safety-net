@@ -47,8 +47,7 @@ const AUTO_POWERSHELL_HEADS = new Set([
   'copy-item',
   'move-item',
 ]);
-// These names are ordinary POSIX programs too, so they only select the PowerShell
-// parser when an argument is spelled as a PowerShell path expression.
+
 const AUTO_POWERSHELL_PATH_ALIASES = new Set(['gc', 'cat', 'type', 'cp', 'mv', 'rm']);
 const AUTO_POWERSHELL_PARAMETERS = ['-rec', '-for', '-path', '-literalpath', '-whatif'];
 const POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
@@ -72,8 +71,6 @@ export function shouldUsePowerShellParser(source: string): boolean {
   return selector.invalidComment || selector.commands.some(isPowerShellSelectorCommand);
 }
 
-// A linear precheck for the alias forms: a word scan is only worth paying for when the
-// source could hold `$env:` or a variable joined to a suffix by a backslash at all.
 function hasPathExpressionSignal(candidate: string): boolean {
   if (candidate.includes('$env:')) return true;
   return candidate.includes('\\') && (candidate.includes('$') || candidate.includes('~'));

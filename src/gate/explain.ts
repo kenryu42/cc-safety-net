@@ -38,13 +38,11 @@ import {
   type TraceStep,
 } from './trace';
 
-/** Trace data for explain command */
 interface ExplainTrace {
   steps: TraceStep[];
   segments: { index: number; steps: TraceStep[] }[];
 }
 
-/** Options for explain command */
 export interface ExplainOptions {
   cwd?: string;
   userConfigDir?: string;
@@ -52,7 +50,6 @@ export interface ExplainOptions {
   policySnapshot?: PolicySnapshot;
 }
 
-/** Result of explain command */
 export interface ExplainResult {
   trace: ExplainTrace;
   result: 'blocked' | 'allowed';
@@ -64,25 +61,18 @@ export interface ExplainResult {
   configValid: boolean;
   effectiveLevel: EffectiveSafetyLevel;
   selectedPreset: PolicySafetyLevel;
-  /** Which scope supplied `selectedPreset`, set only when a project policy file
-   *  was read. The per-field deltas belong to `status` and `doctor`. */
+
   safetyPresetScope?: PolicyScopes['levelScope'];
   effectiveCapabilities: EffectiveSafetyCapabilities;
   destructiveCommandRuleOverrides: Readonly<Record<string, DestructiveCommandRuleOverride>>;
   ruleActivation?: EffectiveDestructiveCommandRuleState & { id: string };
 }
 
-/**
- * Explain runs the whole guard sequence over a synthetic shell invocation with a recording
- * trace sink attached, so a diagnostic surface reports exactly what the hook would decide
- * without executing anything.
- */
 export function explainCommand(
   command: string,
   options: ExplainOptions = {},
   environment: Environment,
 ): ExplainResult {
-  // Resolve to absolute path - relative paths break cwd comparison logic
   const cwd = resolve(options.cwd ?? process.cwd());
   const snapshot =
     options.policySnapshot ??
@@ -120,17 +110,14 @@ export function explainCommand(
   }
 
   const program = parseCommand(command, 'auto');
-  // What `src`'s pre-analysis scanner threw for a structural-limit syntax. The pipeline would
-  // answer the hook with the recursion denial before any protection runs, so explain reports
-  // the limit itself instead of a denial the hook path never shows a user.
+
   if (program.status === 'limited') throw new StructuralShellSyntaxLimitError();
   const displayProgram =
     program.dialect === 'powershell' ? parseCommand(command, 'posix') : program;
   const segments = projectSegmentWords(displayProgram);
   const recorder = createCommandTraceRecorder();
   const trace = createCommandTraceContext(recorder);
-  // Recorded before the guard runs so the recorder collects the command's assignment values
-  // and redacts them out of every later step, as `src`'s evaluator wrapper did.
+
   trace.recordGlobal({
     type: 'parse',
     input: command,
@@ -155,8 +142,6 @@ export function explainCommand(
   });
   const decision = evaluation.decision.kind === 'deny' ? evaluation.decision : null;
 
-  // A protection denied before the analyzer ran, so the recorder holds nothing but the parse
-  // step: report the matcher that answered, exactly as `src`'s pre-analysis scan did.
   if (
     decision &&
     (evaluation.stage === 'policy-protection' || evaluation.stage === 'secret-protection')
@@ -229,16 +214,10 @@ export function explainCommand(
 
 type CommandDenial = Extract<Decision, { kind: 'deny' }>;
 
-/** The segment a denial points at, with the whole command as the fallback `src` used. */
 function denialSegment(decision: CommandDenial, command: string): string {
   return decision.evidence.find((item) => item.kind === 'command')?.segment ?? command;
 }
 
-/**
- * Which pre-analysis matcher answered. The pipeline runs the same four in the same order as
- * `src`'s scan, so the reason it denied with names the matcher, and the secret guard is the
- * only one of them that reports a rule id of its own.
- */
 function preAnalysisMatcher(decision: CommandDenial) {
   if (decision.reason === REASON_POLICY_CONFIG_PROTECTION)
     return {
@@ -263,9 +242,9 @@ function preAnalysisMatcher(decision: CommandDenial) {
 
 interface GetConfigSourceOptions {
   cwd: string;
-  /** Override user rules config directory for testing */
+
   userConfigDir?: string;
-  /** Override user rules config path for testing */
+
   userConfigPath?: string;
 }
 
@@ -320,12 +299,6 @@ export function getConfigSource(
   }
 }
 
-/**
- * The rule a mode-gated activation would have matched: the same evaluation with every
- * activation-gated rule forced on and the strict modes raised. `src` ran the analyzer alone
- * here, so the mode-dependent secret guard is switched off rather than allowed to pre-empt the
- * destructive candidate; the three mode-independent protections already passed above.
- */
 function identifyModeGatedCandidate(
   invocation: ToolInvocation,
   snapshot: PolicySnapshot,

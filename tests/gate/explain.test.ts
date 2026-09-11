@@ -19,17 +19,10 @@ import {
   withProcessEnv,
 } from '../helpers/temp-home';
 
-/**
- * The projection itself, field by field, where the rendered rows only record the bytes that survive
- * formatting. `explainCommand` reads its home and modes from an Environment, so each row runs it
- * against the values its fixture spells and records the result as data.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
 
-/** The modes a developer's shell may carry in; each row sets the ones it is about. */
 const MODES_UNSET: Record<string, string | undefined> = {
   CC_SAFETY_NET_LEVEL: undefined,
   CC_SAFETY_NET_STRICT: undefined,
@@ -48,7 +41,6 @@ function fixture(files: TreeSpec = {}, env: Record<string, string | undefined> =
 
 type Fixture = ReturnType<typeof fixture>;
 
-/** The result as plain data: a `Map`-free copy of the frozen projection records cleanly. */
 const asData = (result: unknown) => JSON.parse(JSON.stringify(result)) as Record<string, unknown>;
 
 function compareSides(
@@ -60,8 +52,6 @@ function compareSides(
   const ported = withStdoutTTY(false, () =>
     asData(explainCommand(command, withCwd, environmentFor(side.home, side.values))),
   );
-  // The worktree row's project is a `git worktree add` fixture of its own, outside the row's
-  // root; every other row's project is already inside it, so the second pair folds nothing.
   return ported;
 }
 
@@ -75,8 +65,6 @@ describe('explainCommand projects the same result as the shipped engine', () => 
 
 describe('explainCommand honours its options', () => {
   test('strict raises the modes the analyzer runs under', () => {
-    // Row 10 is allowed at standard because its rule waits on `fail_closed`; row 18 needs
-    // strict for the unparseable text to be reported at all.
     for (const slug of ['10-dynamic-target', '18-strict-unparseable']) {
       const explainCase = EXPLAIN_CASES.find((entry) => entry.slug === slug);
       if (!explainCase) throw new Error(`no explain case named ${slug}`);
@@ -151,11 +139,6 @@ describe('getConfigSource reports the rule config explain resolved against', () 
   }
 });
 
-/**
- * Worktree relaxation needs a real repository with a linked worktree, so it is compared here
- * rather than through the two bins: the process-level harness puts an empty directory on `PATH`
- * and no `git` binary can be found from there.
- */
 test('a linked worktree relaxes the reset rule on both sides', () => {
   const worktree = createLinkedWorktreeFixture();
   const side = { ...fixture(), project: worktree.linkedWorktree };

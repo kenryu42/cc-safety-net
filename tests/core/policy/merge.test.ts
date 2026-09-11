@@ -4,13 +4,6 @@ import { mergeProjectPolicy } from '@/core/policy/merge';
 import type { DestructiveCommandRuleOverride, GuiPolicy } from '@/core/policy/types';
 import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
 
-/**
- * The project layer is pure data folding: the merged policy plus the preformatted weakening
- * lines. Those lines are printed verbatim by `status`, `doctor` and the GUI banner, so each row
- * below states exactly which ones a pair must raise — and, just as importantly, which relaxations
- * are not weakenings because the user scope had already given that protection away.
- */
-
 const STRONG_USER: GuiPolicy = {
   version: 1,
   safety: { level: 'paranoid', overrides: {} },
@@ -229,7 +222,6 @@ describe('what the merged policy holds', () => {
   });
 });
 
-/** One named alphabet, wrapped as the draw that reads from it. */
 const chooser =
   <T>(...values: [T, ...T[]]) =>
   (random: () => number): T =>
@@ -346,7 +338,6 @@ const SAMPLED = (() => {
   }));
 })();
 
-/** The whole vocabulary of weakening lines, as the shapes each one must take. */
 const WEAKENING_PATTERNS = [
   /^project policy lowers level: (standard|strict|paranoid) -> (standard|strict|paranoid)$/,
   /^project policy disables (fail_closed|paranoid_rm|paranoid_interpreters)$/,
@@ -356,10 +347,6 @@ const WEAKENING_PATTERNS = [
   /^project policy adds (destructive|secret) allow path: \S+$/,
 ];
 
-/**
- * The generated pairs are here for the properties that must hold for every one of them; the rows
- * above pin what each individual pair reports.
- */
 describe('properties every user and project pair must satisfy', () => {
   test('audit belongs to the user scope and is never touched by the merge', () => {
     for (const pair of SAMPLED) {

@@ -29,10 +29,8 @@ export function sanitizeSessionIdForFilename(sessionId: string): string | null {
     return null;
   }
 
-  // Replace any non-safe characters with underscores
   let safe = raw.replace(/[^A-Za-z0-9_.-]+/g, '_');
 
-  // Strip leading/trailing special chars and limit length
   safe = safe.replace(/^[._-]+|[._-]+$/g, '').slice(0, 128);
 
   if (!safe || safe === '.' || safe === '..') {
@@ -48,10 +46,6 @@ export function encodeCwdForLogDirname(cwd: string | null): string {
   return encoded || 'no-cwd';
 }
 
-/**
- * Write an audit log entry for a denied command.
- * Logs are written to ~/.cc-safety-net/logs/<encoded_cwd>/<YYYY-MM>/<YYYY-MM-DD>-<session_id>.jsonl
- */
 export function writeAuditLog(
   environment: Environment,
   sessionId: string,
@@ -86,8 +80,7 @@ export function writeAuditLog(
 
   try {
     const ts = (options.now ?? (() => new Date()))().toISOString();
-    // Failure entries are the diagnostic of record for fail-closed events, so they
-    // keep the whole command (already bounded upstream by the tool input caps).
+
     const cappedCommand = capField(
       redactSecrets(command),
       options.failureStage ? Number.POSITIVE_INFINITY : COMMAND_MAX_LENGTH,
@@ -133,12 +126,9 @@ export function writeAuditLog(
     };
 
     appendFileSync(logFile, `${JSON.stringify(entry)}\n`, { encoding: 'utf-8', mode: 0o600 });
-    // Retention runs after the append so a pruning failure can never cost the
-    // entry this call was made to persist.
+
     pruneExpiredAuditLogs(environment, logsDir, options.now);
-  } catch {
-    // Silently ignore errors (matches Python behavior)
-  }
+  } catch {}
 }
 
 function capField(value: string, maxLength: number) {
@@ -146,14 +136,6 @@ function capField(value: string, maxLength: number) {
 }
 
 export function getAuditLogHomeDir(environment: Environment): string | null {
-  // The redirect that keeps test writes out of a developer's real home is set by
-  // tests/setup.ts, which only runs via the `preload` in bunfig.toml — and Bun
-  // reads bunfig.toml from the current working directory. Running `bun test`
-  // from anywhere but the repository root silently skipped it and appended
-  // hundreds of fixture entries to ~/.cc-safety-net/logs. Bun sets NODE_ENV
-  // itself from every cwd, so refusing the fallback here makes the leak
-  // impossible to reach, and tests that assert on audit output fail loudly
-  // instead of writing somewhere nobody looks.
   const homeFromEnv = environment.env.get('CC_SAFETY_NET_AUDIT_HOME');
   if (environment.env.get('NODE_ENV') === 'test' && !homeFromEnv) {
     return null;

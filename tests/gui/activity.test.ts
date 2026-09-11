@@ -10,13 +10,6 @@ import {
   removeTempRoots,
 } from '../helpers/temp-home';
 
-/**
- * The feed the dashboard renders from: one window over the audit tree, the aggregates the tiles
- * count in full, and a capped entry list that has to keep both decision classes visible. The feed
- * reads its home off the `Environment` it is handed, so each row seeds one log tree and records the
- * answer with that tree's paths folded out.
- */
-
 type Seeded = { daysAgo: number; second: number; record: Record<string, unknown> };
 
 const noon = (daysAgo: number, second: number) => {
@@ -46,7 +39,6 @@ const allow = (second: number, record: Record<string, unknown> = {}): Seeded => 
   record: { command: 'ls', decision: 'allow', agent: 'claude-code', ...record },
 });
 
-/** The feed over one seeded tree, with the home and the log directory it read folded out. */
 const feedOverBothSides = (
   entries: readonly Seeded[],
   rawLines: readonly string[],
@@ -54,7 +46,6 @@ const feedOverBothSides = (
 ) => {
   const home = createTempRoot('gui-activity-ported-');
   seedFeed(join(home, 'logs'), entries, rawLines);
-  // `homeDir` is the home the feed's `Environment` carries, so it folds out with the tree.
   const ported = normalize(
     portedFeed(environmentFor(home, isolationEnv(home)), days, join(home, 'logs')),
     [
@@ -118,7 +109,6 @@ describe('the GUI activity feed', () => {
     expect(feed.counts.blocked).toBe(denied);
     expect(feed.counts.allowed).toBe(allowed);
     expect(feed.totalInWindow).toBe(denied + allowed);
-    // Newest first, so the list the client renders opens on what just happened.
     const timestamps = feed.entries.map((entry) => entry.ts);
     expect(timestamps).toEqual([...timestamps].sort().reverse());
   });

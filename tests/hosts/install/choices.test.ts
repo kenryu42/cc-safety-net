@@ -12,13 +12,6 @@ import { INSTALL_TARGETS, type InstallTarget } from '@/hosts/install/targets';
 import { createFakeBin, type FakeScriptEntry } from '../../helpers/fake-bin';
 import { createTempRoot, removeTempRoots, withProcessEnv } from '../../helpers/temp-home';
 
-/**
- * The rows the install picker offers. A host counts as present only when its CLI answers
- * `--version` with a clean exit inside the probe cap (five seconds in production), and what the
- * picker says about a row that cannot be chosen ("CLI not installed", "already installed", "not
- * installed") is what the user reads, so the probe result and the reason are both stated here.
- */
-
 const SCRIPT: readonly FakeScriptEntry[] = [
   { command: 'present', stdout: '1.0.0\n' },
   { command: 'broken', exit: 1 },
@@ -36,7 +29,6 @@ const OPTIONS: readonly BuildInstallTargetChoicesOptions[] = [
   { action: 'uninstall', configuredTargets: CONFIGURED },
 ];
 
-/** The distinct row shapes per group, so the table stays readable as hosts are added. */
 const groupedReasons = (choices: readonly InstallTargetChoice[]) => {
   const distinct = (rows: readonly InstallTargetChoice[]) => [
     ...new Set(rows.map((row) => `${row.available} ${row.unavailableReason ?? ''}`.trim())),

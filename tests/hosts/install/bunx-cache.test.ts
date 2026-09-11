@@ -5,13 +5,6 @@ import { clearBunxSafetyNetCache } from '@/hosts/install/bunx-cache';
 import { writeTree } from '../../helpers/fixture-tree';
 import { createTempRoot, removeTempRoots, snapshotHome } from '../../helpers/temp-home';
 
-/**
- * bunx keeps one directory per package under the OS temp dir, named `bunx-<uid>-<pkg>@<version>`.
- * Only this user's `cc-safety-net` entries may go: another uid's entry is not ours to delete on a
- * shared /tmp, `cc-safety-net-extra` is a different package, and the entry the running process
- * was launched from has to survive.
- */
-
 const uid = process.getuid?.() ?? 0;
 const OURS_LATEST = `bunx-${uid}-cc-safety-net@latest`;
 const OURS_PINNED = `bunx-${uid}-cc-safety-net@1.0.0`;

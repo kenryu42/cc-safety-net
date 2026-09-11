@@ -2,38 +2,24 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
-/**
- * Two budgets on the hook entry, both read off its transitive static import closure. Cold start:
- * the modules a hook call cannot avoid loading are the gate, the audit writer and the nine stdin
- * adapters, and nothing else the CLI carries — an installer, a detector, doctor, the GUI, the
- * rulebook manager or an in-process entry pulled in by a stray import is a
- * regression the hook path pays for on every tool call. Git-checkout mode: the same closure names
- * no package, so the plugin runs from a checkout with no `node_modules`.
- */
-
 const NEXT_ROOT = join(import.meta.dir, '..', '..', 'src');
 const HOOK_ENTRY = join(NEXT_ROOT, 'entries', 'bin.ts');
 
 const STATIC_SPECIFIER = /(?:^|[\n;])\s*(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]/g;
 const DYNAMIC_SPECIFIER = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
-/** Every module the file names at load time; a dynamic `import()` is a chunk, not a static cost. */
 function staticSpecifiers(source: string): string[] {
   return [...source.matchAll(STATIC_SPECIFIER)].flatMap((match) =>
     match[1] === undefined ? [] : [match[1]],
   );
 }
 
-/** The chunks the file splits off, which load only when the branch that names them runs. */
 function dynamicSpecifiers(source: string): string[] {
   return [...source.matchAll(DYNAMIC_SPECIFIER)].flatMap((match) =>
     match[1] === undefined ? [] : [match[1]],
   );
 }
 
-/** The file a specifier loads, or undefined when it names a package rather than a file. A module
- *  path is either the file itself or the `index.ts` of the directory it names, as the bundler
- *  resolves it. */
 function resolveSpecifier(specifier: string, fromFile: string): string | undefined {
   const base = specifier.startsWith('@/')
     ? join(NEXT_ROOT, specifier.slice('@/'.length))
@@ -44,7 +30,6 @@ function resolveSpecifier(specifier: string, fromFile: string): string | undefin
   return existsSync(`${base}.ts`) ? `${base}.ts` : join(base, 'index.ts');
 }
 
-/** A file's path under `src/`, spelled with `/` as the budget names it. */
 const relativeToRoot = (file: string) => relative(NEXT_ROOT, file).split(sep).join('/');
 
 function closureOf(entryFile: string) {
@@ -64,10 +49,6 @@ function closureOf(entryFile: string) {
   return { files, bare };
 }
 
-// Anchored at a path segment: `hosts/hook/agent-detection.ts` is the Claude transcript
-// attribution the hook path itself needs, while `hosts/<id>/install.ts`, a detector, the doctor
-// modules and `hosts/system-info.ts` (which spawns a host CLI) are the CLI's, as is every file
-// under `cli/`.
 const OFF_THE_HOOK_PATH =
   /(^|\/)(install|detect|doctor|system-info)|^cli\/|(^|\/)gui\/|rules-manager\//;
 const IN_PROCESS_ENTRIES = [
@@ -79,9 +60,6 @@ const IN_PROCESS_ENTRIES = [
 ];
 
 const offTheHookPath = (file: string) =>
-  // `cli/args.ts` is the exception under `cli/`: the hook verb parses its own flags with the
-  // shared parser, so the whole CLI's argument parser — and nothing else it carries — is on the
-  // hook path.
   file !== 'cli/args.ts' &&
   (OFF_THE_HOOK_PATH.test(file) ||
     IN_PROCESS_ENTRIES.some((prefix) => file.startsWith(prefix)) ||
@@ -127,9 +105,6 @@ describe('the hook entry closure', () => {
   });
 
   test('cold-start budget: the closure loads no crypto at import', () => {
-    // `node:crypto` costs about as much to initialize as the hook's own work, and the two names
-    // that drew on it — the audit id and the policy temp-file suffix — need uniqueness, not
-    // unpredictability, so the module stays off the static closure.
     expect([...closure.bare].filter((specifier) => specifier === 'node:crypto')).toEqual([]);
   });
 

@@ -1,7 +1,3 @@
-/**
- * Audit log activity summary for the doctor command.
- */
-
 import { basename } from 'node:path';
 import { formatRelativeTime } from '@/audit/display';
 import { listAuditLogFiles, readAuditLogEntries } from '@/audit/reader';
@@ -25,14 +21,11 @@ export function getActivitySummary(
   let newestEntry: string | undefined;
   let newestEntryTs: number | undefined;
   if (logsDir) pruneExpiredAuditLogs(environment, logsDir);
-  // Counted so the report can say the summary is partial; silence here reads as
-  // "nothing was ever blocked" when the truth is "the trail could not be read".
+
   const skips = { count: 0 };
   const files = logsDir ? listAuditLogFiles(logsDir, skips) : [];
 
   for (const file of files) {
-    // The shared reader validates each record's shape, so every field used
-    // below - and by the formatter downstream - is a string when present.
     for (const entry of readAuditLogEntries(file, skips)) {
       if (entry.decision === 'allow') {
         continue;

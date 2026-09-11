@@ -22,13 +22,6 @@ import {
   removeTempRoots,
 } from '../../helpers/temp-home';
 
-/**
- * Doctor's only reason to name a version 2 lock or cache is that the file is there, so each row
- * puts one where a scope would have left it and asserts the run names the same
- * absolute paths in the same order — project scope first, then user scope, lock before cache.
- * The user scope is resolved from `CC_SAFETY_NET_HOME`, which the last row moves.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -91,14 +84,6 @@ describe('findRuleV2Leftovers', () => {
   });
 });
 
-/**
- * The other half of `rule sync`: the one-time, offline migration of a version 2 lock and cache.
- * Each row seeds the leftovers a v2 install would have published, runs the migration on both
- * implementations over twin trees, and compares the report, the exit code and what survived —
- * because the failure that matters here is a run that prunes the last offline copy of a rulebook
- * it could not vendor.
- */
-
 const PROJECT_SCOPE = 'project/.cc-safety-net';
 const USER_SCOPE = 'home/.cc-safety-net';
 const SPEC = 'acme/repo#main/x';
@@ -110,8 +95,6 @@ const LOCK_ENTRY = {
   name: 'x',
   owner: 'acme',
   repo: 'repo',
-  // The ref the v2 install displayed, which is what it slugged the cache directory with; a
-  // different spelling from the spec's `main` is what tells the two slug sources apart.
   display_ref: 'v2.0',
 };
 const STALE_ENTRY = { ...LOCK_ENTRY, digest: sha256Digest('{"rulebook_version":1}\n') };

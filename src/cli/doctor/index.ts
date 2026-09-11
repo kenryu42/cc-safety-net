@@ -1,7 +1,3 @@
-/**
- * Main entry point for the doctor command.
- */
-
 import { getActivitySummary } from '@/cli/doctor/activity';
 import { getConfigInfo } from '@/cli/doctor/config';
 import { getEnvironmentInfo } from '@/cli/doctor/environment';
@@ -57,8 +53,6 @@ export async function runDoctor(
     printReport(report);
   }
 
-  // Findings own the failure contract so a rendered error can never exit 0;
-  // the self-test stays a fact check because it has no finding rule.
   return report.engineSelfTest.failed > 0 ||
     report.findings.some((finding) => finding.severity === 'error')
     ? 1
@@ -132,42 +126,32 @@ async function collectDoctorReport(
 }
 
 function printReport(report: DoctorReport): void {
-  // 1. Hook integration
   console.log();
   console.log(formatHooksSection(report.hooks));
   console.log();
 
-  // 2. Shared guard engine verification
   console.log(formatEngineSelfTestSection(report.engineSelfTest));
   console.log();
 
-  // 3. Configuration with Rules Table
   console.log(formatConfigSection(report));
   console.log();
 
-  // 4. Environment
   console.log(formatEnvironmentSection(report.environment));
   console.log();
 
-  // 5. Effective safety
   console.log(formatEffectiveSafetySection(report));
   console.log();
 
-  // 6. Findings
   console.log(formatFindingsSection(report.findings));
   console.log();
 
-  // 7. Activity
   console.log(formatActivitySection(report.activity));
   console.log();
 
-  // 8. System Info
   console.log(formatSystemInfoSection(report.system));
   console.log();
 
-  // 9. Update Check
   console.log(formatUpdateSection(report.update));
 
-  // Summary
   console.log(formatSummary(report));
 }

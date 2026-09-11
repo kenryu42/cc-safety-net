@@ -2,8 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { checkPolicyRuleMatch } from '@/core/rules/custom';
 import type { PolicyRule } from '@/core/rules/types';
 
-/** Token lists are analyzer input; nothing here is executed. */
-
 const V1_RULES: readonly PolicyRule[] = [
   {
     name: 'docker-prune',
@@ -168,11 +166,9 @@ const V2_RULES: readonly PolicyRule[] = [
   v2('nuke-anywhere', 'rm', { command_path: [], any_args: ['--nuke'] }),
 ];
 
-/** The rule id a token list matches in one table, or null. */
 const matchedId = (tokens: readonly string[], rules: readonly PolicyRule[]) =>
   checkPolicyRuleMatch(tokens, rules)?.id ?? null;
 
-/** Every row of a table, labelled by the token list it states. */
 function expectIds(
   rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[],
   rules: readonly PolicyRule[],
@@ -192,18 +188,13 @@ describe('checkPolicyRuleMatch', () => {
         tokens: ['docker', '-H', 'tcp://docker.example', 'system', 'prune'],
         id: 'custom.docker-prune',
       },
-      // The global option consumed `system`, so no subcommand is left to match.
       { tokens: ['docker', '--context', 'system', 'prune'], id: null },
       { tokens: ['git', 'push', '--force'], id: 'custom.git-push-force' },
       { tokens: ['git', '-C', '/path', 'push', '--force'], id: 'custom.git-push-force' },
       { tokens: ['git', '-C/path', 'push', '--force'], id: 'custom.git-push-force' },
       { tokens: ['git', '--config=foo', 'push', '--force'], id: 'custom.git-push-force' },
       { tokens: ['git', '--', 'checkout', '--'], id: 'custom.git-checkout-dash' },
-      // An unrecognized global option with a separate value hides the subcommand.
       { tokens: ['git', '--super-prefix', 'push', 'status', '--force'], id: null },
-      // A rule with no blocked argument matches the subcommand alone.
-      // contract: src/core/rules/custom.ts:33 — a v1 rule with no blocked argument matches
-      // nothing, since the subcommand alone is never the block.
       { tokens: ['git', 'stash'], id: null },
       { tokens: ['git', 'status'], id: null },
       { tokens: ['npm', 'install', '-g', 'pkg'], id: 'custom.npm-global' },
@@ -216,14 +207,12 @@ describe('checkPolicyRuleMatch', () => {
     expect(checkPolicyRuleMatch(['git', 'push', '--force'], V1_RULES)).toStrictEqual({
       id: 'custom.git-push-force',
       reason: '[git-push-force] r',
-      // A rule that names no intent is manual_only.
       intent: 'manual_only',
     });
     expect(checkPolicyRuleMatch(['rm', '-f', 'x'], V1_RULES)?.intent).toBe('hard_stop');
     expect(checkPolicyRuleMatch(['npm', 'install', '-g', 'pkg'], V1_RULES)?.intent).toBe(
       'scope_down',
     );
-    // The first rule in the table that matches wins.
     expect(checkPolicyRuleMatch(['git', 'clean', '-f'], [...V1_RULES].reverse())?.id).toBe(
       'custom.git-clean',
     );
@@ -235,10 +224,8 @@ describe('checkPolicyRuleMatch', () => {
       { tokens: ['GIT', 'push', '-f'], id: 'custom.git-push-force' },
       { tokens: ['/usr/bin/git', 'push', '-f'], id: 'custom.git-push-force' },
       { tokens: ['C:\\Tools\\GIT.EXE', 'push', '-f'], id: 'custom.git-push-force' },
-      // A short option bundle expands, so `-f` inside it still matches.
       { tokens: ['git', 'clean', '-fx'], id: 'custom.git-clean' },
       { tokens: ['git', 'clean', '-n'], id: null },
-      // A long option is matched whole, never as a prefix.
       { tokens: ['git', 'branch', '--delete-all'], id: null },
       { tokens: ['git', 'branch', '--delete'], id: 'custom.git-branch-delete' },
       { tokens: ['docker', 'image', 'prune'], id: 'custom.docker-upper' },
@@ -258,7 +245,6 @@ describe('checkPolicyRuleMatch', () => {
       },
       { tokens: ['terraform', 'state', 'rm', '--dry-run'], id: null },
       { tokens: ['terraform', 'apply', '-destroy'], id: 'custom.tf-apply-destroy' },
-      // any_args are exact tokens in v2: no short-option expansion, no `=` splitting.
       { tokens: ['terraform', 'apply', '--destroy=true'], id: null },
       {
         tokens: ['aws', '--profile', 'prod', 'ec2', 'terminate-instances'],
@@ -274,14 +260,12 @@ describe('checkPolicyRuleMatch', () => {
         tokens: ['gcloud', 'beta', 'compute', 'instances', 'delete', 'vm'],
         id: 'custom.gcloud-beta-instances-delete',
       },
-      // The path is matched in order from the first argument, so a later `delete` is not it.
       { tokens: ['gcloud', 'compute', 'instances', 'create', 'delete'], id: null },
       {
         tokens: ['az', '--subscription', 'prod', 'group', 'delete', '--name', 'rg'],
         id: 'custom.az-group-delete',
       },
       { tokens: ['az', '--subscription', 'prod', 'group', 'list'], id: null },
-      // An empty command path matches the command itself, wherever the argument sits.
       { tokens: ['rm', '-rf', '--nuke'], id: 'custom.nuke-anywhere' },
     ];
     expectIds(rows, V2_RULES);

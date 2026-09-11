@@ -5,12 +5,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { atomicWriteFile } from '@/core/io/atomic-write';
 
-/**
- * The contract of `atomicWriteFile`: the destination ends up holding exactly the bytes handed in,
- * the staging file is a sibling of the destination, and an interrupted rename leaves the previous
- * destination intact.
- */
-
 const CONTENTS: readonly (readonly [string, string | Buffer])[] = [
   ['an empty file', ''],
   ['a single line', 'plain\n'],
@@ -79,7 +73,6 @@ describe('atomic write', () => {
     expect(dirname(staged[0]?.from ?? '')).toBe(dir);
     expect(staged[0]?.to).toBe(dest);
     expect(staged[0]?.listing).toEqual(['settings.json', `settings.json.${process.pid}.tmp`]);
-    // The bytes are complete in the temp file and the destination is still the previous file.
     expect(readFileSync(staged[0]?.from ?? '', 'utf-8')).toBe('new\n');
     expect(staged[0]?.destination).toBe('old\n');
   });
@@ -95,7 +88,6 @@ describe('atomic write', () => {
     spy.mockRestore();
 
     expect(readFileSync(dest, 'utf-8')).toBe('old\n');
-    // The staged file is the only residue of the failed write.
     expect(readdirSync(dir).sort()).toEqual(['settings.json', `settings.json.${process.pid}.tmp`]);
     expect(readFileSync(`${dest}.${process.pid}.tmp`, 'utf-8')).toBe('new\n');
   });

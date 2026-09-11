@@ -72,8 +72,6 @@ void analyzeCommand;
 
   test('api subpath types narrow by kind and need no OpenCode peer', async () => {
     await withTempDir('cc-safety-net-public-api-library-', (dir) => {
-      // No @opencode-ai/plugin fixture: a library-only consumer must compile
-      // the api subpath without the optional peer's types installed.
       writeInstalledPackage(dir);
       writeFileSync(
         join(dir, 'consumer.ts'),

@@ -63,9 +63,6 @@ export function behavioralContractCases(paths: {
   const invalidConfig = {
     configFallbackReason: 'invalid policy config: fix the file named in the diagnostic.',
   };
-  // Everyday agent work must stay allowed at standard and strict safety: a widened
-  // destructive heuristic would start denying routine commands without failing any
-  // block-side case.
   const everydayCommands = [
     'git status',
     'git add -A',
@@ -601,8 +598,6 @@ export function behavioralContractCases(paths: {
       },
     },
     {
-      // Invalid configuration degrades: the rejected values never become active,
-      // and ordinary work is never denied for being unconfigurable.
       name: 'allows an ordinary command while a fallback configuration is enforced',
       command: 'printf safe',
       options: options({ cwd: paths.cwd, policy: invalidConfig }),

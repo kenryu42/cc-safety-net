@@ -12,12 +12,6 @@ import {
   REASON_INTERPRETER_DANGEROUS,
 } from '@/gate/analyzer/interpreters';
 
-/**
- * The interpreter argv scanner walks each `-c`/`-e` form the four interpreters accept, and the
- * code detector judges the body it recovers — including the encoded payloads a one-liner hides a
- * command in.
- */
-
 describe('interpreter denial reasons', () => {
   test('the two reasons are the strings the denials render', () => {
     expect(REASON_INTERPRETER_DANGEROUS).toBe(
@@ -113,8 +107,6 @@ describe('interpreter argv scanning', () => {
             { tokenIndex: 2, kind: 'module-file', value: 'preload.js' },
             { tokenIndex: 4, kind: 'inline-code', value: 'x' },
           ],
-          // Unlike python's `-c`, an `-e` operand does not end the option list, so an argv that
-          // stops there leaves it open.
           optionsOpen: true,
         },
       },
@@ -130,7 +122,6 @@ describe('interpreter argv scanning', () => {
         },
       },
       {
-        // An option that needs a value it never gets invalidates the scan.
         argv: ['node', '-r'],
         parsed: { code: null, sources: [], optionsOpen: false },
       },
@@ -182,7 +173,6 @@ describe('interpreter argv scanning', () => {
       { command: '/usr/bin/node', selectors: 9, isInterpreter: true },
       { command: 'ruby', selectors: 2, isInterpreter: true },
       { command: 'perl', selectors: 4, isInterpreter: true },
-      // A name that only resembles an interpreter is not one.
       { command: 'nodejs', selectors: 0, isInterpreter: false },
       { command: 'pypy3', selectors: 0, isInterpreter: false },
       { command: 'perl5', selectors: 0, isInterpreter: false },
@@ -213,7 +203,6 @@ describe('interpreter argv scanning', () => {
       { command: 'node', code: 'console.log("a", "b")', display: false },
       { command: 'node', code: 'console.log("hi"); rm()', display: false },
       { command: 'node', code: '', display: false },
-      // The form is node's; another interpreter running the same text is not display-only.
       { command: 'nodejs', code: 'console.log("hello")', display: false },
       { command: 'python3', code: 'console.log("hello")', display: false },
     ];
@@ -231,7 +220,6 @@ describe('dangerous interpreter code', () => {
       { code: '', dangerous: false },
       { code: 'print(1)', dangerous: false },
       { code: 'console.log("hello")', dangerous: false },
-      // A match confined to a string literal is inert data without an exec sink.
       { code: 'print("rm -rf /tmp/x")', dangerous: false },
       { code: 'x = "rm -rf /tmp/x"', dangerous: false },
       { code: 'x = "rm -rf /tmp/x"; print(x)', dangerous: false },
@@ -241,9 +229,7 @@ describe('dangerous interpreter code', () => {
       { code: 'require("child_process").execSync("rm -rf /tmp/x")', dangerous: true },
       { code: 'puts `rm -rf /tmp/x`', dangerous: true },
       { code: 'puts %x{rm -rf /tmp/x}', dangerous: true },
-      // An unterminated literal keeps its tail, so the conservative scan still sees it.
       { code: 'x = "unterminated rm -rf /tmp/x', dangerous: true },
-      // A comment is not a string literal.
       { code: 'x = 1 # rm -rf /tmp/x', dangerous: true },
       { code: 'os.system("rm \\\n-rf /tmp/x")', dangerous: true },
       { code: 'os.system("git reset --hard")', dangerous: true },

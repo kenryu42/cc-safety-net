@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { AnalysisLimit, type CountedKind, createBudget, LIMITS } from '@/core/budget';
 
-/**
- * The five sentences the gate reports a refusal with. Which kinds share one is the contract: a
- * reader of a denial learns which class of limit stopped the command, not which counter.
- */
 const ANALYSIS =
   'CC Safety Net could not analyze the command because it exceeds safe analysis limits. Simplify or split the command and retry.';
 const RECURSION =
@@ -16,8 +12,6 @@ const PARALLEL =
 const FAILED_CLOSED =
   'CC Safety Net failed closed because command analysis failed unexpectedly. This is not caused by your command. Report it to the user.';
 
-/** Every cap the gate ships, as the number it is. A change to one is a change to what the gate
- *  accepts, so each is spelled here rather than recorded. */
 const CAPS: Readonly<Record<CountedKind, number>> = {
   realpathAttempts: 16_384,
   processedCandidateBytes: 4 * 1024 * 1024,
@@ -40,7 +34,6 @@ const CAPS: Readonly<Record<CountedKind, number>> = {
   toolInputGitDiffCandidates: 64,
 };
 
-/** Every kind in the table, including the three that refuse on shape rather than on a count. */
 const REASONS: Readonly<Record<keyof typeof LIMITS, string>> = {
   realpathAttempts: ANALYSIS,
   processedCandidateBytes: ANALYSIS,
@@ -56,7 +49,6 @@ const REASONS: Readonly<Record<keyof typeof LIMITS, string>> = {
   parallelDerivedTokens: PARALLEL,
   parallelDerivedBytes: PARALLEL,
   parallelPlaceholderReplacements: PARALLEL,
-  // Read before any tool input is parsed, so the intake denial is the one it reports.
   hookInputBytes: 'Failed to parse hook input JSON.',
   toolInputDepth: FAILED_CLOSED,
   toolInputNodes: FAILED_CLOSED,
@@ -113,7 +105,6 @@ describe('analysis budget', () => {
       expect(breach?.kind).toBe(kind);
       expect(breach?.message).toBe(LIMITS[kind].reason);
       expect([...budget.counters.keys()]).toEqual([kind]);
-      // The breach leaves every other counter its full cap on the same budget.
       for (const other of COUNTED_KINDS.filter((candidate) => candidate !== kind)) {
         expect(limitThrownBy(() => budget.charge(other, LIMITS[other].cap))).toBeUndefined();
       }
@@ -136,7 +127,6 @@ describe('analysis budget', () => {
   });
 
   test('every capped kind ships the cap this table names', () => {
-    // Keyed by kind, so a cap added to the table without a row here fails rather than passes.
     expect(Object.keys(CAPS).sort()).toStrictEqual(
       Object.entries(LIMITS)
         .filter(([, limit]) => 'cap' in limit)

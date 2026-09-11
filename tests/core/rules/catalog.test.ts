@@ -2,13 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import * as nextDestructive from '@/core/rules/destructive';
 import * as nextSecret from '@/core/rules/secret';
 
-/**
- * The catalogs are data the rest of the engine addresses by id: a policy names a rule to switch
- * off, a denial carries the id it was answered by, and the GUI lists every record. So what the
- * tables owe is that the ids are unique and well formed, that each derived table still agrees with
- * the one it came from, and that the rows carrying a behaviour — a catastrophic rule, one gated on
- * a capability, one that ships off — are the rows that are supposed to carry it.
- */
 describe('rule catalogs', () => {
   const destructive = nextDestructive.DESTRUCTIVE_COMMAND_RULE_METADATA;
   const secret = nextSecret.SECRET_PROTECTION_RULE_METADATA;
@@ -20,10 +13,7 @@ describe('rule catalogs', () => {
     expect(nextDestructive.DESTRUCTIVE_COMMAND_RULE_ID_SET).toEqual(new Set(ids));
 
     for (const rule of destructive) {
-      // `<area>.<rule>`: the id a policy override names and a denial carries.
       expect(rule.id, rule.id).toMatch(/^[a-z0-9-]+\.[a-z0-9-]+$/);
-      // Every field is shown to someone: the GUI lists the category, label and description, and
-      // `explain` prints the example.
       expect(rule.category, rule.id).not.toBe('');
       expect(rule.label, rule.id).not.toBe('');
       expect(rule.description, rule.id).toEndWith('.');
@@ -32,7 +22,6 @@ describe('rule catalogs', () => {
   });
 
   test('the rules that carry a behaviour beyond their text are the ones that should', () => {
-    // A catastrophic rule cannot be switched off by a policy, so the set is spelled out.
     expect(destructive.flatMap((rule) => (rule.catastrophic ? [rule.id] : []))).toEqual([
       'rm.recursive-force-root-or-home',
       'rm.git-metadata',
@@ -41,8 +30,6 @@ describe('rule catalogs', () => {
       'powershell.remove-item-git-metadata',
       'find.delete-git-metadata',
     ]);
-    // A capability gates whether a rule is active at all: `fail_closed` rules answer only where
-    // the analysis could not settle the target, and the two paranoid tiers ship behind the level.
     expect(
       destructive.flatMap((rule) =>
         rule.activationCapability ? [[rule.id, rule.activationCapability]] : [],
@@ -60,8 +47,6 @@ describe('rule catalogs', () => {
   });
 
   test('destructiveCommandMatch answers with the record intent and the reason it was handed', () => {
-    // The intent decides which footer the denial prints, so a match that lost it would deny with
-    // the wrong advice; an id with no record at all falls back to the strictest intent.
     expect([...new Set(destructive.map((rule) => rule.intent))].sort()).toEqual([
       'hard_stop',
       'manual_only',
@@ -80,8 +65,6 @@ describe('rule catalogs', () => {
   });
 
   test('the secret catalog is the matcher tables in order, and nothing else', () => {
-    // A matcher table left out of the catalog would match files no policy can switch off and no
-    // listing shows, so the concatenation is stated here rather than derived.
     expect(
       [
         ...nextSecret.SECRET_BASENAME_RULES,
@@ -105,7 +88,6 @@ describe('rule catalogs', () => {
       expect(rule.id, rule.id).toStartWith('secret.');
       expect(rule.category, rule.id).not.toBe('');
       expect(rule.label, rule.id).not.toBe('');
-      // A coding-CLI rule names the paths it guards; every other rule describes what it blocks.
       expect(
         'paths' in rule ? rule.paths.length > 0 : rule.description.endsWith('.'),
         rule.id,
@@ -114,8 +96,6 @@ describe('rule catalogs', () => {
   });
 
   test('the tier that ships off is the coding-CLI config rules', () => {
-    // Agents edit these files as routine work, so the tier is opt-in; the flag the GUI reads and
-    // the set the policy reads have to name the same rules.
     const off = secret.flatMap((rule) => (rule.defaultOff === true ? [rule.id] : []));
     expect(new Set(off)).toEqual(nextSecret.SECRET_DEFAULT_OFF_RULE_ID_SET);
     expect(off).toEqual(
@@ -125,7 +105,6 @@ describe('rule catalogs', () => {
   });
 
   test('every pattern matcher is anchored at both ends and carries no flags', () => {
-    // An unanchored pattern would match far more than the label it is listed under says.
     expect(
       [
         nextSecret.SECRET_BROAD_SSH_KEY_BASENAME_RULE,

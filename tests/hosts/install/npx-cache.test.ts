@@ -10,13 +10,6 @@ import {
   removeTempRoots,
 } from '../../helpers/temp-home';
 
-/**
- * The npx cache sweep decides where to look from `npm_config_cache`, the platform and the home,
- * all read off the `Environment`. It must land on that directory and delete only the entries
- * there that actually hold a `cc-safety-net` install.
- */
-
-/** One npx cache: an entry that is ours, an entry that is someone else's, and an empty one. */
 const npxFixture = (cacheDir: string): TreeSpec => ({
   [`${cacheDir}/_npx/a/node_modules/cc-safety-net/package.json`]: '{}',
   [`${cacheDir}/_npx/b/node_modules/other/index.js`]: '',
@@ -93,11 +86,9 @@ describe('clearing the npx cache', () => {
 
       clearNpxSafetyNetCache(
         environmentFor(portedHome, isolationEnv(portedHome, testCase.env(portedHome))),
-        // The rows without a platform pin the POSIX layout wherever the suite runs.
         testCase.platform ?? 'linux',
       );
 
-      // Only the entry holding a `cc-safety-net` install is gone; `b` and `c` stay.
       expect(cacheEntries(portedHome, testCase.cacheDir)).toEqual(testCase.remaining);
     });
   }

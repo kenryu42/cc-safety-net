@@ -73,7 +73,6 @@ export function validateRulebook(rulebook: unknown): { errors: string[]; ruleNam
     return { errors: [RULEBOOK_LIMIT_ERROR], ruleNames: new Set() };
   }
   const errors = [
-    // The only rulebook diagnostic that reads as a sentence; the rest are `field: reason`.
     ...(rulebook.rulebook_version === 1 || rulebook.rulebook_version === 2
       ? []
       : ['rulebook_version must be 1 or 2']),
@@ -88,7 +87,6 @@ export function validateRulebook(rulebook: unknown): { errors: string[]; ruleNam
   };
 }
 
-/** Custom rule names as written, in declaration order. */
 export function collectCustomRuleNames(config: unknown): string[] {
   const rules = isRecord(config) ? config.rules : undefined;
   return (Array.isArray(rules) ? rules : []).flatMap((rule) => {
@@ -215,11 +213,6 @@ function v2MatchIssues(match: unknown, path: readonly PropertyKey[]): Issue[] {
   ];
 }
 
-/**
- * A token list reports each unusable element, then its own emptiness and duplication —
- * but only when no element was the wrong type, which stops the list's checks the way a
- * fatal element issue stops the schema's.
- */
 function tokenArrayIssues(
   tokens: unknown,
   path: readonly PropertyKey[],

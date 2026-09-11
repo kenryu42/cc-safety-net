@@ -1,12 +1,5 @@
 import { createHash } from 'node:crypto';
 
-/**
- * The documents a rulebook-manager row seeds: rule configs, rulebooks in both schema versions, a
- * version 0 inline config and the lock and cache a version 2 install left behind. Each builder
- * returns file bytes, so a row spells the tree it wants and no comparison has to normalize
- * formatting afterwards.
- */
-
 export type SeedRule = {
   name: string;
   command: string;
@@ -24,7 +17,6 @@ export type SeedMatchRule = {
 
 export type SeedFixture = { command: string; expect: 'blocked' | 'allowed'; rule?: string };
 
-/** The v2 lock rows the migration reads: the spec, its digest and the slug fields. */
 export type SeedLockEntry = {
   spec: string;
   digest: string;
@@ -42,7 +34,6 @@ const DOCKER_PRUNE_RULE: SeedRule = {
   reason: 'Use targeted cleanup instead.',
 };
 
-/** What the atomic writer leaves behind: two-space JSON with a closing newline. */
 export function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -76,12 +67,10 @@ export function v2Rulebook(
   });
 }
 
-/** A version 0 inline config, the shape `rule migrate` converts and `doctor` reports. */
 export function legacyConfig(rules: readonly SeedRule[]): string {
   return json({ version: 1, rules });
 }
 
-/** One rule past the 1,024-rule acceptance limit, so the rulebook is refused whole. */
 export function oversizedRulebook(name: string): string {
   return v1Rulebook(
     name,
@@ -98,7 +87,6 @@ export function v2Lock(entries: readonly SeedLockEntry[]): string {
   return json({ version: 2, rulebooks: entries });
 }
 
-/** The directory a v2 install cached one entry in, under the scope's `cache/rulebooks`. */
 export function v2CacheDir(entry: SeedLockEntry): string {
   const slug = `${entry.owner}/${entry.repo}#${entry.display_ref}/${entry.name}`
     .toLowerCase()

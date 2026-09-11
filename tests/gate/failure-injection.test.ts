@@ -23,13 +23,6 @@ import { withEnv } from '../helpers';
 import { bashCall, createGateTree, portedVerdict, toolCall } from '../helpers/gate-differential';
 import { policySnapshot } from '../helpers/policy';
 
-/**
- * What the gate does when something under it fails: a filesystem that throws, a config file
- * swapped out from under the reader, input past the intake caps, and one breach of every analysis
- * cap a command can still reach. Each row records the verdict, pins the words it carries, and —
- * where a breach escapes as an exception — the audit classification it is given.
- */
-
 const tree = createGateTree('gate-failure-injection-');
 const environment = createProcessEnvironment();
 const snapshot = policySnapshot();
@@ -42,7 +35,6 @@ afterAll(() => {
 const repeated = (count: number, make: (index: number) => string, separator = ' ') =>
   Array.from({ length: count }, (_, index) => make(index)).join(separator);
 
-/** Records one command's verdict and hands it back for the row's own assertions. */
 function agreedOn(command: string, overrides = {}) {
   const ported = portedVerdict(bashCall(command, tree.workspace), environment, {
     ...dependencies,
@@ -63,14 +55,11 @@ describe('a filesystem that throws instead of answering', () => {
     },
   };
 
-  // The analyzer is the seam the gate takes its process state through, so it is the only place a
-  // broken `realpath` can be injected.
   const breakingPaths: Partial<PortedDependencies> = {
     analyzeCommand: (command, options, program, store) =>
       portedAnalyzeCommand(command, { ...options, environment: throwing }, program, store),
   };
 
-  /** One command through the gate with `realpath` broken, recorded as it decided. */
   const brokenRealpathVerdict = (command: string) => {
     const ported = portedVerdict(bashCall(command, tree.workspace), environment, {
       ...dependencies,
@@ -110,7 +99,6 @@ describe('input past the intake caps', () => {
 });
 
 describe('a host that truncated the tool input', () => {
-  /** What the Grok Build adapter does with `toolInputTruncated`: deny without analyzing. */
   function truncatedDenial(report: typeof portedOutputFailedClosed, toolInput: unknown) {
     const denials: unknown[] = [];
     report((denial) => denials.push(denial), toolInput, 'run_terminal_command');
@@ -127,8 +115,6 @@ describe('a host that truncated the tool input', () => {
     ['no payload at all', undefined, undefined],
   ] as const) {
     test(name, () => {
-      // The adapter never analyzed the text, so it fails closed and echoes back whatever it was
-      // handed — the truncated command, the oversized one, or nothing at all.
       expect(truncatedDenial(portedOutputFailedClosed, toolInput)).toEqual([
         {
           command,
@@ -144,7 +130,6 @@ describe('a host that truncated the tool input', () => {
 
 describe('process state the two gates read differently', () => {
   test('a Git config count past its cap is a rule denial on both sides', () => {
-    /** `git status` through the gate, reading the process state as it stands right now. */
     const gitStatusVerdict = () => {
       const ported = portedVerdict(
         bashCall('git status', tree.workspace),
@@ -156,8 +141,6 @@ describe('process state the two gates read differently', () => {
     withEnv({ GIT_CONFIG_COUNT: '1025' }, () => {
       expect(gitStatusVerdict().ruleId).toBe('git.alias-config');
     });
-    // `1024` is still a valid count, and the analyzer denies large valid counts for its own
-    // reason, so the counterpart here is the variable being absent.
     withEnv({ GIT_CONFIG_COUNT: undefined }, () => {
       expect(gitStatusVerdict().outcome).toBe('allow');
     });
@@ -182,7 +165,6 @@ describe('process state the two gates read differently', () => {
         path: Parameters<typeof nodeFs.readFileSync>[0],
         options: Parameters<typeof nodeFs.readFileSync>[1],
       ) => {
-        // The descriptor read is the window the identity check closes: swap the file inside it.
         if (typeof path === 'number') {
           swaps.push(path);
           rmSync(rulePath, { force: true });
@@ -206,11 +188,6 @@ describe('process state the two gates read differently', () => {
 const nestedShells = (depth: number): string =>
   depth === 0 ? 'echo ok' : `sh -c ${JSON.stringify(nestedShells(depth - 1))}`;
 
-/**
- * One breach per cap a command can still reach, with the counterpart just below it. `audited` is
- * what the audit would record: the class the breach escapes as, or null where the analyzer
- * catches it and answers with an ordinary denial.
- */
 const CAP_BREACHES = [
   {
     kind: 'recursionDepth',
@@ -277,7 +254,6 @@ const CAP_BREACHES = [
   audited: string | null;
 }[];
 
-/** The classification: one exception carrying the kind the `LIMITS` table codes. */
 function portedAuditCode(cause: unknown) {
   if (cause instanceof AnalysisLimit) return LIMITS[cause.kind].errorCode;
   if (cause instanceof ToolInputLimitError) return 'tool-input-limit';

@@ -13,13 +13,6 @@ import { createToolInvocation } from '@/gate/invocation';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
 
-/**
- * The policy files are protected in both scopes and through every write channel the gate sees:
- * shell operands, tracked assignments, redirections, `rm -r` of an ancestor, `mv`, `find -delete`
- * and the write-shaped tool inputs. The fixture sets `CC_SAFETY_NET_HOME` on the process as well as
- * on the environment it hands the guard, so `~` and the user scope line up with it.
- */
-
 let root = '';
 let home = '';
 let workspace = '';
@@ -44,8 +37,6 @@ beforeAll(() => {
     'work/alias': { symlink: join(home, '.cc-safety-net') },
     other: null,
   });
-  // A path that reads `~` resolves against the process home, so the process carries the same home
-  // the guard's environment does.
   process.env.CC_SAFETY_NET_HOME = safetyHome;
   process.env.HOME = home;
 });
@@ -66,7 +57,6 @@ function toolContext() {
   return { executionCwd: workspace, configCwd: workspace };
 }
 
-/** One tool call through the guard, from the raw input the host would deliver. */
 function guardPair(toolName: string, input: unknown, route: ToolRoute) {
   const paired = guardEnvironments();
   return describeOutcome(() =>
@@ -74,14 +64,10 @@ function guardPair(toolName: string, input: unknown, route: ToolRoute) {
   );
 }
 
-/** A fixture path as a POSIX shell operand: on Windows `join` spells it with `\\`, which the shell
- *  would read as escapes. */
 const sh = (path: string) => path.split(sep).join('/');
 
-/** The home shorthand, kept out of this file's own source as a literal path. */
 const TILDE = '~';
 
-/** Every row of a shell table, labelled by the command it states. */
 function expectBlocked(rows: readonly { readonly command: string; readonly blocked: boolean }[]) {
   for (const row of rows) {
     const outcome = guardPair(
@@ -95,7 +81,6 @@ function expectBlocked(rows: readonly { readonly command: string; readonly block
 
 describe('policy config protection through the shell', () => {
   test('every write channel that reaches a policy file is blocked, and a read is not', () => {
-    // The user scope spelled through `~`, which resolves against the fixture home.
     const tildePolicy = `${TILDE}/.cc-safety-net/policy.json`;
     const rows: readonly { readonly command: string; readonly blocked: boolean }[] = [
       { command: `less ${sh(userPolicy)}`, blocked: false },
@@ -107,11 +92,8 @@ describe('policy config protection through the shell', () => {
       { command: `install -m 600 /dev/null ${sh(userPolicy)}`, blocked: true },
       { command: `rm ${sh(userPolicy)}`, blocked: true },
       { command: `rm -f ${sh(projectPolicy)}`, blocked: true },
-      // A recursive delete of an ancestor takes the policy file with it.
       { command: `rm -r ${sh(home)}`, blocked: true },
       { command: `rm -rf ${sh(join(workspace, '.cc-safety-net'))}`, blocked: true },
-      // The project root itself is not the policy directory, so deleting it is left to the
-      // destructive-command rules.
       { command: `rm -rf ${sh(workspace)}`, blocked: false },
       { command: `mv ${sh(join(root, 'other'))} ${sh(userPolicy)}`, blocked: true },
       { command: `find ${sh(safetyHome)} -exec rm -rf {} \\;`, blocked: true },
@@ -120,18 +102,12 @@ describe('policy config protection through the shell', () => {
       { command: `cat ${tildePolicy}`, blocked: false },
       { command: `truncate -s 0 ${tildePolicy}`, blocked: true },
       { command: `P=${sh(safetyHome)}; rm -rf "$P"`, blocked: true },
-      // A `cd` moves the directory the later relative operand resolves against.
       { command: `cd ${sh(home)} && rm -rf .cc-safety-net`, blocked: true },
       { command: 'cd /nowhere-at-all && cp /dev/null .cc-safety-net/policy.json', blocked: false },
-      // A nested shell is walked, so a mutation inside one is still blocked — but its `cd` ends
-      // with it, so the operand after the group resolves against the project directory.
       { command: `( rm -rf ${sh(safetyHome)} )`, blocked: true },
       { command: `(cd ${sh(join(root, 'other'))}) && rm -rf .cc-safety-net`, blocked: true },
       { command: `env -S "cp /dev/null ${sh(userPolicy)}"`, blocked: true },
       { command: `sudo cp /dev/null ${sh(userPolicy)}`, blocked: true },
-      // contract: src/gate/guards/policy-protection.ts:213 — outside a read-only segment any
-      // operand naming the policy file is treated as a write, so a command that only prints it
-      // is denied too.
       { command: `echo CONFIG=${sh(userPolicy)}`, blocked: true },
       { command: `printf x > ${sh(join(workspace, 'src', 'policy.json'))}`, blocked: false },
       { command: '', blocked: false },
@@ -162,19 +138,13 @@ describe('policy config protection through the shell', () => {
         command: `/opt/reviewer --prompt 'Only ${sh(userPolicy)} is protected by policy.'`,
         blocked: false,
       },
-      // A wildcard is not resolved into the protected name.
       { command: `rm "${sh(safetyHome)}/polic?.json"`, blocked: false },
-      // A write the guard cannot attribute to the file is not inferred from the directory.
       { command: `cp /tmp/policy.json ${sh(safetyHome)}`, blocked: false },
       { command: 'rm -rf / ${', blocked: false },
-      // A quoted heredoc body is data, unless the heredoc is redirected into the file or fed to
-      // a shell.
       { command: `cat <<'EOF'\nit is about ${sh(userPolicy)}\nEOF`, blocked: false },
       { command: `cat <<'EOF' > ${sh(userPolicy)}\nbody\nEOF`, blocked: true },
       { command: `bash <<'EOF'\nrm ${sh(userPolicy)}\nEOF`, blocked: true },
-      // An unterminated quote still leaves the operand visible.
       { command: `rm ${sh(userPolicy)} "`, blocked: true },
-      // A sibling of the policy file inside the same directory is not the policy file.
       { command: `rm -rf ${sh(join(safetyHome, 'rules'))}`, blocked: false },
       { command: `mv ${sh(join(safetyHome, 'rules'))} /tmp/rules`, blocked: false },
       { command: `find ${sh(safetyHome)} -type f -print`, blocked: false },
@@ -209,7 +179,6 @@ describe('policy config protection through tool inputs', () => {
         route: { kind: 'path' },
         target: null,
       },
-      // The target is reported as written, alias and `~` spellings included.
       {
         toolName: 'Edit',
         input: { file_path: `${TILDE}/.cc-safety-net/policy.json` },

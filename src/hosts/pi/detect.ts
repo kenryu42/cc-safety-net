@@ -1,7 +1,3 @@
-/**
- * Pi hook detection.
- */
-
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
 import {
@@ -20,10 +16,6 @@ export function isPiSafetyNetPackageSource(source: unknown): source is string {
   return source === 'npm:cc-safety-net' || source.startsWith('npm:cc-safety-net@');
 }
 
-/**
- * Detect the Pi package from `settings.json`, where Pi records both the installed package and,
- * through a `-` prefix on a resource entry, which of its extensions the user switched off.
- */
 export function detect(context: DetectContext): HookDetection {
   const settingsPath = getPiSettingsPath(context.environment);
   const settings = readStateFile(settingsPath);

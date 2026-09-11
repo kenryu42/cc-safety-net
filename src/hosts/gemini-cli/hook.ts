@@ -3,7 +3,6 @@ import type { CommandToolKind } from '@/gate/invocation';
 import { getStandardHookContext, runConfiguredHookAdapter } from '@/hosts/hook/common';
 import { GEMINI_CLI_HOOK_EVENT } from '@/hosts/hook/constants';
 
-/** Gemini CLI hook input format */
 interface GeminiHookInput {
   session_id?: string;
   transcript_path?: string;
@@ -17,7 +16,6 @@ interface GeminiHookInput {
   };
 }
 
-/** Gemini CLI hook output format */
 interface GeminiHookOutput {
   decision: 'deny';
   reason: string;
@@ -36,7 +34,7 @@ function getGeminiCliToolRoute(toolName: string) {
 export async function runGeminiCLIHook(): Promise<void> {
   await runConfiguredHookAdapter<GeminiHookInput>({
     agent: 'gemini-cli',
-    // Gemini CLI expects exit code 0 with JSON for policy blocks; exit 2 is for hook errors.
+
     createDenyOutput: (message): GeminiHookOutput => ({
       decision: 'deny',
       reason: message,

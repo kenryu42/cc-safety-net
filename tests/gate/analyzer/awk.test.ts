@@ -10,7 +10,6 @@ import {
   REASON_AWK_SYSTEM_DYNAMIC,
 } from '@/gate/analyzer/awk';
 
-/** A nested analyzer whose answer depends only on the recovered command text. */
 function nestedAnalyzer(command: string) {
   return command.includes('rm -rf')
     ? { id: 'awk.system-dynamic', reason: `nested ${command}`, intent: 'manual_only' as const }
@@ -64,8 +63,6 @@ describe('awk argv scanning', () => {
           argv: ['awk', '--file=prog.awk'],
           parsed: {
             sources: [{ tokenIndex: 1, kind: 'program-file', value: 'prog.awk' }],
-            // contract: src/gate/analyzer/awk.ts:157 — an argv that runs out of tokens while every
-            // one of them was an option leaves the option list open.
             optionsOpen: true,
           },
         },
@@ -102,8 +99,6 @@ describe('awk argv scanning', () => {
         },
         {
           argv: ['awk', '-v', '{print}'],
-          // contract: src/gate/analyzer/awk.ts:108 — `-v` consumes the next token as its value, so
-          // no program is left to read.
           parsed: { sources: [], optionsOpen: true },
         },
         {
@@ -129,7 +124,6 @@ describe('awk argv scanning', () => {
         },
         {
           argv: ['awk', '-f'],
-          // contract: src/gate/analyzer/awk.ts:110 — an option missing its value invalidates the scan.
           parsed: { sources: [], optionsOpen: false },
         },
         { argv: ['awk', '-e'], parsed: { sources: [], optionsOpen: false } },
@@ -197,8 +191,6 @@ describe('awk program scanning', () => {
       { argv: ['awk', '{ print }'], match: null },
       { argv: ['awk', 'BEGIN { subsystem("rm -rf /") }'], match: null },
       { argv: ['awk', 'BEGIN { system("echo ok") }'], match: null },
-      // contract: src/gate/analyzer/awk.ts:168 — a program file is not read, so it offers no
-      // command text to analyze.
       { argv: ['awk', '-f', 'prog.awk'], match: null },
       { argv: ['awk', '{ "date" | getline d }'], match: null },
       {
@@ -216,8 +208,6 @@ describe('awk program scanning', () => {
       { argv: ['awk', 'BEGIN { system($0) }'], match: DYNAMIC_MATCH },
       { argv: ['awk', 'BEGIN { system("unterminated }'], match: DYNAMIC_MATCH },
       { argv: ['awk', 'BEGIN { system("rm " $1) }'], match: DYNAMIC_MATCH },
-      // contract: src/gate/analyzer/awk.ts:56 — a replacement token is literal to awk but dynamic
-      // when xargs or parallel fills it in.
       { argv: ['awk', 'BEGIN { system("echo {}") }'], match: DYNAMIC_MATCH },
       { argv: ['awk', 'BEGIN { system("echo $HOME") }'], match: DYNAMIC_MATCH },
       { argv: ['awk', '{ cmd | getline line }'], match: DYNAMIC_MATCH },

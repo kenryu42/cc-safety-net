@@ -8,12 +8,6 @@ import { stripEnvAssignmentWords } from '@/gate/analyzer/wrapper-prelude';
 
 const RULE_ID_PREFIX = 'custom.';
 
-/**
- * Evaluates a rulebook_version 2 rulebook's fixtures against its own rules: a blocked fixture
- * passes only when its named rule is the first match, an allowed fixture only when nothing
- * matches. Fixture commands are analyzer input strings — they are parsed, never executed.
- * Version 1 fixtures stay shape-validated only. Returns one diagnostic per failing fixture.
- */
 export function evaluateRulebookFixtures(rulebook: Rulebook): string[] {
   if (rulebook.rulebook_version !== 2) {
     return [];
@@ -52,7 +46,6 @@ export function evaluateRulebookFixtures(rulebook: Rulebook): string[] {
   });
 }
 
-/** Analyzed tokens of every simple command a fixture's parse tree contains, in program order. */
 function collectCommandTokenLists(program: CommandProgram): string[][] {
   return program.nodes.flatMap((node) => {
     if (node.kind === 'group' || node.kind === 'function') {

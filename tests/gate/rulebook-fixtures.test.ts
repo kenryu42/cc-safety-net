@@ -2,14 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { Rulebook } from '@/core/policy/rulebook';
 import { evaluateRulebookFixtures } from '@/gate/rulebook-fixtures';
 
-/**
- * `rule verify` prints these diagnostics, so their wording, their `tests[i]` index and their
- * order are contract. The fixture set below walks every shape the collector has a branch for —
- * a plain command, an assignment prelude, a group, a function body, a pipeline, a substitution —
- * plus the three verdicts a fixture can fail with, so a collector that stopped descending or a
- * matcher that changed precedence shows up as a changed list rather than as silence.
- */
-
 const RULEBOOK: Rulebook = {
   rulebook_version: 2,
   name: 'fixture-rules',
@@ -85,9 +77,7 @@ const VERSION_ONE_RULEBOOK: Rulebook = {
 describe('the rulebook fixture evaluator', () => {
   test('names the failing fixture, its verdict and why', () => {
     expect(evaluateRulebookFixtures(RULEBOOK)).toEqual([
-      // A wrapper prefix is not peeled here: the fixture describes the command the rule sees.
       'tests[2]: expected "block-system-prune" to block "sudo docker system prune" but no rule matched',
-      // Nor is an interpreter string descended into; only the parse tree's own nesting is.
       'tests[5]: expected "block-system-prune" to block "bash -c \'docker system prune\'" but no rule matched',
       'tests[8]: could not parse fixture command: ',
       'tests[9]: expected "docker system prune --all" to be allowed but "block-system-prune" matched',

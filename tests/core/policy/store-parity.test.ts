@@ -8,29 +8,14 @@ import {
 import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics';
 import { named, samples, USER_POLICY_VALUES } from './policy-values';
 
-/**
- * The salvage normalizer is the runtime's only acceptance of `policy.json`, and the diagnostics
- * are what `doctor` and `policy check` report with. The two must agree on the outcome — which
- * document is acceptable and which fields it loses — even though they word it differently, so
- * every fixture document states both verdicts below and a seeded mutation of each is held to the
- * salvage invariants. The empty and malformed files of `docs/config-recovery.md` never reach
- * either one and are pinned in `snapshot.test.ts`.
- */
-
 const HOME = '/srv/home/tester';
 const DOCUMENTS = samples(USER_POLICY_VALUES);
 
-/** A document that is not a JSON object: one diagnostic, and the whole file replaced. */
 const NOT_A_JSON_OBJECT: [readonly string[], readonly string[]] = [
   ['Config must be an object'],
   [''],
 ];
 
-/**
- * What each fixture document earns: the diagnostics reported for it and the paths salvage drops
- * from it, stated in the order `USER_POLICY_VALUES` lists the documents. A new fixture without a
- * verdict beside it fails the count below.
- */
 const VERDICTS: readonly [readonly string[], readonly string[]][] = [
   [[], []],
   [[], []],
@@ -250,7 +235,6 @@ function valueAt(document: unknown, path: string): unknown {
     );
 }
 
-/** Whether the field, or a section holding it, was dropped. */
 function dropsCovering(dropped: ReadonlySet<string>, path: string): boolean {
   const segments = path.split('.');
   return ['', ...segments.map((_segment, index) => segments.slice(0, index + 1).join('.'))].some(
@@ -298,8 +282,6 @@ describe('the salvage normalizer and the diagnostics judge each document alike',
       const salvaged = salvageUserPolicy(document, HOME);
       const dropped = new Set(salvaged.drops.map((drop) => drop.path));
       expect(salvaged.policy.version, named(document)).toBe(1);
-      // The one field a drop does not replace with the default: an out-of-range window
-      // clamps into range, which `store.test.ts` pins against the documented fallback.
       expect(salvaged.policy.audit.retention_days, named(document)).toBe(
         clampAuditRetentionDays(valueAt(document, 'audit.retention_days')),
       );

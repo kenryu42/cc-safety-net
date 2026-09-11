@@ -4,23 +4,14 @@ import { type FlowSpec, runFlowDifferential } from '../../helpers/command-flow';
 import { fileAt } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * `cc-safety-net update` over whatever is already installed: which integrations it finds, which
- * host CLIs it probes and drives, the caches it clears once up front, and the update nudge it
- * prints only for a persistent install. Both implementations run over identically seeded homes
- * with the same fake CLIs on `PATH`, so any divergence fails the row.
- */
-
 const flow = async (spec: FlowSpec) => await runFlowDifferential(spec);
 
 const NUDGE =
   'Update available: cc-safety-net dev → 9.9.9. Update this CLI with your package manager, e.g. `npm i -g cc-safety-net@latest` for a global install.';
 const PERSISTENT_SCRIPT = '/opt/cc-safety-net/bin/cc-safety-net';
-/** bunx names its cache entries after the running user; the suite's own id is the one it uses. */
 const BUNX_PREFIX = `bunx-${process.getuid?.() ?? 0}-`;
 const BUNX_ENTRY = `${BUNX_PREFIX}cc-safety-net@`;
 
-/** Detection asks three host CLIs for their state; every row scripts that instead of spawning. */
 const versions = (canned: Record<string, string> = {}) => ({
   fetchVersion: async (args: string[]) => canned[args.join(' ')] ?? null,
   checkLatestVersion: async () => ({
@@ -64,14 +55,11 @@ const CURSOR_HOOKS = '.cursor/hooks.json';
 const KIMI_CONFIG = '.kimi-code/config.toml';
 const HERMES_DIR = '.hermes/plugins/cc-safety-net';
 const NPX_ENTRY = '.npm/_npx/9f1/node_modules/cc-safety-net/package.json';
-// Detected by the hook pattern, but not the canonical command the installer writes, so the
-// update rewrites it instead of reporting it up to date.
 const DRIFTED_KIMI_HOOK = `[[hooks]]
 event = "PreToolUse"
 command = "npx cc-safety-net hook --kimi-code"
 `;
 
-/** The four seeded integrations plus a Gemini extension whose CLI is not installed. */
 async function seedInstalledHome() {
   const cursor = await flow({ invoke: 'install', args: ['--cursor'] });
   const hermes = await flow({

@@ -5,12 +5,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { detectionRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * OpenCode is configured by a plugin array in whichever of its two config files exists, and it has
- * no disabled state: the plugin is listed or it is not. A file that will not parse is reported
- * rather than skipped silently, because that is the shape a half-written config takes.
- */
-
 const DIR = '.config/opencode';
 const JSON_FILE = `${DIR}/opencode.json`;
 const JSONC_FILE = `${DIR}/opencode.jsonc`;

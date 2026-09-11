@@ -4,13 +4,6 @@ import { BLOCK_INTENTS, type BlockIntent, type Decision } from '@/core/decision'
 import * as next from '@/core/denial';
 import { corpusStrings } from './differential-inputs';
 
-/**
- * The denial frame is the text a user reads when the gate stops them, so the lines it prints, the
- * order it prints them in, and the footer each intent chooses are stated here as literals. The
- * projection that feeds the frame is an object the hosts consume rather than text anyone reads, so
- * it is stated as the object it is.
- */
-
 const LONG_COMMAND = `rm -rf ${'./build/artifacts '.repeat(20)}`;
 const LONG_REASON = `Blocked: ${'the target is outside the workspace and cannot be recovered '.repeat(5)}`;
 const SECRET_COMMAND =
@@ -33,8 +26,6 @@ function deny(
   };
 }
 
-/** The last paragraph each intent ends with. Stated rather than imported: this is the instruction
- *  the blocked agent acts on, so a reworded footer has to be a deliberate edit here too. */
 const FOOTERS: Readonly<Record<BlockIntent, string>> = {
   hard_stop:
     'Do not retry this operation or attempt any workaround (other tools, flags, or paths). Report the block to the user and continue with the rest of the task.',
@@ -75,11 +66,9 @@ describe('denial renderer', () => {
   });
 
   test('a field the caller left out, or left empty, prints no line at all', () => {
-    // Only the banner, the reason and a footer are never optional.
     expect(next.formatBlockedMessage({ reason: 'bare' })).toBe(
       `BLOCKED by CC Safety Net\n\nReason: bare\n\n${FOOTERS.manual_only}`,
     );
-    // An empty string is as absent as an omitted key, for every optional field.
     expect(
       next.formatBlockedMessage({
         reason: 'bare',
@@ -90,7 +79,6 @@ describe('denial renderer', () => {
         configWarning: '',
       }),
     ).toBe(`BLOCKED by CC Safety Net\n\nReason: bare\n\n${FOOTERS.manual_only}`);
-    // A segment that repeats the command is noise, so only the command line prints.
     expect(
       next.formatBlockedMessage({
         reason: 'same',
@@ -100,7 +88,6 @@ describe('denial renderer', () => {
     ).toBe(
       `BLOCKED by CC Safety Net\n\nReason: same\n\nCommand: git reset --hard\n\n${FOOTERS.manual_only}`,
     );
-    // A segment with no command of its own still prints.
     expect(next.formatBlockedMessage({ reason: 'orphan', segment: 'git reset --hard' })).toBe(
       `BLOCKED by CC Safety Net\n\nReason: orphan\n\nSegment: git reset --hard\n\n${FOOTERS.manual_only}`,
     );
@@ -114,28 +101,23 @@ describe('denial renderer', () => {
     expect(next.formatBlockedMessage({ reason: 'r' }).split('\n\n').at(-1)).toBe(
       FOOTERS.manual_only,
     );
-    // The five intents are the whole set the frame knows how to end.
     expect(Object.keys(FOOTERS).sort()).toEqual([...BLOCK_INTENTS].sort());
   });
 
   test('the command and segment lines are excerpted at the cap, and nothing else is', () => {
-    // Longer than the default cap: cut at 200 with an ellipsis the reader can see.
     const capped = next.formatBlockedMessage({
       reason: LONG_REASON,
       command: LONG_COMMAND,
       segment: 'short',
     });
     expect(capped).toContain(`Command: ${LONG_COMMAND.slice(0, 200)}...`);
-    // The reason rides uncapped, however long it is.
     expect(capped).toContain(`Reason: ${LONG_REASON}`);
-    // Exactly at the cap is not over it, so no ellipsis appears.
     expect(next.formatBlockedMessage({ reason: 'r', command: 'y'.repeat(200) })).toContain(
       `Command: ${'y'.repeat(200)}`,
     );
     expect(next.formatBlockedMessage({ reason: 'r', command: 'y'.repeat(201) })).toContain(
       `Command: ${'y'.repeat(200)}...`,
     );
-    // A caller may tighten the cap, down to nothing at all.
     expect(
       next.formatBlockedMessage({
         reason: 'r',
@@ -150,7 +132,6 @@ describe('denial renderer', () => {
   });
 
   test('the frame redacts through the redactor it is given, and only through that one', () => {
-    // A caller-supplied redactor reaches every field it is asked to cover.
     const redacted = next.formatBlockedMessage({
       reason: 'custom redactor over secret',
       command: 'rm -rf /secret/path',
@@ -162,11 +143,9 @@ describe('denial renderer', () => {
     expect(redacted).toContain('Command: rm -rf /***/path');
     expect(redacted).toContain('Segment: echo ***');
     expect(redacted).toContain('Config warning: *** warning');
-    // Without one, `formatBlockedMessage` prints what it was handed: the redaction is the caller's.
     expect(next.formatBlockedMessage({ reason: 'r', configWarning: SECRET_CONFIG })).toContain(
       SECRET_CONFIG,
     );
-    // `formatDenial` is the caller that always supplies one.
     expect(next.formatDenial({ reason: 'r', command: SECRET_COMMAND })).not.toContain(TOKEN);
   });
 
@@ -178,7 +157,6 @@ describe('denial renderer', () => {
       { includeEvidence: false, toolName: 'Bash' },
       { includeEvidence: true, toolName: '' },
     ] as const;
-    // An allow is not a denial, whatever the host asked for.
     for (const option of options) {
       expect(next.projectGuardDenial({ decision: { kind: 'allow' } }, option)).toBeUndefined();
     }
@@ -192,7 +170,6 @@ describe('denial renderer', () => {
       ],
       'test.rule',
     );
-    // The first command evidence is the one the frame shows; the rest never reach the reader.
     expect(
       next.projectGuardDenial({ decision }, { includeEvidence: true, toolName: 'Bash' }),
     ).toEqual({
@@ -203,7 +180,6 @@ describe('denial renderer', () => {
       segment: 'one',
       toolName: 'Bash',
     });
-    // Withholding the evidence drops both fields and keeps everything else.
     expect(next.projectGuardDenial({ decision }, { includeEvidence: false })).toEqual({
       reason: 'Reason',
       ruleId: 'test.rule',
@@ -212,7 +188,6 @@ describe('denial renderer', () => {
       segment: undefined,
       toolName: undefined,
     });
-    // A decision carrying no evidence answers the same way as one whose evidence was withheld.
     expect(
       next.projectGuardDenial(
         { decision: deny('Bare', 'scope_down', []) },
@@ -226,14 +201,12 @@ describe('denial renderer', () => {
       segment: undefined,
       toolName: undefined,
     });
-    // Evidence with no segment of its own leaves the segment absent rather than echoing the command.
     expect(
       next.projectGuardDenial(
         { decision: deny('No segment', 'scope_down', [{ command: 'find . -delete' }]) },
         { includeEvidence: true },
       )?.segment,
     ).toBeUndefined();
-    // A degraded policy load did not cause this denial, so it rides along as a warning.
     expect(
       next.projectGuardDenial(
         {
@@ -243,7 +216,6 @@ describe('denial renderer', () => {
         { includeEvidence: true },
       )?.configWarning,
     ).toBe('digest mismatch');
-    // Every intent reaches the frame that picks the footer.
     for (const intent of BLOCK_INTENTS) {
       expect(
         next.projectGuardDenial({ decision: deny('r', intent, []) }, { includeEvidence: false })
@@ -253,7 +225,6 @@ describe('denial renderer', () => {
   });
 
   test('a projected denial renders the same frame the formatter promises', () => {
-    // The path a host actually walks: decide, project, format.
     expect(
       next.formatDenial(
         next.projectGuardDenial(
@@ -294,7 +265,6 @@ describe('denial renderer', () => {
         segment: command.slice(0, Math.ceil(command.length / 2)),
         toolName: 'Bash',
       });
-      // Whatever the shell text is, the frame keeps its own lines around it.
       expect(
         rendering.startsWith(
           'BLOCKED by CC Safety Net\n\nReason: Corpus command\n\nTool: Bash\n\n',
@@ -302,7 +272,6 @@ describe('denial renderer', () => {
         command,
       ).toBe(true);
       expect(rendering.endsWith(FOOTERS.hard_stop), command).toBe(true);
-      // The corpus carries an empty command, which prints no command line at all.
       if (command === '') continue;
       expect(rendering, command).toContain(`Command: ${command.slice(0, 200)}`);
     }
@@ -320,11 +289,9 @@ describe('denial renderer', () => {
       const denial = next.createFailedClosedDenial(option);
       expect(denial.reason).toBe(REASON_SAFETY_NET_FAILED_CLOSED);
       expect(denial.intent).toBe('stop_and_explain');
-      // A caller that gave no segment gets the command back as one, so the frame prints neither twice.
       expect(denial.segment).toBe(option.segment ?? option.command);
       expect(next.formatDenial(denial)).not.toContain(TOKEN);
     }
-    // Called with nothing, it builds the same denial as being handed an empty object.
     expect(next.createFailedClosedDenial()).toEqual(next.createFailedClosedDenial({}));
     expect(next.formatDenial(next.createFailedClosedDenial({ command: 'rm -rf /' }))).toBe(
       [
@@ -347,7 +314,6 @@ describe('denial renderer', () => {
     expect(next.formatIntegrationError(42)).toBe('42');
     expect(next.formatIntegrationError(null)).toBe('null');
     expect(next.formatIntegrationError(undefined)).toBe('undefined');
-    // A plain object is stringified rather than asked for its `message`.
     expect(next.formatIntegrationError({ message: 'object' })).toBe('[object Object]');
   });
 });

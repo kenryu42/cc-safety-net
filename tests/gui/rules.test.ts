@@ -1,23 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { renderPages, sliceBlock } from '../helpers/gui-page';
 
-/**
- * The prompt the Rules composer copies out: it has to tell the agent which scope to write into,
- * which directory that is, and which rulebook names are already taken. The block is sliced out of the
- * served page and run over its own state.
- */
-
-// Token-shaped, assembled here rather than written out, and fixed so the slice is deterministic.
 const TOKEN = Buffer.from('cc-safety-net gui rules fixture').toString('base64url');
 
 const pages = renderPages(TOKEN);
 const block = (page: string) =>
   sliceBlock(page, 'var rulePromptText = () => {', 'var copyRulePrompt = async () => {');
 
-/**
- * The block reads the module state the page keeps and the two form fields it renders, so both are
- * supplied where it looks for them.
- */
 const promptFor = (state: {
   rulesData: { projectPath: string; rulebooks: { spec: string; name: string }[] } | null;
   rulesScope: 'user' | 'project';
@@ -50,11 +39,9 @@ describe('the rule prompt block on the served page', () => {
 
     expect(prompt).toContain('Scope: this project - /srv/typed-instead');
     expect(prompt).not.toContain('/srv/launched-from');
-    // The names have to stay unique across both scopes, so every one of them is listed.
     expect(prompt).toContain(
       'Existing rulebooks (names must stay unique across both scopes): ops-guard, db-guard',
     );
-    // What the user typed is the last line, with the composer's whitespace trimmed off.
     expect(prompt.split('\n').at(-1)).toBe('block terraform destroy');
     expect(prompt.split('\n')[0]).toBe('Use the cc-safety-net skill for this request.');
   });

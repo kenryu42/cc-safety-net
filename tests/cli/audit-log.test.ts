@@ -22,17 +22,6 @@ import {
   removeTempRoots,
 } from '../helpers/temp-home';
 
-/**
- * `logs` reads the audit tree the guard writes, so each row seeds that tree once and asks the
- * two bins the same question about it. What a row pins is the selection: which entries a flag
- * admits, in what order, and what the command says when it admits none.
- *
- * Two fixture details are deliberate. The entries the legacy file carries name a fixed working
- * directory, because `--prune-legacy` prints that file's size and the two sides' temp roots are
- * not the same length. The nested entries name the side's own project directory instead, which
- * is what `--project` has to resolve against.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -44,7 +33,6 @@ const RESET_HARD_ID = 'a1c2e3f405162738';
 const REPEATED_ID = 'b1c2e3f405162740';
 const ABSENT_ID = 'ffffffffffffffff';
 
-/** Never opened: only the value the legacy entries record and `logs` prints back. */
 const LEGACY_CWD = '/home/agent/legacy';
 const LEGACY_FILE = 'legacy-sess.jsonl';
 const UNLINK_REFUSAL = 'EPERM: operation not permitted, unlink';
@@ -62,7 +50,6 @@ const denial = (ts: string, id: string, fields: Fixture): Fixture => ({
   ...fields,
 });
 
-/** The tree every seeded row reads: one nested session file, one legacy root file. */
 function auditFixture(clock: number, project: string) {
   const at = (ago: number) => new Date(clock - ago).toISOString();
   return {
@@ -142,21 +129,17 @@ function auditFixture(clock: number, project: string) {
 const asJsonl = (entries: readonly Fixture[]) =>
   entries.map((entry) => `${JSON.stringify(entry)}\n`).join('');
 
-/** Where the side's own audit tree lives; the writer derives every path below it from this. */
 function logsDirOf(side: CliSide): string {
   const logsDir = getAuditLogsDir(environmentFor(side.home, side.env));
   if (!logsDir) throw new Error('the isolated environment resolved no audit logs directory');
   return logsDir;
 }
 
-/** Writes the fixture under the side's own audit root, with one unparseable line. */
 function seedLogs(clock: number) {
   return (side: CliSide) => {
     const logsDir = logsDirOf(side);
-    // `logs --project .` resolves the cwd the child runs in, which is canonical on macOS.
     const entries = auditFixture(clock, realpathSync(side.project));
     const stamp = new Date(clock).toISOString();
-    // `logs --project .` resolves the cwd the child runs in, which is the canonical path.
     const nested = join(
       logsDir,
       encodeCwdForLogDirname(realpathSync(side.project)),
@@ -170,13 +153,6 @@ function seedLogs(clock: number) {
   };
 }
 
-/**
- * The directory the writer names after the project path encodes each side's own temp root, which
- * the harness cannot spell as `<root>`. Nothing reads that name — the reader walks every
- * directory it finds — so the record folds it to one token and orders the tree by the folded
- * path: the encoded name starts with `-` on Linux and with a drive letter on Windows, which sort
- * on either side of the `.last-prune` marker beside it.
- */
 const foldProjectDir = (outcome: CliOutcome): CliOutcome => ({
   ...outcome,
   tree: outcome.tree
@@ -195,7 +171,6 @@ async function runLogs(args: readonly string[], row: Omit<CliRow, 'args'> = {}) 
   );
 }
 
-/** The same rows against the seeded tree; the clock is read once so the fixture is fixed. */
 const runSeededLogs = (args: readonly string[]) => runLogs(args, { seed: seedLogs(Date.now()) });
 
 const rows = (stdout: string) => stdout.split('\n').filter(Boolean);
@@ -209,7 +184,6 @@ describe('logs selection', () => {
     expect(outcome.exitCode).toBe(0);
     expect(rows(outcome.stdout)).toHaveLength(6);
     expect(rows(outcome.stdout)[0]).toContain(RESET_HARD_ID);
-    // The recorded segment is narrower than the command, so the entry is marked as one part of it.
     expect(rows(outcome.stdout)[0]).toContain('↳ git reset --hard');
     expect(rows(outcome.stdout)[1]).toContain('git clean -fd');
     expect(outcome.stderr).toBe(SKIP_WARNING);
@@ -235,8 +209,6 @@ describe('logs selection', () => {
       seed: (side) => {
         const logsDir = logsDirOf(side);
         mkdirSync(dirname(logsDir), { recursive: true });
-        // A directory that is not there is an empty history; one that cannot be listed is a
-        // source the answer is missing, which is what the warning is for.
         writeFileSync(logsDir, '');
       },
     });
@@ -274,7 +246,6 @@ describe('logs selection', () => {
   test('--session matches the recorded id, then the legacy file name', async () => {
     const byId = await runSeededLogs(['--session', 'sess1']);
     expect(rows(byId.stdout)).toHaveLength(2);
-    // No entry carries this session id; the legacy file's own name is what matches.
     const byFilename = await runSeededLogs(['--session', 'legacy-sess']);
     expect(rows(byFilename.stdout)).toHaveLength(4);
     expect(byFilename.stdout).toContain(LEGACY_CWD);
@@ -400,12 +371,6 @@ describe('logs --prune-legacy', () => {
   }, 60_000);
 });
 
-/**
- * The one failure `--prune-legacy` reports is an unlink the filesystem refuses. This suite runs
- * as root, which ignores the directory permissions that would produce one, so the refusal is
- * spied at the `unlinkSync` both implementations call — a model that holds for a normal user too.
- * Both are driven in process, because the spy cannot reach a child.
- */
 describe('logs --prune-legacy failure', () => {
   afterEach(() => {
     mock.restore();

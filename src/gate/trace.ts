@@ -5,7 +5,6 @@ import {
   redactNonAssignmentSecrets,
 } from '@/core/redaction';
 
-/** Trace step for explain command - discriminated union of all step types. */
 export type TraceStep =
   | { type: 'parse'; input: string; segments: string[][] }
   | { type: 'env-strip'; input: string[]; envVars: string[]; output: string[] }
@@ -64,7 +63,6 @@ export type CommandTrace = Readonly<{
   terminal: CommandTraceTerminal;
 }>;
 
-/** Passive command-evaluator diagnostics; decisions never consult this interface. */
 export type CommandTraceContext = {
   currentSegmentIndex?: number;
   flattenNested?: boolean;
@@ -120,7 +118,6 @@ const PROVIDER_HINTS = [
 
 export type CommandTraceRecorder = ReturnType<typeof createCommandTraceRecorder>;
 
-/** Adapts the bounded recorder to the evaluator's passive trace context. */
 export function createCommandTraceContext(recorder: CommandTraceRecorder): CommandTraceContext {
   let nextSegmentIndex = 0;
   const context: CommandTraceContext = {
@@ -141,7 +138,6 @@ export function createCommandTraceContext(recorder: CommandTraceRecorder): Comma
   return context;
 }
 
-/** Records bounded, sanitized diagnostics without participating in decisions. */
 export function createCommandTraceRecorder(options: RecorderOptions = {}) {
   const events: CommandTraceEvent[] = [];
   const maxEvents = options.maxEvents ?? 512;

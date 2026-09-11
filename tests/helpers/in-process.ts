@@ -4,13 +4,6 @@ import { withEnv } from '../helpers';
 import { clearAuditLogs, readAuditEntries } from './hook-capture';
 import { type HookFixture, hostEnv } from './hook-hosts';
 
-/**
- * The harness the four in-process host entries share: one call into a handler, captured whole, and
- * one recorded outcome per row. The run writes into an audit home of its own inside the fixture, so
- * a row never reads another row's tree, and the two flags a row may set are cleared for every other
- * row.
- */
-
 export async function captureInProcessCall<T>(
   fixture: HookFixture,
   env: Record<string, string | undefined>,
@@ -43,10 +36,6 @@ export function auditHomeFor(fixture: HookFixture): string {
   return join(fixture.root, 'audit-ported');
 }
 
-/**
- * One test per row: `check` states what the row's outcome has to be, so a row cannot pass by
- * leaving the handler silent.
- */
 export function describeDifferential<Row extends { name: string }, Outcome>(
   title: string,
   rows: readonly Row[],
@@ -62,10 +51,6 @@ export function describeDifferential<Row extends { name: string }, Outcome>(
   });
 }
 
-/**
- * The port's own contract (I14): a host object that throws reaches the host's deny document
- * instead of escaping the handler.
- */
 export function expectFallbackDeny(
   ported: { returned: unknown; stderr: string[]; entries: unknown[] },
   expected: { denial: unknown; failure: string },

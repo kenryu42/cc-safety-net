@@ -6,13 +6,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { differential } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Doctor's view of the world: one detector per catalog entry, in doctor order, projected onto the
- * status shape the report renders. The rows below drive all thirteen at once, so a detector wired
- * to the wrong id, a missing entry, or a projection that calls an unreadable file "not installed"
- * shows up as a changed row rather than as a passing per-host test.
- */
-
 const AMP_ACTIVE = '✓ cc-safety-net (User Plugins) active\n';
 const AMP_STALE = '✓ cc-safety-net (User Plugins) stale\n';
 const CODEX_SOURCE = 'https://github.com/kenryu42/cc-safety-net.git';
@@ -100,7 +93,6 @@ const all = async (seed: TreeSpec, outputs: Outputs = {}) =>
     })
   ).outcome;
 
-/** One line per host: what doctor would print about it, without the paths. */
 const summarize = (statuses: unknown) =>
   (statuses as ReadonlyArray<Record<string, unknown>>).map(
     (status) =>

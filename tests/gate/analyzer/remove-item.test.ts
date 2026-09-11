@@ -11,12 +11,6 @@ import { createRecursiveDeleteTargetContext } from '@/gate/analyzer/recursive-de
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { writeTree } from '../../helpers/fixture-tree';
 
-/**
- * PowerShell deletion is a parameter language: abbreviated switches, `-Path:` values, array
- * commas, `--`, `-WhatIf` and pipeline input all decide whether a target is even seen, so every
- * spelling states the rule it earns.
- */
-
 let root = '';
 let home = '';
 let workspace = '';
@@ -150,13 +144,11 @@ function optionsFor(row: RemoveItemCase) {
   };
 }
 
-/** Every command view the dialect yields. */
 function viewPairs(source: string, dialect: ShellKind) {
   return projectCommandViews(parseCommand(source, dialect));
 }
 
 describe('powershell Remove-Item', () => {
-  /** The rule one spelling earns under one of the option sets above, as PowerShell reads it. */
   function matchFor(source: string, label: string, piped = false) {
     const row = removeItemCases().find((option) => option.label === label);
     if (!row) throw new Error(`unknown case: ${label}`);
@@ -197,8 +189,6 @@ describe('powershell Remove-Item', () => {
         source: 'Remove-Item -Recurse -Force $env:HOME',
         id: 'powershell.remove-item-recursive-force-root-or-home',
       },
-      // Without both switches the deletion is not recursive, so the catastrophic rule is the
-      // plain one.
       { source: 'Remove-Item /', id: 'powershell.remove-item-root-or-home' },
       { source: 'Remove-Item -Force ~', id: 'powershell.remove-item-root-or-home' },
     ];
@@ -224,21 +214,18 @@ describe('powershell Remove-Item', () => {
       { source: 'Remove-Item -Recurse -Force build', id: null },
       { source: 'Remove-Item build', id: null },
       { source: 'Remove-Item -Force build', id: null },
-      // An abbreviation of two characters or more is the switch; a single letter is not.
       { source: 'Remove-Item -Rec -Fo .', id: 'powershell.remove-item-recursive-force-cwd-self' },
       { source: 'Remove-Item -r -f .', id: null },
       {
         source: 'Remove-Item -Recurse:$true -Force:$true .',
         id: 'powershell.remove-item-recursive-force-cwd-self',
       },
-      // `-WhatIf` disarms the command unless it is explicitly false.
       { source: 'Remove-Item -Recurse -Force -WhatIf .', id: null },
       { source: 'Remove-Item -Recurse -Force -wi .', id: null },
       {
         source: 'Remove-Item -Recurse -Force -WhatIf:$false .',
         id: 'powershell.remove-item-recursive-force-cwd-self',
       },
-      // A call operator before the command name does not hide it.
       {
         source: '& Remove-Item -Recurse -Force .',
         id: 'powershell.remove-item-recursive-force-cwd-self',
@@ -269,7 +256,6 @@ describe('powershell Remove-Item', () => {
         source: 'Remove-Item -Recurse -Force .\\dist,..',
         id: 'powershell.remove-item-recursive-force-outside-cwd',
       },
-      // A word after `--` is an operand however it is spelled.
       { source: 'Remove-Item -Recurse -Force -- -weird', id: null },
       {
         source: 'Remove-Item -Recurse -Force -- .',
@@ -290,16 +276,12 @@ describe('powershell Remove-Item', () => {
         'powershell.remove-item-recursive-force-dynamic-target',
       );
     }
-    // contract: src/gate/analyzer/powershell/remove-item.ts:220 — a path parameter takes the next
-    // word as its value, so `-Recurse` here is a target and the delete is not recursive.
     expect(ruleIdFor('Remove-Item -Path -Recurse -Force', 'workspace, strict')).toBeNull();
     expect(ruleIdFor('Remove-Item -Recurse -Force build', 'workspace, strict', true)).toBe(
       'powershell.remove-item-pipeline-dynamic-target',
     );
     expect(ruleIdFor('Remove-Item -Recurse -Force build', 'workspace', true)).toBeNull();
-    // A non-recursive delete of a named target does not depend on the pipeline.
     expect(ruleIdFor('Remove-Item build', 'workspace, strict', true)).toBeNull();
-    // With the rule off, the target classification decides instead.
     expect(
       ruleIdFor('Remove-Item -Recurse -Force build', 'pipeline rule disabled by policy', true),
     ).toBeNull();
@@ -393,7 +375,6 @@ describe('powershell Remove-Item', () => {
         { ...options, environment: paired },
         createRecursiveDeleteTargetContext({ ...anchoredAtHome, environment: paired }),
       );
-      // The context decides, so the home anchor wins over the workspace in the options.
       expect(next?.id).toBe('powershell.remove-item-recursive-force-home-cwd');
       expect(
         analyzePowerShellCommandViewMatch(view, false, {

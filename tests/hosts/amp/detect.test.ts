@@ -4,13 +4,6 @@ import type { HookDetection } from '@/hosts/detect/context';
 import { differential } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Amp is the one host doctor cannot read off disk: the managed plugin lives in the account's
- * hosted repository, so `amp plugins list` output is the whole input. Only the personal-scope line
- * for our exact plugin name counts — a system-scope path line or a lookalike name is not our
- * plugin, and reporting one as configured would tell the user a hook is live when none is.
- */
-
 const LISTING = 'amp plugins list';
 
 const listed = (status: string): HookDetection => ({

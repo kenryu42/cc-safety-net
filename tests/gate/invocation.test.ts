@@ -7,12 +7,6 @@ import {
 } from '@/gate/invocation';
 import { pipelineContractCases } from './pipeline-contract-cases';
 
-/**
- * `createToolInvocation` decides one thing: whether the extracted command text is retained. The
- * corpus rows supply the real tool payloads and routes; the table below adds the shapes the
- * corpus does not carry, including a command handed to a non-command route.
- */
-
 const CONTEXT: ToolCallContext = { configCwd: '/srv/config', executionCwd: '/srv/run' };
 
 type Row = {
@@ -150,11 +144,6 @@ const TABLE: readonly Row[] = [
   },
 ];
 
-/**
- * One row through the constructor. Everything but the command is the caller's own value handed
- * straight on — asserted by identity, so a copy or a rewrite fails — and the command text is kept
- * for a command route and dropped for any other, whatever the caller passed.
- */
 function expectInvocation(row: Row) {
   const invocation = createPortedInvocation(
     row.toolName,
@@ -173,7 +162,6 @@ function expectInvocation(row: Row) {
       ? ['command', 'context', 'input', 'route', 'toolName']
       : ['context', 'input', 'route', 'toolName'],
   );
-  // Retained verbatim where it is kept: an empty command stays empty rather than becoming absent.
   if ('command' in invocation) expect(invocation.command).toBe(row.command);
 }
 

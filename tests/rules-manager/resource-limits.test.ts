@@ -2,13 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import * as ported from '@/rules-manager/resource-limits';
 import { describeOutcome } from '../helpers/fixture-tree';
 
-/**
- * The budget is the only thing standing between one `rule add` and an unbounded fetch: a request
- * counter that refuses the 132nd call and a byte counter that refuses the byte past the cap. Each
- * row exhausts one counter and states the outcome of every reservation, so an off-by-one or a
- * charge that stops being recorded fails here.
- */
-
 function reserveRequests(side: typeof ported, count: number, maxRequests?: number) {
   const budget = side.createRuleSyncResourceBudget(
     maxRequests === undefined ? {} : { maxRequests },
@@ -59,7 +52,6 @@ describe('the response-byte counter', () => {
     const result = reserveBytes(ported, [cap - 1, 1, 1]);
     expect(result.outcomes.map((outcome) => outcome.ok)).toEqual([true, true, false]);
     expect(result.outcomes[2]).toEqual(LIMIT_ERROR);
-    // The refused chunk is charged before the throw, so the reader cannot retry it cheaply.
     expect(result.responseBytes).toBe(cap + 1);
   });
 

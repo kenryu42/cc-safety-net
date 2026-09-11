@@ -9,7 +9,6 @@ import type { HookOutput } from '@/hosts/claude-code/hook';
 import { runConfiguredHookAdapter } from '@/hosts/hook/common';
 import { KIMI_CODE_HOOK_EVENT } from '@/hosts/hook/constants';
 
-/** Kimi Code hook input format */
 interface KimiCodeHookInput {
   session_id?: string;
   cwd?: string;

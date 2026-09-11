@@ -5,13 +5,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { detectionRunner, differential } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Claude Code is read from the two records it writes itself: `installed_plugins.json` says what is
- * installed and `settings.json` says what is switched on. A record we cannot parse is reported as
- * uninspected rather than guessed at, which is what keeps a half-written file from reading as
- * "not installed" and prompting a reinstall over a working one.
- */
-
 const INSTALLED = '.claude/plugins/installed_plugins.json';
 const SETTINGS = '.claude/settings.json';
 const INSTALLED_PATH = `<home>/${INSTALLED}`;

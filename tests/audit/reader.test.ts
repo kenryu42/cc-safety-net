@@ -9,11 +9,6 @@ import { writeAuditFixture } from '../helpers/audit-fixture';
 const NOW_MS = Date.parse('2026-05-17T12:34:56.789Z');
 const TS = '2026-05-17T01:00:00.000Z';
 
-/**
- * Every `*.jsonl` name the fixture tree carries, symlinks included: the scan reads names, not
- * kinds, so a link and a dangling link count exactly as a regular file does, while `notes.txt`,
- * `README.md`, the `.last-prune` marker and the symlinked project directory do not.
- */
 const SCANNED_FILES = [
   'legacy-empty.jsonl',
   'legacy-expired.jsonl',
@@ -66,16 +61,9 @@ const READ_CASES = [
     skips: 4,
   },
   { name: 'an empty file', content: '', commands: [], skips: 0 },
-  // A file that is not there is a dropped read, unlike a directory that is not there.
   { name: 'a file that was never written', content: null, commands: [], skips: 1 },
 ];
 
-/**
- * Denials whose suspect status the rule decides differently: a fail-closed stage on its own, a
- * signature a session was blocked on more than once (legacy records without `decision` included,
- * and keyed on the segment when there is one), against allows, one-offs, the same signature split
- * across two sessions, and repeats that carry no session at all.
- */
 const SUSPECT_ENTRIES: AuditLogEntry[] = [
   {
     ts: TS,
@@ -153,7 +141,6 @@ function makeRoot(): string {
   return root;
 }
 
-/** The retention fixture plus a dangling link named like a log file. */
 function makeScanTree(): string {
   const logs = writeAuditFixture(makeRoot(), NOW_MS);
   mkdirSync(join(logs, 'proj-d', '2026-03'), { recursive: true });
@@ -185,8 +172,6 @@ describe('audit reader listing parity', () => {
 
   test('a file where a directory belongs counts as a skip, a missing directory does not', () => {
     const root = makeRoot();
-    // Root ignores permission bits, so an unreadable location is modelled as a regular file:
-    // reading it as a directory fails with ENOTDIR for every uid.
     const notADirectory = join(root, 'logs.jsonl');
     writeFileSync(notADirectory, `${denied('ls')}\n`);
     const missing = join(root, 'never-created');
@@ -209,7 +194,6 @@ describe('audit reader record parity', () => {
       if (readCase.content !== null) writeFileSync(file, readCase.content);
       const nextSkips = { count: 0 };
 
-      // A record that survives comes back whole, so the commands name entire lines.
       expect(readAuditLogEntries(file, nextSkips)).toEqual(
         readCase.commands.map((command) => JSON.parse(denied(command))),
       );

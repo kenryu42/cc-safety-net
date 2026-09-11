@@ -12,13 +12,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from '../../helpers/temp-home';
 
-/**
- * Doctor reads the extension directory OpenClaw copied the plugin into and the config that decides
- * whether it loads. Both halves report why rather than guessing, so a plugin that is installed but
- * inert reads as disabled with the reason, and one that is not ours at all is never called an
- * install.
- */
-
 const DIR = '.openclaw/extensions/cc-safety-net';
 const DIR_PATH = posix.join('<home>', DIR);
 const CONFIG = '.openclaw/openclaw.json';
@@ -26,7 +19,6 @@ const CONFIG_PATH = posix.join('<home>', CONFIG);
 const ENABLE_HINT = 'run `openclaw plugins enable cc-safety-net`';
 const OUTDATED = 'Installed OpenClaw plugin is outdated; run install --openclaw to update';
 
-/** What `openclaw plugins install` leaves behind: the stamped entry and its two metadata files. */
 const installedAt = (dir: string, version: string): TreeSpec => ({
   [`${dir}/index.js`]: `${buildOpenClawArtifactHeader(version)}export default {};\n`,
   [`${dir}/openclaw.plugin.json`]: '{\n  "id": "cc-safety-net"\n}\n',

@@ -1,4 +1,3 @@
-/** Browser-safe formatting helpers shared by audit log views. */
 export const formatRelativeTime = (value: string | Date): string => {
   const diff = Date.now() - new Date(value).getTime();
   if (!Number.isFinite(diff)) return '';
@@ -11,7 +10,6 @@ export const formatRelativeTime = (value: string | Date): string => {
   return 'just now';
 };
 
-/** Reduce a command to the stable key used by audit activity summaries. */
 export const commandSignature = (source: string | undefined): string | null => {
   const tokens = (source ?? '')
     .trim()

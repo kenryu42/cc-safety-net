@@ -95,12 +95,6 @@ export interface PolicyGuiServer {
   close: () => Promise<void>;
 }
 
-/**
- * The project draft a GUI session is editing: the directory it targets (null is
- * the launch cwd) and an opaque counter bumped whenever that directory changes.
- * The counter binds a diff to the apply that follows it, so a second tab moving
- * the directory invalidates the confirmation the first tab is holding.
- */
 interface ProjectDraftSession {
   dir: string | null;
   revision: number;
@@ -174,8 +168,7 @@ export async function createPolicyGuiServer(
   options: PolicyGuiServerOptions = {},
 ): Promise<PolicyGuiServer> {
   const token = randomBytes(24).toString('base64url');
-  // Per session rather than per module: the draft directory belongs to the one
-  // GUI this server serves, and a second server must not inherit its target.
+
   const session: ProjectDraftSession = { dir: null, revision: 0 };
   const server = createServer((request, response) => {
     void handleRequest(createEnvironment, request, response, token, options, session);
@@ -207,8 +200,6 @@ async function handleRequest(
   options: PolicyGuiServerOptions,
   session: ProjectDraftSession,
 ): Promise<void> {
-  // Per request: an `Environment` memoizes the Git facts it resolves, so one built for the server
-  // would answer from the repository shape it saw first for as long as the GUI stays open.
   const environment = createEnvironment();
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
   if (request.method === 'GET' && url.pathname === '/favicon.ico') {
@@ -233,8 +224,7 @@ async function handleRequest(
     sendJson(response, 200, {
       ...result,
       configState: describeConfigState(snapshot),
-      // Display only: the editor writes the user file, so a project policy in
-      // force is reported beside it rather than made editable here.
+
       ...(snapshot.policyScopes
         ? {
             projectPolicy: {
@@ -309,8 +299,6 @@ async function handleRequest(
   }
 
   if (request.method === 'POST' && url.pathname === '/api/policy/project/choose-directory') {
-    // Takes no path from the client: the dialog is the only input, so there is
-    // nothing here to point at a directory of the caller's choosing.
     const picked = await (options.chooseDirectory ?? chooseDirectory)();
     if ('path' in picked) {
       session.dir = picked.path;
@@ -326,15 +314,11 @@ async function handleRequest(
   if (request.method === 'GET' && url.pathname === '/api/policy/project') {
     const dir = resolveDraftProjectDir(session, options);
     const current = readProjectPolicyFile(dir, environment.home);
-    // Both halves come from one read: the draft refuses to inherit from the
-    // protective defaults an unreadable user policy degrades to, and a second
-    // read could report defaults with the diagnostics that explain them gone.
+
     const user = readRuntimeUserBaseline(environment, options);
     sendJson(response, 200, {
       dir,
-      // Named by the server rather than joined in the browser: the confirm
-      // dialog and the JSON preview both state where the write lands, and a
-      // path assembled client-side would print the wrong separator on Windows.
+
       path: getProjectPolicyPath(dir),
       revision: session.revision,
       baseline: user.baseline,
@@ -351,8 +335,7 @@ async function handleRequest(
     if (!draft) return;
     const current = readProjectPolicyFile(draft.dir, environment.home);
     const baseline = readRuntimeUserBaseline(environment, options).baseline;
-    // The weakenings come from the same merge as the proposed policy, so the
-    // warnings describe exactly the proposal the rows below them show.
+
     const proposed = mergeProjectPolicy(
       baseline,
       projectPolicyProjection(draft.proposal, environment.home).policy,
@@ -392,8 +375,6 @@ async function handleRequest(
   }
 
   if (request.method === 'POST' && url.pathname === '/api/rules/choose-directory') {
-    // Takes no path from the client: the dialog is the only input, so there is
-    // nothing here to point at a directory of the caller's choosing.
     sendJson(response, 200, await chooseDirectory());
     return;
   }
@@ -409,7 +390,7 @@ async function handleRequest(
         spec: rulebook.spec,
         name: rulebook.name,
         version: rulebook.version,
-        // A rule disabled by an override stays listed here but leaves policy.rules.
+
         rules: rulebook.rules.flatMap((ruleName) => {
           const rule = enforcedByName.get(ruleName);
           if (!rule) return [];
@@ -488,7 +469,6 @@ async function handleRequest(
   sendJson(response, 404, { error: 'Not found' });
 }
 
-/** The loaders take a resolved project directory; the server's is optional as in the CLI. */
 function loaderOptions(options: PolicyGuiServerOptions): RulesPolicyOptions {
   return { ...options, cwd: options.cwd ?? process.cwd() };
 }
@@ -500,11 +480,6 @@ function resolveDraftProjectDir(
   return session.dir ?? options.cwd ?? process.cwd();
 }
 
-/**
- * The project policy file as it stands, with the diagnostics an unreadable or
- * invalid one produces. A malformed file projects to nothing so the draft starts
- * empty and says why, rather than pretending the team policy loaded.
- */
 function readProjectPolicyFile(dir: string, home: string) {
   const path = getProjectPolicyPath(dir);
   const file = existsSync(path) ? readPolicyJson(path) : { value: undefined, errors: [] };
@@ -515,15 +490,6 @@ function readProjectPolicyFile(dir: string, home: string) {
   };
 }
 
-/**
- * The gate both project-draft writes pass: the session directory and revision
- * read **synchronously at entry, before the body await**, a proposal still bound
- * to the revision the caller read, and the validation the CLI runs before a
- * project apply. Capturing here rather than after the await is what makes the
- * cross-tab interleave unreachable: the directory returned is the one whose
- * revision matched, which is the one whose diff the user confirmed. A rejected
- * body is answered here, so a caller handles only the accepted case.
- */
 async function readProjectDraft(
   environment: Environment,
   request: IncomingMessage,
@@ -539,8 +505,7 @@ async function readProjectDraft(
     return null;
   }
   const payload = body.value as { proposal?: unknown; revision?: unknown } | null;
-  // A body with no revision is malformed input, not a directory that moved: it
-  // must not reach the client as the "reload the draft" story a stale one tells.
+
   if (typeof payload?.revision !== 'number') {
     sendJson(response, 400, { errors: ['revision must be a number'] });
     return null;
@@ -557,11 +522,6 @@ async function readProjectDraft(
   return { dir, proposal: payload.proposal };
 }
 
-/**
- * A project proposal is a user policy minus the audit section, which has no
- * project scope: accepting one would report a setting the loader then ignores.
- * The same two checks the CLI runs before a project `policy apply`.
- */
 function getProjectProposalErrors(proposal: unknown, home: string): string[] {
   const errors = getUserPolicyDiagnostics(proposal, home);
   if (errors.length > 0) return errors;
@@ -570,12 +530,6 @@ function getProjectProposalErrors(proposal: unknown, home: string): string[] {
     : [PROJECT_AUDIT_REJECTION];
 }
 
-/**
- * The write goes through the project-policy containment capability rather than a
- * joined path: `.cc-safety-net` in a checkout the user did not write can be a
- * symlink, and following it would redirect the write out of the project — onto
- * the user's own policy file, for instance.
- */
 function writeProjectPolicy(
   dir: string,
   proposal: unknown,
@@ -590,8 +544,6 @@ function writeProjectPolicy(
     );
     return { path, errors: [] };
   } catch (error) {
-    // The containment machinery reports an escaping or symlinked target by
-    // throwing; the response has to carry that instead of the request hanging.
     return { path, errors: [error instanceof Error ? error.message : String(error)] };
   }
 }
@@ -631,7 +583,6 @@ function explainDraftCommand(
 }
 
 function parseActivityDays(raw: string | null, retentionDays: number): number | null {
-  // The default window cannot outrun a retention set below it.
   if (raw === null) return Math.min(DEFAULT_ACTIVITY_DAYS, retentionDays);
   const days = Number(raw);
   if (!Number.isInteger(days) || days < 1 || days > retentionDays) return null;
@@ -644,8 +595,6 @@ function requestHasValidToken(request: IncomingMessage, url: URL, token: string)
   return request.headers['x-cc-safety-net-token'] === token;
 }
 
-/** The whole body sits in memory before parsing, so one oversized local
- *  request must stop at this cap instead of growing the process unbounded. */
 const MAX_JSON_BODY_BYTES = 1_048_576;
 
 async function readJsonBody(
@@ -831,8 +780,6 @@ export function runIntegration(
       const exitCode = await runInstallCommand(action, [], {
         selectTargets: async () => [target],
         output: new Writable({
-          // The install report goes to `output`, not the console, so the status box would
-          // render empty unless these chunks land in the same capture.
           write(chunk, _encoding, callback) {
             lines.push(String(chunk).replace(/\n$/, ''));
             callback();

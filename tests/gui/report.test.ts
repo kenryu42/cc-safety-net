@@ -1,13 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderPages, sliceBlock } from '../helpers/gui-page';
 
-/**
- * The false-positive report the feed offers: the paths it scrubs before anything leaves the
- * machine, and the issue URL it builds under GitHub's length limit. The block is sliced out of the
- * served page and run on its own to prove what those bytes do.
- */
-
-// Token-shaped, assembled here rather than written out, and fixed so the slice is deterministic.
 const TOKEN = Buffer.from('cc-safety-net gui report fixture').toString('base64url');
 const ISSUE_URL =
   'https://github.com/kenryu42/cc-safety-net/issues/new?template=false_positive.yml';
@@ -39,8 +32,6 @@ describe('the report block on the served page', () => {
         cwd,
         home,
       ),
-      // The project is its own placeholder rather than a path under `~`, and both keep what
-      // follows them so the report still says which file.
     ).toBe(
       'reading "<project>/src/app.ts" failed, and ~/.ssh/id_ed25519 was next; last: <project>',
     );
@@ -77,7 +68,6 @@ describe('the report block on the served page', () => {
 
     expect(request.dropped).toStrictEqual(['command']);
     expect(request.url.length).toBeLessThanOrEqual(8000);
-    // What survived is still on the issue form, so the report is worth filing.
     expect(new URL(request.url).searchParams.get('why')).toBe('e'.repeat(20));
   });
 });

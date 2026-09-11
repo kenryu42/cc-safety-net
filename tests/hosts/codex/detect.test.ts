@@ -3,13 +3,6 @@ import { detect as detectCodex } from '@/hosts/codex/detect';
 import { detectionRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Codex keeps no state file we may read, so the caller hands the detector the `codex plugin list`
- * output and the whole decision is how that text is read. The rows below are the four shapes the
- * host prints; "not installed" containing the word "installed" is the one that has to be told
- * apart from a real install by more than a substring.
- */
-
 const LISTING = 'codex plugin list';
 const SOURCE = 'https://github.com/kenryu42/cc-safety-net.git';
 const row = (state: string) => `cc-safety-net  ${SOURCE}  ${state}\n`;

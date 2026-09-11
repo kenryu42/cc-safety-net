@@ -20,19 +20,8 @@ import {
 import { expectGateView, runManagerDifferential } from '../helpers/rules-manager-differential';
 import { describeAsyncOutcome, removeTempRoots } from '../helpers/temp-home';
 
-/**
- * Everything the manager writes, refuses to write, or rolls back, driven over its `Environment`
- * against one scripted GitHub on loopback. A row records the result object and the tree and pins
- * the messages, so a reworded diagnostic or a byte that moves in `rule.json` fails here rather
- * than reaching a user.
- */
-
 type RemoveOptions = SyncRulesConfigOptions & { deleteSource?: boolean };
 
-/**
- * The manager surface a row drives, with the `Environment` already bound; the type names only the
- * members a row actually calls.
- */
 type Manager = {
   operation(resolveUrl?: (url: string) => string): portedLimits.RuleSyncOperation;
   budget(limits: {
@@ -113,7 +102,6 @@ const dockerRule = (name: string, reason: string): SeedRule => ({
   reason,
 });
 
-/** A version 1 rulebook at an explicit version, so an update has something to report. */
 const rulebookAt = (name: string, version: string, rules: readonly SeedRule[]) =>
   json({ rulebook_version: 1, name, version, allowed_commands: ['docker'], rules });
 
@@ -194,29 +182,24 @@ afterEach(() => {
 const contentAt = (tree: TreeEntry[], path: string) =>
   tree.find((entry) => entry.path === path)?.content;
 
-/** The request log this row produced, emptied so the next row starts from nothing. Fanout order
- *  is not deterministic, so the log is recorded as a sorted set of calls. */
 const takeRequests = () => github.requests.splice(0).sort();
 
 const waitFor = async (ready: () => boolean) => {
   while (!ready()) await new Promise((resolve) => setTimeout(resolve, 10));
 };
 
-/** One `rule add` over the seeded project scope, pointed at the scripted GitHub. */
 const addRow = (seed: TreeSpec, source: string, options: AddRulebookSourceOptions = {}) =>
   runManagerDifferential(seed, async (side, environment) => {
     const api = manager(environment);
     return api.add(source, { ...options, cwd: side.project }, api.operation(github.resolveUrl));
   });
 
-/** One `rule update` over the seeded project scope. */
 const syncRow = (seed: TreeSpec, options: SyncRulesConfigOptions) =>
   runManagerDifferential(seed, async (side, environment) => {
     const api = manager(environment);
     return api.sync({ ...options, cwd: side.project }, api.operation(github.resolveUrl));
   });
 
-/** One `rule remove` over the seeded project scope; nothing here ever reaches the network. */
 const removeRow = (seed: TreeSpec, match: string, options: RemoveOptions = {}) =>
   runManagerDifferential(seed, async (side, environment) =>
     manager(environment).remove(match, { ...options, cwd: side.project }),
@@ -270,7 +253,6 @@ describe('adding rulebook sources', () => {
     expect(contentAt(tree, rulebookPath('a'))).toBe(A_V1);
     expect(contentAt(tree, rulebookPath('b'))).toBe(B_V1);
     expect(contentAt(tree, rulebookPath('c'))).toBe(C_V1);
-    // Discovery is three requests; each rulebook then costs a commit and a raw read.
     expect(results.requests).toHaveLength(9);
     expectGateView(side, 'project', results.result);
   });
@@ -325,7 +307,6 @@ describe('adding rulebook sources', () => {
     });
     expect(results.result.changes).toStrictEqual([]);
     expect(contentAt(tree, CONFIG)).toBe(seed[CONFIG]);
-    // Discovery alone: the pinned spec is already vendored, so nothing is fetched for it.
     expect(results.requests).toHaveLength(3);
   });
 
@@ -342,8 +323,6 @@ describe('adding rulebook sources', () => {
   });
 
   test('refuses a rulebook name another configured source already claims', async () => {
-    // The local file is byte-identical to what the repository serves, so the only thing wrong
-    // with the add is the name two sources would then claim.
     const seed = { [CONFIG]: rulesConfig(['a']), [rulebookPath('a')]: A_V1 };
     const { results, tree } = await addRow(seed, 'acme/catalog', { rulebooks: ['a'] });
     expect(results.ok).toBeFalse();
@@ -369,9 +348,6 @@ describe('adding rulebook sources', () => {
     expect(contentAt(tree, CONFIG)).toBe(rulesConfig([]));
   });
 
-  // The siblings a refused add must not strand. `b` and `c` resolve, but the run reports a
-  // failure and rolls its config edit back, so vendoring them would leave two files no source
-  // claims — and those orphans are exactly what the unclaimed-file refusal trips over next time.
   test('a refused name stops the rest of the catalogue from being vendored', async () => {
     const claimed = { [CONFIG]: rulesConfig(['a']), [rulebookPath('a')]: A_V1 };
     const { results, tree } = await addRow(claimed, 'acme/catalog');
@@ -913,8 +889,6 @@ describe('bounded fanout', () => {
 describe('fault hooks', () => {
   let originalFetch: typeof fetch;
 
-  // The hook entry points build their own operation, so the only seam left for pointing them at
-  // the scripted GitHub is the global `fetch` the manager calls.
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
@@ -935,7 +909,6 @@ describe('fault hooks', () => {
         {
           _testAfterPolicyRename: () => {
             renames += 1;
-            // The config's own rename is the first; this is the second vendored rulebook.
             if (renames === 3) throw new Error('rename failed');
           },
         },

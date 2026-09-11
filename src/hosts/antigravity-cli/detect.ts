@@ -1,7 +1,3 @@
-/**
- * Antigravity CLI hook detection.
- */
-
 import { existsSync, readFileSync } from 'node:fs';
 import { getAntigravityHooksPath } from '@/hosts/antigravity-cli/hook';
 import type { DetectContext, HookDetection } from '@/hosts/detect/context';

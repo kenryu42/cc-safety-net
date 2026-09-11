@@ -53,10 +53,6 @@ export async function getUpdateNotice(
   return `UPDATE_AVAILABLE: cc-safety-net v${latest} is available (running v${current}). Ask the user once whether to run \`npx -y cc-safety-net@latest update\`; continue the current task either way and do not raise this again.`;
 }
 
-// Any unreadable or malformed cache counts as empty so the check self-heals on
-// the next successful write instead of going silent forever. That includes
-// non-finite or future timestamps (JSON's 1e999 parses to Infinity), which
-// would otherwise suppress the poll or the notice indefinitely.
 async function readUpdateCache(path: string, now: number): Promise<UpdateCache> {
   const value = await readFile(path, 'utf8')
     .then((json) => JSON.parse(json) as unknown)

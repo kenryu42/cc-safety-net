@@ -4,12 +4,6 @@ import { installKimiCode, uninstallKimiCode } from '@/hosts/kimi-code/install';
 import { expectRow, fileAt, hostRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Kimi's config is TOML the user owns, so the edit is textual: the hook goes into the inline
- * `hooks` array when one is in use and into a `[[hooks]]` block otherwise, and removal has to give
- * the surrounding document back untouched — comments, trailing comments and all.
- */
-
 const TOML = '.kimi-code/config.toml';
 const MANAGED = 'npx -y cc-safety-net hook --kimi-code';
 const HOOK_BLOCK = `[[hooks]]\nevent = "PreToolUse"\ncommand = "${MANAGED}"`;
@@ -55,9 +49,6 @@ describe('the Kimi Code hook config differential', () => {
     });
   });
 
-  // Removing the item takes the comma that separated it and the line break with it, so the closing
-  // bracket ends up where the appended item left it: the one case the round trip cannot restore
-  // byte for byte, asserted here rather than assumed away.
   test('joins an inline hooks array as one more item, and takes only that item back out', async () => {
     expectRow((await row({ [TOML]: INLINE_SEED })).steps, {
       file: TOML,
@@ -88,8 +79,6 @@ describe('the Kimi Code hook config differential', () => {
     });
   });
 
-  // The walk splices text without parsing the document, so an array it cannot find the end of has
-  // to stop the install rather than truncate the config the user wrote.
   test.each([
     ['a string that never closes', 'hooks = [ "abc\n', 'Unterminated string in Kimi Code config'],
     [
@@ -104,8 +93,6 @@ describe('the Kimi Code hook config differential', () => {
     expect(fileAt(tree, TOML)).toBe(seed);
   });
 
-  // The block ends where the next table begins: removing ours must not take [model] with it. The
-  // blank line that separated them stays where it was, which is the whitespace this row pins.
   test('takes its own block back out and leaves the table that follows it', async () => {
     const table = '[model]\nname = "y"\n';
     expectRow((await row({ [TOML]: `${HOOK_BLOCK}\n\n${table}` })).steps, {

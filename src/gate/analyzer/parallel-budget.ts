@@ -7,10 +7,6 @@ export type ParallelAnalysisReservation = {
   placeholderReplacements?: number;
 };
 
-/**
- * One expansion's share of the four parallel counters, charged in the order the shipped budget
- * validates them so the kind that breaches is the same one.
- */
 export function reserveParallelAnalysis(
   budget: Budget,
   reservation: ParallelAnalysisReservation,

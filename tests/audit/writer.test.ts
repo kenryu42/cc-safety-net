@@ -16,8 +16,6 @@ const REPO_ROOT = join(import.meta.dir, '..', '..');
 const logPath = (project: string, session: string) =>
   `${LOGS}/${project}/2026-05/2026-05-17-${session}.jsonl`;
 
-// Token-shaped values are assembled here rather than committed whole: a literal
-// trips GitHub push protection, and what matters is what redaction does to them.
 const providerToken = `${'gh'}p_A1b2C3d4E5f6G7h8I9j0K1`;
 const jwt = `${'ey'}JhbGciOiJIUzI1NiJ9.${'ey'}JzdWIiOiJhZ2VudCJ9.c2lnbmF0dXJlLXZhbHVl`;
 const bearer = `${'sk'}-live-Z9y8X7w6V5u4T3s2R1q0P9o8`;
@@ -37,9 +35,7 @@ type Case = {
   segment: string;
   reason: string;
   cwd: string | null;
-  /** The layout this input produces, relative to the audit home; null when nothing is written. */
   file: string | null;
-  /** What the record says where it does not simply repeat the input. */
   entry?: Record<string, unknown>;
   options: WriteOptions;
 };
@@ -158,8 +154,6 @@ const CASES: readonly Case[] = [
     options: {},
   },
   {
-    // The record holds the cwd capped at 32,768; the directory name it is encoded
-    // into stops at 180, so this row pins both numbers at once.
     name: 'cwd over both caps',
     sessionId: 'session-longcwd',
     command: 'ls',
@@ -317,8 +311,6 @@ describe('audit writer parity', () => {
           .sort(),
       ).toStrictEqual(fixture.file === null ? [] : [MARKER, fixture.file].sort());
       if (fixture.file !== null) {
-        // The record repeats the input except where the row says otherwise, under the clock and
-        // the id the writer was handed and the version it was written by.
         expect(onlyRecord(nextHome)).toEqual({
           ts: NOW,
           id: 'id000000000000000',
@@ -332,7 +324,6 @@ describe('audit writer parity', () => {
           ...fixture.entry,
         });
       }
-      // Windows has no POSIX mode to assert.
       if (process.platform === 'win32') return;
       expect([
         ...new Set(
@@ -465,8 +456,6 @@ describe('audit writer contract', () => {
 
   test('four processes appending to one session file leave every line intact', async () => {
     const home = makeRoot('concurrent');
-    // Spawned without waiting, so the four runs overlap: a read-modify-write
-    // writer loses records here where a single O_APPEND write does not.
     const workers = Array.from({ length: 4 }, (_, worker) =>
       Bun.spawn({
         cmd: [

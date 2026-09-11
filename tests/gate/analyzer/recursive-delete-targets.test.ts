@@ -20,12 +20,6 @@ import { pairedEnvironments } from '../../core/differential-inputs';
 import { createLinkedWorktreeFixture, type LinkedWorktreeFixture } from '../../helpers';
 import { writeTree } from '../../helpers/fixture-tree';
 
-/**
- * Where a recursive delete lands decides which rule fires, so every classification branch —
- * root and home, the Git control plane, trusted temp, dynamic, allow paths, the anchored cwd —
- * states the kind it earns over the same targets, options and filesystem.
- */
-
 let root = '';
 let home = '';
 let workspace = '';
@@ -164,7 +158,6 @@ function contextCases(): readonly ContextCase[] {
   ];
 }
 
-/** The repository case needs the fixture paths and metadata resolved in `beforeAll`. */
 function resolvedOptions(row: ContextCase): Omit<RecursiveDeleteTargetOptions, 'environment'> {
   if (row.label !== 'git repository') return row.options;
   return {
@@ -246,7 +239,6 @@ function targets(cwd: string): readonly string[] {
   ];
 }
 
-/** The context fields the module exposes; the budget behind them is private. */
 type ReadableContext = {
   readonly anchoredCwd: string | null;
   readonly resolvedCwd: string | null;
@@ -308,8 +300,6 @@ describe('recursive delete target context', () => {
       posixShell: true,
     });
     expect(readable('home is the anchor')).toMatchObject({ anchoredCwd: home, paranoid: true });
-    // `allowTmpdirVar` decides whether `$TMPDIR` is followed; the value's own location decides
-    // whether it is trusted once followed.
     expect(readable('tmpdir variable distrusted')).toMatchObject({
       trustTmpdirVar: false,
       trustedTmpdirValue: false,
@@ -334,12 +324,9 @@ describe('recursive delete target context', () => {
         protectedGitMetadata: null,
       },
     });
-    // An allow root is canonicalized, so it spells the fixture's real path, lower-cased on
-    // Windows where the comparison is case-insensitive.
     const allowRoot = (path: string) => (process.platform === 'win32' ? path.toLowerCase() : path);
     expect(withAllowed.allowRoots).toContain(allowRoot(join(realpathSync(root), 'allowed')));
     expect(withAllowed.allowRoots).toContain(allowRoot(join(realpathSync(home), 'allowed-home')));
-    // A relative entry is not an allow root, and a root containing home is refused.
     expect(withAllowed.allowRoots).not.toContain('relative');
     expect(
       contextPair({
@@ -356,7 +343,6 @@ describe('recursive delete target context', () => {
 });
 
 describe('recursive delete target classification', () => {
-  /** The kind one target earns under one of the context cases above. */
   function kindFor(
     target: string,
     label: string,
@@ -382,8 +368,6 @@ describe('recursive delete target classification', () => {
       { target: '../x', kind: 'outside_anchored_cwd' },
       { target: '/nonexistent/elsewhere', kind: 'outside_anchored_cwd' },
       { target: '/tmp/next-delete-targets-probe', kind: 'temp_target' },
-      // The temp test runs before the anchor tests, and this fixture is itself a system temp
-      // directory, so its absolute paths are temp targets whatever the anchor is.
       { target: workspace, kind: 'temp_target' },
       { target: join(home, 'projects'), kind: 'temp_target' },
     ];
@@ -394,8 +378,6 @@ describe('recursive delete target classification', () => {
   test('a target a shell would expand is dynamic unless it is read literally', () => {
     for (const target of ['*', '$VAR/x', '`hostname`/x', 'a?b', '[ab]', '{a,b}', '+(x)'])
       expect(kindFor(target, 'workspace anchored, posix shell'), target).toBe('dynamic_target');
-    // An escaped metacharacter is literal text, and a caller that already knows the target is
-    // literal skips the test.
     expect(kindFor('x\\*y', 'workspace anchored, posix shell')).toBe('within_anchored_cwd');
     expect(kindFor('*', 'workspace anchored, posix shell', { targetIsLiteral: true })).toBe(
       'within_anchored_cwd',
@@ -406,10 +388,8 @@ describe('recursive delete target classification', () => {
     expect(kindFor('$TMPDIR/x', 'workspace anchored, posix shell')).toBe('temp_target');
     expect(kindFor('${TMPDIR}/x', 'workspace anchored, posix shell')).toBe('temp_target');
     expect(kindFor('$TMPDIR/x', 'tmpdir variable distrusted')).toBe('dynamic_target');
-    // A parent component, a dynamic tail and a longer name are all outside the trusted form.
     for (const target of ['$TMPDIR/../escape', '$TMPDIR/$VAR', '$TMPDIRX/x'])
       expect(kindFor(target, 'workspace anchored, posix shell'), target).toBe('dynamic_target');
-    // Word splitting can carry the value out of the temp root unless the caller quoted it.
     expect(kindFor('$TMPDIR/x', 'tmpdir word splitting unsafe')).toBe('outside_anchored_cwd');
     expect(
       kindFor('$TMPDIR/x', 'tmpdir word splitting unsafe', { tmpdirWordSplittingProtected: true }),
@@ -421,11 +401,8 @@ describe('recursive delete target classification', () => {
     expect(kindFor('projects', 'home is the anchor', { skipHomeCwd: true })).toBe(
       'within_anchored_cwd',
     );
-    // `.` in the home directory resolves to home itself, which is catastrophic before any
-    // anchor test runs.
     expect(kindFor('.', 'home is the anchor', { skipHomeCwd: true })).toBe('root_or_home_target');
     expect(kindFor('.', 'workspace anchored', { skipCwdSelf: true })).toBe('within_anchored_cwd');
-    // Without an anchor nothing is inside it.
     expect(kindFor('file.txt', 'no anchor')).toBe('outside_anchored_cwd');
     expect(kindFor('.', 'no anchor')).toBe('outside_anchored_cwd');
     for (const target of [
@@ -434,7 +411,6 @@ describe('recursive delete target classification', () => {
       join(home, 'allowed-home'),
     ])
       expect(kindFor(target, 'allow paths configured'), target).toBe('temp_target');
-    // An allow root that would widen into home is dropped, so the same target stays outside.
     expect(kindFor(join(root, 'allowed'), 'allow path containing home')).toBe('temp_target');
     expect(kindFor('.git', 'git repository')).toBe('git_metadata_target');
     expect(kindFor('.git/hooks', 'git repository')).toBe('git_metadata_target');
@@ -477,7 +453,6 @@ describe('recursive delete target classification', () => {
       },
     });
     expect(isTrustedTempDescendantTarget(join(root, 'tmp', 'inner'), context)).toBeTrue();
-    // The temp root itself is never a descendant, and `root` lives under it.
     expect(isTrustedTempDescendantTarget(tmpdir(), context)).toBeFalse();
     expect(isTrustedTempDescendantTarget('$TMPDIR', context)).toBeFalse();
     expect(isTrustedTempDescendantTarget('$TMPDIR/x', context)).toBeTrue();
@@ -502,7 +477,6 @@ describe('dangerous root or home targets', () => {
       { target: '/tmp/x', literal: false, dangerous: false },
       { target: '~/projects', literal: false, dangerous: false },
       { target: '', literal: false, dangerous: false },
-      // A home spelling is only dangerous while the shell would still expand it.
       { target: '~', literal: false, dangerous: true },
       { target: '~/*', literal: false, dangerous: true },
       { target: '~/*', literal: true, dangerous: false },
@@ -548,11 +522,9 @@ describe('delete target word facts', () => {
     expect(expansion('rm -rf plain')).toBeUndefined();
     expect(expansion('rm -rf {a,b}/{c,d}')).toStrictEqual(['a/c', 'a/d', 'b/c', 'b/d']);
     expect(expansion('rm -rf y{,z}')).toStrictEqual(['y', 'yz']);
-    // A range, an empty brace and an unclosed brace are not literal alternations.
     expect(expansion('rm -rf x{1..3}')).toBeUndefined();
     expect(expansion('rm -rf {}')).toBeUndefined();
     expect(expansion('rm -rf a{b')).toBeUndefined();
-    // A quoted brace is text, so it is not expanded and the target is literal.
     expect(expansion('rm -rf "{a,b}"')).toBeUndefined();
     expect(expansion("rm -rf '{a,b}'")).toBeUndefined();
   });

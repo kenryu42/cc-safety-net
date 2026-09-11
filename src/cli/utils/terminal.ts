@@ -1,4 +1,3 @@
-/** Render untrusted text without emitting terminal control bytes. */
 export function renderTerminalText(value: string): string {
   return Array.from(value, (character) => {
     const code = character.charCodeAt(0);

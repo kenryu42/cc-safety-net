@@ -15,12 +15,6 @@ import { policySnapshot } from '../helpers/policy';
 import { type BehavioralContractCase, behavioralContractCases } from './behavioral-contract-cases';
 import { type PipelineContractCase, pipelineContractCases } from './pipeline-contract-cases';
 
-/**
- * The behavioral contract through the gate, entered the way every host enters it, so the
- * protection stages and secret matching sit in front of command analysis for every row. The
- * process state is injected as an Environment rather than mutated on `process.env`.
- */
-
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'next-gate-contract-'));
 const workspace = join(fixtureRoot, 'workspace');
 const repository = join(fixtureRoot, 'repo');
@@ -31,11 +25,6 @@ afterAll(() => {
   rmSync(fixtureRoot, { recursive: true, force: true });
 });
 
-/**
- * Dropped from the injected env map rather than cleared on the process: the mode variables, and
- * the ambient names that would otherwise steer a row (`GIT_SSH*` turns Git rows into
- * dynamic-executable denials; `PARALLEL` changes what the `parallel` rows see).
- */
 const AMBIENT_NAMES = new Set([
   'CC_SAFETY_NET_LEVEL',
   'CC_SAFETY_NET_PARANOID',
@@ -54,7 +43,6 @@ const AMBIENT_NAMES = new Set([
   'SAFETY_NET_WORKTREE',
 ]);
 
-// The real home, tmpdir and filesystem, so every path expectation the corpora carry still holds.
 const environment = createTestEnvironment({
   env: new Map(
     Object.entries(process.env).flatMap(([name, value]) =>
@@ -92,7 +80,6 @@ function evaluate(
   });
 }
 
-/** One assertion path for both corpora; a row's stage and segment are checked where it names them. */
 function expectContract(
   evaluation: GuardEvaluation,
   expected: BehavioralContractCase['expected'] | PipelineContractCase['expected'],
@@ -129,8 +116,6 @@ describe('behavioral contract through the ported gate', () => {
           ),
           options.policySnapshot,
           {
-            // The analyzer corpus fixes the modes per row and `protectedGitMetadata: null`;
-            // inject both so the gate decides the row on exactly the analyzer's inputs.
             getModes: (policy, env) => ({
               ...getCCSafetyNetEnvModes(policy, env),
               strict: options.strict ?? false,
@@ -148,7 +133,6 @@ describe('behavioral contract through the ported gate', () => {
 });
 
 describe('pipeline-only contract through the ported gate', () => {
-  // The rows splice these into shell commands, where a `\\` is an escape: spelled with `/`.
   const shellPath = (path: string) => path.split(sep).join('/');
   const userPolicyPath = shellPath(getUserPolicyPath(environment));
   for (const contractCase of pipelineContractCases({

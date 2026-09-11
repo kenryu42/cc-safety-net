@@ -5,12 +5,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { detectionRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Pi keeps the installed package and the switched-off extensions in one settings file: an entry is
- * either a bare source string or an object carrying a resource filter, and a `-` prefix inside
- * that filter is how Pi spells "installed but not loaded".
- */
-
 const SETTINGS = '.pi/agent/settings.json';
 const SETTINGS_PATH = `<home>/${SETTINGS}`;
 const settings = (...packages: readonly unknown[]): TreeSpec => ({

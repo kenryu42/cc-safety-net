@@ -16,12 +16,6 @@ import {
   expectFallbackDeny,
 } from '../../helpers/in-process';
 
-/**
- * The Pi `tool_call` event driven through a fake extension context: the returned decision, the
- * stderr lines and the audit tree are recorded per row. The last case is the port's own contract —
- * a context that throws blocks in Pi's form instead of escaping the handler.
- */
-
 const SESSION = 'pi-1';
 const ANALYZER_FAILURE = 'injected analyzer failure';
 const SECRET_SCAN_FAILURE = 'injected secret scan failure';
@@ -32,10 +26,8 @@ type Row = {
   event: (fixture: HookFixture) => unknown;
   cwd?: (fixture: HookFixture) => string;
   breaks?: 'analyzer' | 'secret-scan';
-  /** Loads the user policy from the malformed file this test writes beside the fixture. */
   brokenPolicy?: true;
   env?: Record<string, string | undefined>;
-  /** Text the block reason must carry, so a row cannot pass by blocking with a bare frame. */
   contains?: string;
   blocked: boolean;
   lines: number;
@@ -148,8 +140,6 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    // The one route where the evidence is dropped. The tool input carries a command anyway, so
-    // the block would name it if the route flag were wrong.
     name: 'a secret scan that fails on a read',
     event: () => ({
       type: 'tool_call',
@@ -161,8 +151,6 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    // Denied after the config load, so the degraded policy reaches the block reason as a
-    // `Config warning:` paragraph and the audit line as `configFallback`.
     name: 'a user policy file that is not valid JSON',
     event: () => bash('git reset --hard HEAD~1'),
     brokenPolicy: true,

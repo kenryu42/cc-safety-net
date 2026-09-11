@@ -1,8 +1,3 @@
-/**
- * Hook discovery for the doctor command: one detector per catalog integration, composed in
- * doctor order.
- */
-
 import type { Environment } from '@/core/environment';
 import { detect as detectAmp } from '@/hosts/amp/detect';
 import { detect as detectAntigravityCli } from '@/hosts/antigravity-cli/detect';
@@ -21,7 +16,6 @@ import { detect as detectOpenClaw } from '@/hosts/openclaw/detect';
 import { detect as detectOpenCode } from '@/hosts/opencode/detect';
 import { detect as detectPi } from '@/hosts/pi/detect';
 
-/** A catalog entry without a detector fails typecheck here. */
 const detectors = {
   amp: detectAmp,
   'antigravity-cli': detectAntigravityCli,
@@ -38,9 +32,6 @@ const detectors = {
   pi: detectPi,
 } satisfies Record<IntegrationId, (context: DetectContext) => HookDetection>;
 
-/**
- * Detect all hooks and inspect their configuration.
- */
 export function detectAllHooks(
   environment: Environment,
   cwd: string,

@@ -14,16 +14,8 @@ import {
   removeTempRoots,
 } from '../helpers/temp-home';
 
-/**
- * `getScopePaths` decides which config a rule command writes and which root bounds the write, so
- * a scope resolved one directory too high would let a write escape its capability. Each row
- * resolves the selection through an `Environment` over its own root and names the directory the
- * config lands in, the root that bounds the write, and the scope it is labelled with.
- */
-
 afterEach(removeTempRoots);
 
-/** The scope as data: the branded capability objects differ per module, their paths do not. */
 function scopeOf(paths: {
   configDir: string;
   configPath: string;
@@ -52,7 +44,6 @@ function withCwd<T>(cwd: string, run: () => T): T {
   }
 }
 
-/** One temp root, with the home and project layout inside it. */
 function sides(label: string) {
   const side = (name: string) => {
     const root = createTempRoot(`${label}-${name}-`);
@@ -80,7 +71,6 @@ const ROWS: Array<{
     name: 'the user scope under the relocated safety-net home',
     options: (root) => ({ cwd: join(root, 'project'), global: true }),
     configDir: (root) => join(root, 'home', '.cc-safety-net', 'rules'),
-    // The user scope may write anywhere under the safety-net home, not only the rules directory.
     root: (root) => join(root, 'home', '.cc-safety-net'),
     label: 'user policy',
   },
@@ -113,7 +103,6 @@ const ROWS: Array<{
       projectConfigPath: join(root, 'project', 'nested', 'rules', 'rule.json'),
     }),
     configDir: (root) => join(root, 'project', 'nested', 'rules'),
-    // The working directory still bounds the write, not the nested directory the config sits in.
     root: (root) => join(root, 'project'),
     label: 'project policy',
   },
@@ -124,14 +113,11 @@ const ROWS: Array<{
       projectConfigPath: join(root, 'sibling', '.cc-safety-net', 'rules', 'rule.json'),
     }),
     configDir: (root) => join(root, 'sibling', '.cc-safety-net', 'rules'),
-    // A config outside the working directory carries its own bound: the safety-net directory
-    // above it, so the write cannot reach the rest of the sibling checkout.
     root: (root) => join(root, 'sibling', '.cc-safety-net'),
     label: 'project policy',
   },
 ];
 
-/** The config and the lock sit in the scope's directory, and each target repeats its own path. */
 function scopeIn(configDir: string, root: string, label: string) {
   return {
     configDir,

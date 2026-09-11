@@ -6,13 +6,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { detectionRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Copilot reads hooks from four kinds of place, and which of them its binary understands depends
- * on the version the caller probed: user hook files landed in 0.0.422 and inline definitions in
- * 1.0.8, so the same tree is configured, ignored-with-a-reason, or unknown-with-a-reason depending
- * on that one string. Every row below is that product.
- */
-
 const REPO_HOOK = 'repo/.github/hooks/a.json';
 const USER_HOOK = '.copilot/hooks/b.json';
 const REPO_SETTINGS = 'repo/.github/copilot/settings.json';

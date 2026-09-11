@@ -13,12 +13,6 @@ import {
 import type { PolicySafety } from '@/core/policy/types';
 import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
 
-/**
- * The readers take an injected map, so each case stages only the variables it sets. Every read
- * runs under a `console.error` spy, because an invalid level is reported on stderr and that
- * warning is part of the behavior.
- */
-
 const FLAGS: readonly EnvFlag[] = Object.values(ENV_FLAGS);
 
 const ENV_NAMES: readonly string[] = FLAGS.flatMap((flag) =>
@@ -53,10 +47,6 @@ function capture<T>(run: () => T) {
 const modesFor = (subject: EnvCase) =>
   capture(() => getCCSafetyNetEnvModes(subject.policy, injectedFrom(subject.env)));
 
-/**
- * One resolved environment. `stderr` is the warning the reader prints, and an empty list means it
- * printed nothing — an invalid level is reported once and then ignored, never enforced.
- */
 type Resolved = {
   readonly behavior: string;
   readonly env: Staged;
@@ -272,8 +262,6 @@ const RESOLVED: readonly Resolved[] = [
 
 describe('the environment variables that resolve safety capabilities', () => {
   test('the flag table names every variable and its legacy spelling', () => {
-    // Spelled as one line per flag rather than as the table's own shape, so the assertion is a
-    // reading of the table and not a copy of it.
     expect(
       Object.entries(ENV_FLAGS).map(
         ([capability, flag]) =>
@@ -461,10 +449,6 @@ function sampledCases(count: number): readonly EnvCase[] {
   }));
 }
 
-/**
- * The generated environments are here for the properties that must hold for every one of them,
- * not for what any single one resolves to; the rows above pin the individual outcomes.
- */
 const SAMPLED = sampledCases(300);
 
 describe('properties every environment must satisfy', () => {

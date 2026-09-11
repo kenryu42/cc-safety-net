@@ -17,16 +17,9 @@ import {
 } from '../../helpers/temp-home';
 import { mutate, USER_POLICY_VALUES } from './policy-values';
 
-/**
- * The four helpers the GUI reads, previews, repairs and writes user policy with. They take the
- * `Environment`, so every row names the home and the mode flags it runs under as a map and a
- * developer's own shell cannot move what they report.
- */
-
 const HOME = '/srv/home/tester';
 const MUTATION_COUNT = 200;
 
-/** The fixture documents and a seeded mutation of each, for the properties below. */
 const DOCUMENTS: readonly unknown[] = (() => {
   const random = createSeededRandom(FUZZ_SEED);
   return USER_POLICY_VALUES.concat(
@@ -39,15 +32,8 @@ const DOCUMENTS: readonly unknown[] = (() => {
 const environmentWith = (values: Record<string, string>) =>
   createTestEnvironment({ home: HOME, env: new Map(Object.entries(values)) });
 
-/** The report the resolver writes for the row that names a level it does not recognize. */
 const INVALID_LEVEL_REPORT = 'CC Safety Net: ignored invalid CC_SAFETY_NET_LEVEL=';
 
-/**
- * The rows below resolve the environment once per document, so the row naming an invalid level
- * reports it hundreds of times and buries the run's own output. The report is pinned verbatim in
- * `tests/core/policy/env.test.ts`; here it is captured, and anything else reaching the channel is
- * a diagnostic these rows are not supposed to produce.
- */
 function withCapturedReports(run: () => void): void {
   const captured: string[] = [];
   const spy = spyOn(console, 'error').mockImplementation((...parts: unknown[]) => {
@@ -154,8 +140,6 @@ describe('properties every proposed document must satisfy', () => {
           const configurable = states.filter((state) => state.source !== 'catastrophic');
           expect(Object.keys(preview.rules)).toHaveLength(DESTRUCTIVE_COMMAND_RULE_METADATA.length);
           expect(configurable).toHaveLength(CONFIGURABLE_RULE_COUNT);
-          // The GUI headline reads "N active / M disabled": each tally is the rules that are
-          // actually in that state, so a swapped pair is a wrong headline, not a wrong sum.
           expect(preview.counts.enabled).toBe(configurable.filter((state) => state.enabled).length);
           expect(preview.counts.disabled).toBe(
             configurable.filter((state) => !state.enabled).length,
@@ -184,13 +168,10 @@ describe('properties every proposed document must satisfy', () => {
       preview = ported.createPolicyPreview(ported.DEFAULT_GUI_POLICY, environmentWith(values).env);
     });
     expect(preview.effectiveLevel).toBe(effectiveLevel);
-    // Catastrophic rules are always enforced, so they are surfaced separately and never counted.
     const catastrophic = Object.values(preview.rules).filter(
       (state) => state.source === 'catastrophic',
     );
     expect(catastrophic.length).toBeGreaterThan(0);
-    // The tallies themselves are asserted by the invariant above, which decides the default
-    // policy too: the empty document is one of DOCUMENTS and salvages to DEFAULT_GUI_POLICY.
   });
 
   test('with no mode flag set the default policy activates exactly the ungated rules', () => {
@@ -221,7 +202,6 @@ const STRICT_POLICY = `${JSON.stringify(
 const REJECTED_POLICY =
   '{"version":1,"safety":{"level":"bogus"},"audit":{"retention_days":5},"secret_protection":{"enabled":"yes"}}';
 
-/** A home holding `file` as its user policy, or none when `file` is null. */
 const seedHome = (file: string | null) => {
   const root = createTempRoot('gui-store-');
   mkdirSync(join(root, '.cc-safety-net'), { recursive: true });
@@ -233,12 +213,9 @@ type FileState = {
   readonly behavior: string;
   readonly file: string | null;
   readonly exists: boolean;
-  /** Exact messages where the wording is ours; a prefix where the JSON parser supplies it. */
   readonly errors: readonly string[] | { readonly startsWith: string };
-  /** What the GUI shows for this file — the same projection the engine enforces. */
   readonly shownLevel: 'standard' | 'strict' | 'paranoid';
   readonly shownRetentionDays: number;
-  /** What repair writes back. */
   readonly repairedRetentionDays: number;
 };
 
@@ -318,7 +295,6 @@ describe('reading the user policy file for the GUI', () => {
       expect(read.errors).toHaveLength(1);
       expect(read.errors[0]).toStartWith((row.errors as { startsWith: string }).startsWith);
     }
-    // The GUI shows the salvaged projection the engine enforces, never the raw file.
     expect(read.policy.safety.level).toBe(row.shownLevel);
     expect(read.policy.audit.retention_days).toBe(row.shownRetentionDays);
   });
@@ -335,8 +311,6 @@ describe('repairing the user policy file', () => {
 
     expect(repaired.errors).toEqual([]);
     expect(repaired.policy.audit.retention_days).toBe(row.repairedRetentionDays);
-    // The whole config directory: one owner-only file with the canonical bytes, and no
-    // half-written temp file left beside it.
     expect(
       snapshotTree(home.root).filter((entry) => entry.path.startsWith('.cc-safety-net/')),
     ).toEqual([
@@ -346,10 +320,8 @@ describe('repairing the user policy file', () => {
         content: `${JSON.stringify(repaired.policy, null, 2)}\n`,
       },
     ]);
-    // Windows has no POSIX mode to assert.
     if (process.platform !== 'win32')
       expect(lstatSync(join(home.root, '.cc-safety-net', 'policy.json')).mode & 0o777).toBe(0o600);
-    // What repair wrote validates cleanly, so a repaired file never degrades the next load.
     expect(getUserPolicyDiagnostics(repaired.policy, home.environment.home)).toEqual([]);
   });
 

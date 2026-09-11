@@ -15,22 +15,10 @@ import { runHermesAgentHook as portedHermesAgentHook } from '@/hosts/hermes-agen
 import { runKimiCodeHook as portedKimiCodeHook } from '@/hosts/kimi-code/hook';
 import { withEnv } from '../helpers';
 
-/**
- * One table of hosts and payloads, shared by the in-process adapter runs and the process-level runs
- * through the bin: the same stdin bytes and the same environment must produce the recorded document
- * and the recorded audit line. Every payload is a literal document in the host's own protocol
- * shape, so a row that stops matching the host is a broken row rather than a silently rewritten one.
- */
-
-/** What a row must answer, at both the adapter level and through the bin. */
 export type HookOutcome = {
-  /** The document the host printed, or `none` when its protocol answers an allow with silence. */
   document: 'none' | 'allow' | 'deny';
-  /** The audit line the run leaves, or `none` when the call never reached the gate. */
   audit: 'allow' | 'deny' | 'none';
-  /** The rule that answered, when a named one did. */
   ruleId?: string;
-  /** Debug lines on stderr; every row but one leaves none. */
   stderr?: number;
 };
 
@@ -41,23 +29,16 @@ export type HookRow = {
   expected: HookOutcome;
 };
 
-/**
- * The answer every row is owed, by name. A row reaches the gate through nine different protocols,
- * and the gate's answer is the same for all nine: this table is that answer, so a host that starts
- * misreading its own payload shows up as a changed verdict rather than a redrawn document.
- */
 const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'a denied command': { document: 'deny', audit: 'deny', ruleId: 'git.push-force' },
   'an allowed command': { document: 'none', audit: 'allow' },
   'an allowed command under the blocked-only audit scope': { document: 'none', audit: 'none' },
   'an event the host does not handle': { document: 'none', audit: 'none' },
-  // A payload the intake cannot read is denied fail-closed, before any gate call to audit.
   'a payload that is not JSON': { document: 'deny', audit: 'none' },
   'an empty payload': { document: 'deny', audit: 'none' },
   'a payload that is an array': { document: 'deny', audit: 'none' },
   'a payload past the input byte limit': { document: 'deny', audit: 'none' },
   'a payload without a tool name': { document: 'deny', audit: 'deny' },
-  // A relative read resolves against a directory the host never named, so nothing is audited.
   'a read tool over a relative path': { document: 'none', audit: 'none' },
   'a read tool over a private key': { document: 'deny', audit: 'deny', ruleId: 'secret.home.ssh' },
   'a payload without a cwd': { document: 'none', audit: 'allow' },
@@ -95,7 +76,6 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     audit: 'deny',
     ruleId: 'powershell.remove-item-recursive-force-root-or-home',
   },
-  // Copilot alone reads the session id, and a blank one is a payload it declines to handle.
   'a blank session id': { document: 'none', audit: 'none' },
   'a working directory inside the workspace roots': { document: 'allow', audit: 'allow' },
   'a working directory outside the workspace roots': { document: 'deny', audit: 'deny' },
@@ -114,18 +94,15 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'a blank workdir': { document: 'deny', audit: 'deny' },
 };
 
-/** What the two hosts that answer every call say instead, where their protocol differs. */
 const ANSWERED_OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'an allowed command': { document: 'allow', audit: 'allow' },
   'an allowed command under the blocked-only audit scope': { document: 'allow', audit: 'none' },
   'a read tool over a relative path': { document: 'allow', audit: 'none' },
-  // With no directory to place the call in, these two deny where the others allow.
   'a payload without a cwd': { document: 'deny', audit: 'deny' },
 };
 
 export type HookHost = {
   id: string;
-  /** The long hook flag from the catalog, so the process-level runs spell `hook --<flag>`. */
   flag: string;
   ported: () => Promise<void>;
   rows: (fixture: HookFixture) => readonly HookRow[];
@@ -140,22 +117,14 @@ export type HookFixture = {
   remove: () => void;
 };
 
-/** The `pathEnvironmentExpansion` breach pinned in tests/gate/failure-injection.test.ts: the
- *  pipeline throws inside on it, so it drives the fail-mode rows. */
 export const BREACH_COMMAND = `cat ${'${HOME:-'.repeat(65)}x${'}'.repeat(65)}/.ssh/config`;
 
-/** A nested program past the parser's word cap. The secret guard meets it as a `limited` program
- *  and throws `StructuralShellSyntaxLimitError`, the one breach class that is not an
- *  `AnalysisLimit`, so the audit line carries `structural-shell-syntax-limit`. */
 export const STRUCTURAL_LIMIT_COMMAND = `bash -c '${'a '.repeat(16_400)}'`;
 
 const SESSION = 's1';
-/** Fourteen components that do not exist, so each target under them costs sixteen realpath
- *  attempts and the shared target-root budget breaches on the count alone. */
 const MISSING_PREFIX = Array.from({ length: 14 }, (_, index) => `m${index}`).join('/');
 const BAD_CONFIG_DIR = 'bad-config';
 const NOT_A_DIRECTORY = 'not-a-directory';
-/** One byte past the intake cap, still shaped like the JSON document a host would send. */
 const OVERSIZED_PAYLOAD = `{"pad":"${'x'.repeat(8 * 1024 * 1024 - 9)}"}`;
 
 export function createHookFixture(prefix: string): HookFixture {
@@ -179,8 +148,6 @@ export function createHookFixture(prefix: string): HookFixture {
   writeFileSync(join(home, '.ssh', 'id_rsa'), `${['-----BEGIN', 'KEY-----'].join(' ')}\n`);
   writeFileSync(join(project, 'README.md'), 'a file the read rows point at\n');
   writeFileSync(join(root, NOT_A_DIRECTORY), 'a file where a directory is expected\n');
-  // The malformed user policy the config-fallback row loads, at whatever path the loader names
-  // for a home of its own, rather than at a path this helper spells out a second time.
   writeFileSync(
     withEnv({ CC_SAFETY_NET_HOME: join(root, BAD_CONFIG_DIR) }, () =>
       getUserPolicyPath(createProcessEnvironment()),
@@ -205,19 +172,15 @@ export function hostEnv(fixture: HookFixture, auditHome: string) {
   };
 }
 
-/** What a common row varies: the tool, its input, the directory the call claims, and the event. */
 type Payload = { tool?: string; args?: unknown; cwd?: string; event?: string };
 
 type HostSpec = {
   id: string;
   flag: string;
   ported: () => Promise<void>;
-  /** The host's shell tool, and how a command reaches its tool input. */
   commandTool: string;
   commandArgs?: (command: string) => Record<string, unknown>;
-  /** An event the host reads but does not handle; absent when the host accepts every payload. */
   unsupportedEvent?: string;
-  /** Hosts whose protocol expects an answer to every call, allow included, rather than silence. */
   answersEveryCall?: true;
   build: (payload: Payload) => unknown;
   extraRows?: (fixture: HookFixture) => readonly Omit<HookRow, 'expected'>[];
@@ -345,8 +308,6 @@ const HOST_SPECS: readonly HostSpec[] = [
     ],
   },
   {
-    // The Claude-shaped document again, without the transcript attribution Claude Code adds and
-    // with `Bash` routed as `auto`, so the common rows carry the whole host.
     id: 'codex',
     flag: '--codex',
     ported: portedCodexHook,
@@ -384,8 +345,6 @@ const HOST_SPECS: readonly HostSpec[] = [
     flag: '--copilot-cli',
     ported: portedCopilotCliHook,
     commandTool: 'bash',
-    // Copilot is the one host whose tool input arrives as a JSON string, so every common row
-    // already exercises that parse; these rows are the shapes only Copilot can send.
     build: (payload) => ({
       sessionId: SESSION,
       timestamp: 0,
@@ -467,8 +426,6 @@ const HOST_SPECS: readonly HostSpec[] = [
       },
       { name: 'a blank Cwd', stdin: antigravityPayload(fixture, { Cwd: '' }) },
       {
-        // The one branch whose exception class the port re-typed: the target-root walk shares one
-        // budget across the targets, so past the cap it denies without naming a directory.
         name: 'view targets past the path-canonicalization budget',
         stdin: JSON.stringify({
           conversationId: SESSION,
@@ -581,8 +538,6 @@ function commonRows(spec: HostSpec, fixture: HookFixture): Omit<HookRow, 'expect
     { name: 'a payload without a cwd', stdin: commandPayload('git status') },
     { name: 'a cwd that is a regular file', stdin: commandPayload('git status', fixture.file) },
     {
-      // Denied after the config load, so the degraded policy still reaches the document as a
-      // `Config warning:` paragraph and the audit line as `configFallback`.
       name: 'a denied command under a malformed user policy',
       stdin: inProject('git reset --hard HEAD~1'),
       env: { CC_SAFETY_NET_HOME: join(fixture.root, BAD_CONFIG_DIR) },
@@ -600,8 +555,6 @@ function commonRows(spec: HostSpec, fixture: HookFixture): Omit<HookRow, 'expect
   ];
 }
 
-/** The row's declared answer, or a loud failure: a row nobody stated an outcome for is a row
- *  whose verdict nothing checks. */
 function outcomeFor(spec: HostSpec, name: string): HookOutcome {
   const outcome =
     (spec.answersEveryCall === true ? ANSWERED_OUTCOMES[name] : undefined) ?? OUTCOMES[name];

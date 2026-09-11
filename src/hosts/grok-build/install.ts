@@ -8,9 +8,6 @@ import { managedHookCommands } from '@/hosts/managed-command';
 export const GROK_BUILD_HOOK_COMMAND = managedHookCommands['grok-build'];
 export const GROK_BUILD_HOOK_TIMEOUT = 30;
 
-// A dedicated file under the always-trusted global hooks dir. cc-safety-net names the
-// file, but users may append their own entries: install and uninstall only ever touch
-// entries carrying the managed command and preserve everything else.
 export function getGrokBuildHooksPath(environment: Environment): string {
   return join(
     environment.env.get('GROK_HOME') ?? join(environment.home, '.grok'),
@@ -27,8 +24,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function canonicalEntry() {
   return {
-    // No matcher: every tool call is inspected, so file and patch tools reach the
-    // adapter's path protections instead of only run_terminal_command.
     hooks: [
       { type: 'command', command: GROK_BUILD_HOOK_COMMAND, timeout: GROK_BUILD_HOOK_TIMEOUT },
     ],
@@ -39,8 +34,6 @@ function isManagedHandler(hook: unknown): boolean {
   return isRecord(hook) && hook.command === GROK_BUILD_HOOK_COMMAND;
 }
 
-// Strip managed handlers out of each entry, keeping sibling handlers (and the entry's
-// matcher) intact; entries left with no handlers disappear entirely.
 function withoutManagedHandlers(entries: readonly unknown[]): unknown[] {
   return entries.flatMap((entry) => {
     if (!isRecord(entry) || !Array.isArray(entry.hooks)) return [entry];
@@ -85,8 +78,7 @@ export function installGrokBuild(environment: Environment): InstallResult {
   }
 
   const config = parseGrokBuildConfig(readFileSync(configPath, 'utf-8'));
-  // Invalid JSON in a file this integration names cannot carry usable foreign hooks
-  // (Grok skips unparsable hook files entirely); repair it to canonical.
+
   if (!config) {
     writeGrokBuildConfig(configPath, {}, [canonicalEntry()]);
     return { path: configPath, alreadyInstalled: false };
@@ -109,7 +101,7 @@ export function uninstallGrokBuild(environment: Environment): InstallResult {
   if (!existsSync(configPath)) return { path: configPath, alreadyInstalled: false };
 
   const config = parseGrokBuildConfig(readFileSync(configPath, 'utf-8'));
-  // Unparsable content is not provably ours to delete; leave it in place.
+
   if (!config) return { path: configPath, alreadyInstalled: false };
 
   const existing = getPreToolUse(config);

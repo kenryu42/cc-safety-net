@@ -52,7 +52,6 @@ export function resolveAuditScope(value: string | undefined): 'all' | 'blocked' 
   return 'invalid';
 }
 
-/** Denials are always recorded; an invalid scope falls back to blocked-only recording. */
 export function shouldRecordAllowedCommands(env: ReadonlyMap<string, string>): boolean {
   return resolveAuditScope(getEnvFlagValue(ENV_FLAGS.auditScope, env)) === 'all';
 }

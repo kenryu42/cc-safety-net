@@ -20,15 +20,11 @@ type EnvWordStrippingResult = {
   words: readonly CommandWord[];
   envAssignments: Map<string, string>;
   cwd?: string | null;
-  /** Raw `env -S` values the prelude dropped instead of expanding. */
+
   envSplitValues?: readonly string[];
 };
 
 export type WrapperPreludeResult = EnvWordStrippingResult & {
-  /**
-   * Whether a word the prelude produced itself survived (a `command -v` rewrite). Such words
-   * carry no parser facts, so the caller analyzes the command as text only.
-   */
   rewritten: boolean;
 };
 
@@ -46,10 +42,6 @@ export function stripEnvAssignmentWords(words: readonly CommandWord[]): EnvWordS
   return { words: words.slice(i), envAssignments };
 }
 
-/**
- * Whether a head word can start anything the prelude strips. Commands that cannot skip the
- * whole walk: the embedded-command scan runs it once per remaining word of a command.
- */
 function hasWrapperPreludeHead(text: string): boolean {
   const head = text.toLowerCase();
   return (
@@ -104,15 +96,13 @@ export function stripWrapperWords(
         allEnvAssignments.set(appendAssignment.name, appendAssignment.value);
         effectiveEnvAssignments.set(appendAssignment.name, appendAssignment.value);
       }
-      // Other non-strict leading assignments are dropped to reach the executable word.
-      // Git context append assignments are preserved above so worktree relaxation fails closed.
+
       result = result.slice(1);
     }
     if (result.length === 0) break;
 
     const head = headText(result).toLowerCase();
 
-    // Guard: unknown wrapper type, exit loop
     if (head !== 'sudo' && head !== 'env' && head !== 'command' && head !== 'builtin') {
       break;
     }
@@ -213,7 +203,6 @@ function stripSudoWords(
       return { words: words.slice(i + 1), cwd: currentCwd };
     }
 
-    // Guard: not an option, exit loop
     if (!token.startsWith('-')) {
       break;
     }
@@ -323,9 +312,6 @@ function stripEnvWords(
             ? { value: token.slice('--split-string='.length), consumed: 1 }
             : null;
     if (splitString) {
-      // The split-string language is not emulated: keep the raw value for the caller's
-      // dangerous-text scan, drop the option and mark the cwd unknown so relaxations fail closed.
-      // Option parsing stops here because GNU env treats every following word as an operand.
       if (splitString.value !== undefined) envSplitValues.push(splitString.value);
       currentCwd = null;
       return result(i + splitString.consumed);
@@ -366,7 +352,6 @@ function stripEnvWords(
       continue;
     }
 
-    // Not an option - try to parse as env assignment
     if (!parseEnvAssignment(token)) {
       break;
     }
@@ -418,7 +403,6 @@ function stripCommandWords(words: readonly CommandWord[]): readonly CommandWord[
       return words.slice(i + 1);
     }
 
-    // Check for combined short opts like -pv
     if (token.startsWith('-') && !token.startsWith('--') && token.length > 1) {
       if (!/^[pvV]+$/.test(token.slice(1))) {
         break;
@@ -432,15 +416,8 @@ function stripCommandWords(words: readonly CommandWord[]): readonly CommandWord[
   return words.slice(i);
 }
 
-// `env -S` gives these characters quoting, expansion, escape, or comment semantics the analyzer
-// does not emulate (`#` also hides retained operands behind a shell comment on re-parse).
 const ENV_SPLIT_NON_INERT_RE = /['"\\$`{}#]/;
 
-/**
- * Words of an `env -S` command reconstructed by splicing the whitespace-split values ahead of the
- * retained operands. Null when a value is non-inert or the result exceeds the 64-word splice
- * budget, so callers keep their conservative behavior.
- */
 export function reconstructEnvSplitWords(
   envSplitValues: readonly string[],
   operands: readonly string[],
@@ -460,10 +437,6 @@ export interface EnvStrippingResult {
   envSplitValues?: readonly string[];
 }
 
-/**
- * Token views of the word-based prelude, for the derived commands that exist only as text
- * (find -exec children, xargs/parallel templates) and the guards that skip wrapper prefixes.
- */
 export function stripWrappers(
   tokens: string[],
   environment: EnvironmentContext,
@@ -472,11 +445,6 @@ export function stripWrappers(
   return stripWrappersWithInfo(tokens, environment, cwd).tokens;
 }
 
-/**
- * Words of an `env -S` value for the path-scan view: a `"…"` or `'…'` span becomes part of one word
- * with the quotes dropped, so a quoted path containing whitespace stays a single word; whitespace
- * outside quotes splits words. An unbalanced quote falls back to the plain whitespace split.
- */
 function splitPathScanWords(value: string) {
   const words: string[] = [];
   let current = '';
@@ -508,13 +476,6 @@ function splitPathScanWords(value: string) {
   return words;
 }
 
-/**
- * Token view for the path guards, with the quote-grouped `env -S` value words spliced ahead of the
- * retained operands so a mutation hidden in the split string is still matched against the
- * protected paths. Path matching needs no quoting fidelity, so the quote characters are dropped
- * from the split words and the inert-value and splice-budget limits of
- * {@link reconstructEnvSplitWords} do not apply.
- */
 export function stripWrappersForPathScan(
   tokens: string[],
   environment: EnvironmentContext,
@@ -525,8 +486,7 @@ export function stripWrappersForPathScan(
   const splitWords = (stripped.envSplitValues ?? []).flatMap(splitPathScanWords);
   if (splitWords.length === 0) return stripped.tokens;
   const spliced = [...splitWords, ...stripped.tokens];
-  // The spliced words can themselves start a prelude (`env -S 'LC_ALL=C mv'` hides the head command
-  // behind an assignment), so re-normalize until the view settles.
+
   if (depth >= 8) return spliced;
   return stripWrappersForPathScan(spliced, environment, cwd, depth + 1);
 }
@@ -537,7 +497,6 @@ export function stripWrappersWithInfo(
   cwd?: string | null,
   inheritedEnvAssignments?: ReadonlyMap<string, string>,
 ): EnvStrippingResult {
-  // Skips building stand-in words for the commands the prelude would leave untouched.
   if (!hasWrapperPreludeHead(tokens[0] ?? '')) {
     return { tokens: [...tokens], envAssignments: new Map(), cwd };
   }

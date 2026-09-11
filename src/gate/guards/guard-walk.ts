@@ -14,24 +14,9 @@ import { getBasename, hasUnclosedQuotes } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
 import { stripWrappers } from '@/gate/analyzer/wrapper-prelude';
 
-/**
- * The one walk every pre-analysis guard runs over a parsed command.
- *
- * `readGuardSyntax` reads the tree once to decide whether the command is scannable at all, and
- * `walkGuardSyntax` then replays it as the linear stream of words, boundaries, redirections and
- * shell scopes the guards decide on. Word text keeps shell expansions inert (`$NAME` becomes
- * `${NAME}`) so variable tracking sees one spelling, heredoc bodies fed to inert data sinks stay
- * out of the stream, and a nested program that runs in its own shell — a subshell group, `$( )`,
- * backticks, a process substitution — saves and restores the directory state around it, while a
- * brace group, a called function body and arithmetic run in the current shell.
- *
- * The event list a walk reads is an internal detail: it is memoized per syntax so a command that
- * several guards inspect is read from the tree once, and it never leaves this module.
- */
-
 export type GuardSyntax = Readonly<{
   status: 'complete' | 'unclosed-quote' | 'invalid' | 'structural-limit';
-  /** The command source with inert heredoc bodies blanked out. */
+
   source: string;
   program: CommandProgram;
   assignmentFallbacks: readonly string[];
@@ -40,7 +25,7 @@ export type GuardSyntax = Readonly<{
 export type ProtectedPathShellState = Readonly<{
   cwd: string;
   variables: ReadonlyMap<string, string>;
-  /** Where the last `cd` came from, so `cd -` can return to it. Null until one has moved. */
+
   previous: string | null;
 }>;
 
@@ -51,16 +36,11 @@ type GuardRedirection = Readonly<{
   target: string;
 }>;
 
-/**
- * A redirection whose target the shell reads as an operand of the segment around it (`<<`, `<<<`,
- * `>|`) rather than as a file the command opens on its own.
- */
 export const ADOPT_AS_OPERAND: unique symbol = Symbol('adopt-as-operand');
 
 export type GuardWalkVisitor = Readonly<{
-  /** Maps a word before it joins the open segment; the tracked `cd` reads the mapped token. */
   word: (text: string) => string;
-  /** One segment, with the state it ran under and the segment that piped into it. */
+
   segment: (
     tokens: readonly string[],
     state: ProtectedPathShellState,
@@ -73,7 +53,6 @@ export type GuardWalkVisitor = Readonly<{
   ) => string | null | typeof ADOPT_AS_OPERAND;
 }>;
 
-/** The words, boundaries and redirection targets of a command, for reads that track no state. */
 export type GuardToken =
   | { readonly kind: 'word'; readonly text: string }
   | { readonly kind: 'operator'; readonly boundary: boolean }
@@ -95,16 +74,13 @@ const LEGACY_BOUNDARIES = new Set(['&&', '||', '|&', '|', '&', ';']);
 const LEGACY_SEGMENT_REDIRECTS = new Set(['<<', '<<<', '>|']);
 const PIPE_OPERATORS = new Set(['|', '|&']);
 const SPECIAL_VARIABLE_NAME = /[*@#?$!_-]/;
-// PowerShell variable names carry an optional scope or provider prefix, so `$env:USERPROFILE`
-// is one name rather than `$env` followed by literal text.
+
 const POWERSHELL_VARIABLE_NAME = /^\w+(?::\w+)*/;
 const EMPTY_EVENTS = Object.freeze([]) as readonly GuardEvent[];
 const SCOPE_ENTER: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'enter' });
 const SCOPE_EXIT: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'exit' });
 const EMPTY_STRINGS = Object.freeze([]) as readonly string[];
-// A call site inlines the whole body, so branching recursion (`a() { a; a; }`) grows
-// exponentially where the depth cap alone never triggers. Real commands call a handful of
-// functions; anything past this budget fails closed instead of reading the tree dry.
+
 const MAX_FUNCTION_EXPANSIONS = 256;
 
 const READ_EVENTS = new WeakMap<GuardSyntax, readonly GuardEvent[]>();
@@ -129,10 +105,6 @@ type QuoteState = { single: boolean; double: boolean };
 
 type PositionedEvents = { readonly start: number; readonly events: readonly GuardEvent[] };
 
-/**
- * Reads the tree far enough to say whether the command is scannable, and remembers what it read
- * so the guards' walks over the same syntax cost one read.
- */
 export function readGuardSyntax(source: string, program: CommandProgram): GuardSyntax {
   const suppressed =
     program.status === 'complete'
@@ -161,11 +133,6 @@ export function readGuardSyntax(source: string, program: CommandProgram): GuardS
   return syntax;
 }
 
-/**
- * The linear walk itself: one segment at a time, with the directory state a `cd`, an assignment
- * or a nested shell leaves behind. The first target a callback returns stops the walk, so the
- * guards keep reporting the earliest operand that matched.
- */
 export function walkGuardSyntax(
   syntax: GuardSyntax,
   cwd: string,
@@ -228,10 +195,6 @@ export function walkGuardSyntax(
   return visitor.segment(segment, state, pipeProducer, null);
 }
 
-/**
- * The same read, flattened for the checks that only ask which words and boundaries a command
- * carries — whether it is metadata-only, and whether a substitution decodes base64.
- */
 export function readGuardTokens(syntax: GuardSyntax): readonly GuardToken[] {
   return guardEvents(syntax).flatMap((event): GuardToken[] => {
     if (event.kind === 'word') return [{ kind: 'word', text: event.text }];
@@ -269,12 +232,6 @@ export function isAssignmentOnlySegment(tokens: readonly string[]): boolean {
   return tokens.length > 0 && tokens.every((token) => /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token));
 }
 
-/**
- * One segment's effect on the tracked shell state: an assignment-only segment extends the
- * variables, a `cd` after wrapper stripping moves the cwd and remembers where it came from,
- * `cd -` returns to that directory, and a bare `cd` — or a `cd -` with nothing remembered —
- * leaves the cwd where it was.
- */
 function applyShellState(
   segment: readonly string[],
   state: ProtectedPathShellState,
@@ -316,8 +273,6 @@ function extractShellAssignments(
   });
 }
 
-// What `readGuardSyntax` read, remembered per syntax. A syntax it could not take whole carries
-// nothing, which is why every guard decides on the status before it walks.
 function guardEvents(syntax: GuardSyntax): readonly GuardEvent[] {
   return READ_EVENTS.get(syntax) ?? EMPTY_EVENTS;
 }
@@ -443,8 +398,6 @@ function readRedirection(
   const first = targetEvents[0];
   const target = first?.kind === 'word' ? first.text : undefined;
   return [
-    // An explicit fd prefix (`2>&1`) is a word of its own in the stream, as the guards have
-    // always seen it; folding it into the redirection would silently drop that token.
     ...(redirection.fd === undefined ? [] : [wordEvent(String(redirection.fd))]),
     Object.freeze({
       kind: 'redirection' as const,
@@ -472,8 +425,7 @@ function readHeredocs(
     ...heredocs.flatMap((redirection): PositionedEvents[] => {
       const heredoc = redirection.heredoc;
       if (!heredoc) return [];
-      // The newline that closes the terminator line separates the heredoc from what follows;
-      // without it the next command would join this one's segment.
+
       const terminator = [
         wordEvent(heredoc.delimiter),
         ...(/[\r\n]/.test(context.source[heredoc.terminatorSpan.end] ?? '')
@@ -496,16 +448,13 @@ function readHeredocs(
         },
       ];
     }),
-    // A declared-but-never-terminated heredoc swallows the rest of the input; a heredoc with no
-    // delimiter at all swallows nothing, so its trailing text is already an ordinary node.
+
     ...(heredocs.some((redirection) => !redirection.heredoc && redirection.target)
       ? readUnterminatedHeredoc(program, index, context)
       : []),
   ];
 }
 
-// An unterminated heredoc leaves its body outside the node tree: the parser stops at the
-// declaration. The body text still reaches the shell, so it stays scannable here.
 function readUnterminatedHeredoc(
   program: CommandProgram,
   index: number,
@@ -521,8 +470,6 @@ function readUnterminatedHeredoc(
   ];
 }
 
-// Each re-parse resets the parser's own depth limit, so nesting across parses (heredoc bodies
-// declaring further heredocs) is bounded here to keep total recursion finite.
 function readText(text: string, context: ReadContext): GuardEvent[] {
   if (context.depth >= DEFAULT_COMMAND_PARSER_LIMITS.maxDepth) {
     context.flags.limited = true;
@@ -533,9 +480,7 @@ function readText(text: string, context: ReadContext): GuardEvent[] {
     context.flags.limited = true;
     return [];
   }
-  // A body is often not shell at all (code, prose), so its invalid marks stay contained: an
-  // unclosed `${` aborts a real shell before anything in the text it swallows runs, which keeps
-  // the surviving events faithful without failing the whole command's read.
+
   const flags: ReadFlags = {
     invalid: false,
     limited: false,
@@ -590,8 +535,7 @@ function readWord(
       }
       continue;
     }
-    // Inside double quotes a substitution never breaks the word: its text stays inert, and the
-    // nested command is still reached through the substitution scan over the source.
+
     if (state.double) {
       const quotedText = context.source.slice(part.span.start, part.span.end);
       pending += scanWordText(
@@ -632,7 +576,7 @@ function readWord(
       );
       continue;
     }
-    // Arithmetic runs in the current shell, so only the single-frame form opens a scope.
+
     const frames = part.raw.startsWith('$((') ? 2 : 1;
     pending += '${}';
     flush();
@@ -650,14 +594,6 @@ function readWord(
   return events;
 }
 
-// Reproduces the quoting, escaping and expansion rules the guards were built against: quotes come
-// off, `$NAME` normalizes to `${NAME}`, active assignment expansions expose their fallback, and an
-// unquoted `*`/`?` makes the whole word a glob whose text never reaches a segment. An unquoted
-// parenthesis ends the run it sits in, so `open('.env')` still yields `.env` as a token of its own.
-//
-// A PowerShell word follows PowerShell's rules instead: the escape character is a backtick, a
-// backslash is an ordinary path separator, and a variable name may carry a scope
-// (`$env:USERPROFILE`).
 function scanWordText(
   raw: string,
   state: QuoteState,
@@ -677,8 +613,7 @@ function scanWordText(
       index++;
       continue;
     }
-    // A backtick escapes the next character everywhere except inside single quotes, which are
-    // literal in PowerShell.
+
     if (powershell && char === '`' && !state.single) {
       text += raw[index + 1] ?? '';
       index += 2;
@@ -823,8 +758,6 @@ function getRedirectionRole(operator: string) {
   return 'file-write' as const;
 }
 
-// Bodies fed to executing/applying consumers (bash, python, git apply, a pipe into another
-// command, an output process substitution) must stay scannable; only inert data sinks qualify.
 function collectDataSinkHeredocSpans(program: CommandProgram): CommandSpan[] {
   return program.nodes.flatMap((node, index): CommandSpan[] => {
     if (node.kind === 'group' || node.kind === 'function') {
@@ -862,8 +795,6 @@ function isBareWord(word: CommandWord | undefined, text: string): boolean {
   );
 }
 
-// A message sink stores or publishes its body; it never resolves a word in it as a path.
-// git apply is not one: its body names the files the patch writes, so it stays scannable.
 function isMessageSinkConsumer(view: CommandView): boolean {
   if (isBareWord(view.words[0], 'git')) return isBareWord(view.words[1], 'commit');
   if (!isBareWord(view.words[0], 'gh') || !isBareWord(view.words[2], 'create')) return false;

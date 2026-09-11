@@ -88,9 +88,7 @@ export function runIntegrationSelfTest(environment: Environment): SelfTestSummar
           dependencies: {
             loadPolicySnapshot: () => SNAPSHOT,
             getModes: () => STANDARD_MODES,
-            // Policy config lives under the real home directory, so its ancestor chain always
-            // includes "/". Left enabled, it would intercept the rm root/home case before the
-            // destructive-command guard this suite exists to exercise ever runs.
+
             findPolicyMutation: () => null,
           },
         },

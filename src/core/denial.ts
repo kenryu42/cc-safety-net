@@ -2,12 +2,6 @@ import { REASON_SAFETY_NET_FAILED_CLOSED } from './budget';
 import type { BlockIntent, Decision } from './decision';
 import { redactSecrets } from './redaction';
 
-/**
- * The denial frame every host renders: the reason, the rule, the tool line only when a host
- * passes one (non-analysis denials), the command and, when narrower, the segment, each capped at
- * 200 characters, a config warning when the policy load degraded, and one footer per intent.
- */
-
 /** @internal */
 export interface FormatBlockedMessageInput {
   reason: string;
@@ -63,7 +57,7 @@ export type IntegrationDenial = {
   command?: string;
   segment?: string;
   toolName?: string;
-  /** Degraded-config diagnostics riding along with an unrelated denial. */
+
   configWarning?: string;
 };
 
@@ -82,7 +76,7 @@ export function projectGuardDenial(
     command: evidence?.command,
     segment: evidence?.segment,
     toolName: options.toolName,
-    // The fallback did not cause this denial, so it rides along as a warning.
+
     ...(evaluation.configFallback ? { configWarning: evaluation.configFallback.reason } : {}),
   };
 }

@@ -1,7 +1,3 @@
-/**
- * Cursor hook detection.
- */
-
 import { existsSync, readFileSync } from 'node:fs';
 import { CURSOR_HOOK_COMMAND, getCursorHooksPath } from '@/hosts/cursor/install';
 import type { DetectContext, HookDetection } from '@/hosts/detect/context';

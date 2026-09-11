@@ -72,7 +72,6 @@ describe('core/shell/tokens', () => {
       { shell: 'bash', args: ['--rcfile=profile', '-c', 'echo ok'], command: 'echo ok' },
       { shell: 'bash', args: ['--rcfile', 'profile', '-c', 'echo ok'], command: 'echo ok' },
       { shell: 'bash', args: ['--rcfile'], command: null },
-      // `-O` takes the next argument, so it swallows the `-c`.
       { shell: 'bash', args: ['-O', '-c', 'echo ok'], command: null },
       { shell: 'bash', args: ['-O', 'extglob', '-lc', 'echo ok'], command: 'echo ok' },
       { shell: 'ksh', args: ['-o', 'errexit', '-c', 'echo ok'], command: 'echo ok' },

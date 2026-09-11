@@ -2,12 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import * as portedFormat from '@/cli/rule/format';
 import { captureConsole } from '../../helpers/console-capture';
 
-/**
- * The add and change reports over fixed result objects. A repository add is the only caller that
- * fills the `add` block, and it is unreachable without the network, so the block is handed to the
- * printers directly here and the process-level rows cover the local shapes end to end.
- */
-
 type Printers = Pick<typeof portedFormat, 'printRuleAddResult' | 'printRuleChangeResult'>;
 
 const SCOPE_LINE = 'Project scope: .cc-safety-net/rules/rule.json';

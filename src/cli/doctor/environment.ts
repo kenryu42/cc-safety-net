@@ -1,7 +1,3 @@
-/**
- * Environment variable checking for the doctor command.
- */
-
 import type { Environment } from '@/core/environment';
 import { ENV_FLAGS, type EnvFlag, envFlagIsSet, getEnvFlagValue } from '@/core/policy/env';
 import type { EnvVarInfo } from '@/hosts/doctor-types';

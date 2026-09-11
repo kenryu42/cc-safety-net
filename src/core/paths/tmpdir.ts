@@ -9,7 +9,7 @@ export function isTmpdirOverriddenToNonTemp(
   environment: Environment,
 ): boolean {
   if (hasUnsafeTmpdirWordSplitting(envAssignments, environment)) return true;
-  // Only explicit shell assignments override TMPDIR trust. Inherited process env is not an override.
+
   if (!envAssignments.has('TMPDIR')) return false;
   return !isAssignedTmpdirValueTrusted(envAssignments.get('TMPDIR') ?? '', environment);
 }
@@ -34,7 +34,6 @@ export function getEffectiveTmpdirValue(
 }
 
 function isAssignedTmpdirValueTrusted(tmpdirValue: string, environment: Environment): boolean {
-  // Empty TMPDIR is dangerous: $TMPDIR/foo expands to /foo
   if (!tmpdirValue) return false;
   if (hasUnsafeTmpdirShellExpansion(tmpdirValue)) return false;
   return isTrustedTempPath(tmpdirValue, environment);
@@ -62,9 +61,6 @@ export function isTrustedTempRootPath(path: string, environment: Environment): b
   );
 }
 
-// Resolving the temp roots costs a realpath per component, and the guard asks for them
-// once per target, per segment and per child command. The captured process state cannot
-// change within a run, so each environment resolves them once.
 const trustedTempRootsByEnvironment = new WeakMap<Environment, string[]>();
 
 function trustedTempRoots(environment: Environment): string[] {
@@ -106,8 +102,6 @@ function isMacOSPerUserTempRoot(path: string): boolean {
   return /^\/(?:private\/)?var\/folders\/[^/]{2}\/[^/]+\/T$/.test(path);
 }
 
-// The resolver still throws on paths the platform rejects outright, such as embedded NUL
-// bytes; those values stay untrusted rather than crashing the analysis.
 function tryResolveExistingPathComponents(path: string, paths: PathResolver): string | null {
   try {
     const normalized = normalize(path);
@@ -127,8 +121,7 @@ function tryResolveExistingPathComponents(path: string, paths: PathResolver): st
       if (paths.entryKind(candidate) === 'missing') {
         return join(candidate, ...components.slice(i + 1));
       }
-      // This is a best-effort safety check before command execution; path targets can race.
-      // A component that exists but cannot be resolved (a broken symlink) stays untrusted.
+
       const resolved = paths.realpath(candidate);
       if (resolved === null) return null;
       current = resolved;
@@ -140,18 +133,13 @@ function tryResolveExistingPathComponents(path: string, paths: PathResolver): st
   }
 }
 
-/**
- * Check if a path equals or is a subpath of basePath.
- * E.g., isPathOrSubpath("/tmp/foo", "/tmp") → true
- *       isPathOrSubpath("/tmp-malicious", "/tmp") → false
- */
 function isPathOrSubpath(path: string, basePath: string): boolean {
   const normalizedPath = normalizePathForComparison(path);
   const normalizedBasePath = normalizePathForComparison(basePath);
   if (normalizedPath === normalizedBasePath) {
     return true;
   }
-  // Ensure basePath ends with the platform separator for proper prefix matching.
+
   const baseWithSlash = normalizedBasePath.endsWith(sep)
     ? normalizedBasePath
     : `${normalizedBasePath}${sep}`;

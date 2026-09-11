@@ -17,14 +17,6 @@ import {
 } from '../helpers/cli-fixtures';
 import { removeTempRoots } from '../helpers/temp-home';
 
-/**
- * `status` is the projection of one policy resolution a user reads before anything else, so
- * each row seeds one configuration and pins the line it is supposed to change. The plugin
- * probe, the level, the rule count, the two policy paths, the worktree row, the project
- * weakenings block and the "Not active" bullets each have a row that fails if the projection
- * drifts. Stdout is a pipe here, so the run renders the ASCII form without color.
- */
-
 afterEach(() => {
   removeTempRoots();
 });

@@ -6,12 +6,6 @@ import {
 } from '@/cli/commands/install';
 import { getIntegrationDisplayName, installIntegrationMetadata } from '@/hosts/catalog';
 
-/**
- * These three definitions are what `--help` prints. Both target lists come out of the catalog, so
- * the check is that every catalog row still reaches the help under its own name and artifact kind
- * — a host added to the catalog and missing from the help is the failure this catches.
- */
-
 describe('cli/commands/install', () => {
   test('each definition keeps its name, usage and description', () => {
     expect([portedInstallCommand, portedUninstallCommand, portedUpdateCommand]).toMatchObject([
@@ -45,7 +39,6 @@ describe('cli/commands/install', () => {
         })),
         { flags: '-h, --help', description: 'Show this help' },
       ]);
-      // The bare command first, then one example per target, in the order the options list them.
       expect(command.examples, verb).toEqual([
         `cc-safety-net ${command.name}`,
         ...installIntegrationMetadata.map(

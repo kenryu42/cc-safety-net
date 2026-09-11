@@ -7,13 +7,6 @@ import {
 import { describeOutcome } from '../../helpers/fixture-tree';
 import { named, RULEBOOK_VALUES, samples } from './policy-values';
 
-/**
- * Rulebook acceptance has no schema counterpart to answer to: a rulebook is loaded on the hook's
- * path and the wording here is the wording its author reads. The rows below are what each
- * diagnostic says, and the property at the end is that no document — fixture or seeded mutation
- * — can make the validator throw or exceed its own diagnostic budget.
- */
-
 const VALID_RULEBOOK = {
   rulebook_version: 1,
   name: 'infra-guards',
@@ -318,14 +311,11 @@ describe('rulebook diagnostics', () => {
   test('rulebook validation answers every document with usable diagnostics and never throws', () => {
     for (const value of samples(RULEBOOK_VALUES)) {
       const result = validateRulebook(value);
-      // Every diagnostic is something a rulebook author can read and act on, and the list
-      // stays inside the budget the truncation message announces.
       expect(
         result.errors.every((error) => typeof error === 'string' && error.trim() !== ''),
         named(value),
       ).toBe(true);
       expect(result.errors.length, named(value)).toBeLessThanOrEqual(65);
-      // A reported rule name was written in the document; the set is what overrides resolve against.
       expect(
         [...result.ruleNames].every((name) =>
           collectCustomRuleNames(value).some((written) => written.toLowerCase() === name),

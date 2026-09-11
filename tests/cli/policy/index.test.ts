@@ -21,13 +21,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from '../../helpers/temp-home';
 
-/**
- * `policy check` reports what a proposal would change, `policy apply` writes it after a human
- * confirms. The reported diff is the whole value of `check`, so each row pins the rows it prints
- * for one seeded scope; `apply` is driven in-process because a real terminal is the one thing the
- * process harness cannot hand it.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -41,7 +34,6 @@ async function runPolicy(args: readonly string[], files: Record<string, string> 
     args: ['policy', ...args],
     seed: (side) => seedFiles(side, files),
   };
-  // These cases verify refusal of a real piped stdin, not just a handler return value.
   if (args[0] === 'apply') return runCliDifferential(row);
   return runCliCommand(row, (environment) => portedPolicyCommand(environment, [...args]));
 }
@@ -152,7 +144,6 @@ describe('policy apply without a terminal', () => {
   }, 60_000);
 });
 
-/** One `policy apply` run against a private root, with the terminal it insists on. */
 async function driveApply(
   label: string,
   extra: readonly string[],
@@ -170,7 +161,6 @@ async function driveApply(
   const home = join(root, 'home');
   const env = isolationEnv(home);
   writeTree(root, { [PROPOSAL_FILE]: STRICT_PROPOSAL });
-  // A `PassThrough` rather than the suite's fake terminal: readline consumes a real readable.
   const input = Object.assign(new PassThrough(), { isTTY: true }) as unknown as NodeJS.ReadStream;
   const output = createFakeOutput({ isTTY: true });
   const written: string[] = [];
@@ -184,8 +174,6 @@ async function driveApply(
       home,
       env,
       cwd: join(root, 'project'),
-      // The proposal is named absolutely: the file is read relative to the process working
-      // directory, which an in-process run cannot move.
       args: ['apply', join(root, PROPOSAL_FILE), ...extra],
       input,
       output: output as unknown as NodeJS.WriteStream,
@@ -235,7 +223,6 @@ describe('policy apply at a terminal', () => {
     expect(outcome.code).toBe(0);
     const applied = outcome.tree.find((entry) => entry.path === 'home/.cc-safety-net/policy.json');
     expect(JSON.parse(applied?.content ?? '')).toMatchObject({ safety: { level: 'strict' } });
-    // Windows has no POSIX mode to assert.
     if (process.platform === 'win32') return;
     expect(lstatSync(join(outcome.home, '.cc-safety-net', 'policy.json')).mode & 0o777).toBe(0o600);
   }, 30_000);

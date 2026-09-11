@@ -19,17 +19,9 @@ import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 import { mutate, USER_POLICY_VALUES } from './policy-values';
 
-/**
- * The salvage normalizer is what the whole loader stands on: an invalid section falls back to
- * its protective default and every other section stays in force (`docs/config-recovery.md`). The
- * store takes the home directory as an argument instead of reading it from the process, so every
- * row runs against a literal home.
- */
-
 const HOME = '/srv/home/tester';
 const MUTATION_COUNT = 200;
 
-/** The fixture documents and a seeded mutation of each, for the properties below. */
 const DOCUMENTS: readonly unknown[] = (() => {
   const random = createSeededRandom(FUZZ_SEED);
   return [
@@ -53,7 +45,6 @@ describe('the built-in default policy', () => {
   });
 });
 
-/** A document that needs no repair, so salvaging it is the identity. */
 const VALID_DOCUMENT: ReturnType<typeof ported.normalizeGuiPolicy> = {
   version: 1,
   safety: { level: 'strict', overrides: { fail_closed: true, paranoid_rm: false } },
@@ -223,8 +214,6 @@ const SALVAGE_ROWS: readonly {
     },
   },
   {
-    // The code clamps, while audit-retention-days.ts's own docstring and docs/config-recovery.md
-    // read as a fallback to the 30-day default; this row pins the code and flags the conflict.
     behavior: 'a retention window out of range clamps rather than disabling retention',
     document: { version: 1, audit: { retention_days: 0 } },
     expected: { ...ported.DEFAULT_GUI_POLICY, audit: { retention_days: 1 } },
@@ -246,10 +235,6 @@ describe('salvaging one user policy document', () => {
   });
 });
 
-/**
- * The generated documents are here for the properties that must hold for every one of them; the
- * rows above pin what each individual document salvages to.
- */
 describe('properties every salvaged document must satisfy', () => {
   test('salvage never produces a document that would itself fail validation', () => {
     for (const document of DOCUMENTS) {
@@ -516,18 +501,12 @@ describe('which secret rules end up disabled', () => {
   }, 30_000);
 });
 
-/**
- * Retention is read from the same salvaged policy the snapshot reads rather than from a
- * second parser, so the rows below are the ones where the two could disagree: values the
- * clamp rejects, a field of the wrong type, and every way the file can fail to be read.
- */
 const RETENTION_FILES: readonly {
   readonly behavior: string;
   readonly file: string;
   readonly days: number;
 }[] = [
   {
-    // Same docstring/contract conflict as the salvage row above: clamp, not the 30-day default.
     behavior: 'below the minimum clamps up',
     file: '{"version":1,"audit":{"retention_days":0}}',
     days: 1,
@@ -614,11 +593,6 @@ describe('the audit retention window read from the policy file', () => {
   });
 });
 
-/**
- * `policy apply` writes the user scope through this call, so what lands on disk is contract: the
- * salvaged document, the 0600 file inside a 0700 directory, and nothing at all when the proposal
- * fails validation.
- */
 describe('writing the user policy from the GUI', () => {
   afterEach(removeTempRoots);
 
@@ -631,7 +605,6 @@ describe('writing the user policy from the GUI', () => {
     });
     return { result, tree: snapshotTree(root), root };
   };
-  /** The directory's and the file's permission bits, in that order. */
   const modes = (root: string) =>
     ['.cc-safety-net', '.cc-safety-net/policy.json'].map((path) =>
       (lstatSync(join(root, path)).mode & 0o777).toString(8),
@@ -660,7 +633,6 @@ describe('writing the user policy from the GUI', () => {
         content: `${JSON.stringify(written.result.policy, null, 2)}\n`,
       },
     ]);
-    // Windows has no POSIX mode to assert.
     if (process.platform !== 'win32') expect(modes(written.root)).toEqual(['700', '600']);
   });
 
@@ -689,7 +661,6 @@ describe('writing the user policy from the GUI', () => {
   ] as const)('%s is reported and nothing is written', (_behavior, policy, errors) => {
     const written = write(policy);
     expect(written.result.errors).toEqual([...errors]);
-    // A rejected proposal never leaves a partial file, and never touches the config directory.
     expect(written.tree).toEqual([]);
     expect(written.result.policy).toEqual(ported.DEFAULT_GUI_POLICY);
   });

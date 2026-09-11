@@ -9,7 +9,6 @@ import {
 import type { CommandToolKind, ToolCallContext } from '@/gate/invocation';
 import { runConfiguredHookAdapter } from '@/hosts/hook/common';
 
-/** Grok Build PreToolUse hook input format */
 interface GrokBuildHookInput {
   hookEventName?: string;
   sessionId?: string;
@@ -24,7 +23,6 @@ interface GrokBuildHookInput {
   toolInputTruncated?: boolean;
 }
 
-/** Grok Build PreToolUse hook output format: the classic decision form, the only one it reads. */
 type GrokBuildHookOutput = { decision: 'allow' } | { decision: 'deny'; reason: string };
 
 const GROK_BUILD_COMMAND_TOOLS = new Map<string, CommandToolKind>([
@@ -45,7 +43,6 @@ export async function runGrokBuildHook(): Promise<void> {
     isSupported: () => true,
     getToolName: (input) => input.toolName,
     getToolInput: (input, toolName, outputDeny) => {
-      // Grok Build truncates tool input at 128 KB; the cut command cannot be analyzed.
       if (input.toolInputTruncated === true) {
         outputFailedClosed(outputDeny, input.toolInput, toolName);
         return { ok: false };

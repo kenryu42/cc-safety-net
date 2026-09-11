@@ -19,12 +19,6 @@ import {
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
 
-/**
- * The find analyzer decides three separate things — the catastrophic starting point, `-delete`
- * against the trusted temp roots, and what each `-exec` child is — and it hands the child to the
- * caller. Each row therefore states the match and the nested calls it issues.
- */
-
 let root = '';
 let home = '';
 let workspace = '';
@@ -113,7 +107,6 @@ const FIND_COMMANDS: readonly string[] = [
 
 type NestedCall = { tokens: string[]; cwd: string | null | undefined; command?: string };
 
-/** Blocks on two sentinel heads so the caller-supplied match is exercised both ways. */
 function nestedMatchFor(tokens: readonly string[]): DestructiveCommandRuleMatch | null {
   if (tokens.includes('DANGER')) {
     return { id: 'rm.recursive-force-outside-cwd', reason: 'nested', intent: 'manual_only' };
@@ -168,7 +161,6 @@ function sharedContext(row: FindCase) {
   };
 }
 
-/** The analyzer over one command, with a recorder for the nested calls it issues. */
 function analyzePair(source: string, row: FindCase, mode: 'tokens' | 'nested') {
   const paired = pairedEnvironments({ HOME: home, ...row.env }, home);
   const calls: NestedCall[] = [];
@@ -222,7 +214,6 @@ describe('find primaries', () => {
       { token: '-name', arity: 1, exec: false },
       { token: '-newerat', arity: 1, exec: false },
       { token: '-newerXY', arity: 1, exec: false },
-      // contract: src/gate/analyzer/find.ts — `-newer` takes two letters after it.
       { token: '-newerx', arity: 0, exec: false },
       { token: '-fprintf', arity: 2, exec: false },
       { token: '-exec', arity: 0, exec: true },
@@ -255,7 +246,6 @@ describe('find primaries', () => {
         command: { tokens: ['rm', '{}'], nextIndex: 6 },
       },
       {
-        // contract: src/gate/analyzer/find.ts — a body without a terminator runs to the end.
         tokens: ['find', '.', '-exec', 'rm', '-rf'],
         index: 2,
         command: { tokens: ['rm', '-rf'], nextIndex: 5 },
@@ -313,11 +303,8 @@ describe('find primaries', () => {
       { source: 'find logs -delete', points: ['logs'] },
       { source: 'find . -name "*.log"', points: ['.'] },
       { source: 'find /tmp/a /tmp/b -delete', points: ['/tmp/a', '/tmp/b'] },
-      // contract: src/gate/analyzer/find.ts:307 — no operand at all reads as no starting point,
-      // which the caller turns into the implicit `.`.
       { source: 'find -delete', points: null },
       { source: 'find', points: null },
-      // contract: src/gate/analyzer/find.ts — an expression the reader cannot bound gives up.
       { source: 'find ! -name x -delete', points: null },
       { source: 'find ( logs ) -delete', points: null },
     ];
@@ -335,14 +322,10 @@ describe('find primaries', () => {
       { tokens: ['find', '.', '-exec', 'rm', '-rf', '{}', ';'], deletes: true },
       { tokens: ['find', '.', '-exec', 'sudo', 'rm', '-rf', '{}', '+'], deletes: true },
       { tokens: ['find', '.', '-exec', 'env', 'rm', '-rf', '{}', ';'], deletes: true },
-      // contract: src/gate/analyzer/find.ts:225 — only the wrapper prelude is peeled here, so a
-      // busybox applet is not read as an rm.
       { tokens: ['find', '.', '-exec', 'busybox', 'rm', '-rf', '{}', ';'], deletes: false },
       { tokens: ['find', '.', '-execdir', 'rm', '-rf', '{}', ';'], deletes: true },
       { tokens: ['find', '.', '-exec', 'rm', '-rf', 'x', ';'], deletes: false },
       { tokens: ['find', '.', '-exec', 'echo', '{}', ';'], deletes: false },
-      // contract: src/gate/analyzer/find.ts:227 — the probe asks whether the body removes the
-      // paths find hands it, not whether the removal is recursive.
       { tokens: ['find', '.', '-exec', 'rm', '{}', ';'], deletes: true },
       { tokens: ['find', '.', '-exec', 'rmdir', '{}', ';'], deletes: true },
       { tokens: ['find', '.', '-delete'], deletes: false },
@@ -412,14 +395,12 @@ describe('find analysis', () => {
 
     const tmpdir = caseFor('tmpdir trusted');
     expect(matchId('find $TMPDIR/build -delete', tmpdir)).toBeNull();
-    // The temp root itself is not a descendant of a trusted temp directory.
     expect(matchId('find $TMPDIR -delete', tmpdir)).toBe('find.delete');
     expect(matchId('find $TMPDIR/build -delete', caseFor('workspace'))).toBe('find.delete');
 
     const off = caseFor('destructive protection off');
     expect(matchId('find . -delete', off)).toBeNull();
     expect(matchId('find . -exec DANGER {} \\;', off)).toBeNull();
-    // A custom rule is not the destructive protection to disable.
     expect(matchId('find . -exec CUSTOM {} \\;', off)).toBe('custom.nested');
     expect(matchId('find / -delete', off)).toBe('rm.recursive-force-root-or-home');
   });

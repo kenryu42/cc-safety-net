@@ -1,12 +1,3 @@
-/**
- * Amp Code hook detection.
- *
- * `amp plugins list` has no `--json` mode, so its text is parsed. A personal-scope plugin is
- * rendered as `✓ <name> (User Plugins) <status>`; the local system-scope line prints a path
- * instead and is not what install writes anymore. The output carries no version, so drift is
- * not reported here — `cc-safety-net update` pushes the current artifact regardless.
- */
-
 import { stripVTControlCharacters } from 'node:util';
 import type { DetectContext, HookDetection } from '@/hosts/detect/context';
 

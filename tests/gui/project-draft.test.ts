@@ -2,14 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { DEFAULT_GUI_POLICY } from '@/core/policy/store';
 import { renderPages, sliceBlock } from '../helpers/gui-page';
 
-/**
- * The project draft the page edits: a sparse proposal built from the fields the user marked, the
- * entry snapshot that decides whether anything is unsaved, and the overlay that shows the marked
- * fields on top of the user policy. The block is sliced out of the served page and run
- * over a policy of its own.
- */
-
-// Token-shaped, assembled here rather than written out, and fixed so the slice is deterministic.
 const TOKEN = Buffer.from('cc-safety-net gui draft fixture').toString('base64url');
 
 const RULE_ID = 'destructive.git-push-force';
@@ -36,7 +28,6 @@ const draft = new Function(
   `${block(pages.ported)}\nreturn { clonePolicy, collectProjectProposal, projectMarkedFields, overlayProjectProposal, seedProjectDraft };`,
 )() as DraftBlock;
 
-/** A user policy the project draft can weaken: strict, with one destructive rule switched off. */
 const baseline = (): Policy => ({
   ...(JSON.parse(JSON.stringify(DEFAULT_GUI_POLICY)) as Policy),
   safety: { level: 'strict', overrides: {} },
@@ -59,8 +50,6 @@ describe('the project draft block on the served page', () => {
       version: 1,
       destructive_command_protection: { overrides: { [RULE_ID]: 'off' } },
     });
-    // Nothing marked is an empty proposal, and the audit section the policy carries is user scope
-    // only, so no marking can put it in a project file.
     expect(draft.collectProjectProposal(new Set(), policy)).toStrictEqual({ version: 1 });
     expect(
       draft.collectProjectProposal(
@@ -86,8 +75,6 @@ describe('the project draft block on the served page', () => {
 
     expect([...seeded.marked]).toStrictEqual(['safety.level']);
     expect(dirty(seeded.marked)).toBeFalse();
-    // The project file would stop setting the level, so the draft is unsaved even though the
-    // level the user sees does not move.
     expect(seeded.policy.safety.level).toBe('strict');
     expect(dirty(new Set())).toBeTrue();
     expect(dirty(new Set(['safety.level', MARKED_RULE]))).toBeTrue();
@@ -112,7 +99,6 @@ describe('the project draft block on the served page', () => {
         draft.collectProjectProposal(new Set(draft.projectMarkedFields(snapshot)), restored),
       ),
     ).toBe(seeded.snapshot);
-    // The overlay shows the project's weakening on top of the user policy without touching it.
     expect(restored.safety.level).toBe('standard');
     expect(entered.safety.level).toBe('strict');
   });

@@ -1,11 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-/**
- * A plain HTTP server on the loopback interface, handed back as a handle rather than run around a
- * callback: a rulebook-manager row drives the manager against the origin it hands back, so the
- * server has to outlive the whole row.
- */
 export async function startLoopbackServer(
   handler: (request: IncomingMessage, response: ServerResponse) => void,
 ): Promise<{ origin: string; close(): Promise<void> }> {

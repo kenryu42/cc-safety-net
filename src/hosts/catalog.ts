@@ -255,8 +255,6 @@ export const installIntegrationMetadata = catalog
   .map((integration) => ({ id: integration.id, ...integration.install }))
   .map(({ order: _, ...integration }) => integration);
 
-/** Audit entries stamp an integration id as their `agent`, so this doubles as
- *  the id-to-label map for anything rendering a logged agent. */
 export const integrationDisplayNames = Object.fromEntries(
   catalog.map((integration) => [integration.id, integration.displayName]),
 ) as Record<IntegrationId, string>;

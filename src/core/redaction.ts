@@ -1,4 +1,3 @@
-// Provider/API token formats. Length floors favour recall; distinctive prefixes limit false positives.
 const PROVIDER_TOKENS = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
@@ -22,7 +21,6 @@ const PROVIDER_TOKENS = [
   /\b[a-f0-9]{32}\.[A-Za-z0-9]{16}\b/g,
 ];
 
-/** Sanitize secrets from text before it is retained in diagnostics or logs. */
 export function redactSecrets(text: string): string {
   return redactNonAssignmentSecrets(
     text
@@ -41,7 +39,6 @@ export function redactSecrets(text: string): string {
   );
 }
 
-/** Sanitizes non-assignment secrets in an already structured diagnostic payload. */
 export function redactNonAssignmentSecrets(text: string): string {
   return PROVIDER_TOKENS.reduce(
     (result, pattern) => result.replace(pattern, '<redacted>'),
@@ -70,7 +67,6 @@ export function redactNonAssignmentSecrets(text: string): string {
     .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '<redacted>');
 }
 
-/** Redacts assignment values without running provider-token patterns. */
 export function redactEnvAssignmentValues(text: string): string {
   return findEnvAssignments(text).reduceRight(
     (value, assignment) =>
@@ -79,19 +75,16 @@ export function redactEnvAssignmentValues(text: string): string {
   );
 }
 
-/** Canonical sanitizer for user-visible diagnostic text. */
 export function sanitizeDiagnosticText(text: string): string {
   return redactNonAssignmentSecrets(redactEnvAssignmentValues(text));
 }
 
-/** Returns assignment values so trace recorders can redact derived parser events. */
 export function getEnvAssignmentValues(text: string): readonly string[] {
   return findEnvAssignments(text).map((assignment) =>
     text.slice(assignment.valueStart, assignment.valueEnd),
   );
 }
 
-/** Fast gate for whether assignment scanning is worth running. */
 export function mightContainEnvAssignment(text: string): boolean {
   return /[A-Za-z_][A-Za-z0-9_]*=/.test(text);
 }

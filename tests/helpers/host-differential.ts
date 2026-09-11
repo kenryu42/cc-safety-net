@@ -21,11 +21,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from './temp-home';
 
-/**
- * One seed, one home: the installer reads the isolation values off an `Environment` built from
- * them, and the row records the bytes it wrote, detected and removed rather than what it claims.
- */
-
 function seedHome(prefix: string, seed: TreeSpec): string {
   const home = join(createTempRoot(prefix), 'home');
   mkdirSync(home, { recursive: true });
@@ -33,7 +28,6 @@ function seedHome(prefix: string, seed: TreeSpec): string {
   return home;
 }
 
-/** `<home>` in an env value stands for that side's home, which only exists once the root does. */
 function resolvePlaceholders(env: Record<string, string> | undefined, home: string) {
   return Object.fromEntries(
     Object.entries(env ?? {}).map(([name, value]) => [name, value.replaceAll('<home>', home)]),
@@ -52,22 +46,15 @@ export async function differential<T>(options: {
   );
 
   return {
-    // The separator is folded with the home, so a `<home>/`-spelled expectation holds on Windows.
     outcome: normalize(ported, [[portedHome, '<home>'], ...WINDOWS_SEPARATOR_FOLDS]),
     tree: snapshotHome(portedHome),
   };
 }
 
-/** The content of one file in a home snapshot, or `undefined` when nothing sits there. */
 export function fileAt(tree: TreeEntry[] | undefined, path: string) {
   return tree?.find((entry) => entry.path === path)?.content;
 }
 
-/**
- * A detect-only host: nothing of ours is installed through it here, so a row is one seeded home
- * and the detection reported for it. Inputs that vary per case (a host command's output, a CLI
- * version, a project directory) are closed over when the runner is built.
- */
 export function detectionRunner(sides: { ported: (environment: Environment) => HookDetection }) {
   return async (seed: TreeSpec, env?: Record<string, string>) =>
     (await differential({ seed, env, ported: sides.ported })).outcome;
@@ -92,7 +79,6 @@ type HostLifecycle = {
   finalUninstall: Outcome<InstallResult>;
 };
 
-/** Install, detect, install again, detect, uninstall, detect, uninstall again — one host row. */
 function hostLifecycle(home: string, actions: HostActions): HostLifecycle {
   const step = (run: () => InstallResult) => ({
     result: describeOutcome(run),
@@ -108,7 +94,6 @@ function hostLifecycle(home: string, actions: HostActions): HostLifecycle {
   };
 }
 
-/** Binds one host's implementation, so each seed reads as data rather than as wiring. */
 export function hostRunner(sides: { ported: (environment: Environment) => HostActions }) {
   return {
     row: async (seed: TreeSpec, env?: Record<string, string>) => {
@@ -133,11 +118,6 @@ export function hostRunner(sides: { ported: (environment: Environment) => HostAc
   };
 }
 
-/**
- * What a row that installs cleanly owes: install reported and wrote what it claims, the detector
- * then finds it, a second install changes nothing, uninstall leaves exactly `left` behind, the
- * host is no longer detected, and a second uninstall finds nothing to remove.
- */
 export function expectRow(
   steps: HostLifecycle | undefined,
   expected: {

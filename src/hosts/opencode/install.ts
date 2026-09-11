@@ -15,17 +15,13 @@ import type { InstallResult } from '@/hosts/install/types';
 const OPENCODE_PACKAGE = 'cc-safety-net';
 const OPENCODE_CACHE_PACKAGE = `${OPENCODE_PACKAGE}@latest`;
 const OPENCODE_CONFIG_FILES = ['opencode.json', 'opencode.jsonc'] as const;
-/** The plugin factory `src/index.ts` publishes and OpenCode loads from the package entry. */
+
 const OPENCODE_PLUGIN_EXPORT = 'CCSafetyNetPlugin';
 const OPENCODE_JSON_ERRORS = {
   stringError: 'Unterminated string in OpenCode config',
   bracketError: 'Unmatched plugin array in OpenCode config',
 };
 
-/**
- * OpenCode derives its config root through `xdg-basedir`: `XDG_CONFIG_HOME` verbatim when set,
- * else `<home>/.config`. An empty value falls back, matching the package's `||`.
- */
 export function getOpenCodeConfigDir(environment: Environment) {
   return join(
     environment.env.get('XDG_CONFIG_HOME') || join(environment.home, '.config'),
@@ -41,7 +37,6 @@ function getOpenCodeConfigPaths(environment: Environment) {
   return OPENCODE_CONFIG_FILES.map((filename) => join(getOpenCodeConfigDir(environment), filename));
 }
 
-/** Same derivation for OpenCode's package cache, from `XDG_CACHE_HOME`, else `<home>/.cache`. */
 function getOpenCodeCachePath(environment: Environment) {
   return join(
     environment.env.get('XDG_CACHE_HOME') || join(environment.home, '.cache'),
@@ -55,15 +50,6 @@ export function clearOpenCodeCache(environment: Environment): void {
   rmSync(getOpenCodeCachePath(environment), { recursive: true, force: true });
 }
 
-/**
- * Prove the plugin OpenCode just installed can actually load. OpenCode fails open: when a
- * configured plugin cannot be installed, resolved or imported it publishes a session error and
- * keeps going unprotected, so `opencode plugin` exiting 0 proves nothing about enforcement.
- *
- * This mirrors the host's own acceptance of an npm plugin: it reifies the package into
- * `<cache>/packages/<spec>/node_modules/<name>`, resolves the entry from the package's `main`
- * (this package ships no `./server` export) and requires the exported plugin to be callable.
- */
 export async function verifyOpenCodePluginRuntime(environment: Environment): Promise<void> {
   const packageDir = join(getOpenCodeCachePath(environment), 'node_modules', OPENCODE_PACKAGE);
   const packageJsonPath = join(packageDir, 'package.json');

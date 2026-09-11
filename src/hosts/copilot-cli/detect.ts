@@ -1,7 +1,3 @@
-/**
- * GitHub Copilot CLI hook detection.
- */
-
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
@@ -43,7 +39,6 @@ function _isSafetyNetCopilotCommand(command: string | undefined): boolean {
   return /(^|\s)hook\s+(?:[^\s]+\s+)*(--copilot-cli|-cp)(\s|$)/.test(command);
 }
 
-/** Null when the version is absent or unparseable, which callers report distinctly. */
 function _isAtLeastVersion(
   version: string | null | undefined,
   threshold: readonly [number, number, number],
@@ -204,9 +199,6 @@ function _resolveCopilotInlineDisableSource(
   return undefined;
 }
 
-/**
- * Check if GitHub Copilot CLI hooks are enabled via supported repository, user, and inline config sources.
- */
 function _checkCopilotEnabled(
   environment: Environment,
   cwd: string,
@@ -220,9 +212,7 @@ function _checkCopilotEnabled(
   const repoClaudeDir = join(cwd, '.claude');
   const inlineSupport = _supportsCopilotInlineHooks(copilotCliVersion);
   const inlineErrors = inlineSupport === true ? errors : undefined;
-  // Repository sources outrank user sources, and within the user scope `settings.json` is the
-  // current file while `config.json` stays readable because the host still merges its values.
-  // Copilot also reads the cross-tool `.claude` settings files, which rank below its native ones.
+
   const repoInlineSources = [
     _collectCopilotInlineConfig(join(repoConfigDir, 'settings.local.json'), inlineErrors),
     _collectCopilotInlineConfig(join(repoConfigDir, 'settings.json'), inlineErrors),
@@ -329,9 +319,6 @@ export function detect(context: DetectContext): HookDetection {
     };
   }
 
-  // The plugin is a checkout under the Copilot config directory, named for its marketplace
-  // entry, and `settings.json` records whether it is switched on. Copilot writes that file as
-  // JSONC, so its comments come out before parsing.
   const configHome = _getCopilotConfigHome(context.environment);
   const pluginDir = join(configHome, 'installed-plugins', ...COPILOT_PLUGIN_DIR);
   const pluginInstalled = existsSync(pluginDir);
@@ -342,7 +329,6 @@ export function detect(context: DetectContext): HookDetection {
     return { platform: 'copilot-cli', status: 'not-inspected' };
   }
 
-  // Absent means enabled: Copilot records the key only to turn a plugin off.
   if (
     pluginInstalled &&
     settings.kind === 'ok' &&

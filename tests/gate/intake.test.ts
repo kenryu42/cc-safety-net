@@ -20,15 +20,6 @@ import {
 } from '@/gate/intake';
 import type { CommandToolKind } from '@/gate/invocation';
 
-/**
- * Intake is where the gate reads the process: the stdin document, the tool name, and the
- * directory a host claims the call runs in. A change here changes the input every later stage
- * sees, so each surface states the answer it must produce rather than recording the one it did.
- *
- * The exhaustive tool-name-to-kind table belongs to `core/tool-input`, which owns the
- * classification; intake only decides when a host's own table overrides it.
- */
-
 const FAIL_CLOSED_REASON =
   'CC Safety Net failed closed because command analysis failed unexpectedly. This is not caused by your command. Report it to the user.';
 
@@ -53,8 +44,6 @@ beforeAll(() => {
   tree.escape = join(tree.workspace, 'escape');
   tree.file = join(tree.workspace, 'file.txt');
   tree.missing = join(tree.workspace, 'missing');
-  // A name the workspace's own is a string prefix of: containment compares path segments, not
-  // characters, so this directory is outside the workspace however alike the two spellings read.
   tree.sibling = `${tree.workspace}-sibling`;
   mkdirSync(tree.inner, { recursive: true });
   mkdirSync(tree.outside, { recursive: true });
@@ -88,8 +77,6 @@ describe('the route a tool name resolves to', () => {
   });
 
   test('a host that calls a file tool a shell gets a command route, not the built-in kind', () => {
-    // `read` is a path tool everywhere else; a host whose `read` runs a shell must not have its
-    // command handed to the path guards as a filename.
     expect(getNonCommandToolInputKind('read')).toBe('path');
     expect(getToolRoute('read', hostTable([['read', 'posix']]))).toEqual({
       kind: 'command',
@@ -113,8 +100,6 @@ describe('the route a tool name resolves to', () => {
   });
 
   test('the host table is read by the exact name a host sent, not a normalized one', () => {
-    // The classifier folds case and separators; the host table does not, so a table listing
-    // `Bash` cannot claim a call the host spelled `bash`.
     const table = hostTable([['Bash', 'posix']]);
     expect(getToolRoute('Bash', table)).toEqual({ kind: 'command', shell: 'posix' });
     expect(getToolRoute('bash', table)).toEqual({ kind: 'unknown' });
@@ -151,7 +136,6 @@ describe('reading the hook document from stdin', () => {
 });
 
 describe('parsing the hook document', () => {
-  /** Whatever JSON names is handed on; only text JSON refuses becomes a denial. */
   const rows: readonly {
     readonly text: string;
     readonly parsed: unknown;
@@ -176,7 +160,6 @@ describe('parsing the hook document', () => {
 });
 
 describe('the directory a call is contained to', () => {
-  /** Every requested spelling the rows below draw from, named by what it is. */
   const requestedPaths = () => [
     tree.workspace,
     tree.inner,
@@ -212,21 +195,16 @@ describe('the directory a call is contained to', () => {
   test('a directory inside a trusted root resolves to its canonical self', () => {
     expect(contained(tree.workspace, [tree.workspace])).toBe(tree.workspace);
     expect(contained(tree.inner, [tree.workspace])).toBe(tree.inner);
-    // A symlink is followed, so a later path guard compares the real location.
     expect(contained(tree.link, [tree.workspace])).toBe(tree.inner);
     expect(contained(join(tree.inner, '..', 'inner'), [tree.workspace])).toBe(tree.inner);
   });
 
   test('anything that is not a directory inside a root is refused', () => {
-    // The escape link and the outside directory are the same place; neither is under the root.
     expect(contained(tree.escape, [tree.workspace])).toBeUndefined();
     expect(contained(tree.outside, [tree.workspace])).toBeUndefined();
-    // A sibling whose name merely starts with the root's.
     expect(contained(tree.sibling, [tree.workspace])).toBeUndefined();
-    // A parent of the root, reached by name or by climbing.
     expect(contained(root, [tree.workspace])).toBeUndefined();
     expect(contained('..', [tree.workspace])).toBeUndefined();
-    // A file and a path that is not there at all.
     expect(contained(tree.file, [tree.workspace])).toBeUndefined();
     expect(contained(tree.missing, [tree.workspace])).toBeUndefined();
   });
@@ -236,9 +214,7 @@ describe('the directory a call is contained to', () => {
     expect(contained('./inner', [tree.workspace])).toBe(tree.inner);
     expect(contained('.', [tree.workspace])).toBe(tree.workspace);
     expect(contained('', [tree.workspace])).toBe(tree.workspace);
-    // The first root that is a usable directory, so an unusable one ahead of it is stepped over.
     expect(contained('inner', [tree.missing, tree.workspace])).toBe(tree.inner);
-    // Resolved against the first root, not against the one that would contain it.
     expect(contained('inner', [tree.outside, tree.workspace])).toBeUndefined();
   });
 
@@ -263,11 +239,6 @@ describe('the directory a call is contained to', () => {
     expect(firstTrustedRoot([tree.link], processPathResolver)).toBe(tree.inner);
   });
 
-  /**
-   * The guarantee the containment check exists for, over every pair the fixture can make: an
-   * answer is never a path the caller could reach outside the roots it was given. Dropping the
-   * containment test in `resolveContainedCwd` fails this on the escaping symlink alone.
-   */
   test('no pair ever answers with a path outside its trusted roots', () => {
     let answered = 0;
     for (const roots of rootSets()) {
@@ -284,7 +255,6 @@ describe('the directory a call is contained to', () => {
         expect(canonicalRoots.some((entry) => isSameOrInsidePath(answer, entry))).toBeTrue();
       }
     }
-    // The rows above are not passing by refusing everything.
     expect(answered).toBeGreaterThan(20);
   });
 });
@@ -295,7 +265,6 @@ describe('the directory a call is canonicalized to without containment', () => {
 
   test('an existing directory canonicalizes wherever it lies', () => {
     expect(canonical(tree.inner, tree.workspace)).toBe(tree.inner);
-    // Outside the base, which is the whole point: an agent may legitimately run elsewhere.
     expect(canonical(tree.outside, tree.workspace)).toBe(tree.outside);
     expect(canonical(tree.escape, tree.workspace)).toBe(tree.outside);
     expect(canonical(root, tree.workspace)).toBe(root);
@@ -308,7 +277,6 @@ describe('the directory a call is canonicalized to without containment', () => {
     expect(canonical('.', tree.outside)).toBe(tree.outside);
     expect(canonical('', tree.outside)).toBe(tree.outside);
     expect(canonical('..', tree.workspace)).toBe(root);
-    // The same relative name resolves nowhere from a base that has no such child.
     expect(canonical('inner', tree.outside)).toBeUndefined();
   });
 
@@ -325,7 +293,6 @@ describe('the two path predicates intake decides with', () => {
       [() => tree.inner, true],
       [() => tree.outside, true],
       [() => root, true],
-      // A symlink to a directory is usable; the stat follows it.
       [() => tree.link, true],
       [() => tree.escape, true],
       [() => tree.file, false],
@@ -339,7 +306,6 @@ describe('the two path predicates intake decides with', () => {
     expect(isSameOrInsidePath(tree.inner, tree.workspace)).toBeTrue();
     expect(isSameOrInsidePath(tree.workspace, tree.inner)).toBeFalse();
     expect(isSameOrInsidePath(tree.outside, tree.workspace)).toBeFalse();
-    // The prefix trap: `<root>/workspace-sibling` starts with `<root>/workspace`.
     expect(isSameOrInsidePath(tree.sibling, tree.workspace)).toBeFalse();
     expect(isSameOrInsidePath(tree.workspace, root)).toBeTrue();
     expect(isSameOrInsidePath(root, tree.workspace)).toBeFalse();
@@ -385,11 +351,6 @@ describe('the execution directory a hook call reports', () => {
     expect(resolved.denials).toEqual([]);
   });
 
-  /**
-   * Every other shape fails closed rather than guessing a directory. The denial carries what the
-   * host sent when that was a string, so the report names the directory it could not use; for a
-   * value that is not a string there is nothing to name and the command stands in.
-   */
   test.each([
     ['an empty string', '', ''],
     ['a blank string', '   ', '   '],
@@ -428,14 +389,12 @@ describe('the fail-closed denial', () => {
       reason: FAIL_CLOSED_REASON,
       intent: 'stop_and_explain',
       command: 'rm -rf /',
-      // With no segment of its own the denial points at the whole command.
       segment: 'rm -rf /',
       toolName: 'Bash',
     });
     expect(denialFor({ command: 'rm -rf /' }, '/some/segment').segment).toBe('/some/segment');
   });
 
-  /** Nothing here is a command the report can quote, so the denial goes out without one. */
   test.each([
     ['no input at all', undefined],
     ['an empty command', { command: '' }],

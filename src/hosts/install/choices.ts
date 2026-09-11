@@ -1,8 +1,3 @@
-/**
- * The rows the install prompt offers: one per integration, probed for a usable
- * CLI and marked available or not for the action being run.
- */
-
 import { spawn } from 'node:child_process';
 import { getSpawnCommand } from '@/hosts/system-info';
 import type { NativeCommand } from './native';
@@ -23,8 +18,6 @@ export type BuildInstallTargetChoicesOptions = {
   configuredTargets?: readonly InstallTarget[];
 };
 
-// All targets probe in parallel, so a slow CLI (Electron-backed Cursor, or a Node CLI under
-// contention) must not be misreported as missing. Absent binaries still fail fast on spawn error.
 const PROBE_TIMEOUT_MS = 5000;
 
 export function probeInstallTarget(
@@ -95,8 +88,6 @@ function getChoiceAvailability(
   cliAvailable: boolean,
   configured: boolean,
 ): Pick<InstallTargetChoice, 'available' | 'unavailableReason'> {
-  // `configured` decides uninstall on its own so a stale config-based integration stays
-  // removable: its detection is filesystem-only, and removing it needs no binary.
   if (action === 'uninstall')
     return configured
       ? { available: true }

@@ -27,8 +27,6 @@ export function printRuleAddResult(
   source: string,
   scopeLine: string,
 ): void {
-  // Which scope an add landed in is invisible otherwise, so running from the wrong directory
-  // reads as success. A failed add wrote nothing, so it names no destination.
   if (result.ok) console.log(scopeLine);
   if (!result.add) {
     printRuleChangeResult(result, `Added rulebook source: ${source}`);
@@ -120,11 +118,6 @@ function printListSection<T>(title: string, items: T[], format: (item: T) => str
   }
 }
 
-/**
- * How a rule matches, in the shape its own rulebook version states it. A version 2 rule
- * carries no `block_args`, so printing that row would show an empty list for every one of
- * them and hide the `match` contract that actually decides the block.
- */
 function describeRuleMatch(rule: CustomRule): string[] {
   if (!rule.match) {
     return [

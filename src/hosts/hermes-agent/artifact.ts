@@ -1,24 +1,10 @@
-/**
- * The managed Hermes Agent plugin written to `~/.hermes/plugins/cc-safety-net/`.
- *
- * Hermes discovers a user plugin from a `plugin.yaml` manifest plus an `__init__.py`
- * exposing `register(ctx)` (`hermes_cli/plugins.py`), so both files are generated here and
- * stamped with the same ownership marker the installer and doctor detect.
- */
-
 import { managedHookCommands } from '@/hosts/managed-command';
 
-/** Directory name under `~/.hermes/plugins/`; also the id `hermes plugins enable` takes. */
 export const HERMES_AGENT_PLUGIN_NAME = 'cc-safety-net';
 
-/**
- * First line of every managed Hermes plugin file. The installer refuses to overwrite a file
- * that does not start with it, and doctor reports one as unmanaged.
- */
 export const HERMES_AGENT_MANAGED_HEADER =
   '# cc-safety-net managed Hermes Agent plugin. Do not edit. Reinstall with: npx -y cc-safety-net install --hermes-agent';
 
-/** Hermes's own shell hooks default to 60s; half that keeps a hung analyzer from stalling a turn. */
 const ANALYSIS_TIMEOUT_SECONDS = 30;
 
 function header(version: string): string {
@@ -35,9 +21,6 @@ provides_hooks:
 `;
 }
 
-// The first release forwards only the tools with a proven payload mapping in the Hermes
-// adapter: `terminal` for command analysis, `write_file`/`patch` for protected writes, and
-// `read_file` for protected reads.
 function buildPluginSource(version: string): string {
   return `${header(version)}"""CC Safety Net guard for Hermes Agent.
 
@@ -207,10 +190,6 @@ def register(ctx):
 `;
 }
 
-/**
- * The managed files in write order: the module first, then the manifest that makes Hermes
- * discover it, so an interrupted install never leaves a discoverable plugin without code.
- */
 export function buildHermesAgentPluginFiles(
   version: string,
 ): readonly { name: string; content: string }[] {

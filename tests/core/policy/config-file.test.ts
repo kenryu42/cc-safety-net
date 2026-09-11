@@ -12,12 +12,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from '../../helpers/temp-home';
 
-/**
- * The legacy config validator, the legacy paths and the atomic writer moved into one core
- * module, each run over its own copy of the fixture tree. Only the diagnostics are contract
- * here: doctor prints them verbatim, so a reworded or reordered message is a changed report.
- */
-
 const TREE: TreeSpec = {
   'valid/rule.json': '{"version":1,"rules":["project-rules"],"transparent_wrappers":["rtk"]}',
   'version-two/rule.json': '{"version":2}',
@@ -50,14 +44,12 @@ const TREE: TreeSpec = {
   }),
 };
 
-/** The fixture tree under its own root, so nothing outside it is in reach. */
 function tree() {
   const root = createTempRoot('config-file-');
   writeTree(root, TREE);
   return root;
 }
 
-/** The result with its own absolute root removed, so a row can state the path it names. */
 function reported(
   result: { errors: string[]; ruleNames: Set<string> },
   root: string,
@@ -70,10 +62,6 @@ function reported(
 
 type Expectation = { readonly errors: readonly string[]; readonly ruleNames: readonly string[] };
 
-/**
- * Both readers share one file-reading front end, so the rows that never reach a schema — an
- * unreadable, empty or malformed file — must report identically through either one.
- */
 const UNREADABLE: readonly { behavior: string; file: string; expected: Expectation }[] = [
   {
     behavior: 'a file that is not JSON reports the parse failure, not the parser message',
@@ -219,7 +207,6 @@ describe('the atomic JSON writer', () => {
       { version: 1, rules: ['project-rules'], overrides: {} },
       mode,
     );
-    // One file, no half-written temp beside it, and the pretty-printed bytes with a final newline.
     expect(snapshotTree(root)).toEqual([
       {
         path: 'rule.json',
@@ -227,7 +214,6 @@ describe('the atomic JSON writer', () => {
         content: `${JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }, null, 2)}\n`,
       },
     ]);
-    // Owner-only; Windows has no POSIX mode to assert.
     if (process.platform !== 'win32')
       expect(lstatSync(join(root, 'rule.json')).mode & 0o777).toBe(0o600);
   });

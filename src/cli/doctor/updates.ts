@@ -1,7 +1,3 @@
-/**
- * Update checking for the doctor command.
- */
-
 import type { UpdateInfo } from '@/hosts/doctor-types';
 import { getPackageVersion } from '@/hosts/system-info';
 

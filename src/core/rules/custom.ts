@@ -46,10 +46,6 @@ function toRuleMatch(rule: PolicyRule): DestructiveCommandRuleMatch {
   };
 }
 
-/**
- * Rulebook v2 matching: exact tokens only, with no short-option expansion and no
- * backtracking over an unrecognized option's possible value.
- */
 function matchesCustomRuleMatch(
   command: string,
   tokens: readonly string[],
@@ -81,8 +77,6 @@ function matchesCommandPath(
       continue;
     }
     if (token.startsWith('-')) {
-      // An unrecognized option never consumes a value, and an `=`-joined value is part
-      // of its own token; an unlisted value-taking option therefore misses, failing open.
       skipNext = !token.includes('=') && optionsWithValues.has(token);
       continue;
     }

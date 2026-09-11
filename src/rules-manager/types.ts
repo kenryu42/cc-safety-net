@@ -17,7 +17,7 @@ export interface SyncRulesConfigResult {
   ok: boolean;
   errors: string[];
   entries: ActiveRulebookSummary[];
-  /** Preformatted lines describing what vendoring changed on disk, if anything. */
+
   changes?: string[];
 }
 

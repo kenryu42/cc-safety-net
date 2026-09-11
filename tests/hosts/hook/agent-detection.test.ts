@@ -6,13 +6,6 @@ import { createProcessEnvironment } from '@/core/environment';
 import { detectClaudeShapeAgent as portedDetect } from '@/hosts/hook/agent-detection';
 import { withEnv } from '../../helpers';
 
-/**
- * Who a Claude-shaped payload came from, decided from the transcript path against the three
- * configuration roots. The port reads the roots and the home off the captured `Environment`
- * instead of `process.env`, so every row drives both implementations under the same variables
- * and the answers have to agree.
- */
-
 let home: string;
 
 beforeEach(() => {
@@ -77,7 +70,6 @@ const ROWS: readonly Row[] = [
     expected: 'codex',
   },
   {
-    // The root prefix decides who the payload came from; the file behind the path is never read.
     name: 'a transcript path that does not exist under a root',
     transcript: (root) => join(root, '.codex', 'sessions', 'gone.jsonl'),
     expected: 'codex',
@@ -106,8 +98,6 @@ const ROWS: readonly Row[] = [
 
 for (const row of ROWS) {
   test(row.name, () => {
-    // A configured root is written relative to the fixture so the row can name it before the
-    // temporary home exists; the environment variable itself is absolute, as a host would set it.
     const rooted = (value: string | undefined) =>
       value === undefined ? undefined : join(home, value);
     withEnv(

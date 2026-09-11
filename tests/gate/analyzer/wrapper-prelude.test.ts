@@ -13,11 +13,6 @@ import {
 } from '@/gate/analyzer/wrapper-prelude';
 import { pairedEnvironments } from '../../core/differential-inputs';
 
-/**
- * The prelude peel: which leading words are assignments, which wrappers are stripped, and where a
- * `--chdir` leaves the command. The `--chdir` rows resolve against a real directory tree.
- */
-
 const INHERITED = new Map([
   ['TMPDIR', '/inherited/tmp'],
   ['GIT_DIR', '/inherited/git'],
@@ -77,7 +72,6 @@ describe('env assignment words', () => {
     });
     expect(strip(['echo', 'hi'])).toStrictEqual({ words: ['echo', 'hi'], env: [] });
     expect(strip(['FOO=bar'])).toStrictEqual({ words: [], env: [['FOO', 'bar']] });
-    // An append is not an assignment, so the peel stops at it.
     expect(strip(['TMPDIR+=/extra', 'echo'])).toStrictEqual({
       words: ['TMPDIR+=/extra', 'echo'],
       env: [],
@@ -87,7 +81,6 @@ describe('env assignment words', () => {
 });
 
 describe('wrapper peel', () => {
-  /** The peeled command, the assignments it carries and the directory it ends in. */
   const peel = (
     tokens: readonly string[],
     cwd?: string | null,
@@ -124,7 +117,6 @@ describe('wrapper peel', () => {
       'x',
     ]);
     expect(peel(['sudo']).tokens).toStrictEqual([]);
-    // A login shell and an unresolvable target both leave the directory unknown.
     expect(peel(['sudo', '-i', 'rm', '-rf', 'x'], root).cwd).toBeNull();
     expect(peel(['sudo', '--login', 'rm', '-rf', 'x'], root).cwd).toBeNull();
     expect(peel(['sudo', '--chdir=', 'rm', '-rf', 'x'], root).cwd).toBeNull();
@@ -149,7 +141,6 @@ describe('wrapper peel', () => {
     expect(peel(['env', '-C', 'relative', 'git', 'status'], null).cwd).toBeNull();
     expect(peel(['env', '-C', sub, 'rm', '-rf', 'x'], root).cwd).toBe(sub);
     expect(peel(['env', '-C', sub, 'env', '-C', '..', 'rm', '-rf', 'x'], root).cwd).toBe(root);
-    // `-i` and `-` clear the inherited names the caller named, plus TMPDIR.
     expect(peel(['env', '-i', 'rm', '-rf', 'x'], root, INHERITED).env).toStrictEqual({
       TMPDIR: '',
       GIT_DIR: '',
@@ -165,7 +156,6 @@ describe('wrapper peel', () => {
     expect(peel(['env', '-0', 'printf', 'x']).tokens).toStrictEqual(['printf', 'x']);
     expect(peel(['env', '-P', '/bin', 'echo', 'x']).tokens).toStrictEqual(['echo', 'x']);
     expect(peel(['env']).tokens).toStrictEqual([]);
-    // A split string is not emulated: it is reported raw and the directory becomes unknown.
     expect(peel(['env', '-S', 'printf one\\_two', 'git', 'status'], root)).toMatchObject({
       tokens: ['git', 'status'],
       cwd: null,
@@ -176,7 +166,6 @@ describe('wrapper peel', () => {
       tokens: [],
       split: ['rm -rf x'],
     });
-    // Option parsing stops at `-S`, so the words after its value stay operands.
     expect(peel(['env', '--split-string', 'rm', '-rf', 'x'])).toMatchObject({
       tokens: ['-rf', 'x'],
       split: ['rm'],
@@ -229,7 +218,6 @@ describe('wrapper peel', () => {
       '-rf',
     ];
     expect(peel(overBudget)).toMatchObject({ tokens: ['rm', '-rf'], env: { FOO: 'bar' } });
-    // A head the prelude does not recognize is returned untouched.
     for (const argv of [
       ['nice', '-n', '10', 'rm', '-rf', 'x'],
       ['time', 'rm', '-rf', 'x'],
@@ -280,7 +268,6 @@ describe('wrapper peel', () => {
         words: Array.from({ length: 64 }, (_, index) => `w${index}`),
       },
       {
-        // The 64-word splice budget counts the retained operands too.
         values: [Array.from({ length: 64 }, (_, index) => `w${index}`).join(' ')],
         operands: ['tail'],
         words: null,

@@ -1,7 +1,3 @@
-/**
- * Gemini CLI hook detection.
- */
-
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
@@ -14,10 +10,6 @@ import {
 
 const GEMINI_SAFETY_NET_EXTENSION = 'gemini-safety-net';
 
-/**
- * Detect the Gemini extension from its installed directory and the enablement file Gemini CLI
- * keeps beside it. A `!`-prefixed override is how Gemini records "disabled for this scope".
- */
 export function detectGeminiCLI(environment: Environment): HookDetection {
   const extensionsDir = join(environment.home, '.gemini', 'extensions');
   const extensionDir = join(extensionsDir, GEMINI_SAFETY_NET_EXTENSION);

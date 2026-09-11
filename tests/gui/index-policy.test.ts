@@ -15,24 +15,16 @@ import {
   removeTempRoots,
 } from '../helpers/temp-home';
 
-/**
- * The guard, the page and the user-policy endpoints, driven against the server over a seeded home.
- * Every row records what came back; the assertions below pin what each row is for, so a row that
- * starts answering the wrong thing still fails.
- */
-
 const USER_POLICY_FILE = 'home/.cc-safety-net/policy.json';
 const PROJECT_POLICY_FILE = 'project/.cc-safety-net/policy.json';
 const USER_POLICY_PATH = posix.join('<root>', USER_POLICY_FILE);
 
-/** The canonical document the writer produces, seeded with a level and a window of its own. */
 const USER_POLICY = {
   ...DEFAULT_GUI_POLICY,
   safety: { level: 'strict', overrides: {} },
   audit: { retention_days: 10 },
 };
 
-/** A rule the draft can switch off, with the command its metadata offers as the example. */
 const CONFIGURABLE_RULE = DESTRUCTIVE_COMMAND_RULE_METADATA.find((rule) => !rule.catastrophic);
 if (!CONFIGURABLE_RULE) throw new Error('the destructive metadata carries no configurable rule');
 
@@ -67,7 +59,6 @@ const S7: TreeSpec = {
 
 const JSON_HEADERS = { contentType: 'application/json; charset=utf-8', cacheControl: 'no-store' };
 
-/** The `/api/policy` fields the rows pin; everything else on the body is compared, not named. */
 type PolicyBody = {
   path: string;
   exists: boolean;
@@ -92,7 +83,6 @@ const errorsOf = (body: unknown) => (body as { errors: string[] }).errors;
 const policyFile = (tree: readonly TreeEntry[]) =>
   tree.find((entry) => entry.path === USER_POLICY_FILE);
 
-/** The user policy file's permission bits, or the owner-only bits on Windows, which has none. */
 const policyFileMode = (home: string) =>
   process.platform === 'win32'
     ? 0o600
@@ -154,8 +144,6 @@ describe('the policy GUI server', () => {
   });
 
   test('stands the guard above every route, not just the ones the views open with', async () => {
-    // Every route the page can reach, with the token that route needs withheld: a GET carries one
-    // in the query, a POST that one and the header, so a query-only POST is the cross-site case.
     const reads = [
       '/',
       '/api/policy',
@@ -180,10 +168,6 @@ describe('the policy GUI server', () => {
       '/api/install',
       '/api/uninstall',
     ];
-    // A correct guard reaches none of these hooks; a broken one reaches all of them, and the row
-    // has to fail on the status rather than by starring the repo, opening a dialog, probing a host
-    // CLI or calling out to the network. (`/api/rules/choose-directory` takes no hook on either
-    // side, so it stays the one route a regression here would still drive for real.)
     const row = await runGuiRow({
       seed: S1,
       options: () => ({
@@ -213,8 +197,6 @@ describe('the policy GUI server', () => {
         body: { error: 'Forbidden' },
       })),
     );
-    // Nothing behind the guard ran: the seeded file is byte-for-byte what it was, and neither the
-    // writer nor the picker left a project file anywhere.
     expect(policyFile(row.tree)?.content).toBe(json(USER_POLICY));
     expect(row.tree.filter((entry) => entry.path.startsWith('project/'))).toStrictEqual([]);
   });
@@ -249,12 +231,10 @@ describe('the policy GUI server', () => {
       errors: [],
       policy: { safety: { level: 'strict' }, audit: { retention_days: 10 } },
     });
-    // Display only: no project file, so nothing is reported beside the user one.
     expect(Object.keys(valid)).not.toContain('projectPolicy');
     expect(empty.errors).toStrictEqual(['Config file is empty']);
     expect(malformed.errors[0]).toStartWith('Invalid JSON:');
     expect(malformed.preview).toBeNull();
-    // Parseable but refused: the recovery banner gets the errors and the salvaged retention stands.
     expect(invalid.errors.length).toBeGreaterThan(0);
     expect(invalid.preview).toBeNull();
     expect(invalid.policy.audit.retention_days).toBe(5);
@@ -347,7 +327,6 @@ describe('the policy GUI server', () => {
     expect(
       row.responses.slice(0, 7).map((response) => (response.body as { result: string }).result),
     ).toStrictEqual(['blocked', 'allowed', 'blocked', 'blocked', 'allowed', 'blocked', 'allowed']);
-    // The seeded rulebook's rule, named as the draft's own policy would name it.
     expect(row.responses[2]?.body).toMatchObject({
       customRule: { id: 'team-rules/block-docker-system-prune' },
     });
@@ -374,7 +353,6 @@ describe('the policy GUI server', () => {
     expect(refused.responses.map((response) => response.status)).toStrictEqual([400, 400]);
     expect(errorsOf(refused.responses[0]?.body).length).toBeGreaterThan(0);
     expect(errorsOf(refused.responses[1]?.body)[0]).toStartWith('Invalid JSON:');
-    // Neither refusal reached the file.
     expect(policyFile(refused.tree)?.content).toBe(json(USER_POLICY));
   });
 
@@ -388,11 +366,8 @@ describe('the policy GUI server', () => {
       ],
     });
 
-    // A body exactly at the cap is still parsed and written.
     expect(row.responses[0]).toMatchObject({ status: 200, body: { errors: [] } });
     expect(policyFile(row.tree)?.content).toBe(json(USER_POLICY));
-    // The oversized body is the differential itself: this bun build answers it identically on both
-    // sides, which is the contract the port has to keep, so nothing about that status is pinned.
     expect(row.responses).toHaveLength(2);
   });
 
@@ -414,7 +389,6 @@ describe('the policy GUI server', () => {
     });
     expect(policyFile(reset.tree)).toMatchObject({ content: json(DEFAULT_GUI_POLICY) });
     expect(policyFileMode(reset.home)).toBe(0o600);
-    // Repair keeps what parsed — the retention window — and drops what the schema refused.
     expect(repairedInvalid.responses[0]).toMatchObject({
       status: 200,
       body: { errors: [], policy: { safety: { level: 'standard' }, audit: { retention_days: 5 } } },
@@ -422,15 +396,9 @@ describe('the policy GUI server', () => {
     expect(policyFile(repairedInvalid.tree)?.content).toBe(
       json({ ...DEFAULT_GUI_POLICY, audit: { retention_days: 5 } }),
     );
-    // Nothing parsed, so there is nothing to keep.
     expect(policyFile(repairedMalformed.tree)?.content).toBe(json(DEFAULT_GUI_POLICY));
   });
 
-  /**
-   * Git facts are memoized per `Environment`, so a server that built one at startup answered every
-   * later request from the repository shape it saw first. One server and one token here, with the
-   * `.git` marker appearing and disappearing between requests.
-   */
   test('reads the Git facts again for every request', async () => {
     const root = createTempRoot('gui-git-marker-');
     const home = join(root, 'home');
@@ -457,7 +425,6 @@ describe('the policy GUI server', () => {
     try {
       expect(await explain()).toMatchObject({ result: 'allowed' });
 
-      // The linked worktree's own marker: a `gitdir:` line naming a directory that exists.
       writeFileSync(marker, readFileSync(join(fixture.linkedWorktree, '.git'), 'utf-8'));
       expect(await explain()).toMatchObject({
         result: 'blocked',

@@ -15,14 +15,6 @@ import { describeOutcome, type TreeSpec, writeTree } from '../../helpers/fixture
 import { differential, fileAt } from '../../helpers/host-differential';
 import { createTempRoot, describeAsyncOutcome, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Amp install has no config file: the plugin is pushed into the account's hosted Personal Plugins
- * repository, so what is contract here is the exact command sequence, the bytes staged into the
- * throwaway checkout (artifact plus the policy the plugin reads on an Orb), and the refusals that
- * keep it off anything it did not write. Every subprocess is scripted, so nothing here can reach
- * a real repository.
- */
-
 const ARTIFACT = `${AMP_MANAGED_HEADER}\n// version: dev\nexport default function plugin() {}\n`;
 const ENTRY = 'cc-safety-net/index.ts';
 const LEGACY = 'cc-safety-net.ts';
@@ -57,11 +49,6 @@ const commit = (message: string) => ({
 
 type Row = AmpScript & { home?: TreeSpec; action?: 'uninstall' };
 
-/**
- * One install or uninstall against both implementations: the same home seed, the same scripted
- * hosted repository, and the same fixture artifact, which lives outside either home because it is
- * input the CLI ships rather than anything the install writes.
- */
 async function ampRow(row: Row = {}) {
   const artifactRoot = createTempRoot('next-amp-artifact-');
   writeTree(artifactRoot, { 'index.ts': ARTIFACT });
@@ -155,8 +142,6 @@ describe('publishing the plugin to the hosted repository', () => {
   });
 
   test('reports the repository as up to date when staging changed nothing', async () => {
-    // Under core.autocrlf a reclone smudges the committed LF plugin, so the artifact differs on
-    // disk while `git add` renormalizes it straight back to HEAD.
     const row = await ampRow({ porcelain: '' });
     expect(row.result).toEqual({
       kind: 'returned',
@@ -341,8 +326,6 @@ describe('removing the plugin from the hosted repository', () => {
 describe('finding the packaged artifact', () => {
   test('resolves the same shipped dist path from either module', () => {
     const candidates = ampArtifactCandidates();
-    // The module sits three directories under the repository root, so the packaged artifact the
-    // release stamps is the one an install without an explicit path publishes.
     expect(candidates.at(-1)).toBe(join(import.meta.dir, '..', '..', '..', 'dist', 'amp', ENTRY));
   });
 

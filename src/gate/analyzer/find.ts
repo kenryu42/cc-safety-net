@@ -106,11 +106,10 @@ export function analyzeFindMatch(
   words: readonly CommandWord[],
   context: AnalyzeFindContext,
 ): DestructiveCommandRuleMatch | null {
-  // The primary/arity walk is textual; only the starting points read word facts.
   const tokens = words.map(analysisWordText);
   const catastrophicMatch = findCatastrophicDeleteMatch(words, tokens, context);
   if (catastrophicMatch) return catastrophicMatch;
-  // Check for -delete outside of -exec/-execdir blocks
+
   if (findHasDelete(tokens, 1) && !hasOnlyTrustedTempDeleteTargets(words, tokens, context)) {
     const match = filterDestructiveCommandMatch(
       destructiveCommandMatch('find.delete', REASON_FIND_DELETE),
@@ -120,7 +119,7 @@ export function analyzeFindMatch(
   }
 
   const budget = context.budget ?? createBudget();
-  // Check all executable child primaries for dangerous commands
+
   let i = 0;
   while (i < tokens.length) {
     const token = tokens[i];
@@ -168,7 +167,7 @@ function findCatastrophicDeleteMatch(
 ): DestructiveCommandRuleMatch | null {
   const deletesDirectly = findHasDelete(tokens, 1);
   if (!deletesDirectly && !findExecRmDeletesFoundPaths(tokens, context.environment)) return null;
-  // An omitted starting point means find searches `.` implicitly.
+
   const targets = getFindStartingPoints(words) ?? textCommandWords(['.']);
   const targetContext = createRecursiveDeleteTargetContext({
     ...context,
@@ -182,8 +181,7 @@ function findCatastrophicDeleteMatch(
         targetIsLiteral: facts.expandedTargets !== undefined || facts.targetIsLiteral,
         tmpdirWordSplittingProtected: facts.tmpdirWordSplittingProtected,
       });
-      // A find traversal that deletes found paths erases the starting tree's
-      // contents even when each individual removal is non-recursive.
+
       if (classification.kind === 'root_or_home_target') {
         return destructiveCommandMatch(
           'rm.recursive-force-root-or-home',
@@ -342,18 +340,12 @@ export function getFindExecCommand(
     terminatorIndex++;
   }
 
-  // If no terminator is present, the parser may have separated the token as an operator.
-  // In that case, treat the rest of the tokens as the exec command.
   return {
     tokens: tokens.slice(execIndex + 1, terminatorIndex),
     nextIndex: Math.min(terminatorIndex + 1, tokens.length),
   };
 }
 
-/**
- * Check if find command has -delete action (not as argument to another option).
- * Handles cases like "find -name -delete" where -delete is a filename pattern.
- */
 export function findHasDelete(tokens: readonly string[], start: number): boolean {
   let i = start;
 
@@ -364,20 +356,17 @@ export function findHasDelete(tokens: readonly string[], start: number): boolean
       continue;
     }
 
-    // Skip executable child-primary bodies, including arguments named like another primary.
     if (isFindExecPrimary(token)) {
       i = getFindExecCommand(tokens, i).nextIndex;
       continue;
     }
 
-    // Options that take an argument - skip the next token
     const arity = getFindPrimaryArity(token);
     if (arity > 0) {
       i += arity + 1;
       continue;
     }
 
-    // Found -delete outside of -exec and not as an argument
     if (token === '-delete') {
       return true;
     }

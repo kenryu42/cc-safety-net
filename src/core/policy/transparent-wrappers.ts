@@ -6,7 +6,6 @@ import {
 } from '@/core/rules/constants';
 import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
 
-/** Commands the analyzer inspects itself, so a wrapper may never claim their names. */
 export const BUILTIN_ANALYZED_COMMANDS = new Set(['rm', 'find', 'xargs', 'parallel']);
 const RESERVED_TRANSPARENT_WRAPPERS = new Set([
   'git',
@@ -17,7 +16,6 @@ const RESERVED_TRANSPARENT_WRAPPERS = new Set([
   ...AWK_INTERPRETERS,
 ]);
 
-/** The interpreters that take code on the command line; the analyzer's code-flag table keys. */
 const CODE_FLAG_INTERPRETERS = new Set(['python', 'node', 'ruby', 'perl']);
 
 export function isReservedTransparentWrapper(command: string): boolean {

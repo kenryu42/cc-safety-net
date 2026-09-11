@@ -175,8 +175,6 @@ describe('generated artifact contract', () => {
     expect(declaration).toContain('checkCommand');
     expect(declaration).toContain('CheckCommandInput');
     expect(declaration).toContain('CheckCommandResult');
-    // A library-only TypeScript consumer must compile without the optional
-    // OpenCode peer or any private module, so the declaration imports nothing.
     expect(declaration).not.toMatch(/from ["']/);
     expect(declaration).not.toContain('@opencode-ai/plugin');
   });
@@ -199,7 +197,6 @@ describe('generated artifact contract', () => {
     expect(getRuntimeImportSpecifiers('import{x}from"node:fs";').sort()).toEqual(['node:fs']);
     expect(getRuntimeImportSpecifiers('const z=require("zod")')).toEqual(['zod']);
     expect(getRuntimeImportSpecifiers('await import("./chunks/a.js")')).toEqual(['./chunks/a.js']);
-    // the word "import" inside a string literal is not an import position.
     expect(getRuntimeImportSpecifiers('const flags=["--import","--loader"]')).toEqual([]);
   });
 

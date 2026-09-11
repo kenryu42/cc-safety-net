@@ -12,10 +12,6 @@ import { printStatusline } from '@/cli/statusline';
 import { createProcessEnvironment } from '@/core/environment';
 import { runGuiCommand } from '@/gui/index';
 
-/**
- * Handle "help <command>" pattern.
- * Returns true if handled (printed help or error), false if not the help command.
- */
 function handleHelpCommand(args: readonly string[]): boolean {
   if (args[0] !== 'help') {
     return false;
@@ -23,7 +19,6 @@ function handleHelpCommand(args: readonly string[]): boolean {
 
   const commandName = args[1];
   if (!commandName) {
-    // Just "help" with no argument - show main help
     printHelp();
     process.exit(0);
   }
@@ -101,9 +96,6 @@ const commandHandlers = {
 } satisfies Record<CommandName, (args: string[]) => Promise<void>>;
 
 export async function runCli(args: readonly string[]): Promise<void> {
-  // The global scan answers one question — was --help or --version given as an
-  // option? Everything after the first `--` is command input, so the scan stops
-  // there, and unknown tokens belong to whichever command is dispatched below.
   const globalScan = parseCommandArgs(
     { label: 'cc-safety-net', booleans: { version: ['-V', '--version'] }, positionals: 'list' },
     args,
@@ -113,8 +105,7 @@ export async function runCli(args: readonly string[]): Promise<void> {
 
   const commandName = args[0];
   const command = commandName ? findCommand(commandName) : undefined;
-  // A known command name keeps its own help; `rule` is the one command that parses
-  // `--help` itself, so the request reaches the leaf handler for its subcommand.
+
   if (globalScan.help && command && command.name !== 'rule') {
     showCommandHelp(command.name);
     process.exit(0);
@@ -133,8 +124,6 @@ export async function runCli(args: readonly string[]): Promise<void> {
     return;
   }
 
-  // The bin resolved the legacy top-level hook flags before this chunk loaded, so a
-  // token reaching here names no integration.
   if (commandName === '--statusline') {
     await printStatusline(createProcessEnvironment());
     return;

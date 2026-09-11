@@ -10,17 +10,10 @@ import { describeOutcome, type TreeEntry, type TreeSpec } from '../../helpers/fi
 import { differential, hostRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Hermes owns a directory rather than a config file, so the installer's job is bounded: write the
- * two managed files, refuse every managed path that is not a plain file of ours, and on the way
- * out remove only what it wrote — the user's own files keep the directory alive.
- */
-
 const DIR = '.hermes/plugins/cc-safety-net';
 const DIR_PATH = `<home>/${DIR}`;
 const NOT_ENABLED =
   'cc-safety-net is not enabled in Hermes; run `hermes plugins enable cc-safety-net`';
-/** What both directions say about anything but a plain directory at the managed path. */
 const NOT_A_DIRECTORY: readonly [string, string] = [
   `Refusing to install ${DIR_PATH}: not a regular directory. Move or remove it and rerun install --hermes-agent.`,
   `Refusing to remove ${DIR_PATH}: not a regular directory. Move or remove it and rerun uninstall --hermes-agent.`,
@@ -29,7 +22,6 @@ const NOT_A_DIRECTORY_ERRORS = [
   `${DIR_PATH} is a symlink or not a directory; move or remove it before installing`,
 ];
 
-/** The managed files under one directory: a seed spec, and what a snapshot should hold. */
 const managedFiles = (dir: string, version: string): Record<string, string> =>
   Object.fromEntries(
     buildHermesAgentPluginFiles(version).map((file) => [`${dir}/${file.name}`, file.content]),
@@ -37,7 +29,6 @@ const managedFiles = (dir: string, version: string): Record<string, string> =>
 
 const installedTree = (dir: string) => ({ [dir]: 'directory', ...managedFiles(dir, 'dev') });
 
-/** Everything a snapshot holds at or under `prefix`: content, a link target, or the entry kind. */
 const entriesUnder = (tree: TreeEntry[] | undefined, prefix: string) =>
   Object.fromEntries(
     (tree ?? [])
@@ -53,8 +44,6 @@ const { row } = hostRunner({
   }),
 });
 
-/** Install wrote our two files, the detector saw them, a reinstall changed nothing, and the
- * uninstall reclaimed the whole directory. */
 function expectHermesRow(
   steps: Awaited<ReturnType<typeof row>>['steps'],
   expected: { dir: string; alreadyInstalled: boolean },
@@ -124,8 +113,6 @@ describe('the Hermes Agent plugin directory differential', () => {
 });
 
 describe('refusing a managed path that is not ours', () => {
-  /** case, seed, what the directory still holds, the install and remove refusals, and what the
-   * detector reports about the same path. */
   const REFUSALS: readonly (readonly [
     string,
     TreeSpec,

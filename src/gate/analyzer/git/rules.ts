@@ -88,7 +88,6 @@ export function matchesGitLongOption(token: string, option: string): boolean {
   );
 }
 
-/** The git subcommands `analyzeGitRule` dispatches on, for callers that gate before dispatching. */
 export const GIT_RULE_SUBCOMMANDS = new Set([
   'branch',
   'checkout',
@@ -234,8 +233,6 @@ function getCheckoutPositionalArgs(tokens: readonly string[]): string[] {
       continue;
     }
 
-    // The option names carrying an optional value never contain `=`, so the attached-value form
-    // the shipped chain tested before this branch cannot reach it.
     if (CHECKOUT_OPTS_WITH_OPTIONAL_VALUE.has(token)) {
       const nextToken = tokens[i + 1];
       const validModes =
@@ -244,7 +241,6 @@ function getCheckoutPositionalArgs(tokens: readonly string[]): string[] {
       continue;
     }
 
-    // Every remaining option, known or not, consumes only itself.
     i++;
   }
 

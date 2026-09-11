@@ -168,8 +168,7 @@ export function normalizeOpenCodeWindowsWorkdir(workdir: string): string {
     .replace(/^\/([a-zA-Z])(?:[\\/]|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`)
     .replace(/^\/cygdrive\/([a-zA-Z])(?:[\\/]|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`)
     .replace(/^\/mnt\/([a-zA-Z])(?:[\\/]|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`);
-  // Slash-rooted paths OpenCode does not rewrite (`/tmp`) stay as they are: the host hands them to
-  // `cygpath` for POSIX shells, else resolves them against the config root, and runs the command.
+
   return normalized;
 }
 

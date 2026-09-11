@@ -16,8 +16,6 @@ describe('core/shell/model', () => {
       { source: 'time -p git status', called: 'git' },
       { source: 'time -p -- git status', called: 'git' },
       { source: '! git status', called: 'git' },
-      // contract: src/core/shell/model.ts:113 — quoting does not change provenance, so a
-      // quoted literal still names the command.
       { source: '"git" status', called: 'git' },
       { source: '$(printf git) status', called: undefined },
       { source: 'A=1', called: undefined },

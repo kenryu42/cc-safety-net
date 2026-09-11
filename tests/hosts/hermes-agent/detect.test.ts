@@ -5,12 +5,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { differential } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Doctor reports two independent facts about Hermes: whether the artifact on disk is ours and
- * current, and whether Hermes' own `plugins.enabled` list would load it. Both are read without a
- * YAML parser, so every shape the reader accepts is pinned here.
- */
-
 const DIR = '.hermes/plugins/cc-safety-net';
 const DIR_PATH = `<home>/${DIR}`;
 const CONFIG = '.hermes/config.yaml';
@@ -24,7 +18,6 @@ const managedFiles = (version: string): TreeSpec =>
     buildHermesAgentPluginFiles(version).map((file) => [`${DIR}/${file.name}`, file.content]),
   );
 
-/** Config shapes Hermes' own `yaml.safe_dump` can produce, and whether each loads the plugin. */
 const CONFIGS: readonly (readonly [string, string | undefined, boolean])[] = [
   ['a block sequence naming the plugin', 'plugins:\n  enabled:\n    - cc-safety-net\n', true],
   ['a quoted sequence entry', 'plugins:\n  enabled:\n    - "cc-safety-net"\n', true],

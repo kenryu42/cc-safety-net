@@ -1,13 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { getRulesConfigValidation } from '@/core/policy/rules-config';
 
-/**
- * `rule.json` has one validator: the loader runs it on the hook's path, and `doctor` and
- * `explain` report the same document through it. The table below states the diagnostics and the
- * usable sources each document must produce; `schema-asset.test.ts` holds the published JSON
- * Schema to the same acceptance decisions.
- */
-
 describe('rules config diagnostics', () => {
   test.each([
     ['a config with no sources is accepted', { version: 1 }, [], []],

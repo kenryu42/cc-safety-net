@@ -5,19 +5,12 @@ import { runAmpCommand } from '@/hosts/amp/run';
 import { createFakeBin, type FakeScriptEntry } from '../../helpers/fake-bin';
 import { createTempRoot, removeTempRoots, withProcessEnv } from '../../helpers/temp-home';
 
-/**
- * The one subprocess boundary of the Amp integration. What the installer reads off it is the exit
- * status, both streams and — when the command never started — the spawn error, because that is
- * what turns into "Amp CLI not found" instead of a stack trace.
- */
-
 const SCRIPT: readonly FakeScriptEntry[] = [
   { command: 'amp', args: ['plugins'], stdout: 'listed\n', stderr: 'notice\n' },
   { command: 'amp', args: ['clone'], stdout: 'partial', stderr: 'clone refused', exit: 3 },
   { command: 'git', args: ['status'], stdout: ' M cc-safety-net/index.ts\n' },
 ];
 
-/** One call with its own fake `amp`, `git` and log. */
 async function bothSides(command: readonly [string, ...string[]], workdir?: string) {
   const root = createTempRoot('next-amp-run-');
   const side = async (name: string, run: typeof runAmpCommand) => {
@@ -56,8 +49,6 @@ describe('running an amp or git command', () => {
   test('reports a command that is not on PATH as a spawn failure', async () => {
     const { result } = await bothSides(['cc-safety-net-absent-cli', '--version']);
     expect({ status: result.status, stdout: result.stdout }).toEqual({ status: null, stdout: '' });
-    // The runtime words the failure itself; what the installer needs is a code to branch on and a
-    // message to print, so both must be there whichever runtime spawned it.
     expect(result.errorCode).toBeString();
     expect(result.stderr).toContain('cc-safety-net-absent-cli');
   });

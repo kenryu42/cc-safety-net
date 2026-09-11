@@ -12,14 +12,6 @@ import { readAuditEntries } from '../../helpers/hook-capture';
 import { createHookFixture, type HookFixture } from '../../helpers/hook-hosts';
 import { auditHomeFor, captureInProcessCall, describeDifferential } from '../../helpers/in-process';
 
-/**
- * The OpenCode plugin driven through a fake plugin input: one project directory, one OpenCode
- * config and one `tool.execute.before` call. OpenCode's deny form is a thrown error, so a row
- * records the thrown message, the stderr lines and the audit tree. The `homeDir` input is the
- * Environment home, which names the user policy file, expands `~` and steers the audit tree; the
- * last two tests pin both halves of that.
- */
-
 const SESSION = 'opencode-1';
 const POLICY_FAILURE = 'boom';
 const ANALYZER_FAILURE = 'injected analyzer failure';
@@ -29,11 +21,9 @@ type Row = {
   tool?: string;
   args: (fixture: HookFixture) => unknown;
   directory?: (fixture: HookFixture) => string;
-  /** The shell OpenCode reports through its own config hook before the tool call. */
   shell?: string;
   breaks?: 'analyzer' | 'policy';
   env?: Record<string, string | undefined>;
-  /** Text the thrown message must carry, so a row cannot pass by throwing anything at all. */
   contains?: string;
   blocked: boolean;
   lines: number;
@@ -75,7 +65,6 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    // OpenCode checks that the workdir is usable, not that it stays inside the project.
     name: 'a workdir outside the project',
     args: (fixture) => ({ command: 'git status', workdir: fixture.outside }),
     blocked: false,
@@ -132,8 +121,6 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    // Config load is one of the three stages OpenCode rethrows the cause from, so the host sees
-    // the loader's own error rather than a denial document.
     name: 'a policy load that fails',
     args: () => ({ command: 'git status' }),
     breaks: 'policy',
@@ -151,7 +138,6 @@ const ROWS: readonly Row[] = [
   },
 ];
 
-/** The workdir spellings OpenCode hands a Windows host, and what each one resolves to. */
 const WINDOWS_WORKDIRS = [
   ['/c:/x', 'C:/x'],
   ['/c/x', 'C:/x'],
@@ -161,7 +147,6 @@ const WINDOWS_WORKDIRS = [
   ['rel', 'rel'],
 ] as const;
 
-/** Configured shell, platform, `SHELL` value, and the route the pair resolves to. */
 const SHELL_ROUTES = [
   [undefined, 'linux', undefined, 'auto'],
   [undefined, 'win32', undefined, 'powershell'],
@@ -226,7 +211,6 @@ test('the config hook adds the builtin command without dropping the host own', a
   await plugin.config(config as never);
   const ported = config.command;
 
-  // Ours is added whole, exactly as the loader supplies it, and the host's own is left alone.
   expect(Object.keys(ported as Record<string, unknown>)).toStrictEqual(['cc-safety-net', 'own']);
   expect(ported).toEqual({ ...loadBuiltinCommands(), own: { template: 'x' } });
 });
@@ -263,7 +247,6 @@ test('a homeDir input is the ported policy home, so a policy under it decides', 
     callToolExecuteBefore(row, homeDir),
   );
   expect(ported.thrown).toBeUndefined();
-  // The allow comes from the valid policy, not from a salvaged invalid one.
   expect(ported.entries[0]?.entry).toMatchObject({ decision: 'allow' });
   expect(ported.entries[0]?.entry).not.toHaveProperty('configFallback');
 });
@@ -273,8 +256,6 @@ test('a homeDir input steers the shipped audit tree and the environment steers t
   const homeDir = join(fixture.root, 'opencode-home');
   const ported = await captureInProcessCall(fixture, {}, () => callToolExecuteBefore(row, homeDir));
 
-  // The plugin wrote nowhere but the audit home the environment names, and what it wrote there is
-  // the row's own verdict rather than a second call's.
   expect(ported.entries.map((line) => line.entry.ruleId)).toEqual(['git.push-force']);
   expect(readAuditEntries(auditHomeFor(fixture))).toHaveLength(1);
   expect(readAuditEntries(homeDir)).toStrictEqual([]);

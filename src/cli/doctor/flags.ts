@@ -1,7 +1,3 @@
-/**
- * CLI flag parsing for the doctor command.
- */
-
 import { parseCommandArgs, reportCommandArgErrors } from '@/cli/args';
 import type { DoctorOptions } from '@/hosts/doctor-types';
 

@@ -14,17 +14,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from '../../helpers/temp-home';
 
-/**
- * What `rule add` and `doctor` report after a scope changes is exactly what the gate would find
- * when it next loads that scope, so these two projections are the reload check. The runtime
- * projection carries the scope's errors, its warnings and its unknown override keys; the override
- * projection carries the last of the three alone, and only while the scope loaded cleanly enough
- * to know its rule ids. Each row resolves both over its own copy of the tree.
- *
- * Both diagnostics are printed verbatim by `rule add` and `doctor`, so the exact wording — the
- * failing key, what stays in force, and the repair — is the contract and is asserted literally.
- */
-
 const TREE: TreeSpec = {
   'unknown-override/.cc-safety-net/rules/rule.json': rulesConfig(['project-rules'], {
     overrides: { 'project-rules/gone': 'off' },
@@ -39,7 +28,6 @@ const UNKNOWN_OVERRIDE_WARNING =
 const MISSING_RULEBOOK_ERROR =
   'missing rulebook file <root>/missing-rulebook/.cc-safety-net/rules/absent-book/rulebook.json for absent-book; create that file or remove that source from the rules config';
 
-/** One row of `docs/config-recovery.md`: the scope, and what both projections say about it. */
 const SCOPES: readonly {
   readonly scope: string;
   readonly behavior: string;
@@ -65,7 +53,6 @@ function configPath(root: string, scope: string) {
   return join(root, scope, '.cc-safety-net', 'rules', 'rule.json');
 }
 
-/** Both projections of one scope, read with the default binding or with an explicit one. */
 function reportsFor(scope: string, bound: boolean) {
   const root = createTempRoot('scope-policy-');
   writeTree(root, TREE);

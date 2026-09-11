@@ -1,9 +1,3 @@
-/**
- * The user policy file as the GUI and `policy apply` see it: read, preview, repair, write.
- * Every one of them reports the user-policy diagnostics beside the salvaged document; the
- * diagnostics live in `user-policy-diagnostics.ts` and this module stays off the hook path.
- */
-
 import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Environment } from '@/core/environment';
@@ -62,8 +56,7 @@ export function readUserPolicyForGui(
   try {
     const parsed = JSON.parse(raw) as unknown;
     const errors = getUserPolicyDiagnostics(parsed, environment.home);
-    // The GUI displays the same salvaged projection the engine enforces and repair would
-    // write, so a partially invalid file cannot show one policy while another is in force.
+
     return {
       path,
       exists: true,
@@ -82,8 +75,6 @@ export function readUserPolicyForGui(
   }
 }
 
-// The write goes straight through the atomic writer rather than `config-file.ts`'s
-// `writeJsonAtomic`, which carries the legacy validator alongside it.
 export function writeUserPolicyFromGui(
   environment: Environment,
   policy: unknown,

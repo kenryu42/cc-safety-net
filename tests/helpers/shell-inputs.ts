@@ -4,12 +4,6 @@ import { getCommandFromToolInput } from '@/core/tool-input';
 import { behavioralContractCases } from '../gate/behavioral-contract-cases';
 import { pipelineContractCases } from '../gate/pipeline-contract-cases';
 
-/**
- * Shared inputs for the corpus tests: the corpus commands, a fixed table of parser-shaped commands,
- * and a seeded fuzz over a shell-like alphabet. Every test file feeds the same inputs to the parser
- * and records what comes back.
- */
-
 export const SHELL_DIALECTS: readonly ShellKind[] = ['posix', 'powershell', 'auto'];
 
 export const FUZZ_SEED = 0x9e37_79b9;
@@ -163,7 +157,6 @@ export const FIXED_COMMANDS: readonly string[] = [
   'echo $VAR/${VAR}/$VAR$VAR/"$VAR"/\'$VAR\'',
 ];
 
-/** A small, fast PRNG (mulberry32) so the fuzz corpus is identical on every run. */
 export function createSeededRandom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -332,7 +325,6 @@ export type ProgramPair = {
   readonly program: CommandProgram;
 };
 
-/** Every source parsed as every dialect. */
 export function differentialProgramPairs(): readonly ProgramPair[] {
   return differentialSources().flatMap((source) =>
     SHELL_DIALECTS.map((dialect) => ({ source, dialect, program: parseCommand(source, dialect) })),

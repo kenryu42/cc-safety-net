@@ -52,8 +52,7 @@ export function analyzeAwkSystemCallMatch(
     for (const command of commands.commands) {
       const result = analyzeNested(command);
       if (result) return result;
-      // Fail closed when nested analysis cannot prove the recovered command text is fixed.
-      // xargs/parallel replacement tokens like "{}" are literal to awk but dynamic at runtime.
+
       if (command.includes('{}') || /[$`]/.test(command)) dynamic = true;
     }
     dynamic ||= commands.dynamic;

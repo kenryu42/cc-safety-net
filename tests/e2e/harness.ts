@@ -26,10 +26,6 @@ export type SafetyLevel = 'standard' | 'strict' | 'paranoid';
 
 export type GateResult = { allowed: true } | { allowed: false; reason: string };
 
-/**
- * Emit the packaged artifacts under test into a fresh cache directory and return the root that
- * holds `dist`. Callers own the root and must remove it when the suite ends.
- */
 export async function buildE2EArtifacts(
   prefix: string,
   builds: readonly ((
@@ -112,10 +108,6 @@ export function expectSingleAudit(
   });
 }
 
-/**
- * Run a host process under an isolated home. Any output on stderr, or a non-zero exit, is a
- * contract violation: the integrations must stay silent on the channels their hosts surface.
- */
 export async function runCommand(
   argv: string[],
   input: unknown,
@@ -178,15 +170,10 @@ export function parseJsonOutput(label: string, output: string) {
   }
 }
 
-/**
- * Every session id in the packaged Hermes Agent and OpenClaw host suites starts with it, so a
- * leaked audit entry is identifiable by filename alone in the developer's real log tree.
- */
 export const SESSION_PREFIX = 'hostpkg';
 
 const REAL_HOME = homedir();
 
-/** Real host state the packaged host suites must never touch. */
 const WATCHED_REAL_PATHS = [
   join(REAL_HOME, '.hermes', 'config.yaml'),
   join(REAL_HOME, '.hermes', 'plugins'),
@@ -194,20 +181,10 @@ const WATCHED_REAL_PATHS = [
   join(REAL_HOME, '.openclaw'),
 ];
 
-/**
- * Run a case in an isolated workspace and prove it left the developer's real host state alone.
- * The realistic mistake this catches is an env key that fails to reach a spawned host — the
- * `hermes` binary, the installer, or the plugin's own analyzer subprocess — which would send
- * writes to the real `~/.hermes` or the real audit log instead of the temporary home.
- */
 export function withHostWorkspace<T>(run: (context: { cwd: string; home: string }) => Promise<T>) {
   return withWorkspace(async (context) => {
     const before = snapshotRealHostState();
     const beforeAudits = snapshotRealAuditState();
-    // The checks run in finally so a test that dirties real host state and
-    // then throws still reports the real-machine write, not just its own
-    // failure. They are nested for the same reason: a snapshot mismatch must
-    // not hide a leaked audit file behind it.
     try {
       try {
         return await run(context);
@@ -262,11 +239,6 @@ export function readHermesDirective(
   return { allowed: false, reason: String(directive.message) };
 }
 
-/**
- * The Hermes Agent protection contract, run against every way a payload can reach our analyzer.
- * The gates differ only in who serialises the payload and who reads the directive back, so the
- * assertions are shared and the gate list says which hosts a suite can drive.
- */
 export function describeHermesGates(
   gates: readonly { name: string; gate: HermesGate; skip: boolean }[],
 ) {
@@ -310,11 +282,7 @@ export function isolatedEnv(home: string, level?: SafetyLevel, env: Record<strin
   return createSpawnEnv({
     HOME: home,
     USERPROFILE: home,
-    // Hermes reads HERMES_HOME before the platform default, so a developer who exports it would
-    // otherwise point `hermes` at their real profile while every other path is isolated.
     HERMES_HOME: join(home, '.hermes'),
-    // `install` clears the npx cache under npm_config_cache when it is set; blanking it keeps the
-    // deletion inside the temporary home instead of the developer's real npm cache.
     npm_config_cache: '',
     CC_SAFETY_NET_HOME: join(home, '.cc-safety-net'),
     CC_SAFETY_NET_AUDIT_HOME: home,

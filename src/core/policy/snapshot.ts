@@ -13,11 +13,6 @@ import type {
 
 export type PolicySnapshotOptions = RulesPolicyOptions;
 
-/**
- * Loads the effective runtime policy from the user and project policy files and
- * each scope's live rulebook files. This function performs no writes, network
- * requests, or in-memory caching.
- */
 export function loadPolicySnapshot(
   environment: Environment,
   options: PolicySnapshotOptions,
@@ -75,26 +70,11 @@ export function loadPolicySnapshot(
   );
 }
 
-/**
- * Projects a snapshot onto what diagnostic surfaces report: the state plus, when
- * a fallback policy is enforced, the reason naming the failing source, what is no
- * longer active, and the repair.
- */
 export function describeConfigState(snapshot: PolicySnapshot): ConfigStateInfo {
   if (snapshot.state === 'ready') return { state: snapshot.state };
   return { state: snapshot.state, reason: snapshot.reason };
 }
 
-/**
- * Collects loader diagnostics into the degraded state. Invalid configuration never
- * denies ordinary work: a rule source that cannot be verified is dropped rather
- * than enforced, and an unreadable policy file falls back to protective defaults,
- * so something safe is always left to enforce.
- *
- * `rules.errors` name sources that were dropped and `rules.warnings` name sources
- * that stay active with one rejected part ignored, so the reason states which of
- * the two happened rather than collapsing them.
- */
 function getSnapshotFailure(
   rules: LoadedRulesPolicy,
   userPolicy: ReturnType<typeof loadPolicyConfig>,
@@ -111,15 +91,10 @@ function getSnapshotFailure(
   };
 }
 
-/**
- * States that the dropped sources are inert and that everything else still applies.
- * The repair is left to each diagnostic, which already names the one that fits it.
- */
 function withDroppedSourceAdvice(errors: string[]): string {
   return `${withTerminalPeriod(errors.join('; '))} Those rule sources are not active; every other rule and all built-in protections still apply`;
 }
 
-/** Names the failing file, the active fallback, and the exact repair action. */
 function getPolicyFallbackWarning(userPolicy: ReturnType<typeof loadPolicyConfig>) {
   if (userPolicy.errors.length === 0) return undefined;
   const fallback =
@@ -162,7 +137,6 @@ export function createPolicySnapshot(
   });
 }
 
-// Freezes every reachable container so a new policy field can never ship mutable by omission.
 function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null) return value;
   for (const child of Object.values(value)) deepFreeze(child);

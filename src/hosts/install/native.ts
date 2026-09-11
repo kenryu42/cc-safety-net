@@ -16,7 +16,6 @@ function formatCommandFailure(command: NativeCommand, status: number | null, out
     .join('\n');
 }
 
-/** Accumulates a spawned child's decoded stdout and stderr; read them once the child closes. */
 export function captureOutputStreams(child: {
   stdout: NodeJS.ReadableStream;
   stderr: NodeJS.ReadableStream;
@@ -33,14 +32,6 @@ export function captureOutputStreams(child: {
   return captured;
 }
 
-/**
- * Run a command, returning stdout and stderr merged so a caller showing human output sees all of
- * it. `stdoutOnly` narrows the success value to stdout for callers that parse it: a tool writing
- * its machine-readable report to stdout keeps it parseable however much trace or warning text
- * lands on stderr. Failures always report both streams.
- *
- * Asynchronous so a loading spinner keeps animating while a slow host CLI runs.
- */
 export function runNativeCommand(
   command: NativeCommand,
   options?: { stdoutOnly?: boolean; timeoutMs?: number },
@@ -53,7 +44,7 @@ export function runNativeCommand(
     const captured = captureOutputStreams(child);
     const merged = () => [captured.stdout, captured.stderr].filter(Boolean).join('\n');
     const timeoutMs = options?.timeoutMs ?? 120_000;
-    // A stalled host CLI must not hang the install forever.
+
     const timer = setTimeout(() => {
       child.kill();
       reject(
@@ -87,11 +78,6 @@ export async function runNativeCommands(commands: readonly NativeCommand[]): Pro
   for (const command of commands) await runNativeCommand(command);
 }
 
-/**
- * Best-effort cleanup of state the host CLI may have already dropped on its own (e.g. a legacy
- * plugin removed by a marketplace rename migration): a failure is reported, never thrown, so it
- * cannot fail the install that precedes it.
- */
 export async function runNativeCleanupCommands(commands: readonly NativeCommand[]): Promise<void> {
   for (const command of commands) {
     try {

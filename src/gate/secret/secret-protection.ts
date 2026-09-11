@@ -37,16 +37,8 @@ import { createToolInvocation, type ToolRoute } from '@/gate/invocation';
 
 export const REASON_SECRET_PROTECTION = 'Access to a sensitive path is not allowed.';
 
-// Secret protection inspects operands by default (fail-safe): any command that is
-// not a recognized exception has its arguments treated as candidate paths. This
-// prevents unlisted file readers (xxd, base64, dd, openssl, ...) and custom
-// binaries from silently bypassing the check. Only commands whose positionals are
-// known NOT to be file paths are exempted.
 const NON_PATH_OPERAND_COMMANDS = new Set(['echo', 'printf']);
 
-// find/fd-style commands take path roots first, then an expression made of
-// predicates (-name, -type, ...). Only the leading path roots are real paths;
-// predicate values (e.g. `-name .env`) are patterns, not reads.
 const PATH_ROOT_COMMANDS = new Set(['find']);
 const FIND_EXEC_PRIMARIES = new Set(['-exec', '-execdir']);
 const FIND_EXEC_TERMINATORS = new Set([';', '+']);
@@ -71,9 +63,6 @@ const FIND_MATCH_PATH_PRIMARIES = new Set([
   '-samefile',
 ]);
 
-// curl reads a file whenever an upload flag is given `@path` (or `<path` for a
-// form part). The path keeps its `@` as a shell token, so it only reaches the
-// sensitive-path rules once the marker is stripped.
 const CURL_UPLOAD_FLAGS = new Set([
   '-d',
   '--data',
@@ -84,9 +73,6 @@ const CURL_UPLOAD_FLAGS = new Set([
   '--form',
 ]);
 
-// Interpreters read files from inside a code string (python -c, node -e, ...),
-// where the path is not a standalone shell token. Their code bodies are scanned
-// for embedded path literals instead of treated as plain operands.
 const CODE_INTERPRETERS = new Set([
   'python',
   'python2',
@@ -105,8 +91,7 @@ const CODE_INTERPRETERS = new Set([
   'dash',
   'ksh',
 ]);
-// Standard mode may treat inline path literals as data only when the remaining
-// Node or Bun code has no recognizable filesystem or command-execution marker.
+
 const JAVASCRIPT_INLINE_INTERPRETERS = new Set(['node', 'bun']);
 const INLINE_ACCESS_NAMESPACES = new Set([
   'bun',
@@ -169,24 +154,6 @@ const INTERPRETERS_BY_CLUSTERED_CODE_EVAL_FLAG = new Map([
   ['r', new Set(['php'])],
 ]);
 
-// grep/rg read the search PATTERN either from the first positional operand
-// or from a -e/--regexp/-f/--file option. extractPatternCommandTargets drops
-// the positional pattern (it is never a file) while still catching:
-//   - a secret file read via -f/--file (standalone, clustered like -rf, or
-//     inline like -fFILE / --file=FILE), and
-//   - any positional that is a file rather than the pattern.
-//
-// Per grep semantics, when ANY -e/-f/--regexp/--file is present there is no
-// positional pattern, so every positional is a file (patternFromOption). This
-// also covers getopt permutation, e.g. `grep secretfile -e foo` reads
-// `secretfile`. Only -f/--file arguments are files among the options; the
-// other modeled arg-consuming options (-A/-B/-C/-m and long forms) take
-// numeric or pattern arguments that must be skipped so they are not mistaken
-// for files. rg's other arg-consuming options (--glob/--type/...) are not
-// modeled; gaps there can only cause safe-direction false positives, never a
-// -f bypass. rg's --files mode lists files under the given paths with no
-// pattern, so every positional is a path (PATTERNLESS_FILES_LONG): rg --files
-// ~/.ssh must still be blocked.
 const PATTERN_FIRST_COMMANDS = new Set(['grep', 'rg']);
 const PATTERN_FILE_SHORT = 'f';
 const PATTERN_FILE_LONG = 'file';
@@ -220,11 +187,6 @@ type SecretTarget = {
   ruleId: string;
 };
 
-/**
- * One operand and the directory it resolves against: the walk tracks `cd` the way the
- * protected-path scanner does, so a segment after `cd ~` reads `.ssh/config` from home while the
- * evidence stays the operand the command actually spells.
- */
 type SecretCandidate = {
   readonly target: string;
   readonly cwd: string;
@@ -286,11 +248,6 @@ function findSensitivePolicyPathTarget(
     if (activeDefaultTargets && !activeDefaultTargets.has(target)) continue;
     const ruleId = isSensitivePath(target, candidate.cwd, config, environment, budget);
     if (ruleId) {
-      // A configured allow entry vouches for paths the user manages themselves
-      // (a repo's .env.test, a fixtures directory). It suppresses the pattern
-      // tiers only: an explicit deny already returned above, and the coding-CLI
-      // tier stays exempt so no allow entry can expose the agent's own
-      // credentials or configuration.
       if (
         !ruleId.startsWith('secret.cli.') &&
         matchesAllowedPath(
@@ -487,10 +444,7 @@ function extractCommandPathTargets(
       budget,
     ),
   ];
-  // The one walk the protected-path guards run: a segment's operands resolve against the cwd in
-  // force when it runs, and only a completed segment moves that cwd. A nested shell contributes
-  // its words to the segment around it as before, but its directory is its own: the pending
-  // segment is read with it before the parent's is handed back.
+
   const map = (text: string) =>
     projectSensitiveShellText(rewritePowerShellHomePrefix(text, powershell), environment);
   walkGuardSyntax(syntax, cwd, environment, budget, {
@@ -534,10 +488,7 @@ function extractSegmentPathTargets(
   budget: Budget,
 ): SecretCandidate[] {
   const here = (target: string) => ({ target, cwd });
-  // Capture the value bound by `VAR=value` assignments as a candidate path so
-  // that later variable indirection (e.g. `f=.env; cat "$f"` or
-  // `f=.env; python3 -c "open('$f')"`) is caught at the assignment site,
-  // regardless of how the variable is dereferenced afterwards.
+
   const assignmentValues = extractLeadingAssignmentValues(tokens).map(here);
   const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
   if (stripped.length === 0) return assignmentValues;
@@ -554,8 +505,7 @@ function extractSegmentPathTargets(
   if (NON_PATH_OPERAND_COMMANDS.has(command)) {
     return assignmentValues;
   }
-  // `export KEY=path` and `git -c key=path` bind a path to a name: the value is the candidate,
-  // never the whole `KEY=path` token, which no allow entry could ever name.
+
   if (command === 'export') {
     return [
       ...assignmentValues,
@@ -615,12 +565,6 @@ function extractSegmentPathTargets(
   ];
 }
 
-/**
- * The paths a safety-net `explain` invocation really touches, or null when the
- * segment is not one. `explain` only ANALYSES the command it is handed and never
- * opens it, so its command argument is inert data; a form that is not recognized
- * keeps being inspected and blocks on its own argument.
- */
 function extractSafetyNetExplainPathTargets(
   executable: string,
   command: string,
@@ -830,19 +774,8 @@ function extractLeadingAssignmentValues(tokens: readonly string[]): string[] {
   return values;
 }
 
-// The four spellings of the home directory in PowerShell, each followed by a separator so the
-// bare variable stays the directory itself. Names are case-insensitive there, and the braced
-// form is how the projection spells an expandable variable.
 const POWERSHELL_HOME_PREFIX = /^(?:\$\{home\}|\$\{env:(?:userprofile|home)\}|~)(?=[\\/])/i;
 
-/**
- * A PowerShell operand rewritten to the `~/...` candidate its POSIX spelling already produces,
- * so the existing home rules see one form. Only the home prefix resolves: a token that does not
- * start with one keeps its backslashes, so an ordinary variable (`$config\.ssh\id_rsa`) still
- * names nothing the rules match, and no other expression is evaluated. Only a PowerShell
- * program reaches here, which is what makes rewriting a backslash safe: in POSIX text it is an
- * escape character, and `git grep "process\.env"` must not become `process/.env`.
- */
 function rewritePowerShellHomePrefix(token: string, powershell: boolean): string {
   if (!powershell || !POWERSHELL_HOME_PREFIX.test(token)) return token;
   return `~${token.replace(POWERSHELL_HOME_PREFIX, '').replace(/\\/g, '/')}`;
@@ -874,7 +807,7 @@ function extractGitOperandPathTargets(tokens: readonly string[]): string[] {
     if (!GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) continue;
     const value = tokens[index + 1];
     if (value === undefined) break;
-    // Global -c consumes a config assignment, not a literal equals-containing filename.
+
     targets.push(
       ...(token === '-c' && value.includes('=')
         ? [value.slice(value.indexOf('=') + 1)]
@@ -885,18 +818,6 @@ function extractGitOperandPathTargets(tokens: readonly string[]): string[] {
   return targets;
 }
 
-/**
- * The paths curl itself reads for its upload flags: a leading `@path` for
- * -d/--data/--data-ascii/--data-binary, `[name]@path` for --data-urlencode, and
- * `[name=]@path` or `[name=]<path` form parts for -F/--form. Recognized operand
- * spellings: a separate token (`-d @path`), one attached to a short option
- * (`-d@path`, `-Fname=@path`), one `=`-joined to a long option (`--data=@path`,
- * `--form=name=@path`), and the token after a clustered short-option group whose
- * upload flag comes last (`-sF name=@path`). A clustered group with the operand
- * attached (`-sd@path`) stays residual. --data-raw and --form-string send their
- * argument literally and never open a file, so they contribute nothing, and `@-`
- * is stdin rather than a path.
- */
 function extractCurlUploadPathTargets(tokens: readonly string[]): string[] {
   return tokens.flatMap((token, index) => {
     const attached = attachedCurlUploadOperand(token);
@@ -922,16 +843,12 @@ function curlUploadOperandPaths(flag: string, value: string): string[] {
   return value.startsWith('@') ? curlUploadPath(value.slice(1)) : [];
 }
 
-// curl gives the operand of a clustered short-option group to its last flag
-// only, so `-sF name=@path` uploads the file exactly as `-F name=@path` does.
 function curlOperandUploadFlag(token: string | undefined): string | null {
   if (token === undefined) return null;
   if (CURL_UPLOAD_FLAGS.has(token)) return token;
   return /^-[A-Za-z]+[dF]$/.test(token) ? `-${token.slice(-1)}` : null;
 }
 
-// The operand attached to the flag itself: `-d@path` / `-Fname=@path` for the
-// short spellings, `--data=@path` for the long ones.
 function attachedCurlUploadOperand(token: string) {
   const short = token.slice(0, 2);
   if (token.length > 2 && (short === '-d' || short === '-F')) {
@@ -1070,9 +987,6 @@ function extractAwkGetlineRedirectTargets(code: string): string[] {
     .filter((value): value is string => value !== undefined && value !== '');
 }
 
-// Pulls candidate paths out of an interpreter code body: every quoted string or
-// template literal, strict base64 decodes of those literals, plus any bare
-// path-looking token (to catch unquoted shell code like `bash -c "cat .env"`).
 function extractPathLiteralsFromCode(code: string): string[] {
   const quoted = Array.from(code.matchAll(/(['"`])((?:\\.|(?!\1).)*)\1/g))
     .map((match) => match[2])
@@ -1184,8 +1098,7 @@ function extractCommandSubstitutionPathTargets(
 ): SecretCandidate[] {
   return extractCommandSubstitutionBodies(command).flatMap((body) => {
     const syntax = store.getShellSyntax(body);
-    // A body a shell cannot parse never executes as extracted here: the real shell either
-    // aborts or reads different bounds (which the structural projection already scanned).
+
     if (syntax.status === 'invalid') return [];
     return [
       ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
@@ -1449,12 +1362,6 @@ const ENV_EXEMPTION_BASENAMES = new Set([
 
 const ENV_EXEMPTION_PREFIXES = ['.env.example.', '.env.sample.'];
 
-// Parsed by the URL API rather than pattern-matched, so scheme casing,
-// userinfo and IPv6 hosts need no bespoke handling. The host check is what
-// keeps a drive-qualified Windows path out: `new URL('C:\\Users\\me\\.npmrc')`
-// parses happily with protocol `c:` and an EMPTY host, and must stay a path.
-// `file:` is excluded because normalizeFileUriPath resolves it to a real local
-// path before any of this runs.
 function isRemoteUrl(target: string): boolean {
   let url: URL;
   try {
@@ -1465,11 +1372,6 @@ function isRemoteUrl(target: string): boolean {
   return url.protocol !== 'file:' && url.host !== '';
 }
 
-// Whitespace is what separates a real filename from a sentence that happens to
-// start with one. Paths containing spaces are unaffected: only the BASENAME is
-// tested, and only for the prefix rules that would otherwise match unbounded
-// trailing text. A candidate that EXISTS is a path whatever it looks like, so
-// a duplicate such as `.env.production copy` is still matched.
 function isFilenameShaped(name: string): boolean {
   return name.length > 0 && !/\s/.test(name);
 }
@@ -1484,9 +1386,6 @@ function candidateExistsOnDisk(
     const absolute = normalizeAbsoluteCandidatePath(target, cwd, environment, budget);
     return absolute !== '' && environment.paths.entryKind(absolute) !== 'missing';
   } catch (error) {
-    // A budget exhaustion is a deliberate signal the callers act on; anything
-    // else (ENAMETOOLONG, ELOOP, EACCES) only means "cannot confirm it exists",
-    // and this probe is a rescue for the shape heuristic, never the guard.
     if (error instanceof AnalysisLimit) throw error;
     return false;
   }
@@ -1506,10 +1405,6 @@ function isSensitivePath(
   environment: EnvironmentContext,
   budget: Budget,
 ): string | null {
-  // A remote URL names something on another host, so no local secret can be
-  // read through it: `curl https://raw.githubusercontent.com/o/r/main/.env.test`
-  // touches nothing on this machine. `file:` URLs are excluded because
-  // normalizeFileUriPath turns those into real local paths first.
   if (isRemoteUrl(target)) {
     return null;
   }
@@ -1521,16 +1416,10 @@ function isSensitivePath(
 
   const comparableName = comparable(normalized.split('/').pop() ?? '');
   const comparablePath = comparable(normalized);
-  // Prefix rules below match the START of a basename, so they need a candidate
-  // that could be a filename at all. Without this, any prose beginning with
-  // `.env.` or `id_rsa-` is read as a path — and the exemption lists, which
-  // compare basenames exactly, cannot rescue it: the sentence fragment
-  // `.env.example) and then ...` was blocked while `.env.example` is allowed.
+
   const isFilenameShapedName = () =>
     isFilenameShaped(comparableName) || candidateExistsOnDisk(target, cwd, environment, budget);
 
-  // Env templates (.env.example, ...) stay readable even inside sensitive
-  // directories, matching the original caller-side exemption.
   if (
     ENV_EXEMPTION_BASENAMES.has(comparableName) ||
     ENV_EXEMPTION_PREFIXES.some((prefix) => comparableName.startsWith(prefix))
@@ -1538,14 +1427,6 @@ function isSensitivePath(
     return null;
   }
 
-  // Sensitive home directories (~/.ssh, ~/.aws, ...) are deny-by-default
-  // wholesale and take priority over the public-key exemption below.
-  //
-  // Matched against the un-resolved home-relative form as well, because these
-  // rules name a LITERAL location: dotfile managers, password managers and
-  // encrypted volumes commonly make ~/.ssh a symlink, and canonicalizing the
-  // candidate rewrites it to the link target, which no longer starts with
-  // `~/.ssh`. Resolving the link would otherwise disable the rule that names it.
   const comparableUnresolvedPath = comparable(
     normalizeUnresolvedHomePath(target, cwd, environment, budget),
   );
@@ -1562,7 +1443,6 @@ function isSensitivePath(
   const codingCliRuleId = matchesCodingCliPath(normalized, cwd, config, environment, budget);
   if (codingCliRuleId) return codingCliRuleId;
 
-  // Public keys are non-secret; exempt them outside sensitive directories.
   if (PUBLIC_KEY_BASENAMES.has(comparableName)) return null;
   for (const rule of SECRET_BASENAME_RULES) {
     if (comparableName === rule.basename && isSecretRuleEnabled(rule.id, config)) return rule.id;
@@ -1575,8 +1455,6 @@ function isSensitivePath(
     return SECRET_ENV_VARIANT_RULE.id;
   }
 
-  // Catch rename-shielded variants (id_rsa.bak, id_rsa-old) without flagging
-  // unrelated lookalikes (id_rsafoo, credentials.json).
   for (const rule of SECRET_VARIANT_SEPARATOR_RULES) {
     if (comparableName.length > rule.prefix.length && comparableName.startsWith(rule.prefix)) {
       const next = comparableName.slice(rule.prefix.length)[0];
@@ -1638,9 +1516,6 @@ function matchesCodingCliPath(
             ['.credentials.json'],
           );
         case 'secret.cli.claude-code.config': {
-          // Project-level configs live at unbounded repo roots, so match by name: a
-          // settings.local.json inside a .claude dir (the gitignored personal override;
-          // team-shared settings.json is deliberately excluded), or any .mcp.json.
           const segments = comparable(normalized).split('/');
           return (
             matchesFileInRoot(
@@ -1679,8 +1554,6 @@ function matchesCodingCliPath(
           );
         }
         case 'secret.cli.codex.config': {
-          // A named profile lives beside config.toml as <name>.config.toml. Anchor
-          // it to the Codex root, so a project file with that suffix stays allowed.
           const root = codingCliRoot(
             environment.env.get('CODEX_HOME'),
             '~/.codex',
@@ -1709,8 +1582,6 @@ function matchesCodingCliPath(
             ],
           );
         case 'secret.cli.gemini.config': {
-          // Workspace settings sit in a .gemini directory at any repository root, and
-          // system settings come from an override or one of three managed roots.
           const segments = comparable(normalized).split('/');
           const systemSettingsPath = environment.env.get('GEMINI_CLI_SYSTEM_SETTINGS_PATH');
           const programDataConfig = environment.env.get('ProgramData')
@@ -1824,8 +1695,7 @@ function matchesCodingCliPath(
                 environment,
                 budget,
               ),
-              // The legacy JSON config holds the same provider keys as config.toml, and
-              // the migration leaves the old file behind as config.json.bak.
+
               [...configFiles, 'config.json', 'config.json.bak'],
             )
           );
@@ -1841,8 +1711,7 @@ function matchesCodingCliPath(
             ),
             'opencode',
           );
-          // The credential database runs in WAL mode, so the -wal and -shm files hold
-          // the newest rows. A release channel renames the file to opencode-<channel>.db.
+
           const databaseName = comparable(normalized).split('/').at(-1) ?? '';
           const databaseEnv = environment.env.get('OPENCODE_DB')?.trim();
           const databaseEnvPaths =
@@ -1885,7 +1754,7 @@ function matchesCodingCliPath(
                 ),
               ]
             : [];
-          // A project config sits at any repository root, so match the basename alone.
+
           const configNames = ['opencode.json', 'opencode.jsonc'];
           const opencodeConfig = environment.env.get('OPENCODE_CONFIG');
           return (
@@ -1929,9 +1798,6 @@ function matchesCodingCliPath(
             ['models.json'],
           );
         case 'secret.cli.amp': {
-          // Amp ships two resolvers for the same data directory: one reads
-          // XDG_DATA_HOME everywhere, the other ignores it on macOS and Windows.
-          // Match both roots, so neither platform gives a false negative.
           const home = normalizeCandidatePath('~', cwd, environment, budget);
           const dataRoots = [
             appendPath(
@@ -1952,10 +1818,6 @@ function matchesCodingCliPath(
           );
         }
         case 'secret.cli.amp.config': {
-          // Amp resolves the config directory with the same two resolvers as the
-          // data directory, and it falls back to settings.jsonc when settings.json
-          // is absent. The workspace file is found by an upward search, so it can
-          // sit in any ancestor directory and needs a segment test.
           const settingsNames = ['settings.json', 'settings.jsonc'];
           const configRoots = [
             appendPath(
@@ -1981,10 +1843,6 @@ function matchesCodingCliPath(
           );
         }
         case 'secret.cli.cursor': {
-          // auth.json follows the platform, not CURSOR_DATA_DIR: the macOS path stays
-          // under ~/.cursor while other platforms use the XDG config root. Only the
-          // project tree, which holds one mcp-auth.json per project, follows the
-          // data directory.
           const configRoot = appendPath(
             codingCliRoot(
               environment.env.get('XDG_CONFIG_HOME'),
@@ -2017,8 +1875,6 @@ function matchesCodingCliPath(
           );
         }
         case 'secret.cli.cursor.config': {
-          // The user file and the project file both sit directly in a .cursor
-          // directory, so one segment test covers both.
           const segments = comparable(normalized).split('/');
           return segments.at(-1) === 'mcp.json' && segments.at(-2) === '.cursor';
         }
@@ -2029,9 +1885,6 @@ function matchesCodingCliPath(
             ['auth.json', 'mcp_credentials.json'],
           );
         case 'secret.cli.grok-build.config': {
-          // The project config sits directly in a .grok directory, so one segment
-          // test covers it and the default user root; the root match keeps the user
-          // files blocked when GROK_HOME renames the directory.
           const segments = comparable(normalized).split('/');
           return (
             (segments.at(-1) === 'config.toml' && segments.at(-2) === '.grok') ||
@@ -2054,11 +1907,6 @@ function matchesCodingCliPath(
   );
 }
 
-/**
- * The coding-CLI roots one decision has already normalized. Every candidate path is matched
- * against all of them, so without this each candidate re-derived the same twenty-odd roots
- * from scratch; that work was half of the gate's CPU on a replay.
- */
 const codingCliRoots = new WeakMap<Budget, Map<string, string>>();
 
 function codingCliRoot(
@@ -2129,10 +1977,6 @@ function matchesPolicyPath(
   );
 }
 
-// Allow entries are literal and use exactly the deny-path semantics:
-// same-or-child of a fully normalized root, symlinks resolved on both sides.
-// Validation rejects glob entries, so an entry that still contains `*` or `?`
-// simply never equals a real normalized path.
 function matchesAllowedPath(
   target: string,
   cwd: string,
@@ -2152,9 +1996,7 @@ function matchesAllowedPath(
     : '';
   const home = comparable(resolvedHome);
   const guardHomeValue = environment.env.get('CC_SAFETY_NET_HOME');
-  // Both roots go through the filesystem: a dotfile-managed ~/.cc-safety-net
-  // symlink would otherwise leave the lexical default root pointing away from
-  // where candidate normalization already followed the link.
+
   const guardRoot = comparable(
     guardHomeValue
       ? normalizePathText(
@@ -2169,19 +2011,12 @@ function matchesAllowedPath(
             resolveExistingPath(`${resolvedHome}/.cc-safety-net`, environment.paths, budget),
           ),
   );
-  // No target under the guard's own configuration is ever exemptible. The
-  // save-time validator rejects literal entries in there, but it cannot see
-  // relative entries, env expansion, a CC_SAFETY_NET_HOME override, or an
-  // entry ABOVE a custom guard root — so the boundary is enforced on the
-  // target, where the effective guard root is finally known.
+
   if (guardRoot && isSameOrChildPath(normalized, guardRoot)) return false;
   return allowPaths.some((entry) => {
     const root = comparable(normalizeAbsoluteCandidatePath(entry, configCwd, environment, budget));
     if (!root) return false;
-    // Validation rejects literal entries that cover home, but an entry can
-    // still RESOLVE there at match time (env expansion, relative segments
-    // against the config cwd), and such a root would exempt every secret
-    // under home. Refuse it here, where the resolved root is finally known.
+
     if (home && (home === root || home.startsWith(root.endsWith('/') ? root : `${root}/`))) {
       return false;
     }
@@ -2256,11 +2091,6 @@ function isSameOrChildHomePath(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
 
-/**
- * The home-relative form of a candidate WITHOUT resolving symlinks, or '' when
- * it does not sit under the home directory. Home rules name a literal location,
- * so they must see the path the user wrote, not where a link points.
- */
 function normalizeUnresolvedHomePath(
   target: string,
   cwd: string,
@@ -2270,21 +2100,15 @@ function normalizeUnresolvedHomePath(
   const { home, normalized } = prepareCandidatePath(target, environment, budget);
   if (!normalized || !home) return '';
   const expanded = expandHomePath(normalized, home);
-  // Lexically collapsed (never through the filesystem): a `..` before the
-  // credential directory would otherwise hide it from the literal comparison,
-  // and a `..` after it would drag ordinary siblings into the rule.
+
   const absolute = posix.normalize(
     isAbsolute(expanded) ? expanded : normalizePathText(resolve(cwd, expanded)),
   );
-  // The home root itself may be reached through a symlinked ancestor (on macOS
-  // /var is a link to /private/var), so an absolute candidate is tested against
-  // both the canonical and the literal home root before being given up on.
+
   const literalHome = normalizePathText(
     normalizeMsysDrivePath(environment.env.get('HOME') ?? environment.home),
   );
-  // Windows paths are case-insensitive and agents routinely re-case drive
-  // letters, so the roots match case-folded there; POSIX casing is
-  // identity-bearing and stays exact.
+
   const fold = (value: string) => (process.platform === 'win32' ? value.toLowerCase() : value);
   const root = [home, literalHome].find(
     (candidate) => candidate !== '' && isSameOrChildPath(fold(absolute), fold(candidate)),
@@ -2340,23 +2164,6 @@ function expandHomePath(path: string, home: string): string {
   return path;
 }
 
-/**
- * Whether a backslash in this candidate separates path components.
- *
- * On Windows it always does. Off Windows it does so only for a candidate that
- * is drive-qualified (`C:\...`, `D:/...`) or UNC (`\\server\share`), which is
- * asked of `node:path` rather than pattern-matched so the platform's own
- * definition covers the forward-slash drive form and extended-length prefixes.
- * A Windows root longer than one character is exactly that set — `win32`
- * reports a bare `\` as an absolute root too, and off Windows `\.npmrc` is a
- * regex for `.npmrc`, not the drive-relative path it would be on Windows.
- *
- * Everything else off Windows keeps its backslashes, because there a backslash
- * is an escape character: rewriting it turned the surviving regex text of
- * `git grep "process\.env"` into `process/.env`, whose basename is `.env`.
- * Shell-level escapes never reach here — the parser removes them first — so
- * `cat \.env` still arrives as `.env` and stays blocked.
- */
 function usesBackslashSeparators(value: string): boolean {
   if (process.platform === 'win32') return true;
   return win32.parse(value).root.length > 1;
@@ -2364,8 +2171,7 @@ function usesBackslashSeparators(value: string): boolean {
 
 function normalizePathText(value: string): string {
   const trimmed = value.trim();
-  // `win32.parse` is the costly step here, and it only matters when there is a backslash to
-  // rewrite; most candidates carry none.
+
   const normalized = (
     trimmed.includes('\\') && usesBackslashSeparators(trimmed)
       ? trimmed.replace(/\\/g, '/')

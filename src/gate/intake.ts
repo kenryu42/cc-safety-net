@@ -10,18 +10,8 @@ import {
 } from '@/core/tool-input';
 import type { CommandToolKind, ToolCallContext, ToolRoute } from './invocation';
 
-/**
- * The boundary where the gate reads what a host hands it: the raw stdin document, the tool name
- * and route, and the directory the call claims to run in. Everything downstream works from the
- * values these functions return.
- */
-
 type HookDenyOutput = (denial: IntegrationDenial) => void;
 
-// Deliberately no realpath step: the OpenCode plugin and the library API both
-// use this check, so a symlinked directory resolves the same way on each surface.
-// The one host-boundary read left outside the path seam: it needs the R_OK|X_OK probe the seam
-// does not carry, and only Phase 5's entry layer calls it, before an Environment exists.
 export function isUsableDirectory(path: string): boolean {
   try {
     if (!statSync(path).isDirectory()) return false;
@@ -51,9 +41,6 @@ export function resolveContainedCwd(
   return roots.some((root) => isSameOrInsidePath(requested, root)) ? requested : undefined;
 }
 
-// Canonicalizes without requiring containment: for agents (Amp) whose commands
-// legitimately execute outside the workspace root. Symlinks still resolve to
-// their real path so path guards compare against the true location.
 export function resolveCanonicalCwd(
   requestedCwd: string,
   baseCwd: string,
@@ -87,7 +74,6 @@ export function isSameOrInsidePath(path: string, root: string): boolean {
 /** @internal Maximum raw stdin accepted from hook hosts before fail-closed denial (8 MiB). */
 export const HOOK_INPUT_MAX_BYTES = 8 * 1024 * 1024;
 
-/** Reads hook input without buffering more than HOOK_INPUT_MAX_BYTES raw bytes. */
 export async function readBoundedHookInput(
   input: (AsyncIterable<Buffer | Uint8Array | string> | Iterable<Buffer | Uint8Array | string>) & {
     destroy?: () => unknown;

@@ -4,25 +4,22 @@ import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from './git/me
 import { resolveWorktreeFacts, type WorktreeFacts } from './git/worktree';
 import { normalizeMsysDrivePath } from './paths/canonicalization';
 
-/** Filesystem lookups the gate needs, so path facts are injected instead of read ambiently. */
 export type PathResolver = Readonly<{
-  /** Fully resolved path, or null when it cannot be resolved. */
   realpath: (path: string) => string | null;
-  /** What sits at the path: a symlink, some other existing entry, or nothing. */
+
   entryKind: (path: string) => 'symlink' | 'present' | 'missing';
-  /** Whether a directory sits at the path, following symlinks; false when it cannot be read. */
+
   isDirectory: (path: string) => boolean;
 }>;
 
-/** Ambient process state the gate reads, captured once at the entry point. */
 export type Environment = Readonly<{
   env: ReadonlyMap<string, string>;
   home: string;
   tmpdir: string;
   paths: PathResolver;
-  /** Git control-plane paths around `cwd`, or null outside a repository; memoized per cwd. */
+
   gitMetadata: (cwd: string) => ProtectedGitMetadata | null;
-  /** Facts for worktree relaxation, or null when it must not apply; memoized per cwd. */
+
   worktreeFacts: (cwd: string) => WorktreeFacts | null;
 }>;
 
@@ -41,8 +38,7 @@ export const processPathResolver: PathResolver = {
     if (!stats) return 'missing';
     return stats.isSymbolicLink() ? 'symlink' : 'present';
   },
-  // `throwIfNoEntry` covers only a missing entry; an unreadable parent still throws, and the
-  // callers treat every unanswerable path the same way.
+
   isDirectory: (path) => {
     try {
       return statSync(path).isDirectory();
@@ -52,7 +48,6 @@ export const processPathResolver: PathResolver = {
   },
 };
 
-/** Snapshot the current process state for one gate call. */
 export function createProcessEnvironment(): Environment {
   return withGitFacts({
     env: new Map(

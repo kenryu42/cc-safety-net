@@ -13,7 +13,6 @@ type ConfiguredGitHubSource = { owner: string; repo: string; ref: string; name: 
 
 const GITHUB_REPOSITORY_REF_SOURCE_RE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#(.+)$/;
 
-/** A source is selected by its exact spec or by the rulebook name that spec carries. */
 export function getSelectedUpdateSpecs(config: RulesConfig, match: string): RulebookMatchResult {
   const exactMatches = getExactSpecMatches(config.rules, match);
   if (exactMatches.length > 0) {
@@ -38,7 +37,6 @@ export function getRemoveMatches(rules: string[], match: string): RulebookMatchR
   return getRulebookNameMatch(rules, match);
 }
 
-/** With no lockfile the name a spec carries is the only name a source has. */
 function getRulebookNameMatch(rules: string[], match: string): RulebookMatchResult {
   const nameMatches = rules.filter((spec) => getConfiguredGitHubSource(spec)?.name === match);
   if (nameMatches.length === 1) return { ok: true, specs: nameMatches };

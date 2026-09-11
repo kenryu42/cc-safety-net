@@ -1,12 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { safetyNetSubcommandIndex } from '@/gate/guards/safety-net-invocation';
 
-/**
- * Two guards read this index with opposite strictness, so every runner spelling is stated in
- * both modes: a wrong answer either exempts a real command from secret protection or lets
- * `policy apply` through.
- */
-
 const RUNNER_COMMANDS = [
   'cc-safety-net',
   'ccsn',
@@ -65,7 +59,6 @@ describe('safetyNetSubcommandIndex', () => {
     TOKEN_LISTS.flatMap((tokens) => MODES.map((options) => ({ command, tokens, options }))),
   );
 
-  /** `narrow` is the exempting consumer's answer, `broad` the blocking one's. */
   test('locates the subcommand of a runner spelling, under-matching or over-matching by mode', () => {
     const spellings: readonly {
       readonly command: string;
@@ -77,8 +70,6 @@ describe('safetyNetSubcommandIndex', () => {
       { command: 'ccsn', tokens: [], narrow: 0, broad: 0 },
       { command: 'npx', tokens: ['cc-safety-net', 'policy', 'apply'], narrow: 1, broad: 1 },
       { command: 'npx', tokens: ['-y', 'cc-safety-net', 'explain', 'x'], narrow: 2, broad: 2 },
-      // Only the documented consent flag is skipped by the exemption; the blocking consumer
-      // looks past any option in front of the target.
       {
         command: 'npx',
         tokens: ['--loglevel=silent', 'cc-safety-net', 'policy', 'apply'],
@@ -91,7 +82,6 @@ describe('safetyNetSubcommandIndex', () => {
         narrow: null,
         broad: 3,
       },
-      // A version or tag suffix resolves this package; a protocol, a scope or a path does not.
       { command: 'npx', tokens: ['ccsn@latest', 'explain', 'x'], narrow: 1, broad: 1 },
       { command: 'npx', tokens: ['cc-safety-net@npm:other', 'status'], narrow: null, broad: null },
       { command: 'npx', tokens: ['@scope/cc-safety-net', 'status'], narrow: null, broad: null },
@@ -102,7 +92,6 @@ describe('safetyNetSubcommandIndex', () => {
         broad: null,
       },
       { command: 'pnpm', tokens: ['dlx', 'cc-safety-net', 'policy', 'apply'], narrow: 2, broad: 2 },
-      // Yarn Classic runs a project script named `dlx`, so only the blocking consumer trusts it.
       {
         command: 'yarn',
         tokens: ['dlx', 'cc-safety-net', 'policy', 'apply'],
@@ -139,7 +128,6 @@ describe('safetyNetSubcommandIndex', () => {
         narrow: 2,
         broad: 2,
       },
-      // `node run x` executes a local script named `run`, so it is a different program.
       {
         command: 'node',
         tokens: ['run', 'dist/bin/cc-safety-net.js', 'policy', 'apply'],
@@ -158,7 +146,6 @@ describe('safetyNetSubcommandIndex', () => {
         narrow: 1,
         broad: 1,
       },
-      // The bundle the bin loads dispatches every verb itself, so running it is running the CLI.
       {
         command: 'node',
         tokens: ['dist/bin/hook.js', 'policy', 'apply'],

@@ -7,11 +7,6 @@ import {
   removeTopLevelEmptyTomlArray,
 } from '@/core/io/toml';
 
-/**
- * The Kimi Code installer is the caller this TOML editor serves, so the rows below are the config
- * files it meets and the exact bytes each edit must leave behind. Its hook strings are restated
- * here because they are the host's artifact, not part of the core edit.
- */
 const COMMAND = 'npx -y cc-safety-net hook --kimi-code';
 const INLINE_ITEM = `{ event = "PreToolUse", command = "${COMMAND}" }`;
 const TABLE_BLOCK = `[[hooks]]\nevent = "PreToolUse"\ncommand = "${COMMAND}"`;
@@ -22,7 +17,6 @@ const ERRORS = {
 
 const OTHER_ITEM = '{ event = "Stop", command = ".kimi/hooks/check.sh" }';
 
-/** The decision `installKimiCode` makes, rebuilt over the core primitives. */
 function install(content: string | undefined) {
   if (content === undefined) return `${TABLE_BLOCK}\n`;
   if (content.includes(COMMAND)) return content;
@@ -34,7 +28,6 @@ function install(content: string | undefined) {
   return trimmed === '' ? `${TABLE_BLOCK}\n` : `${trimmed}\n\n${TABLE_BLOCK}\n`;
 }
 
-/** The decision `uninstallKimiCode` makes, rebuilt over the core primitives. */
 function uninstall(content: string | undefined) {
   if (content === undefined || !content.includes(COMMAND)) return content;
   const array = findTopLevelTomlArray(content, 'hooks', ERRORS);

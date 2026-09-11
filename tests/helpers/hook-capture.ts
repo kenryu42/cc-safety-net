@@ -4,14 +4,6 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { withEnv } from '../helpers';
 
-/**
- * One hook call driven inside this process: the payload arrives on a replaced `process.stdin`,
- * the host document leaves through `console.log`, and the audit tree the call left behind is read
- * back without the two fields that cannot agree between two runs (`ts` and `id`). The stdin
- * replacement, the console spies and the environment are all undone before the call returns, so
- * one row's run cannot reach the next.
- */
-
 export async function captureHookRun(
   input: string | Uint8Array,
   env: Record<string, string | undefined>,
@@ -41,7 +33,6 @@ export async function captureHookRun(
   }
 }
 
-/** Every audit line under one audit home, ordered by file and then by position in the file. */
 export function readAuditEntries(
   auditHome: string,
 ): { file: string; entry: Record<string, unknown> }[] {

@@ -31,8 +31,6 @@ const SHELL_STARTUP_ENV_NAMES = new Map<string, ShellStartupEnvironmentName>([
 ]);
 
 export function extractDashCArg(tokens: readonly string[]): string | null {
-  // Scan past "--" for compatibility with historical wrapper peeling behavior.
-  // parseShellArgv() intentionally treats operands after "--" as script operands.
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
     if (!token) continue;
@@ -46,8 +44,6 @@ export function extractDashCArg(tokens: readonly string[]): string | null {
 }
 
 export function isShellSyntaxCheck(tokens: readonly string[]): boolean {
-  // Prefer argv parser for shells that use -o option names (zsh/ksh), where a bare
-  // "includes('n')" scan would misread -onotify as no-exec.
   const shell = getBasename(tokens[0] ?? '').toLowerCase();
   if (shell === 'zsh' || shell === 'ksh') return parseShellArgv(tokens).syntaxCheck;
 

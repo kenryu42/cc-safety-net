@@ -10,13 +10,6 @@ import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
 import { policySnapshot, testModes } from '../../helpers/policy';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * A child a producer synthesized from its own arguments is dispatched through the same
- * per-command path as the command as written, carrying the provenance that says which producer
- * built it and what the input it cannot see could still change. Each row states the rule one
- * child reaches, and which of the producer's own reasons answers when no rule does.
- */
-
 let root = '';
 let workspace = '';
 
@@ -91,7 +84,6 @@ const RM_MATCH = {
   intent: 'scope_down',
 } as const;
 
-/** The half of a child's provenance a producer fills in from the input it cannot see. */
 type ChildInput = Partial<
   Pick<
     ChildProvenance,
@@ -137,7 +129,6 @@ const ANALYSIS_CASES: readonly ChildAnalysisCase[] = [
   { label: 'worktree mode', worktreeMode: true },
 ];
 
-/** The dispatch over one token list, recording the nested sources it asks about. */
 function dispatchPair(tokens: readonly string[], row: ChildAnalysisCase, input: ChildInput) {
   const snapshot = policySnapshot({ rules: CUSTOM_RULES });
   const nested: string[] = [];
@@ -207,7 +198,6 @@ describe('synthesized child dispatch', () => {
       },
       { tokens: ['python3', '-c', 'print("hello")'], id: null },
       { tokens: ['python3', 'script.py'], id: null },
-      // A shell asked only to check syntax runs nothing.
       { tokens: ['bash', '-n', '-c', 'rm -rf /'], id: null },
       { tokens: ['awk', '{ print }'], id: null },
       { tokens: ['gawk', '-f', 'prog.awk'], id: null },
@@ -249,7 +239,6 @@ describe('synthesized child dispatch', () => {
         dynamicInput: true,
       }),
     ).toStrictEqual(RM_MATCH);
-    // A catastrophic target is reported by the rm analyzer itself, not the caller's match.
     expect(
       matchFor(['rm', '-rf', '/'], {
         dynamicRmInput: true,
@@ -270,7 +259,6 @@ describe('synthesized child dispatch', () => {
     expect(idFor({ producer: 'unknown-head', wrappedByTransparent: true })).toBe(
       'custom.block-deploy',
     );
-    // A child a producer built from its own arguments always asks them.
     expect(idFor({})).toBe('custom.block-deploy');
   });
 
@@ -326,7 +314,6 @@ describe('synthesized child dispatch', () => {
     expect(nestedFor(['bash', '-c', 'echo NESTED'])).toStrictEqual(['echo NESTED']);
     expect(nestedFor(['python3', '-c', 'echo NESTED'])).toStrictEqual(['echo NESTED']);
     expect(nestedFor(['awk', 'BEGIN { system("echo NESTED") }'])).toStrictEqual(['echo NESTED']);
-    // A shell reading a script operand has no source the analyzer can see.
     expect(nestedFor(['bash', 'script.sh'])).toStrictEqual([]);
   });
 });

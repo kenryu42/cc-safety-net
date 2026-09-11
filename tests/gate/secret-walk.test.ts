@@ -7,20 +7,6 @@ import { bashCall } from '../helpers/gate-differential';
 import { policySnapshot } from '../helpers/policy';
 import { environmentFor } from '../helpers/temp-home';
 
-/**
- * The secret matcher on the shared guard walk. A relative operand resolves against the directory
- * the shell would run it in: a `cd` moves that directory, `cd -` returns to the one before it, and
- * a subshell, `$( )`, backtick or process substitution runs with its own copy of the state and
- * hands the parent's back when it ends. A brace group and a function body run in the current
- * shell, so their `cd` still counts.
- *
- * Outside that, the walk's scope is deliberately the scanner's: `pushd`/`popd` are untracked, an
- * operand inside an interpreter body resolves against the segment that runs the interpreter, and a
- * `cd` inside that body is scanned as text rather than walked. A `cd` to an unset variable or to a
- * command substitution leaves later relative operands unresolvable. Each row states its verdict at
- * standard, strict and paranoid against a seeded disposable home.
- */
-
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'secret-walk-')));
 const home = join(root, 'home');
 const project = join(home, 'project');
@@ -42,7 +28,6 @@ const SNAPSHOTS = [
   policySnapshot({ safety: { level: 'paranoid' } }),
 ];
 
-/** Either an allow, or the rule the matcher reports together with the operand it shows as evidence. */
 type Expectation = 'allow' | { readonly ruleId: string; readonly segment: string };
 
 const DENIED_HOME_SSH_CONFIG = { ruleId: 'secret.home.ssh', segment: '.ssh/config' } as const;
@@ -50,10 +35,8 @@ const DENIED_HOME_SSH_CONFIG = { ruleId: 'secret.home.ssh', segment: '.ssh/confi
 const ROWS: readonly {
   readonly name: string;
   readonly command: string;
-  /** The directory the command runs in: the seeded home, or the project directory below it. */
   readonly cwd: 'home' | 'project';
   readonly expected: Expectation;
-  /** A command the same row must still see allowed, so its denial is not read as a blanket ban. */
   readonly alsoAllows?: string;
 }[] = [
   {
@@ -93,17 +76,12 @@ const ROWS: readonly {
     expected: 'allow',
   },
   {
-    // The old row pinned a denial: the walk ignored `cd -` and left the tracked directory in home,
-    // which is not where the shell runs the read. `cd -` returns to the previous directory, so the
-    // read is of the project's own SSH config.
     name: 'cd - after a cd into home returns to the directory the command started in',
     command: 'cd ~ && cd - && cat .ssh/config',
     cwd: 'project',
     expected: 'allow',
   },
   {
-    // The old row pinned a denial because the projection flattened the group, so a subshell's `cd`
-    // was read as if it leaked. A subshell's directory change never reaches the parent shell.
     name: 'a cd inside a subshell group does not move the parent cwd',
     command: '(cd ~) && cat .ssh/config',
     cwd: 'project',
@@ -249,7 +227,6 @@ function evaluate(
   });
 }
 
-/** An allow, or everything a denial row states: the stage that decided, the intent, the rule, the evidence. */
 function decided(evaluation: GuardEvaluation) {
   const decision = evaluation.decision;
   if (decision.kind !== 'deny') return 'allow';

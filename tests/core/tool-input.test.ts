@@ -77,7 +77,6 @@ function nested(depth: number, leaf: unknown): unknown {
   return Array.from({ length: depth }).reduce<unknown>((inner) => ({ inner }), leaf);
 }
 
-/** The five files the apply-patch document above names, in the order it names them. */
 const APPLY_PATCH_TARGETS = [
   'src/new.ts',
   'src/quoted name.ts',
@@ -86,11 +85,6 @@ const APPLY_PATCH_TARGETS = [
   'src/moved.ts',
 ];
 
-/**
- * Every file the git diff above names, in order and with its repetitions: a header names the same
- * file on several lines, and the reader reports each occurrence rather than a set, so a later
- * stage sees how often a path was asked for.
- */
 const GIT_DIFF_TARGETS = [
   'src/a.ts',
   'src/a.ts',
@@ -126,8 +120,6 @@ const GIT_DIFF_TARGETS = [
 describe('core/tool-input', () => {
   const depthUnderCap = next.TOOL_INPUT_LIMITS.maxDepth - 2;
 
-  /** What the three readers found, with the empty answers left out so a row states only what it
-   *  is about. */
   const expectRead = (
     input: unknown,
     expected: { command?: string; paths?: readonly string[]; targets?: readonly string[] },
@@ -156,11 +148,6 @@ describe('core/tool-input', () => {
     expect(error.message).toBe('tool input traversal limit exceeded');
   });
 
-  /**
-   * How a host's spelling of a tool becomes the kind the gate routes it by. The name is folded to
-   * lowercase alphanumerics, so case, spaces, dashes and underscores are all the same name; read
-   * only marks the tools that cannot change anything, which relaxes the metadata-only rules.
-   */
   test.each([
     ['Bash', 'bash', 'unknown', false],
     ['PowerShell', 'powershell', 'unknown', false],
@@ -187,8 +174,6 @@ describe('core/tool-input', () => {
     ['search_web', 'searchweb', 'path', true],
     ['Grep', 'grep', 'grep', true],
     ['grep_search', 'grepsearch', 'grep', true],
-    // `rg` runs a real ripgrep, which can write with `--files-with-matches -0 | xargs`, so it is
-    // the one grep spelling the read-only relaxation does not cover.
     ['rg', 'rg', 'grep', false],
     ['Glob', 'glob', 'glob', true],
     ['find', 'find', 'glob', true],
@@ -207,10 +192,6 @@ describe('core/tool-input', () => {
     expect(next.isReadOnlyTool(toolName)).toBe(readOnly);
   });
 
-  /**
-   * What the three readers take out of a payload. Each row names the rule it stands for; a row
-   * with no `command`, `paths` or `targets` says the reader found nothing to hand on.
-   */
   test.each([
     ['a payload that is not an object carries nothing', undefined, {}],
     ['null', null, {}],
@@ -235,8 +216,6 @@ describe('core/tool-input', () => {
   });
 
   test('a path-like key is matched wherever it appears, and only when it holds the string', () => {
-    // `file-path` and `FILE_PATH` fold to keys the set lists; the array under `file_path` holds
-    // the string at an index rather than at a path-like key, so only the nested `path` matches.
     expectRead(
       { 'file-path': 'hyphen.txt', FILE_PATH: 'upper.txt', file_path: ['array', { path: 'deep' }] },
       { paths: ['hyphen.txt', 'upper.txt', 'deep'] },
@@ -245,12 +224,10 @@ describe('core/tool-input', () => {
       { paths: [{ notebook_path: 'n.ipynb' }, ['skip', { absolutePath: '/abs' }]] },
       { paths: ['n.ipynb', '/abs'] },
     );
-    // A value that is not a string under a path-like key contributes nothing.
     expectRead(
       { edits: [{ target_file: 'a.ts' }, { target_file: 'b.ts' }], path: 7, file: null },
       { paths: ['a.ts', 'b.ts'] },
     );
-    // The same object reached three ways is read three times: the readers report occurrences.
     const shared = { file_path: 'shared.txt' };
     expectRead(
       { first: shared, second: shared, third: [shared] },
@@ -259,7 +236,6 @@ describe('core/tool-input', () => {
   });
 
   test('only a plain own enumerable property is read', () => {
-    // A symbol key and a non-enumerable one are both invisible to the walk.
     expectRead({ [Symbol('secret')]: 'sym', path: 'visible' }, { paths: ['visible'] });
     expectRead(
       Object.defineProperty({ path: 'shown' }, 'file_path', {
@@ -268,7 +244,6 @@ describe('core/tool-input', () => {
       }),
       { paths: ['shown'] },
     );
-    // An object with no prototype is still a plain object.
     expectRead(Object.assign(Object.create(null), { command: 'proto-less', path: 'p' }), {
       command: 'proto-less',
       paths: ['p'],
@@ -291,12 +266,10 @@ describe('core/tool-input', () => {
     expectRead([APPLY_PATCH_TEXT, { input: GIT_DIFF_TEXT }], {
       targets: [...APPLY_PATCH_TARGETS, ...GIT_DIFF_TARGETS],
     });
-    // Each occurrence is scanned; the targets are not deduplicated across them.
     expectRead(
       { command: [{ diff: GIT_DIFF_TEXT }, GIT_DIFF_TEXT] },
       { targets: [...GIT_DIFF_TARGETS, ...GIT_DIFF_TARGETS] },
     );
-    // A key that carries no patch is not scanned, even when its value is a patch.
     expectRead({ other: APPLY_PATCH_TEXT }, {});
     expectRead(
       { patch: { nested: APPLY_PATCH_TEXT, diff: GIT_DIFF_TEXT } },
@@ -304,7 +277,6 @@ describe('core/tool-input', () => {
         targets: GIT_DIFF_TARGETS,
       },
     );
-    // Depth is no obstacle below the cap: both readers still reach the leaf.
     expectRead(nested(depthUnderCap, { file_path: 'deep.txt', patch: GIT_DIFF_TEXT }), {
       paths: ['deep.txt'],
       targets: GIT_DIFF_TARGETS,
@@ -314,7 +286,6 @@ describe('core/tool-input', () => {
   test('every corpus payload is read without refusing it', () => {
     for (const { input } of corpusToolInputs()) {
       const command = next.getCommandFromToolInput(input);
-      // A command that comes back is the text a later stage analyzes, never an empty one.
       if (command !== undefined) expect(command.length).toBeGreaterThan(0);
       expect(next.extractPathLikeToolValues(input, PATH_LIKE_KEYS)).toBeArray();
       expect(next.extractPatchTargetsFromToolInput(input)).toBeArray();
@@ -333,7 +304,6 @@ describe('core/tool-input', () => {
         targets: ['quoted file.txt', 'quoted file.txt'],
       },
       {
-        // A quoted path is unescaped, octal escapes included.
         patch: String.raw`diff --git "a/\056env" "b/\056env"`,
         targets: ['.env', '.env'],
       },
@@ -342,8 +312,6 @@ describe('core/tool-input', () => {
         targets: ['café.txt', 'café.txt'],
       },
       {
-        // Both the prefixed and the stripped spelling are reported, since the prefix is a
-        // convention rather than part of the name.
         patch: 'diff --git a/src/file.ts b/src/file.ts\ndiff --git old/config.json new/config.json',
         targets: [
           'src/file.ts',
@@ -382,8 +350,6 @@ describe('core/tool-input', () => {
         targets: ['safe.txt', '.env'],
       },
       {
-        // An unterminated quote leaves the header unreadable, so its words are reported as they
-        // stand rather than dropped.
         patch: 'diff --git "a/unterminated b/unterminated',
         targets: ['"a/unterminated', 'b/unterminated', 'unterminated'],
       },

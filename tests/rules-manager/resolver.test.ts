@@ -13,14 +13,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from '../helpers/temp-home';
 
-/**
- * The resolver is the only part of the manager that touches the network, so every row here runs
- * against one scripted GitHub on loopback and records what it produced, what it spent from its
- * budget, and which requests it made. The caps are asserted from
- * the outside — a body one byte over is refused, a body of exactly the cap is accepted — so a
- * limit that quietly moves fails a row instead of shipping.
- */
-
 type Budget = {
   requests: number;
   responseBytes: number;
@@ -37,8 +29,6 @@ type Operation = {
 type Kind = 'metadata' | 'commit' | 'tree' | 'raw';
 type ResolvedRulebook = { spec: string; rulebook: { name: string }; content: string };
 
-/** Only the members a row calls, spelled with the arguments a row passes: the filesystem scope is
- *  a module-private nominal type, so a row leaves it to its default. */
 type Side = {
   createRuleSyncResourceBudget(limits?: {
     maxRequests?: number;
@@ -80,7 +70,6 @@ type Side = {
 const SIDES = [{ ...portedResolver, ...portedLimits }] as [Side];
 
 const RESOURCE_LIMIT_ERROR = "Rule synchronization exceeds CC Safety Net's safe resource limits.";
-/** Spelled with `/`: the diagnostics that name it are folded to that spelling on every host. */
 const RULES_SUBPATH = '.cc-safety-net/rules';
 const KIND_CAPS = [
   ['metadata', 524_288],
@@ -96,8 +85,6 @@ afterEach(() => {
   removeTempRoots();
 });
 
-/** The call over its own copy of the seeded scope, recorded whole with the requests it made; the
- *  observation comes back for the row to pin. */
 async function agree<T>(run: (side: Side, configDir: string) => Promise<T>, spec: TreeSpec = {}) {
   const ported = await observe(SIDES[0], run, spec);
   return ported;
@@ -112,15 +99,12 @@ async function observe<T>(
   writeTree(root, spec);
   const before = github.requests.length;
   const value = await run(side, join(root, RULES_SUBPATH));
-  // Sorted: a row cares which requests were made, not which of two sockets answered first.
   return normalize({ value, requests: github.requests.slice(before).sort() }, [
     [root, '<root>'],
     ...WINDOWS_SEPARATOR_FOLDS,
   ]);
 }
 
-/** One bounded fetch reduced to what a row compares: the status and the head of the body it
- *  accepted, or the message it refused with. */
 async function fetchRow(
   side: Side,
   path: string,
@@ -148,8 +132,6 @@ const spend = (budget: Budget) => ({
   responseBytes: budget.responseBytes,
 });
 
-/** A resolution reduced to the spec it answered, the rulebook name it accepted and the bytes it
- *  produced, with what the operation spent reaching it. */
 async function resolutionRow(
   side: Side,
   resolve: (operation: Operation) => Promise<ResolvedRulebook>,
@@ -198,8 +180,6 @@ describe('the bounded GitHub fetch', () => {
         first: first.outcome,
         second: second.outcome,
         requests: budget.requests,
-        // The refused chunk is charged before the throw; the exact total depends on how the
-        // transport split the body, so only the overrun itself is a stable fact.
         overBudget: budget.responseBytes > budget.maxResponseBytes,
       };
     });
@@ -237,7 +217,6 @@ describe('the bounded GitHub fetch', () => {
       });
       const agreed = await agree(async (side) => {
         const row = await fetchRow(side, kindPath(kind, 'overflow'), kind);
-        // The bytes read before the cap is crossed depend on how the transport split the body.
         return { outcome: row.outcome, requests: row.budget.requests };
       });
       expect(agreed.value).toEqual({
@@ -272,7 +251,6 @@ describe('the bounded GitHub fetch', () => {
 
   test('reassembles multibyte text split across writes', async () => {
     const body = '{"n":"é\u{1f600}"}';
-    // 7 lands inside the two bytes of é, 10 inside the four bytes of the emoji.
     github.faults.set('/raw/multibyte', { kind: 'response', body, chunkBoundaries: [7, 10] });
     const agreed = await agree(async (side) => {
       const row = await fetchRow(side, '/raw/multibyte', 'raw');
@@ -288,7 +266,6 @@ describe('the bounded GitHub fetch', () => {
     github.faults.set('/api/stalled', { kind: 'response', body: '{', endless: true });
     const agreed = await agree(async (side) => {
       const row = await fetchRow(side, '/api/stalled', 'metadata', { timeoutMs: 50 });
-      // Whether the one byte already written was charged is a race with the timeout.
       return { outcome: row.outcome, requests: row.budget.requests };
     });
     expect(agreed.value).toEqual({
@@ -307,8 +284,6 @@ describe('the bounded GitHub fetch', () => {
       const row = await fetchRow(side, '/api/moved', 'metadata');
       return { outcome: row.outcome, spend: spend(row.budget) };
     });
-    // The rejection comes from the runtime, so only its shape is contract: the redirect is never
-    // followed, and the refused request is still charged.
     expect(agreed.value.outcome.kind).toBe('threw');
     expect(agreed.value.spend).toEqual({ requests: 1, responseBytes: 0 });
     expect(agreed.requests).toEqual(['GET /api/moved']);
@@ -513,8 +488,6 @@ describe('rulebook resolution', () => {
     ],
     [{ command: 'terraform plan', expect: 'blocked', rule: 'block-terraform-destroy' }],
   );
-  /** What a fetch of the published copy answers with, asserted by three rows that reach it by
-   *  different routes. */
   const fetchedTeam = {
     kind: 'returned' as const,
     value: { spec: 'acme/rules#main/team', name: 'team', content: publishedTeam },

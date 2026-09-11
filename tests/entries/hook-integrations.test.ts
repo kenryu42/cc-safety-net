@@ -14,13 +14,6 @@ import {
   runtimeHookIntegrationMetadata as portedRuntimeMetadata,
 } from '@/hosts/catalog';
 
-/**
- * The hook table is what the bin resolves a flag through: an installed host config names one of
- * these flags, so a flag that stops resolving takes the gate out of that host silently. The rows
- * below name what each argument list resolves to, and the tables state the flags, the names and
- * the order the CLI reads out of the catalog.
- */
-
 const HOOK_ARGS: readonly (readonly [readonly string[], string | undefined])[] = [
   [[], undefined],
   [['--kimi-code'], 'kimi-code'],
@@ -37,15 +30,12 @@ const HOOK_ARGS: readonly (readonly [readonly string[], string | undefined])[] =
   [['--copilot-cli'], 'copilot-cli'],
   [['--grok-build'], 'grok-build'],
   [['--hermes-agent'], 'hermes-agent'],
-  // The flag is the whole argument list: a second flag, a trailing word or an unknown option all
-  // leave the call unresolved rather than guessing which host meant to run it.
   [['--cursor', '--kimi-code'], undefined],
   [['--kimi-code', 'extra'], undefined],
   [['--kimi-code', '--unknown'], undefined],
   [['--help'], undefined],
 ];
 
-/** The top-level spellings that shipped before `hook` took the flag, still answered for. */
 const LEGACY_FLAGS: readonly (readonly [string | undefined, string | undefined])[] = [
   ['-cc', 'claude-code'],
   ['--claude-code', 'claude-code'],
@@ -53,7 +43,6 @@ const LEGACY_FLAGS: readonly (readonly [string | undefined, string | undefined])
   ['--copilot-cli', 'copilot-cli'],
   ['-gc', 'gemini-cli'],
   ['--gemini-cli', 'gemini-cli'],
-  // Never a top-level spelling, so it stays a subcommand flag.
   ['--cursor', undefined],
   ['--statusline', undefined],
   [undefined, undefined],
@@ -134,10 +123,8 @@ const HOOK_TABLE = [
   },
 ] as const;
 
-/** The id as data: a row names one the table may not have, so the narrow union is not the type. */
 const idOf = (integration: { id: string } | undefined): string | undefined => integration?.id;
 
-/** A `run` is a closure; everything else on an integration is data the catalog owns. */
 const withoutRun = (integrations: readonly HookIntegration[]) =>
   integrations.map(({ run: _run, ...integration }) => integration);
 
@@ -156,7 +143,6 @@ describe('the hook table', () => {
 
   test('carries the flags and the help text the bin lists, in order', () => {
     expect(withoutRun(portedIntegrations)).toEqual(HOOK_TABLE as never);
-    // The table the CLI reads for `--help` is the same table the bin dispatches through.
     expect(portedRuntimeMetadata).toEqual(HOOK_TABLE as never);
   });
 });

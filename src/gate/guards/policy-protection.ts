@@ -213,7 +213,7 @@ function findPolicyConfigMutationTargetInSegment(
   }
 
   if (isReadOnlySegment(segment, environment)) return null;
-  // `env -S` words join the scan so a mutation hidden in the split string is still matched.
+
   for (const token of [...segment, ...stripped]) {
     for (const candidate of extractDirectPathCandidates(token)) {
       if (
@@ -288,12 +288,6 @@ function extractDirectPathCandidates(value: string): readonly string[] {
     : [cleaned, cleaned.slice(separator + 1)];
 }
 
-/** Both scopes are protected unconditionally: an unguarded project file the agent can
- *  create is exactly the two-tool-call bypass the user-scope guard already closes.
- *  The project chain stops at its own `.cc-safety-net` directory. Walking further up
- *  would claim the cwd and every ancestor, which is the target surface of the
- *  destructive-command rules; this guard runs first, so that would permanently replace
- *  their specific reasons (`rm -rf .`, `find . -delete`) with this generic one. */
 function createPolicyPathIdentity(
   toolContext: ToolCallContext,
   environment: EnvironmentContext,

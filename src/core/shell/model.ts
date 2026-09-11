@@ -64,14 +64,10 @@ export type CommandView = {
   readonly words: readonly CommandWord[];
   readonly redirections: readonly CommandRedirection[];
   readonly nested: readonly CommandProgram[];
-  /** Command text for block messages; the raw source when the parse could not tokenize it. */
+
   readonly displayText: string;
 };
 
-/**
- * Whether the words start with an executable the parse cannot name: substitution
- * output in POSIX, anything but a literal in PowerShell, where `&`/`.` invoke the next word.
- */
 export function isDynamicExecutable(
   dialect: CommandDialect,
   words: readonly CommandWord[],
@@ -90,10 +86,6 @@ function isBareCallPrefix(word: CommandWord | undefined, text: string) {
   return word?.provenance === 'literal' && !word.quoted && word.raw === text && word.text === text;
 }
 
-/**
- * Names the command a word list runs: the first word that is neither a leading
- * assignment nor a keyword prefix, and that the parse can resolve to a literal.
- */
 export function getCalledCommandName(view: CommandView): string | undefined {
   const afterTimeIndex = isBareCallPrefix(view.words[0], 'time') ? 1 : 0;
   const afterTimeOptionIndex =
@@ -128,7 +120,6 @@ export type CommandGroup = {
   readonly body: CommandProgram;
 };
 
-/** A POSIX name() brace-body definition. Its body is inert until a direct call. */
 export type CommandFunction = {
   readonly kind: 'function';
   readonly name: string;
@@ -165,9 +156,6 @@ export type CommandParserLimits = {
   readonly maxWords: number;
   readonly maxDepth: number;
 };
-
-// The constructors below freeze every node the parsers build, so a program handed to a
-// consumer is immutable down to its spans.
 
 export function createCommandAccumulator() {
   return {

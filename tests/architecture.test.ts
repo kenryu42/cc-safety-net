@@ -2,51 +2,32 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-/**
- * `src/` reaches for no third-party package except the host SDK types listed below, allowed
- * here per file.
- */
-
 const SOURCE_ROOT = join(import.meta.dir, '..', 'src');
 
 const THIRD_PARTY_ALLOWANCES: Record<string, readonly string[]> = {
-  // The two hosts whose SDK types are the host's own parameter shapes: an `import type` is erased,
-  // so neither the cold-start closure nor a git checkout without `node_modules` ever sees them.
   'hosts/opencode/plugin.ts': ['@opencode-ai/plugin'],
   'entries/index.ts': ['@opencode-ai/plugin'],
   'hosts/amp/tool-call.ts': ['@ampcode/plugin'],
   'entries/amp.ts': ['@ampcode/plugin'],
 };
 
-/** The layers a host adapter may reach for; `entries` is above it, and `hosts` is its own. */
 const HOST_LAYERS = ['core', 'gate', 'audit', 'hosts'];
 const NETWORK_MODULES = ['node:http', 'node:https', 'node:net', 'http', 'https', 'net'];
-/**
- * The installers' spawn boundary: the four host-layer files whose `src/` counterparts spawn a
- * host CLI. The hook path never spawns, and the import-closure test keeps all four off it.
- */
 const CHILD_PROCESS_ALLOWANCES: readonly string[] = [
   'hosts/amp/run.ts',
   'hosts/install/native.ts',
   'hosts/install/choices.ts',
   'hosts/system-info.ts',
-  // The browser opener and `gh`.
   'gui/index.ts',
-  // The folder dialogs.
   'gui/choose-directory.ts',
 ];
 
-/** The one loopback listener under `src/`. */
 const NETWORK_ALLOWANCES: Record<string, readonly string[]> = { 'gui/index.ts': ['node:http'] };
 
-/** The layers a CLI command may reach for; `entries` is above it, and `cli` is its own. */
 const CLI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager', 'cli'];
 
-/** The layers the rulebook manager may reach for; `cli` and `entries` are above it. */
 const RULES_MANAGER_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager'];
 
-/** The one host-tier module that reaches into `cli`, for the install flow, the argument parser,
- *  doctor's activity summary and its update check. */
 const GUI_LAYERS = ['core', 'gate', 'audit', 'hosts', 'rules-manager', 'cli', 'gui'];
 
 function sourceFiles(dir: string): string[] {
@@ -55,8 +36,6 @@ function sourceFiles(dir: string): string[] {
     .map((entry) => join(dir, entry));
 }
 
-// The third alternative is `createRequire`: a package reached that way would otherwise be
-// named by no static import.
 const IMPORT_SPECIFIER =
   /(?:^|\n)\s*(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)|\w*[rR]equire\s*\((?:[^()'"]*\)\s*\()?\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -67,7 +46,6 @@ function importSpecifiers(source: string): string[] {
   });
 }
 
-/** A file's path under `src/`, spelled with `/` as the allowance tables and the reports spell it. */
 const relativeToRoot = (file: string) => relative(SOURCE_ROOT, file).split(sep).join('/');
 
 function isAllowed(specifier: string, file: string): boolean {
@@ -80,17 +58,12 @@ function isAllowed(specifier: string, file: string): boolean {
   return (THIRD_PARTY_ALLOWANCES[relativeToRoot(file)] ?? []).includes(specifier);
 }
 
-/**
- * The top-level directory under `src/` a specifier resolves to, so the layering rule reads the
- * layer rather than the spelling: `../audit/writer` and `@/audit/writer` are one violation.
- */
 function layerOf(specifier: string, file: string) {
   if (specifier.startsWith('@/')) return specifier.split('/')[1];
   if (!specifier.startsWith('.')) return undefined;
   return relative(SOURCE_ROOT, join(file, '..', specifier)).split(sep)[0];
 }
 
-/** The specifiers a file imports as types only, which are erased before anything runs. */
 const TYPE_ONLY_IMPORT = /(?:^|\n)\s*(import\b[^'"]*?)\bfrom\s*['"]([^'"]+)['"]/g;
 
 function typeOnlyImports(source: string): string[] {
@@ -99,19 +72,12 @@ function typeOnlyImports(source: string): string[] {
   );
 }
 
-/**
- * The host tier: an adapter reaches down into the gate, core and audit and never back up into an
- * entry, and no file the hook path loads opens a socket or spawns a process — the two capabilities
- * a gate that runs on every tool call has no use for.
- */
 function layeringViolations(file: string, source: string): string[] {
   const path = relativeToRoot(file);
   const layer = path.split('/')[0];
   const specifiers = importSpecifiers(source);
   const allowedThirdParty = THIRD_PARTY_ALLOWANCES[path] ?? [];
   const offending = specifiers.filter((specifier) => {
-    // The socket ban holds for every layer: below the hosts nothing may open one at all, and
-    // `node:https` reached from `core` is the same violation as `node:http` reached from `gui`.
     if (NETWORK_MODULES.includes(specifier))
       return !(NETWORK_ALLOWANCES[path] ?? []).includes(specifier);
     if (
@@ -165,16 +131,8 @@ function layeringViolations(file: string, source: string): string[] {
   ];
 }
 
-/**
- * A static import cycle is a pair of modules neither of which can be loaded on its own: whichever
- * one the loader reaches first runs against a half-initialized other half, so a constant read at
- * module scope is `undefined` and no type checks the difference. Only value imports build the
- * graph — an `import type` is erased before anything runs.
- */
 const VALUE_IMPORT = /(?:^|[\n;])\s*((?:import|export)\b[^'"]*?)\bfrom\s*['"]([^'"]+)['"]/g;
 
-/** The files a module loads at import time, resolved the way the bundler resolves them: a module
- *  path names either the file itself or the `index.ts` of the directory. */
 function importedModules(file: string, source: string): string[] {
   return [...source.matchAll(VALUE_IMPORT)].flatMap((match) => {
     const specifier = match[2];
@@ -189,8 +147,6 @@ function importedModules(file: string, source: string): string[] {
   });
 }
 
-/** Three-colour depth-first search over the import graph: a node still on the walking stack is
- *  grey, and an edge back to one is a cycle, reported as the stack from that node onward. */
 function findImportCycles(graph: Map<string, string[]>): string[][] {
   const visited = new Map<string, 'walking' | 'done'>();
   const cycles: string[][] = [];
@@ -222,15 +178,8 @@ function findImportCycles(graph: Map<string, string[]>): string[][] {
   return cycles;
 }
 
-/** A dynamic import the bundler cannot see through: its target is decided at run time, so it is
- *  never bundled and resolves against whatever the installed tree happens to hold. */
 const NON_LITERAL_IMPORT = /\bimport\s*\((?!\s*["'])/;
 
-/**
- * The capabilities the layers beneath the hosts have no use for. The gate runs on every tool call
- * from a bundle that must work in a checkout with no `node_modules`: it never calls out to the
- * network, never falls back to CommonJS to reach a package, and never defers a load it cannot name.
- */
 const LOW_LAYER_BANS = [
   /\bfetch\s*\(/,
   /\brequire\s*\(/,
@@ -238,8 +187,6 @@ const LOW_LAYER_BANS = [
   NON_LITERAL_IMPORT,
 ] as const;
 
-/** The installer imports the cached plugin's `main` entry through `pathToFileURL` to prove the
- *  export is callable — a runtime path by nature, and off the hook path. */
 const DYNAMIC_IMPORT_ALLOWANCES: readonly string[] = ['hosts/opencode/install.ts'];
 
 function matchedBans(path: string, source: string, patterns: readonly RegExp[]): string[] {
@@ -258,7 +205,6 @@ function lowLayerBans(path: string, source: string): string[] {
 }
 
 function dynamicImportBans(path: string, source: string): string[] {
-  // The allowance is spelled with `/`; `path` carries the host's separator.
   if (DYNAMIC_IMPORT_ALLOWANCES.includes(path.split(sep).join('/'))) return [];
   return matchedBans(path, source, [NON_LITERAL_IMPORT]);
 }

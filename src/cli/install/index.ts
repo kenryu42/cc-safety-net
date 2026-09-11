@@ -85,12 +85,12 @@ type ConfigInstallTarget = Extract<
   InstallTarget,
   'antigravity-cli' | 'grok-build' | 'kimi-code' | 'cursor'
 >;
-// Integrations whose install writes a managed artifact directly instead of driving a host CLI.
+
 type ManagedArtifactTarget = Extract<InstallTarget, 'amp' | 'hermes-agent'>;
 type NativeInstallTarget = Exclude<InstallTarget, ConfigInstallTarget | ManagedArtifactTarget>;
 type NativeInstallPlan = {
   commands: readonly NativeCommand[];
-  /** Best-effort commands run after `commands`; a failure warns instead of failing the target. */
+
   cleanupCommands?: readonly NativeCommand[];
   update?: boolean;
 };
@@ -134,9 +134,9 @@ type InstallTargetResolution = {
   ready?: Promise<unknown>;
   finish: () => Promise<InstallTargetSelection>;
 };
-// Removed on install when Claude Code still records the pre-rename plugin id.
+
 const CLAUDE_LEGACY_PLUGIN_ID = 'safety-net@cc-marketplace';
-// Targets whose install drives a host CLI, so `update` skips them when that CLI is gone.
+
 const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
   'claude-code',
   'codex',
@@ -147,8 +147,7 @@ const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
   'opencode',
   'pi',
 ]);
-// Targets whose install runs `npx cc-safety-net`, so a stale npx cache would keep the previous
-// version running after an update.
+
 const NPX_CACHE_TARGETS = new Set<InstallTarget>([
   'antigravity-cli',
   'cursor',
@@ -157,10 +156,6 @@ const NPX_CACHE_TARGETS = new Set<InstallTarget>([
   'kimi-code',
 ]);
 
-// Codex matchers are line-anchored because the legacy row's source URL also contains
-// "cc-safety-net", and status-checked because `codex plugin list` includes marketplace rows
-// marked "not installed". "installed," matches any installed row (enabled or not) and can
-// never match a "not installed" status.
 function hasCodexLegacyPlugin(output: string | null): boolean {
   return /^\s*safety-net@cc-marketplace[^a-z0-9-][^\n]*installed,/m.test(output ?? '');
 }
@@ -169,7 +164,6 @@ function hasCodexReplacementPlugin(output: string | null): boolean {
   return /^\s*cc-safety-net[^a-z0-9-][^\n]*installed,/m.test(output ?? '');
 }
 
-// `codex plugin list` prints one "Marketplace `<name>`" heading per registered marketplace.
 function hasCodexMarketplace(output: string | null): boolean {
   return /^Marketplace `cc-marketplace`\s*$/m.test(output ?? '');
 }
@@ -187,8 +181,7 @@ const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
               ] as const)
             : ([
                 ['claude', 'plugin', 'marketplace', 'add', 'kenryu42/cc-marketplace'],
-                // `add` is a no-op on an already-registered marketplace, so its stale catalog
-                // (e.g. from before the plugin rename) would fail the install without a refresh.
+
                 ['claude', 'plugin', 'marketplace', 'update', 'cc-marketplace'],
                 ['claude', 'plugin', 'install', 'cc-safety-net@cc-marketplace'],
               ] as const)),
@@ -196,8 +189,7 @@ const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
             ? ([['claude', 'plugin', 'enable', 'cc-safety-net@cc-marketplace']] as const)
             : []),
         ],
-        // Best-effort: the marketplace refresh can migrate the rename itself, leaving a plugin
-        // record the CLI no longer accepts an uninstall for.
+
         cleanupCommands: hasClaudeInstalledPlugin(environment, CLAUDE_LEGACY_PLUGIN_ID)
           ? ([['claude', 'plugin', 'uninstall', CLAUDE_LEGACY_PLUGIN_ID]] as const)
           : [],
@@ -210,16 +202,12 @@ const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
     ],
   },
   codex: {
-    // `update` already paid for a `codex plugin list` during detection, so it hands the output
-    // over instead of refreshing the marketplace checkouts a second time.
     installCommands: async (_environment, codexPluginListOutput) => {
       const pluginList =
         codexPluginListOutput ?? (await runNativeCommand(['codex', 'plugin', 'list']));
       const update = hasCodexReplacementPlugin(pluginList);
       return {
         commands: [
-          // A registered marketplace holds a catalog checkout that `add` does not refresh, so a
-          // stale one (e.g. from before the plugin rename) would fail the plugin add.
           update || hasCodexMarketplace(pluginList)
             ? (['codex', 'plugin', 'marketplace', 'upgrade', 'cc-marketplace'] as const)
             : (['codex', 'plugin', 'marketplace', 'add', 'kenryu42/cc-marketplace'] as const),
@@ -261,8 +249,6 @@ const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
 
       return {
         commands: [
-          // A registered marketplace holds a catalog checkout that goes stale (e.g. from before
-          // the plugin rename) and would fail the install without a refresh.
           hasCopilotMarketplace(
             await runNativeCommand(['copilot', 'plugin', 'marketplace', 'list']),
           )
@@ -355,9 +341,6 @@ function enableCopilotPlugin(environment: Environment): string | undefined {
     return;
   if ((enabledPlugins as Record<string, unknown>)[COPILOT_PLUGIN_ID] !== false) return;
 
-  // Flip the flag in the raw text so hand-written JSONC comments and formatting survive;
-  // fall back to a stringify rewrite when the text form is unmatchable (e.g. a comment
-  // between key and value).
   const raw = readFileSync(settingsPath, 'utf-8');
   const flipped = raw.replace(new RegExp(`("${COPILOT_PLUGIN_ID}"\\s*:\\s*)false`), '$1true');
   (enabledPlugins as Record<string, unknown>)[COPILOT_PLUGIN_ID] = true;
@@ -411,19 +394,13 @@ function parseInstallTarget(args: readonly string[], action: InstallAction): Ins
   return targets[0] as InstallTarget;
 }
 
-// Only probes that leave the inspected runtime untouched run here: `claude plugin list`,
-// `gemini extensions list`, `copilot plugin list` and the Pi extension probe all write into the
-// user's real config directories, and this runs on every bare install/uninstall in a TTY.
 async function detectInstallHookState(
   environment: Environment,
   fetchVersion = defaultVersionFetcher,
 ) {
   const [ampPluginListOutput, codexPluginListOutput, copilotCliVersion] = await Promise.all([
-    // Amp's managed plugin lives in the account's hosted personal repository, so only this
-    // command can see it; like Codex's it can outlast the default 5s version timeout.
     fetchVersion(['amp', 'plugins', 'list'], 30_000),
-    // A cold `codex plugin list` refreshes marketplace checkouts over the network and can
-    // outlast the default 5s version timeout, which would silently drop Codex from detection.
+
     fetchVersion(['codex', 'plugin', 'list'], 30_000),
     fetchVersion(['copilot', '--binary-version']),
   ]);
@@ -444,23 +421,20 @@ async function detectConfiguredInstallTargets(
   fetchVersion = defaultVersionFetcher,
 ): Promise<InstallTarget[]> {
   const state = await detectInstallHookState(environment, fetchVersion);
-  return (
-    state.hooks
-      // Uninstall also keeps a runtime whose state could not be read: hiding it would make the
-      // interactive path unable to remove it at all.
-      .filter((hook) =>
-        action === 'install'
-          ? hook.configured
-          : hook.detected || hook.inspectionStatus === 'not-inspected',
-      )
-      .filter(
-        (hook) =>
-          hook.platform !== 'codex' ||
-          !hasCodexLegacyPlugin(state.codexPluginListOutput) ||
-          hasCodexReplacementPlugin(state.codexPluginListOutput),
-      )
-      .map((hook) => hook.platform as InstallTarget)
-  );
+  return state.hooks
+
+    .filter((hook) =>
+      action === 'install'
+        ? hook.configured
+        : hook.detected || hook.inspectionStatus === 'not-inspected',
+    )
+    .filter(
+      (hook) =>
+        hook.platform !== 'codex' ||
+        !hasCodexLegacyPlugin(state.codexPluginListOutput) ||
+        hasCodexReplacementPlugin(state.codexPluginListOutput),
+    )
+    .map((hook) => hook.platform as InstallTarget);
 }
 
 function startResolveInstallTargets(
@@ -565,7 +539,6 @@ function runConfigInstallTarget(
   environment: Environment,
   updating = false,
 ): string {
-  // Updating clears the cache once up front instead, so its parallel targets cannot race.
   if (action === 'install' && !updating) clearNpxSafetyNetCache(environment);
   const result = CONFIG_INSTALLS[target][action](environment);
   const name = getIntegrationDisplayName(target);
@@ -585,7 +558,7 @@ const MANAGED_ARTIFACT_INSTALLS: Record<
   {
     install: (environment: Environment) => InstallResult | Promise<InstallResult>;
     uninstall: (environment: Environment) => InstallResult | Promise<InstallResult>;
-    /** Returns whether it changed host state, which an unchanged artifact alone cannot tell. */
+
     afterInstall?: (environment: Environment) => Promise<boolean>;
     beforeUninstall?: (environment: Environment) => Promise<void>;
     restartNote: string;
@@ -600,8 +573,7 @@ const MANAGED_ARTIFACT_INSTALLS: Record<
   'hermes-agent': {
     install: installHermesAgent,
     uninstall: uninstallHermesAgent,
-    // Hermes loads a user plugin only when config.yaml lists it, so the artifact alone is inert —
-    // and enabling a plugin the user had switched off is a change even when nothing was written.
+
     afterInstall: async (environment) => {
       const wasEnabled = isHermesAgentPluginEnabled(environment);
       await runNativeCommand([
@@ -613,12 +585,8 @@ const MANAGED_ARTIFACT_INSTALLS: Record<
       ]);
       return !wasEnabled;
     },
-    // Left enabled, the config entry would auto-load any future plugin of the same name. Hermes
-    // only resolves a plugin that is still on disk, so this runs before the files are removed —
-    // and its failure is reported rather than thrown, so it can never keep them.
+
     beforeUninstall: async (environment) => {
-      // `plugins disable` edits the user's config, so an uninstall that is going to refuse the
-      // files must refuse before it runs, not after.
       readOwnedHermesAgentFiles(environment);
       try {
         await runNativeCommand(['hermes', 'plugins', 'disable', HERMES_AGENT_PLUGIN_NAME]);
@@ -715,9 +683,6 @@ const INSTALL_OPERATIONS = {
   },
   'hermes-agent': {
     install: (environment: Environment, updating?: boolean) => {
-      // The managed plugin shells out to `npx cc-safety-net`, so a stale npx cache would
-      // keep running the previous version. Updating clears it once up front instead, so its
-      // parallel targets cannot race.
       if (!updating) clearNpxSafetyNetCache(environment);
       return runManagedArtifactInstallTarget('install', 'hermes-agent', environment, updating);
     },
@@ -737,7 +702,6 @@ const INSTALL_OPERATIONS = {
       return message;
     },
     uninstall: (environment: Environment) => {
-      // `plugins uninstall --force` deletes the extension directory outright.
       assertOpenClawPluginDirIsOurs(environment);
       return uninstallNativeTarget('openclaw');
     },
@@ -787,8 +751,7 @@ function formatKimiPluginInstructions(environment: Environment): string {
   if (detectKimiCodeHook({ environment, cwd: process.cwd() }).status !== 'configured') {
     return KIMI_PLUGIN_INSTRUCTIONS;
   }
-  // Uninstall comes after the plugin works, never before: a gap with neither hook active is
-  // unsafe, while a brief overlap only duplicates the denial message.
+
   return [
     KIMI_PLUGIN_INSTRUCTIONS,
     '',
@@ -801,8 +764,6 @@ function formatKimiPluginInstructions(environment: Environment): string {
   ].join('\n');
 }
 
-// A configured Kimi Code row stays selectable on install: unlike every other target, selecting
-// it opens the method prompt, which is the only path to the native-plugin instructions.
 function allowKimiMethodChoice(
   action: InstallAction,
   choices: readonly InstallTargetChoice[],
@@ -826,8 +787,7 @@ function resolveKimiInstallMethod(
   environment: Environment,
 ): Promise<KimiInstallMethod | null> {
   if (options.selectKimiInstallMethod) return options.selectKimiInstallMethod();
-  // A non-interactive session cannot answer a prompt, so the flag keeps installing the
-  // global hook there instead of hanging a script or CI pipeline.
+
   if (!canPromptInstallTargets(options.input, options.output)) {
     return Promise.resolve('global-hook');
   }
@@ -839,7 +799,6 @@ function resolveKimiInstallMethod(
   });
 }
 
-/** Runs one target's action and returns its report, printed by the caller once any spinner stops. */
 async function runSingleInstallTarget(
   action: InstallAction,
   target: InstallTarget,
@@ -859,10 +818,6 @@ async function detectUpdateTargets(environment: Environment, fetchVersion = defa
   const state = await detectInstallHookState(environment, fetchVersion);
   const copilotPluginsDir = join(_getCopilotConfigHome(environment), 'installed-plugins');
   const targets = orderInstallTargets([
-    // `detected` (not `configured`) so installed-but-disabled integrations update too.
-    // Copilot is decided by its plugin checkouts on disk instead: its 'disabled' status
-    // also fires on a bare disableAllHooks kill-switch with nothing installed, and
-    // update must never install something new.
     ...state.hooks
       .filter((hook) => hook.platform !== 'copilot-cli' && hook.detected)
       .map((hook) => hook.platform as InstallTarget),
@@ -882,20 +837,15 @@ async function detectUpdateTargets(environment: Environment, fetchVersion = defa
 async function updateInstalledIntegrations(options: UpdateCommandOptions): Promise<number> {
   const environment = createProcessEnvironment();
   const output = options.output ?? process.stdout;
-  // Best-effort nudge for persistent installs (`npm i -g`). An npx or bunx cache path means an
-  // ephemeral run the cache clears below already refresh, so the registry round-trip is skipped
-  // entirely; otherwise it starts ahead of detection so it overlaps the update work — and the
-  // zero-target early return — instead of delaying either.
+
   const scriptSegments = (options.scriptPath ?? process.argv[1] ?? '').split(/[\\/]/);
-  // The numeric-id form is bun's real cache naming; a persistent install path may hold other
-  // bunx-* directories (say /opt/bunx-tools) and must still get the nudge.
+
   const runningBunxEntry = scriptSegments.find((segment) => /^bunx-\d+-/.test(segment));
   const latestCheck =
     runningBunxEntry !== undefined || scriptSegments.includes('_npx')
       ? null
       : (options.checkLatestVersion ?? checkForUpdates)();
-  // checkForUpdates resolves with an error field instead of rejecting, and reports no update for
-  // a dev build, so a failed or offline check simply prints nothing and never changes the exit code.
+
   const printUpdateNudge = async () => {
     const updateInfo = latestCheck && (await latestCheck);
     if (updateInfo?.updateAvailable)
@@ -903,8 +853,7 @@ async function updateInstalledIntegrations(options: UpdateCommandOptions): Promi
         `\nUpdate available: cc-safety-net ${updateInfo.currentVersion} → ${updateInfo.latestVersion}. Update this CLI with your package manager, e.g. \`npm i -g cc-safety-net@latest\` for a global install.\n`,
       );
   };
-  // Detection queries every host CLI, so it starts before the banner animation and the
-  // spinner covers whatever latency is left once the animation ends.
+
   const prepared = detectUpdateTargets(
     environment,
     options.fetchVersion ?? defaultVersionFetcher,
@@ -932,10 +881,6 @@ async function updateInstalledIntegrations(options: UpdateCommandOptions): Promi
     { loadingMessage: 'Checking installed integrations…', output },
   );
 
-  // bunx keeps per-package install dirs under the OS temp dir; clearing ours makes the next
-  // `bunx cc-safety-net` run resolve the fresh release, matching the npx clear below. It runs
-  // unconditionally — before the zero-target return too — because the bunx channel is
-  // user-invoked, not tied to any target.
   const bunxCacheFailure = await Promise.resolve()
     .then(() => {
       clearBunxSafetyNetCache(environment.tmpdir, process.platform, runningBunxEntry);
@@ -950,9 +895,6 @@ async function updateInstalledIntegrations(options: UpdateCommandOptions): Promi
     return bunxCacheFailure === null ? 0 : 1;
   }
 
-  // Clearing the cache scans and removes entries under one directory, so the parallel targets
-  // below would race each other's removals; updating clears it once here instead. A clear
-  // failure fails only the cache-dependent targets, leaving the rest to update.
   const npxCacheFailure = detected.targets.some((target) => NPX_CACHE_TARGETS.has(target))
     ? await Promise.resolve()
         .then(() => {
@@ -962,10 +904,6 @@ async function updateInstalledIntegrations(options: UpdateCommandOptions): Promi
         .catch((error: unknown) => formatInstallError(error))
     : null;
 
-  // The targets drive different host CLIs and are independent, so they run together and one
-  // failure cannot keep the rest from updating. Every promise settles into a report, so
-  // Promise.all never rejects; the spinner owns the terminal line, so nothing prints until
-  // all of them are done.
   const reports = await awaitWithSpinner(
     Promise.all(
       detected.targets.map((target) => {
@@ -1038,15 +976,12 @@ export async function runInstallCommand(
         output: options.output ?? process.stdout,
       },
     );
-    // Quitting the selector is a decision, not a failure, so the exit code stays 0 — but say
-    // that nothing was written, or silence reads as a completed install. Ctrl-C is different:
-    // the selector raises SIGINT and the process never reaches here.
+
     if (!targets) {
       (options.output ?? process.stdout).write(`Cancelled: nothing was ${action}ed.\n`);
       return 0;
     }
     if (targets === 'update') {
-      // The banner already played for the selector, so the update must not print a second one.
       return (
         options.runUpdate ??
         (() =>
@@ -1060,8 +995,7 @@ export async function runInstallCommand(
     }
 
     const output = options.output ?? process.stdout;
-    // Host CLIs can install slowly (network fetches, marketplace refreshes), so each target
-    // runs behind the same spinner the interactive selector uses, then prints its report.
+
     await runInstallTargetsInOrder(targets, async (target) => {
       if (target === 'kimi-code' && action === 'install') {
         const method = await resolveKimiInstallMethod(options, environment);

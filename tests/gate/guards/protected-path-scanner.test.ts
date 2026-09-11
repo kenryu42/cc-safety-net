@@ -22,27 +22,18 @@ import {
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, type Outcome, writeTree } from '../../helpers/fixture-tree';
 
-/**
- * The scanner is the walk every protected-path guard drives: it decides where one segment ends,
- * which `cd` moves the tracked cwd, which assignments become tracked variables and which
- * redirection targets reach the guard. A change here silently unprotects a path, so the rows
- * state what the walk observes, not only what it returns.
- */
-
 const MARKER = 'policy.json';
 
 let root = '';
 let home = '';
 let workspace = '';
 
-/** Every callback the walk made, in order, with the state it was handed. */
 type Observation = string;
 
 function describeState(state: ProtectedPathShellState): string {
   return `cwd=${state.cwd} vars=${JSON.stringify([...state.variables].sort())}`;
 }
 
-/** The three observing callbacks the walk is driven through. */
 function observing(observations: Observation[], stopWord: string | null) {
   return {
     findSegmentTarget: (segment: readonly string[], state: ProtectedPathShellState) => {
@@ -74,8 +65,6 @@ function walkWithNext(source: string, cwd: string, environment: Environment, sto
   return { result, observations };
 }
 
-/** The walk over one source — value or thrown error — so a caller can record either. */
-/** The canonical path of a fixture entry as the walk reports it: real, and spelled with `/`. */
 const canonical = (base: string, ...parts: string[]) =>
   join(realpathSync(base), ...parts)
     .split(sep)
@@ -86,7 +75,6 @@ function walkPair(source: string, cwd: string, stop: string | null): Outcome<Wal
   return describeOutcome(() => walkWithNext(source, cwd, environments, stop));
 }
 
-/** The walk that must have succeeded, for the assertions that read what it observed. */
 function completedWalk(outcome: Outcome<Walk>): Walk {
   if (!outcome.ok) throw new Error(`walk threw ${outcome.error.name}`);
   return outcome.value;
@@ -168,7 +156,6 @@ afterAll(() => {
 });
 
 describe('protected path scanner walk', () => {
-  /** The tracked cwd the walk hands the segment callback for the last segment of a source. */
   const lastSegmentCwd = (source: string) => {
     const observations = completedWalk(walkPair(source, workspace, null)).observations.filter(
       (observation) => observation.startsWith('segment '),
@@ -186,32 +173,24 @@ describe('protected path scanner walk', () => {
       { source: 'cd ..; rm -rf x', cwd: () => canonical(root) },
       { source: 'cd ~ ; rm -rf x', cwd: () => canonical(home) },
       { source: 'cd "$HOME" ; rm -rf x', cwd: () => canonical(home) },
-      // A tracked assignment is followed when a `cd` dereferences it.
       { source: 'DIR=policy; cd $DIR; rm -rf x', cwd: () => canonical(workspace, 'policy') },
       { source: 'DIR=policy && cd ${DIR} && rm -rf x', cwd: () => canonical(workspace, 'policy') },
       { source: 'A=policy; B=$A; cd $B; rm -rf x', cwd: () => canonical(workspace, 'policy') },
-      // Wrapper preludes are peeled before the head is read.
       { source: 'sudo cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
       { source: 'env -i cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
       { source: 'command cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
       { source: 'FOO=1 cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
       { source: '/usr/bin/cd policy && rm -rf x', cwd: () => canonical(workspace, 'policy') },
-      // A bare `cd`, an empty target, and a `cd` to a directory that does not exist leave the
-      // walk where it can still resolve later operands.
       { source: 'cd; rm -rf x', cwd: () => workspace },
       { source: 'cd ""; rm -rf x', cwd: () => workspace },
-      // A rooted target is spelled against the process drive on Windows, as the walk reports it.
       {
         source: 'cd /absolute/missing && rm -rf x',
         cwd: () => resolve('/absolute/missing').split(sep).join('/'),
       },
-      // A nested shell walks with its own copy of the state and hands the parent's back.
       { source: '(cd policy) && rm -rf x', cwd: () => workspace },
       { source: 'rm -rf $(cd policy; pwd)/x', cwd: () => workspace },
-      // `cd -` returns to the directory the previous `cd` left, and swaps again on a second one.
       { source: 'cd policy && cd - && rm -rf x', cwd: () => workspace },
       { source: 'cd policy; cd -; cd -; rm -rf x', cwd: () => canonical(workspace, 'policy') },
-      // With nothing remembered there is nowhere to return to, so the cwd stays put.
       { source: 'cd - && rm -rf x', cwd: () => workspace },
     ];
     for (const row of rows) {
@@ -228,18 +207,14 @@ describe('protected path scanner walk', () => {
       { source: `echo hi >> policy/${MARKER}`, result: `policy/${MARKER}` },
       { source: `echo hi 2> ${MARKER}`, result: MARKER },
       { source: `echo hi >| ${MARKER}`, result: MARKER },
-      // A read redirection is not a write, so it never reaches the redirection callback.
       { source: `cat < ${MARKER}`, result: null },
-      // An assignment-only segment tracks the variable, which the redirection target expands to.
       { source: `DEST=${MARKER}; echo hi > $DEST`, result: '${DEST}' },
-      // With a command in the segment the assignment is scoped to it, so nothing is tracked.
       { source: 'DEST=policy.json echo hi > $DEST', result: null },
       { source: `find . -name '*.json' -delete`, result: null },
       { source: 'A=1 B=2', result: null },
       { source: `A=1 B=2; rm -rf ${MARKER}`, result: `rm -rf ${MARKER}` },
       { source: `rm -rf x && echo hi > ${MARKER}`, result: MARKER },
       { source: `echo hi > ${MARKER}; echo second > other`, result: MARKER },
-      // A nested shell is walked, so a mutation inside one still reaches the guard.
       { source: `( rm -rf ${MARKER} )`, result: `rm -rf ${MARKER}` },
       { source: `(cd policy) && rm -rf ${MARKER}`, result: `rm -rf ${MARKER}` },
     ];
@@ -258,12 +233,9 @@ describe('protected path scanner walk', () => {
         ),
       ),
     );
-    // The walk canonicalizes a `cd` target's existing prefix, so the tracked cwd spells the real
-    // path of the fixture (`work/policy` itself does not exist).
     expect(trackedCwds).toContain(canonical(workspace, 'policy'));
     expect(trackedCwds).toContain(canonical(home));
     expect(trackedCwds).toContain(canonical(root));
-    // A `cd` through a symlink is canonicalized, so the guard sees one spelling of the target.
     expect(
       completedWalk(
         walkPair(`cd ${join(root, 'link').split(sep).join('/')} && rm -rf x`, workspace, null),
@@ -299,7 +271,6 @@ describe('protected path scanner walk', () => {
 
     const unclosed = walkPair(`echo "unclosed ${MARKER}`, workspace, null);
     expect(completedWalk(unclosed).observations[0]).toStartWith('malformed ');
-    // The malformed source is handed over whole, and it is the walk's answer.
     expect(completedWalk(unclosed).result).toBe(`echo "unclosed ${MARKER}`);
   });
 });
@@ -314,14 +285,10 @@ describe('tracked shell variable expansion', () => {
       { text: '$A/$B', variables: [['A', '/one']], expanded: '/one/$B' },
       { text: '${A}/${B}', variables: [['A', '/one']], expanded: '/one/${B}' },
       { text: '$A$A$A', variables: [['A', 'x']], expanded: 'xxx' },
-      // The name is read whole, so `$AB` is not `$A` followed by a letter.
       { text: '$AB', variables: [['A', 'x']], expanded: '$AB' },
       { text: '${AB}', variables: [['A', 'x']], expanded: '${AB}' },
-      // `:-` treats an empty value as unset; `-` accepts it.
       { text: '${A:-fallback}', variables: [['A', '']], expanded: 'fallback' },
       { text: '${A-fallback}', variables: [['A', '']], expanded: '' },
-      // An untracked name leaves the whole form as written: the walk does not know whether the
-      // shell would find it set.
       { text: '${A:-fallback}', variables: [], expanded: '${A:-fallback}' },
       { text: '${A:+set}', variables: [['A', 'value']], expanded: 'set' },
       { text: '${A+set}', variables: [['A', '']], expanded: 'set' },
@@ -333,7 +300,6 @@ describe('tracked shell variable expansion', () => {
         ],
         expanded: 'nested',
       },
-      // A positional or special parameter is not a tracked name.
       { text: '$1 $@ $? $$', variables: [['1', 'positional']], expanded: '$1 $@ $? $$' },
       { text: '${unclosed', variables: [['unclosed', 'x']], expanded: '${unclosed' },
       { text: 'no variables here', variables: [['A', 'x']], expanded: 'no variables here' },
@@ -366,11 +332,9 @@ describe('segment and mv operand parsing', () => {
       { segment: ['A='], assignmentOnly: true },
       { segment: ['A=1', 'echo'], assignmentOnly: false },
       { segment: ['echo', 'A=1'], assignmentOnly: false },
-      // A name starts with a letter or underscore and carries no punctuation.
       { segment: ['1A=1'], assignmentOnly: false },
       { segment: ['_A=1'], assignmentOnly: true },
       { segment: ['A-B=1'], assignmentOnly: false },
-      // Everything after the first `=` is the value.
       { segment: ['A=1=2'], assignmentOnly: true },
       { segment: ['A=$B'], assignmentOnly: true },
       { segment: ['A'], assignmentOnly: false },
@@ -391,7 +355,6 @@ describe('segment and mv operand parsing', () => {
       { args: [], operands: { sources: [], destination: null } },
       { args: ['a', 'b'], operands: { sources: ['a'], destination: 'b' } },
       { args: ['a', 'b', 'c'], operands: { sources: ['a', 'b'], destination: 'c' } },
-      // A lone operand is the destination: there is nothing to move into it.
       { args: ['a'], operands: { sources: [], destination: 'a' } },
       { args: ['-t', '/dest', 'a', 'b'], operands: { sources: ['a', 'b'], destination: '/dest' } },
       {
@@ -404,11 +367,9 @@ describe('segment and mv operand parsing', () => {
       },
       { args: ['-t/dest', 'a'], operands: { sources: ['a'], destination: '/dest' } },
       { args: ['-t'], operands: { sources: [], destination: null } },
-      // An option that takes a value consumes it, so the value is not an operand.
       { args: ['-S', '.bak', 'a', 'b'], operands: { sources: ['a'], destination: 'b' } },
       { args: ['--suffix=.bak', 'a', 'b'], operands: { sources: ['a'], destination: 'b' } },
       { args: ['-f', '-v', 'a', 'b'], operands: { sources: ['a'], destination: 'b' } },
-      // After `--` every word is an operand, dashes included.
       { args: ['--', '-a', '-b'], operands: { sources: ['-a'], destination: '-b' } },
       { args: ['-n', '--', 'a', '-t', 'b'], operands: { sources: ['a', '-t'], destination: 'b' } },
       { args: ['-'], operands: { sources: [], destination: null } },
@@ -441,13 +402,11 @@ describe('protected candidate canonicalization', () => {
     expect(normalize('$HOME/.config')).toBe(canonical(home, '.config'));
     expect(normalize('${HOME}/.config')).toBe(canonical(home, '.config'));
     expect(normalize('$TMPDIR/x')).toBe(canonical(root, 'tmp', 'x'));
-    // A symlink is followed, and a dangling one keeps the name it could not resolve.
     expect(normalize(join(root, 'link'))).toBe(canonical(root, 'policy'));
     expect(normalize(join(root, 'dangling-link', 'deeper'))).toBe(
       `${canonical(root)}/dangling-link/deeper`,
     );
     expect(normalize('nested/../policy')).toBe(canonical(workspace, 'policy'));
-    // A name the environment does not carry stays in the resolved path as written.
     expect(normalize('${UNSET_NAME:-policy}')).toBe(
       `${canonical(workspace)}/\${UNSET_NAME:-policy}`,
     );
@@ -456,7 +415,6 @@ describe('protected candidate canonicalization', () => {
   test('the file candidate skips the ancestor walk only for implausible basenames', () => {
     const environments = pairedEnvironments({ HOME: home }, home);
     const missing = join(root, 'missing', 'deeper.json');
-    // The existing prefix is canonicalized, so the answer spells the fixture's real path.
     expect(
       normalizeProtectedFileCandidate(missing, workspace, environments, createBudget(), () => true),
     ).toBe(canonical(root, 'missing', 'deeper.json'));
@@ -481,7 +439,6 @@ describe('protected candidate canonicalization', () => {
   });
 });
 
-/** A budget is threaded, not created per call: a shared one keeps counting across candidates. */
 test('the walk charges one shared budget', () => {
   const budget = createBudget();
   const environment = pairedEnvironments({ HOME: home }, home);

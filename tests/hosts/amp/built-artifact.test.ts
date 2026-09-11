@@ -6,9 +6,6 @@ import { AMP_HOST_SCRIPT } from '../../../scripts/integration-host-scripts';
 
 const ARTIFACT = resolve('dist/amp/cc-safety-net/index.ts');
 
-// A mocked Amp host loads the built plugin artifact, registers the handler, and
-// runs one call. The artifact is the exact file the installer copies, so this
-// proves it is loadable and enforces the guard without any node_modules.
 function runAmpHost(command: string, artifact = ARTIFACT) {
   if (!existsSync(artifact))
     throw new Error(`Amp artifact not built at ${artifact}; run bun run build`);
@@ -20,10 +17,6 @@ function runAmpHost(command: string, artifact = ARTIFACT) {
       ),
       stdout: 'pipe',
       stderr: 'pipe',
-      // Spawned children inherit the process-start environment, so the audit
-      // home from tests/setup.ts is only passed on when env is explicit. The
-      // safety-net home points inside the throwaway workspace so the child is an
-      // Orb-like machine: no user policy file of its own.
       env: { ...process.env, CC_SAFETY_NET_HOME: join(workspaceRoot, 'safety-net-home') },
     });
     if (result.exitCode !== 0) {
@@ -46,8 +39,6 @@ describe('built Amp plugin artifact', () => {
     expect(result.message).toContain('git.reset-hard');
   });
 
-  // The whole Orb feature in one check: `install --amp` appends this line to the published
-  // artifact, and a machine with no policy file of its own must enforce it.
   test('enforces the policy snapshot the installer stamps onto the artifact', () => {
     const dir = mkdtempSync(join(tmpdir(), 'safety-net-amp-stamped-'));
     try {

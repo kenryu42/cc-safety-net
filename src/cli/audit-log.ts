@@ -32,8 +32,6 @@ type SourcedAuditLogEntry = {
 };
 
 function parseLogsFlags(environment: Environment, args: string[]): LogsFlags | null {
-  // Retained history is the only history, so neither the `--since` ceiling nor
-  // the default window can reach past it.
   const retentionDays = readRetentionDays(environment);
   const parsed = parseCommandArgs(
     {
@@ -157,9 +155,7 @@ export async function runLogsCommand(
     return 0;
   }
   pruneExpiredAuditLogs(environment, logsDir);
-  // An unreadable file or a malformed record makes every answer below a partial
-  // one, including "nothing found". Say so once on stderr, name no paths, and
-  // leave stdout and the exit code untouched.
+
   const skips = { count: 0 };
   const allEntries = listAuditLogFiles(logsDir, skips).flatMap((file) =>
     readAuditLogEntries(file, skips).map((entry) => ({ entry, file })),
@@ -173,8 +169,7 @@ export async function runLogsCommand(
 
   const cutoff = Date.now() - flags.since * 24 * 60 * 60 * 1000;
   const matched = allEntries.filter((item) => matchesLogsFlags(item, flags, logsDir, cutoff));
-  // Repeats are counted across the whole matched window before --limit truncates
-  // it; counting after the slice would lose the retries the signal is built on.
+
   const suspects = flags.suspect ? findSuspectEntries(matched.map((item) => item.entry)) : null;
   const entries = (suspects ? matched.filter((item) => suspects.has(item.entry)) : matched)
     .sort((left, right) => Date.parse(right.entry.ts) - Date.parse(left.entry.ts))
@@ -202,15 +197,6 @@ export async function runLogsCommand(
   return 0;
 }
 
-/**
- * Delete every regular `*.jsonl` file sitting directly in the audit root. That
- * layout is only ever produced by the legacy writer, so membership is decided
- * by position alone: entry age, schema, and malformed lines are irrelevant
- * because the user asked for all of it to go. Nested project directories are
- * never entered, and symlinks are not regular files, so neither can be a target.
- *
- * `dryRun` reports exactly that set and deletes nothing.
- */
 function pruneLegacyAuditLogs(logsDir: string | null, json: boolean, dryRun: boolean): number {
   const files = logsDir ? listLegacyLogFiles(logsDir).map((name) => join(logsDir, name)) : [];
   if (dryRun) return previewLegacyAuditLogs(files, json);

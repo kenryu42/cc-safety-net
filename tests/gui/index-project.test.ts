@@ -15,17 +15,9 @@ import {
   removeTempRoots,
 } from '../helpers/temp-home';
 
-/**
- * The project draft: the directory the picker moves, the revision that binds a diff to the apply
- * that follows it, and the containment the write goes through. Every row drives the server over a
- * seeded home, so a body, a status or a file that moved is the failure; the pins behind each row
- * say what the row is for.
- */
-
 const USER_POLICY_FILE = 'home/.cc-safety-net/policy.json';
 const PROJECT_POLICY_FILE = 'project/.cc-safety-net/policy.json';
 
-/** A user policy the drafts inherit from, strict enough that a project proposal can weaken it. */
 const strictUser = json({ ...DEFAULT_GUI_POLICY, safety: { level: 'strict', overrides: {} } });
 
 const S1: TreeSpec = { [USER_POLICY_FILE]: strictUser, picked: null };
@@ -34,7 +26,6 @@ const S5: TreeSpec = {
   [PROJECT_POLICY_FILE]: json({ version: 1, safety: { level: 'standard' } }),
 };
 
-/** The two user-file states whose diagnostics have to reach the draft rather than be swallowed. */
 const MALFORMED_USER: TreeSpec = { [USER_POLICY_FILE]: '{ not json' };
 const INVALID_USER: TreeSpec = {
   [USER_POLICY_FILE]: json({ version: 1, safety: { level: 'bogus' } }),
@@ -65,13 +56,11 @@ const PICK: GuiRequest = { method: 'POST', path: '/api/policy/project/choose-dir
 
 const draftWrite = (path: string, body: unknown): GuiRequest => ({ method: 'POST', path, body });
 
-/** The same write, held open across the requests that follow it. */
 const draftHold = (path: string, body: unknown): GuiRequest => ({
   ...draftWrite(path, body),
   hold: true,
 });
 
-/** The picker every row that moves the draft injects: a directory seeded beside the project. */
 const picksPicked = (side: { root: string }) => ({
   chooseDirectory: async () => ({ path: join(side.root, 'picked') }),
 });
@@ -94,7 +83,6 @@ describe('the GUI project draft', () => {
         draftWrite('/api/policy/project/apply', {
           revision: 1,
           proposal: PARANOID,
-          // Ignored by construction: the target is the session's, not the caller's.
           dir: '/elsewhere',
         }),
       ],
@@ -113,7 +101,6 @@ describe('the GUI project draft', () => {
     expect(before?.canPickDirectory).toBeBoolean();
     expect(row.responses[1]?.body).toStrictEqual({ cancelled: false });
     expect(after).toMatchObject({ dir: posix.join('<root>', 'picked'), revision: 1 });
-    // The diff the first tab is holding names a revision the picker has moved past.
     expect(row.responses[3]).toMatchObject({
       status: 409,
       body: { errors: ['The project draft directory changed; reload the draft before applying.'] },
@@ -126,7 +113,6 @@ describe('the GUI project draft', () => {
       status: 200,
       body: { path: posix.join('<root>', 'picked/.cc-safety-net/policy.json'), errors: [] },
     });
-    // Only the fields the proposal set, so everything else keeps inheriting from user scope.
     expect(
       row.tree.find((entry) => entry.path === 'picked/.cc-safety-net/policy.json'),
     ).toMatchObject({ content: json(PARANOID) });
@@ -137,16 +123,10 @@ describe('the GUI project draft', () => {
     const row = await runGuiRow({
       seed: S1,
       options: picksPicked,
-      requests: [
-        // Sent first and answered last: its body lands only after the pick has moved the session,
-        // so the revision it is checked against is the one its handler read on the way in.
-        draftHold('/api/policy/project/apply', { revision: 0, proposal: PARANOID }),
-        PICK,
-      ],
+      requests: [draftHold('/api/policy/project/apply', { revision: 0, proposal: PARANOID }), PICK],
     });
 
     expect(row.responses[1]?.body).toStrictEqual({ cancelled: false });
-    // The directory whose revision matched is the directory the write landed in.
     expect(row.responses[0]).toMatchObject({
       status: 200,
       body: { path: posix.join('<root>', PROJECT_POLICY_FILE), errors: [] },
@@ -201,7 +181,6 @@ describe('the GUI project draft', () => {
       'audit settings are user scope only; remove the audit section from a project proposal',
     ]);
     expect(errorsOf(row.responses[2]?.body).length).toBeGreaterThan(0);
-    // Nothing reached the project directory, so no refusal left a half-written file behind.
     expect(row.tree.filter((entry) => entry.path.startsWith('project/'))).toStrictEqual([]);
   });
 
@@ -216,7 +195,6 @@ describe('the GUI project draft', () => {
     });
     const read = row.responses[0]?.body as ProjectBody;
 
-    // The unreadable file is reported rather than pretended to have loaded.
     expect(read.projectionDiagnostics.length).toBeGreaterThan(0);
     expect(read.projection).toStrictEqual({});
     expect((row.responses[1]?.body as DiffBody).existingFileDiagnostics.length).toBeGreaterThan(0);
@@ -235,7 +213,6 @@ describe('the GUI project draft', () => {
     expect(row.responses[0]?.status).toBe(500);
     expect(errorsOf(row.responses[0]?.body)).toHaveLength(1);
     expect(errorsOf(row.responses[0]?.body)[0]).toBeString();
-    // The escape hatch stayed shut: nothing was written through the link.
     expect(row.tree.filter((entry) => entry.path.startsWith('outside/'))).toStrictEqual([]);
   });
 
@@ -247,7 +224,6 @@ describe('the GUI project draft', () => {
     const read = row.responses[0]?.body as ProjectBody;
 
     expect(read.userPolicyDiagnostics.length).toBeGreaterThan(0);
-    // The draft still has a baseline to inherit from: the protective defaults, not nothing.
     expect(read.baseline.safety.level).toBeString();
   });
 
@@ -288,7 +264,6 @@ describe('the GUI project draft', () => {
         `  ${row.field}: ${row.before ?? '(unset)'} -> ${row.after ?? '(unset)'}`,
       );
     }
-    // `policy check` renders the rows only, so the weakening half of the parity is pinned here.
     expect(diff.weakenings).toStrictEqual([
       'project policy lowers level: strict -> standard',
       'project policy enables worktree mode relaxations',

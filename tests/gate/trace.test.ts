@@ -9,13 +9,6 @@ import {
 
 type RecorderOptions = Parameters<typeof createPortedRecorder>[0];
 
-/**
- * What the recorder retains, bounds and redacts. `explain` prints the trace, so a secret that
- * survives the recorder is a secret on someone's screen, and a bound that stops holding is an
- * unbounded diagnostic buffer on the analysis path — every step kind, a secret-bearing payload,
- * a cyclic step and each terminal shape go through it here.
- */
-
 const PORTED = { recorder: createPortedRecorder, context: createPortedContext };
 
 const SECRETS = [
@@ -161,7 +154,6 @@ function walkContext(module: typeof PORTED) {
   };
 }
 
-/** Every step the events carry, in the order they were recorded. */
 const STEP_TYPES: TraceStep['type'][] = [
   'parse',
   'env-strip',
@@ -196,10 +188,8 @@ describe('the command trace recorder', () => {
     );
 
     expect(recorded.trace.events.map((event) => event.step.type)).toEqual(STEP_TYPES);
-    // The event under an unknown scope and the missing one are dropped, not half-recorded.
     expect(recorded.trace.droppedEvents).toBe(2);
     expect(recorded.trace.terminal).toEqual({ result: 'allowed' });
-    // A finished trace is final: a later record is ignored and finish hands back the same trace.
     expect(recorded.afterFinish).toBe(recorded.trace);
   });
 
@@ -226,14 +216,11 @@ describe('the command trace recorder', () => {
       TERMINALS[0] as CommandTraceTerminal,
     ).trace;
 
-    // The text is cut to length after redaction, and the property count falls back to the list
-    // bound, so the parse step keeps its first two fields and drops `segments` with the third.
     expect(bounded.events[0]).toEqual({
       kind: 'step',
       scope: 'global',
       step: { type: 'parse', input: 'AWS_KEY=<r' },
     } as never);
-    // One property retained is the discriminant alone.
     expect(perProperty.events[0]).toEqual({
       kind: 'step',
       scope: 'global',
@@ -248,14 +235,11 @@ describe('the command trace recorder', () => {
       return recorder.finish({ result: 'allowed' }).events[0]?.step;
     };
 
-    // The step points at itself; the cycle is dropped rather than walked, and the branch beside it
-    // is kept whole down to the default bound.
     expect(stepAt(undefined)).toEqual({
       type: 'error',
       message: 'AWS_KEY=<redacted>',
       nested: { deeper: { deepest: ['<redacted>', '<redacted>'] } },
     } as never);
-    // Three levels down is where a bound of three stops, so the innermost list is gone.
     expect(stepAt({ maxDepth: 3 })).toEqual({
       type: 'error',
       message: 'AWS_KEY=<redacted>',
@@ -273,8 +257,6 @@ describe('the command trace recorder', () => {
       scope: 'global',
       step: {
         type: 'parse',
-        // The assignment values, the pair behind `-u` and the provider-shaped token all go, and
-        // the value one assignment named goes everywhere else it appears too.
         input:
           'AWS_KEY=<redacted> PASSWORD=<redacted> curl -u <redacted>:<redacted> https://api.example.com',
         segments: [['<redacted>'], ['<redacted>'], ['echo', 'ok']],
@@ -292,8 +274,6 @@ describe('the command trace recorder', () => {
       segment: 'curl -u <redacted>:<redacted> https://api.example.com',
       ruleId: 'destructive-rm-rf',
     });
-    // A terminal the recorder cannot read is not a reason to lose the trace: it settles blocked,
-    // and the failure is counted with the dropped events.
     const unreadable = terminalOf(TERMINALS[3] as CommandTraceTerminal);
     expect(unreadable.terminal).toEqual({
       result: 'blocked',
@@ -301,8 +281,6 @@ describe('the command trace recorder', () => {
       segment: 'trace unavailable',
     });
     expect(unreadable.droppedEvents).toBe(3);
-    // An oversized reason and segment are cut to the text bound, an empty rule id is left off,
-    // and a field the terminal has no place for does not survive.
     expect(
       terminalOf(TERMINALS[4] as CommandTraceTerminal, { maxTextLength: 24 }).terminal,
     ).toEqual({ result: 'blocked', reason: 'r'.repeat(24), segment: 's'.repeat(24) });
@@ -326,8 +304,6 @@ describe('the command trace recorder', () => {
       second: 1,
       afterAllocation: 2,
       trace: {
-        // The step recorded before any segment was current has nowhere to go, so it is not
-        // recorded at all — and not counted as dropped either.
         droppedEvents: 0,
         events: [
           {

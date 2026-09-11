@@ -4,10 +4,6 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { runNode, withHostWorkspace, withWorkspace } from './harness';
 
-// The harness watches the real home, so this proof runs in a subprocess whose
-// HOME points at a throwaway directory: the inner tests dirty that fake host
-// state and throw, and the outer tests assert the isolation checks still
-// reported the writes instead of being skipped by an earlier failure.
 const SELFTEST = process.env.CC_SAFETY_NET_HARNESS_SELFTEST;
 
 test.if(SELFTEST === undefined)('runNode uses an absolute Node.js executable', async () => {
@@ -63,8 +59,6 @@ test.if(SELFTEST === undefined)(
     const { exitCode, stderr } = await runSelftest('1');
 
     expect(exitCode).not.toBe(0);
-    // The snapshot mismatch names the dirtied path, proving the isolation
-    // assertion ran even though the callback threw first.
     expect(stderr).toContain('.openclaw=dir:');
   },
   20_000,

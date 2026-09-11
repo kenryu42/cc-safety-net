@@ -2,9 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
-/** What worktree relaxation needs about a directory that is a verified linked worktree. */
 export type WorktreeFacts = Readonly<{
-  /** The effective Git config enables `submodule.recurse`, so a local discard is not relaxable. */
   recursiveSubmodules: boolean;
 }>;
 
@@ -21,18 +19,8 @@ const TRUSTED_GIT_BINARIES = [
   'C:\\Program Files\\Git\\bin\\git.exe',
 ] as const;
 
-// The cap a wedged git costs the hook, paid at most once per working directory. A timed-out
-// spawn withholds the relaxation, so too tight a cap denies a command it should have allowed:
-// 2s did that on a cold CI runner, where the first `git config` of the process took 2.2s.
 const GIT_CONFIG_TIMEOUT_MS = 5000;
 
-/**
- * Null when `cwd` is not a directory, not a verified linked worktree, or the effective
- * `submodule.recurse` setting could not be read (a failed or timed-out `git config` spawn):
- * every one of those means no relaxation.
- * `gitBinary` is exposed so a test can point the spawn at a fake executable, and `timeoutMs` for
- * the same reason: so a test can cap the wait without sleeping through the shipped one.
- */
 export function resolveWorktreeFacts(
   cwd: string,
   gitBinary: string | null = getTrustedGitBinary(),
@@ -166,9 +154,7 @@ function sameFilesystemPath(left: string, right: string): boolean {
     ) {
       return true;
     }
-  } catch {
-    // Fall through to realpath comparison for platforms where stat identity is unavailable.
-  }
+  } catch {}
 
   return (
     normalizePathForComparison(realpathSync.native(left)) ===
@@ -260,11 +246,6 @@ export function findDotGitInAncestors(cwd: string): string | null {
   }
 }
 
-/**
- * Whether the repository's effective config enables `submodule.recurse`: true when the local
- * config files say so, include other files, or cannot be read, and otherwise what a sanitized
- * `git config --get` reports. Null when that one spawn fails or times out.
- */
 function effectiveGitConfigEnablesRecursiveSubmodules(
   cwd: string,
   gitBinary: string | null,
@@ -286,7 +267,7 @@ function effectiveGitConfigEnablesRecursiveSubmodules(
     stdio: ['ignore', 'pipe', 'ignore'],
     timeout: timeoutMs,
   });
-  // `git config --get` exits 1 when the key is unset; anything but that or success is a failure.
+
   if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) return null;
   return result.status === 0 && gitConfigValueEnablesRecursiveSubmodules(result.stdout.trim());
 }

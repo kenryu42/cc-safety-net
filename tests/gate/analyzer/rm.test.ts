@@ -10,12 +10,6 @@ import { type AnalyzeRmOptions, analyzeRmMatch } from '@/gate/analyzer/rm';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
 
-/**
- * `rm` is the rule set with the most gates in front of it — recursion, force, brace expansion,
- * the Git control plane, allow paths, the temp roots and the paranoid tier — so every spelling
- * states the rule it earns under the option set it is read with.
- */
-
 let root = '';
 let home = '';
 let workspace = '';
@@ -38,7 +32,6 @@ beforeAll(() => {
     allowed: null,
     scratch: null,
   });
-  // Spelled as the metadata resolver reports it: with `/`, and case-folded on Windows.
   const compared = (...parts: string[]) => {
     const path = join(workspace, ...parts)
       .split(sep)
@@ -57,7 +50,6 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-/** A rule state as the policy loader resolves it, used to force one rule off or on. */
 function ruleState(enabled: boolean): EffectiveDestructiveCommandRuleState {
   return { enabled, inheritedEnabled: !enabled, changesInherited: true, source: 'rule_override' };
 }
@@ -234,7 +226,6 @@ function runPair(source: string, row: OptionCase) {
 }
 
 describe('rm rule set', () => {
-  /** The rule id one spelling earns under one of the option sets above. */
   function ruleIdFor(source: string, label: string): string | null {
     const row = optionCases().find((option) => option.label === label);
     if (!row) throw new Error(`unknown option case: ${label}`);
@@ -252,8 +243,6 @@ describe('rm rule set', () => {
       { source: 'rm -rf $HOME', id: 'rm.recursive-force-root-or-home' },
       { source: 'rm -rf "$HOME"', id: 'rm.recursive-force-root-or-home' },
       { source: 'rm -r /', id: 'rm.recursive-force-root-or-home' },
-      // A path below home is an ordinary outside-cwd target once it is resolved; a `$` target
-      // is unverifiable instead, and unverifiable targets are strict-only.
       { source: 'rm -rf ~/keep', id: 'rm.recursive-force-outside-cwd' },
       { source: 'rm -rf ${HOME}/keep', id: null },
     ];
@@ -282,7 +271,6 @@ describe('rm rule set', () => {
       { source: 'rm -fr src', id: null },
       { source: 'rm --recursive --force src', id: null },
       { source: 'rm -rf "quoted dir"', id: null },
-      // Recursion without force reports only the catastrophic and Git-metadata targets.
       { source: 'rm -r src', id: null },
       { source: 'rm file.txt', id: null },
       { source: 'rm -rf -- -weird-name', id: null },
@@ -291,7 +279,6 @@ describe('rm rule set', () => {
       { source: 'rm -rf ..', id: 'rm.recursive-force-outside-cwd' },
       { source: 'rm -rf -- ../outside', id: 'rm.recursive-force-outside-cwd' },
       { source: 'rm -rf /nonexistent/elsewhere', id: 'rm.recursive-force-outside-cwd' },
-      // A literal brace expansion is judged per expanded target; a range is not expanded.
       { source: 'rm -rf {a,b}', id: null },
       { source: 'rm -rf {a,b}/{c,d}', id: null },
       { source: 'rm -rf x{1..3}', id: 'rm.recursive-force-outside-cwd' },
@@ -336,14 +323,11 @@ describe('rm rule set', () => {
       'rm -rf .git',
       'rm -rf .git/hooks',
       'rm -r .git',
-      // An ancestor of the Git directory counts when the delete is recursive.
       'rm -rf .',
     ]) {
       expect(ruleIdFor(source, 'git metadata resolved'), source).toBe('rm.git-metadata');
       expect(ruleIdFor(source, 'plain workspace'), source).not.toBe('rm.git-metadata');
     }
-    // contract: src/gate/guards/git-metadata-protection.ts:86 — a non-recursive delete matches
-    // only a Git directory entry or a hook path, so a marker file below it is not one.
     expect(ruleIdFor('rm .git/HEAD', 'git metadata resolved')).toBeNull();
   });
 
@@ -365,7 +349,6 @@ describe('rm rule set', () => {
         source: 'rm -rf .',
         id: 'rm.recursive-force-cwd-self',
       },
-      // `..` is the anchored workspace, which holds the resolved Git directory.
       { label: 'strict inside a nested directory', source: 'rm -rf ..', id: 'rm.git-metadata' },
     ];
     for (const row of rows)
@@ -373,12 +356,9 @@ describe('rm rule set', () => {
   });
 
   test('an allow path and the system temp root are both trusted', () => {
-    // The fixture root is itself a system temp directory, so every path under it is trusted
-    // whether or not the policy names it.
     for (const label of ['plain workspace', 'allow paths cover a sibling directory'])
       for (const target of [join(root, 'allowed'), join(root, 'allowed', 'inner')])
         expect(ruleIdFor(`rm -rf ${target}`, label), `${label}: ${target}`).toBeNull();
-    // A path outside every trusted root stays outside the anchored cwd.
     expect(ruleIdFor('rm -rf /nonexistent/allowed', 'allow paths cover a sibling directory')).toBe(
       'rm.recursive-force-outside-cwd',
     );
@@ -440,7 +420,6 @@ describe('rm rule set', () => {
         },
       }),
     ).toBeNull();
-    // The root-or-home rule is catastrophic, so disabling protection cannot suppress it.
     const rootWords = rmWords('rm -rf /')[0];
     if (!rootWords) throw new Error('missing root command');
     expect(

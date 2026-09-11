@@ -10,12 +10,6 @@ import type { InstallAction, InstallTarget } from '@/hosts/install/targets';
 import { createFakeInput, createFakeOutput, withStdoutTTY } from '../../helpers/fake-tty';
 import { withProcessEnv } from '../../helpers/temp-home';
 
-/**
- * The picker is the only surface where a user's keystrokes decide what gets written to their host
- * configs, so the rows drive the keyboard: the rows state the frames it draws, the
- * selection it returns and the terminal state it leaves behind, key for key.
- */
-
 const CHOICES: readonly InstallTargetChoice[] = [
   {
     target: 'claude-code',
@@ -98,13 +92,11 @@ function pickKimiMethod(globalHookInstalled: boolean, keys: readonly KeyPress[])
   return runPrompt((fakes) => portedPromptKimi({ ...fakes, globalHookInstalled }), keys);
 }
 
-/** The frames a run drew: the prompt writes each one as a single chunk that opens with a blank line. */
 const framesOf = (chunks: readonly string[]) => chunks.filter((chunk) => chunk.startsWith('\n'));
 
 describe('cli/install/prompt', () => {
   test('every row state renders identically on both implementations', () => {
     const plain = renderEvery(false);
-    // Two actions over two choice lists in three cursor-and-selection states.
     expect(plain).toHaveLength(12);
     expect(plain[0]?.split('\n')).toEqual([
       '',
@@ -131,8 +123,6 @@ describe('cli/install/prompt', () => {
     );
   });
 
-  // `colors` re-reads the terminal on every call, so the row has to hold one open or it compares
-  // plain text against plain text and the role-to-color mapping goes unchecked.
   test('the colored rows render identically on both implementations', () => {
     withStdoutTTY(true, () =>
       withProcessEnv({ NO_COLOR: undefined }, () => {

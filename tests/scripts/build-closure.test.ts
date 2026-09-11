@@ -12,7 +12,6 @@ import {
 } from '../../scripts/build-runtime';
 import { verifyBuildArtifacts } from '../../scripts/verify-build';
 
-// The bin is CommonJS, so the walk follows `require` as well as `from`/`import`.
 const STATIC_SPECIFIER = /\b(?:from|import|require\s*\()\s*["']([^"']+)["']/g;
 const DYNAMIC_SPECIFIER = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -22,8 +21,6 @@ function readSpecifiers(source: string, pattern: RegExp): string[] {
     .filter((specifier): specifier is string => specifier !== undefined);
 }
 
-// The sources reachable from one output without crossing a dynamic import. Minified
-// string literals can look like a bare specifier, so only relative ones are followed.
 function readStaticClosure(start: string): string[] {
   const visited = new Set<string>();
   const pending = [start];
@@ -41,8 +38,6 @@ function readStaticClosure(start: string): string[] {
 }
 
 describe('the build', () => {
-  // Named here but created in `beforeAll`, so a run whose tests are all filtered out leaves no
-  // directory behind: `afterAll` never fires for a describe that contributed no test.
   const root = join(
     process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(),
     `build-closure-${process.pid}`,
@@ -61,8 +56,6 @@ describe('the build', () => {
     for (const build of [buildRuntimeBundles, buildAmpBundle, buildOpenClawBundle]) {
       expect((await build(outdir)).success).toBeTrue();
     }
-    // verifyBuildArtifacts only checks that the two public declarations exist, and no
-    // assertion below reads their bytes, so tsc would cost seconds for nothing.
     for (const declaration of ['index.d.ts', 'api.d.ts']) {
       writeFileSync(join(outdir, declaration), 'export {};\n');
     }
@@ -75,8 +68,6 @@ describe('the build', () => {
   });
 
   test('emits exactly the pinned published paths', () => {
-    // A wrong Bun root or a missed move-back leaves bin.js and pi.js at the outdir root,
-    // and a stale allowlist would let dist/entries/*.d.ts survive.
     expect(listOutputs('**/*').filter((path) => !path.startsWith('chunks/'))).toEqual([
       'amp/cc-safety-net/index.ts',
       'api.d.ts',
@@ -96,14 +87,10 @@ describe('the build', () => {
   });
 
   test('starts the bin with the Node shebang', () => {
-    // npm links the bin as an executable, so the interpreter line is what runs it.
     expect(readFileSync(bin, 'utf8').startsWith('#!/usr/bin/env node\n')).toBeTrue();
   });
 
   test('ships the bin as CommonJS: a loader over the hook bundle, marked by its own package.json', () => {
-    // Under the package's `"type": "module"` a `.js` bin would be ESM; the directory manifest
-    // makes it CommonJS so the hook skips the ES module loader while keeping its pinned name. The
-    // loader requires the bundle rather than being it, so the bundle's compile is cacheable.
     expect(JSON.parse(readFileSync(join(outdir, 'bin', 'package.json'), 'utf8'))).toEqual({
       type: 'commonjs',
     });
@@ -119,14 +106,11 @@ describe('the build', () => {
   });
 
   test('imports the CLI entry through exactly one dynamic import', () => {
-    // The bin loads the whole CLI lazily, so the hook path pays for nothing the CLI needs.
     expect(readSpecifiers(readFileSync(bin, 'utf8'), DYNAMIC_SPECIFIER)).toEqual([]);
     expect(readSpecifiers(readFileSync(hook, 'utf8'), DYNAMIC_SPECIFIER)).toEqual(['../cli.js']);
   });
 
   test('replaces the version define and keeps the internal sync field out', () => {
-    // Without the define the published CLI reports `__PKG_VERSION__` as its version, and
-    // the rule synchronization field must never reach a published bundle.
     const sources = listOutputs('**/*.{js,ts}').map(
       (path) => [path, readFileSync(join(outdir, path), 'utf8')] as const,
     );
@@ -143,7 +127,6 @@ describe('the build', () => {
   });
 
   test('stamps both plugin artifacts with their managed header', () => {
-    // The installers and doctor identify a managed plugin by this exact first line.
     expect(
       readFileSync(join(outdir, 'amp', 'cc-safety-net', 'index.ts'), 'utf8').startsWith(
         buildAmpArtifactHeader(pkg.version),
@@ -157,8 +140,6 @@ describe('the build', () => {
   });
 
   test('passes build verification', async () => {
-    // verifyBuildArtifacts reports paths relative to the working directory, so the
-    // outdir has to be verified from the root that holds it.
     process.chdir(root);
 
     expect(await verifyBuildArtifacts()).toContain('dist/bin/cc-safety-net.js');

@@ -1,14 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderPages, sliceBlock } from '../helpers/gui-page';
 
-/**
- * The activity feed marks the denials worth a second look: anything that failed inside the gate,
- * and anything one session hit twice on the same command signature. Both halves — the signature from
- * the shared display helper, the rule from the page script — are sliced out of the served page and
- * run over fresh entries.
- */
-
-// Token-shaped, assembled here rather than written out, and fixed so the slice is deterministic.
 const TOKEN = Buffer.from('cc-safety-net gui suspect fixture').toString('base64url');
 
 type Entry = {
@@ -20,8 +12,6 @@ type Entry = {
 };
 
 const pages = renderPages(TOKEN);
-// The signature helper is the last thing in its own bundled module, so the next module label ends
-// the slice.
 const block = (page: string) =>
   [
     sliceBlock(page, 'var commandSignature = (source) => {', '\n// '),
@@ -62,7 +52,6 @@ describe('the suspect block on the served page', () => {
       },
     ];
 
-    // Two different command lines, one signature: both are the repeat the feed points at.
     expect(findSuspects(entries).size).toBe(2);
   });
 
@@ -72,7 +61,6 @@ describe('the suspect block on the served page', () => {
       { command: 'git push --force', decision: 'deny', sessionId: 's2' },
       { command: 'git status', decision: 'allow', sessionId: 's3', failureStage: 'analysis' },
       { command: 'git status', decision: 'allow', sessionId: 's3' },
-      // No session to attribute the repeat to, so it never counts as one.
       { command: 'git push --force', decision: 'deny' },
       { command: 'git push --force', decision: 'deny' },
     ];

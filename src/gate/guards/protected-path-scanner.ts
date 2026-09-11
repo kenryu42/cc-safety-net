@@ -16,12 +16,6 @@ type ProtectedPathCommandScanner = Readonly<{
   findMalformedTarget: (source: string) => string | null;
 }>;
 
-/**
- * The adapter every protected-path guard drives the walk through: a segment reaches
- * `findSegmentTarget` with the directory it runs in, a write-like redirection target reaches
- * `isRedirectionTarget` with the tracked variables expanded, and a command the parser could not
- * read whole is handed to `findMalformedTarget` as text.
- */
 export function findProtectedPathMutationInCommand(
   syntax: GuardSyntax,
   cwd: string,

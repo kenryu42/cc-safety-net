@@ -12,19 +12,8 @@ import { readAuditEntries } from '../helpers/hook-capture';
 import { STRUCTURAL_LIMIT_COMMAND } from '../helpers/hook-hosts';
 import { auditDirnameFolds, normalize, rootFolds } from '../helpers/temp-home';
 
-/**
- * The runner's one call into the gate: evaluate, then record. Each row runs one invocation against
- * one audit home and states what came back — or what was thrown — together with the line that
- * reached the log. The limit rows raise the gate's own limit classes, and the classification they
- * carry is what the audit line has to keep.
- */
-
 const tree = createGateTree('next-hosts-runtime-');
 
-/**
- * The workspace the invocation ran in, as the audit line spells it and as the writer spells it in
- * the log directory it names after that directory, with every separator replaced by `-`.
- */
 const FOLDS = [...rootFolds(tree.root), ...auditDirnameFolds(tree.root, '<root>')];
 
 afterAll(() => {
@@ -50,10 +39,8 @@ type Row = {
   command: string;
   auditAllowed: boolean;
   breach?: keyof typeof BREACHES;
-  /** Set by the one row that throws out of the gate without an injected dependency. */
   throws?: true;
   lines: number;
-  /** Where the guard settled: every row but the secret guard's own breach answers in analysis. */
   stage: string;
   entry?: Record<string, unknown>;
 };
@@ -107,8 +94,6 @@ const ROWS: readonly Row[] = [
     entry: { decision: 'deny', command: '', segment: '', errorCode: 'tool-input-limit' },
   },
   {
-    // The one breach class that is not an `AnalysisLimit`: the secret guard raises it itself, so
-    // the row needs no injection and the audit class cannot be satisfied by the default branch.
     name: 'a nested program past the structural shell-syntax limit',
     command: STRUCTURAL_LIMIT_COMMAND,
     auditAllowed: false,
@@ -173,10 +158,8 @@ for (const row of ROWS) {
       kind: row.entry?.decision ?? 'allow',
     });
     if (row.entry) expect(ported.entries[0]?.entry).toMatchObject(row.entry);
-    // The line lands in the log named after the workspace the call ran in, under the session id.
     const day = new Date().toISOString().slice(0, 10);
     for (const entry of ported.entries) {
-      // Spelled with `join`, since the writer spells the path with the host's own separator.
       expect(normalize(entry.file, FOLDS)).toBe(
         join('<root>-workspace', day.slice(0, 7), `${day}-hosts-runtime-1.jsonl`),
       );
@@ -184,7 +167,6 @@ for (const row of ROWS) {
   });
 }
 
-/** The stage and decision either returned or carried by the thrown `GuardEvaluationError`. */
 function outcomeOf(run: () => { stage: string; decision: unknown }) {
   try {
     const evaluation = run();

@@ -6,12 +6,6 @@ import { createTestEnvironment, type FakeEntry, processPathResolver } from '@/co
 import { resolveChdirTarget } from '@/core/paths/chdir';
 import { pickWord, seededRandom, writeSymlinkLoopTree } from '../differential-inputs';
 
-/**
- * Where a `cd`-like operand lands: each component of the operand is resolved through the
- * filesystem the way the shell would, symlinks included, and anything that cannot be resolved
- * throws so the walker marks the cwd unknown instead of guessing a directory.
- */
-
 const root = mkdtempSync(join(tmpdir(), 'next-chdir-'));
 writeSymlinkLoopTree(root, {
   'dir/sub': null,
@@ -105,7 +99,6 @@ describe('chdir target resolution', () => {
       name: 'does not reject a landing that is a file; the caller decides what a non-directory cwd means',
       base: root,
       target: 'file',
-      // Nothing on the way is a symlink, so the base keeps its own spelling.
       expected: join(root, 'file'),
     },
     {
@@ -124,7 +117,6 @@ describe('chdir target resolution', () => {
       name: 'appends to a base that already ends in a separator',
       base: `${root}/`,
       target: 'dir',
-      // The base's own separator is kept, whichever the host's is.
       expected: `${root}/dir`,
     },
     {
@@ -175,8 +167,6 @@ describe('chdir target resolution', () => {
   }
 
   test('reads the in-memory filesystem through the seam', () => {
-    // The walker appends each component with the host's separator, so the seam's entries are
-    // spelled with it too.
     const under = (name: string) => `/work${sep}${name}`;
     const environment = createTestEnvironment({
       entries: new Map<string, FakeEntry>([
@@ -192,11 +182,6 @@ describe('chdir target resolution', () => {
   });
 });
 
-/**
- * The properties every landing must have, over operands glued from the fragments the fixture
- * spells: a cwd the walker accepts must be a place that exists, and everything else must fail
- * loudly rather than resolve to a plausible-looking path.
- */
 describe('chdir invariants over generated operands', () => {
   const FRAGMENTS = [
     '.',

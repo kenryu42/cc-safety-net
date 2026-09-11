@@ -1,7 +1,3 @@
-/**
- * Claude Code hook detection.
- */
-
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
 import {
@@ -22,17 +18,11 @@ function isInstalledPluginRecord(value: unknown, pluginId: string): boolean {
   return Array.isArray(record) && record.length > 0;
 }
 
-/** Whether Claude Code records the given plugin id as installed. */
 export function hasClaudeInstalledPlugin(environment: Environment, pluginId: string): boolean {
   const installed = readStateFile(getClaudeInstalledPluginsPath(environment));
   return installed.kind === 'ok' && isInstalledPluginRecord(installed.value, pluginId);
 }
 
-/**
- * Detect Claude Code hook configuration from the plugin records Claude Code writes:
- * `installed_plugins.json` says what is installed, `settings.json` says what is on. Reading
- * them avoids `claude plugin list`, which rewrites `~/.claude.json` in a possibly running session.
- */
 export function detectClaudeCode(environment: Environment): HookDetection {
   const installedPath = getClaudeInstalledPluginsPath(environment);
   const installed = readStateFile(installedPath);

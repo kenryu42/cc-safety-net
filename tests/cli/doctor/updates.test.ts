@@ -4,12 +4,6 @@ import {
   isNewerVersion as portedIsNewerVersion,
 } from '@/cli/doctor/updates';
 
-/**
- * The one network call the CLI makes. The registry is replaced for the length of each case, so the
- * rows cover the three answers a user can get — a version, a bad status, no network — and prove
- * the check never reaches the real registry to find out.
- */
-
 const REGISTRY_URL = 'https://registry.npmjs.org/cc-safety-net/latest';
 
 const VERSION_PAIRS = [

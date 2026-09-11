@@ -1,10 +1,3 @@
-/**
- * JSONC surgery for host config files. Comments are stripped only to parse; an edit splices the
- * original text, so every byte outside the edited range, comments and formatting included,
- * survives the write. The bracket and range helpers are format-agnostic and serve the TOML edit
- * too.
- */
-
 export function stripJsonComments(content: string): string {
   let result = '';
   let i = 0;
@@ -90,7 +83,6 @@ export type TextRange = {
   end: number;
 };
 
-/** Index just past the closing quote of the double-quoted string opening at `index`. */
 function findJsonStringEnd(content: string, index: number, errorMessage: string) {
   let current = index + 1;
   let isEscaped = false;
@@ -153,7 +145,6 @@ export function getLineIndent(content: string, index: number): string {
   return /^[ \t]*/.exec(content.slice(lineStart))?.[0] ?? '';
 }
 
-/** Removes one array item with the comma that separated it, and the line it sat alone on. */
 export function removeArrayRangeItem(content: string, item: TextRange): string {
   const afterItem = item.end + (/^\s*/.exec(content.slice(item.end))?.[0].length ?? 0);
   if (content[afterItem] === ',') {
@@ -173,7 +164,6 @@ export function removeArrayRangeItem(content: string, item: TextRange): string {
   return `${content.slice(0, removeStart)}${content.slice(item.end)}`;
 }
 
-/** Advances past a `//` or block comment opening at `index`; returns `index` when none does. */
 function skipJsonComment(content: string, index: number) {
   if (content.startsWith('//', index)) {
     const newlineIndex = content.indexOf('\n', index + 2);
@@ -202,10 +192,6 @@ function skipJsonTrivia(content: string, index: number) {
   return current;
 }
 
-/**
- * The `[` … `]` of the array held by `key` on the root object, found by walking the text so a
- * nested key of the same name, a comment, or a string that looks like one cannot mislead it.
- */
 export function findJsonArrayProperty(
   content: string,
   key: string,
@@ -246,7 +232,6 @@ export function findJsonArrayProperty(
   return undefined;
 }
 
-/** Every string item of the array at `array`, with the text range each occupies. */
 export function findJsonStringItems(
   content: string,
   array: TextRange,

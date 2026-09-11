@@ -1,21 +1,11 @@
 import type { ServerResponse } from 'node:http';
 import { startLoopbackServer } from './loopback-server';
 
-/**
- * The GitHub the rulebook manager is allowed to see: a scripted repository catalogue served over
- * loopback, plus the faults a real host can produce (a redirect, a server error, a body that
- * overruns its cap or never ends, a response held open). Every row points the manager at the same
- * origin through `resolveUrl`, so no test needs the network and every run answers to the same
- * bytes.
- */
-
 export type ScriptedRepository = {
   owner: string;
   repo: string;
   defaultBranch: string;
-  /** Ref name to the commit sha it points at. */
   refs: Record<string, string>;
-  /** Commit sha to the rulebook bodies that commit publishes, keyed by rulebook name. */
   trees: Record<string, Record<string, string>>;
 };
 
@@ -25,27 +15,19 @@ export type Fault =
       status?: number;
       headers?: Record<string, string>;
       body?: string | Buffer;
-      /** Byte offsets to split the body at, so a multibyte sequence can straddle two writes. */
       chunkBoundaries?: number[];
-      /** Write the body and never end the message, so only the caller's timeout stops it. */
       endless?: boolean;
     }
   | { kind: 'defer' };
 
 export type FakeGitHub = {
   origin: string;
-  /** Point a real GitHub URL at this server; the only seam a fetch row needs. */
   resolveUrl(url: string): string;
-  /** `${method} ${pathname}${search}` in arrival order. */
   requests: string[];
-  /** Replaces the scripted answer for one pathname. */
   faults: Map<string, Fault>;
-  /** Answer every request parked by a `defer` fault. */
   release(): void;
-  /** The largest number of requests that were open at the same time. */
   maxInFlight(): number;
   reset(): void;
-  /** Mutable, so a row can move a ref to a new sha or replace a body between two operations. */
   repositories: ScriptedRepository[];
   close(): Promise<void>;
 };
@@ -143,8 +125,6 @@ function scriptedAnswer(repositories: readonly ScriptedRepository[], pathname: s
   return NOT_FOUND;
 }
 
-/** A blob per rulebook, one directory entry and one blob outside the rules path, so a listing
- *  that stops filtering by type or by path shows up as an extra discovered name. */
 function treeListing(names: readonly string[]) {
   return {
     tree: [
@@ -180,7 +160,6 @@ async function sendFault(
   response.end();
 }
 
-/** The body split at the requested boundaries, then into writes of at most 64 KiB. */
 function bodyChunks(body: string | Buffer, boundaries: readonly number[] = []): Buffer[] {
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
   const cuts = [...new Set([...boundaries, buffer.byteLength])]
@@ -197,7 +176,6 @@ function bodyChunks(body: string | Buffer, boundaries: readonly number[] = []): 
   });
 }
 
-/** Resolves when the socket drains, or when the client gave up on the response. */
 function drained(response: ServerResponse): Promise<void> {
   return new Promise((resolve) => {
     const settle = () => {

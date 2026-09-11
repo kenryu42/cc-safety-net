@@ -15,13 +15,6 @@ import {
   withProcessEnv,
 } from '../helpers/temp-home';
 
-/**
- * The star strip: what `gh` is asked, what each exit means, and the context the dashboard opens
- * with. Every `gh` call goes to a scripted fake named by absolute path, so `PATH` stays untouched
- * and no row can reach a real `gh`, and the star count always comes from a stubbed fetch rather
- * than from api.github.com.
- */
-
 const STARRED_PATH = '/user/starred/kenryu42/cc-safety-net';
 
 type StarHelpers = {
@@ -29,11 +22,6 @@ type StarHelpers = {
   starRepo: typeof portedStarRepo;
 };
 
-/**
- * The helpers over a scripted `gh`: `runGhCommand` spawns with the process environment, so the
- * fake's script and log are handed to it that way. The command itself is an absolute path into the
- * fake bin, so `PATH` is never touched.
- */
 const bothSides = async <T>(
   script: readonly FakeScriptEntry[],
   run: (side: { helpers: StarHelpers; command: string; root: string }) => Promise<T>,
@@ -54,7 +42,6 @@ const bothSides = async <T>(
         root,
       }),
   );
-  // The working directory each call ran in is the suite's own, so only the argv is comparable.
   return { result, calls: fake.readLog().map((line) => line.split('\t')[0]) };
 };
 
@@ -72,7 +59,6 @@ describe('the GUI star helpers', () => {
     );
 
     expect(row.result).toBeNull();
-    // The starred probe is never reached, so an unauthenticated `gh` costs one call.
     expect(row.calls).toStrictEqual(['gh auth status']);
   });
 
@@ -105,7 +91,6 @@ describe('the GUI star helpers', () => {
     const row = await bothSides([gh(['auth'], 0, { delayMs: 2000 })], async (side) => {
       const started = Date.now();
       const result = await side.helpers.userHasStarredRepo(side.command, 100);
-      // The timeout kills the child rather than waiting the two seconds out.
       expect(Date.now() - started).toBeLessThan(1000);
       return result;
     });
@@ -167,7 +152,6 @@ describe('the GUI star context', () => {
   test('reads the star count, the star state and the retained blocked total together', async () => {
     const context = await contextOver(respondsWith({ stargazers_count: 42 }));
 
-    // `gh` cannot say, the count can, and the total comes off the seeded audit trail.
     expect(context).toStrictEqual({ starred: null, starCount: 42, blockedTotal: 2 });
   });
 

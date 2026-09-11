@@ -1,11 +1,3 @@
-/**
- * Hermes Agent plugin detection.
- *
- * Reads the managed `<Hermes home>/plugins/cc-safety-net/` artifact for installed, loadable, and
- * outdated state, and Hermes' own `plugins.enabled` allow-list for enablement — Hermes loads
- * user plugins only when they are listed there (`hermes_cli/plugins.py`).
- */
-
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
@@ -27,7 +19,7 @@ import {
 import { getPackageVersion } from '@/hosts/system-info';
 
 const PLATFORM = 'hermes-agent';
-// A top-level mapping key, i.e. one that starts in the first column.
+
 const TOP_LEVEL_KEY = /^([^\s#][^:]*):/;
 const NESTED_KEY = /^\s+([A-Za-z_][\w-]*):/;
 const SEQUENCE_ITEM = /^\s+-\s*(.*)$/;
@@ -36,7 +28,6 @@ function unquote(value: string): string {
   return value.trim().replace(/^(["'])(.*)\1$/, '$2');
 }
 
-/** The indented lines belonging to the top-level `plugins:` mapping. */
 function pluginsBlock(raw: string): string[] {
   const lines = raw.split(/\r?\n/);
   const start = lines.findIndex((line) => TOP_LEVEL_KEY.exec(line)?.[1]?.trim() === 'plugins');
@@ -47,12 +38,6 @@ function pluginsBlock(raw: string): string[] {
   return end === -1 ? body : body.slice(0, end);
 }
 
-/**
- * Read one `plugins.<key>` sequence out of Hermes' config.yaml without a YAML parser.
- * Hermes writes the file with `yaml.safe_dump(default_flow_style=False)`, so the lists are block
- * sequences under a top-level `plugins:` mapping. Anything else reads as "not listed", which
- * surfaces as a visible, recoverable "disabled" in doctor.
- */
 function readPluginList(raw: string, key: string): string[] {
   const block = pluginsBlock(raw);
   const start = block.findIndex((line) => NESTED_KEY.exec(line)?.[1] === key);
@@ -73,11 +58,6 @@ function readHermesConfig(environment: Environment): string | undefined {
   }
 }
 
-/**
- * Whether Hermes' own config would load the plugin. Read-only, so the installer can ask it
- * before running `hermes plugins enable` to tell an inert reinstall from one that turns the
- * plugin back on.
- */
 export function isHermesAgentPluginEnabled(environment: Environment): boolean {
   const config = readHermesConfig(environment) ?? '';
   return (
@@ -90,7 +70,6 @@ function artifactVersion(content: string): string | undefined {
   return /^# version:\s*(.+)$/m.exec(content)?.[1]?.trim();
 }
 
-/** Read one managed file, reporting why it cannot be trusted instead of throwing. */
 function inspectFile(
   path: string,
   expected: { name: string; content: string },
@@ -105,9 +84,7 @@ function inspectFile(
     const content = readFileSync(path, 'utf-8');
     if (!isManagedHermesAgentFile(content))
       return { error: `Unmanaged ${expected.name} occupies ${path}; move or remove it` };
-    // A header and a version stamp are not a plugin: a truncated or edited body leaves Hermes
-    // unable to register the hook. Files stamped with another version are reported as outdated
-    // below instead, where their contents are expected to differ.
+
     if (artifactVersion(content) === getPackageVersion() && content !== expected.content)
       return {
         error: `Modified ${expected.name} occupies ${path}; run install --hermes-agent to restore it`,

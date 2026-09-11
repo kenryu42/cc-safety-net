@@ -36,11 +36,6 @@ export function dangerousInTextMatch(
     { regex: /\bmkfs(?:\.[a-z0-9_-]+)?\s+\/dev\/\S/, label: 'mkfs /dev/', skipForEchoRg: true },
     { regex: /\bshred\b\s+\S/, label: 'shred', skipForEchoRg: true },
     {
-      // The optional wrapper before the shell mirrors STANDARD_COMMAND_WRAPPERS in
-      // transparent-wrappers.ts (sudo|env|command|builtin), the set the structural
-      // analyzer treats as transparent; keep the two in sync. Other wrappers stay the
-      // structural dynamic-shell-source rule's job — this text scan is a best-effort
-      // backstop for bodies the parser does not descend into.
       regex:
         /\b(?:curl|wget|fetch|aria2c|https?|xhs?|ncat|netcat|nc)\b(?:[^\n|;&]|\\\n)*\|(?:\s|\\\n)*(?:(?:sudo|env|command|builtin)(?:\s+(?:-\S+|\w+=\S*))*\s+)?(?:[^\s|;&]*\/)?(?:ba|da|z|k)?sh(?![^\s;&|])/,
       label: 'download piped to shell',

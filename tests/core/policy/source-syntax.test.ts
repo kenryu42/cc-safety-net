@@ -24,12 +24,6 @@ import {
 import { describeOutcome } from '../../helpers/fixture-tree';
 import { corpusWords } from '../differential-inputs';
 
-/**
- * `rule add` prints the syntax error verbatim and `rule update` vendors to the path the parse
- * returns, so both are contract: each row below states the parse it must produce and the exact
- * message a rejected spec must carry.
- */
-
 const bareNameError = (spec: string) =>
   `Local rulebook sources must be bare names matching /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/: ${spec}`;
 
@@ -40,12 +34,10 @@ type Parsed = { owner: string; repo: string; ref: string; name: string; path: st
 const SPECS: readonly {
   readonly behavior: string;
   readonly spec: string;
-  /** The message `getRulebookSourceSyntaxError` reports, or null when the spec is usable. */
   readonly syntaxError: string | null;
   readonly isRulebookSource: boolean;
   readonly isRepositorySource: boolean;
   readonly isRef: boolean;
-  /** The parse result, or the message `parseGitHubSource` throws. */
   readonly parsed: Parsed | string;
 }[] = [
   {
@@ -281,10 +273,6 @@ describe('rulebook source syntax', () => {
   });
 });
 
-/**
- * A wrapper the analyzer already inspects itself may never be re-declared as transparent: the
- * declaration would make the guard look through the very command it is analyzing.
- */
 const WRAPPER_COMMANDS: readonly {
   readonly command: string;
   readonly reserved: boolean;
@@ -301,12 +289,9 @@ const WRAPPER_COMMANDS: readonly {
   { command: 'Node', reserved: true, interpreter: true },
   { command: 'ruby', reserved: true, interpreter: true },
   { command: 'perl', reserved: true, interpreter: true },
-  // `nodejs`, `perl5` and `python-config` are not the interpreter names the analyzer keys on.
   { command: 'nodejs', reserved: false, interpreter: false },
   { command: 'perl5', reserved: false, interpreter: false },
   { command: 'python-config', reserved: false, interpreter: false },
-  // Awk dialects are reserved because the analyzer reads awk programs, not because they take
-  // code on a `-c` flag.
   { command: 'awk', reserved: true, interpreter: false },
   { command: 'gawk', reserved: true, interpreter: false },
   { command: 'mawk', reserved: true, interpreter: false },

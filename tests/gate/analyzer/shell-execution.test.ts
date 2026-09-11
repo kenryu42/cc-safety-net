@@ -14,18 +14,11 @@ import {
   shellSourceHasUnresolvedDynamicExecutionCarrier,
 } from '@/gate/analyzer/shell-execution';
 
-/**
- * Every execution source the shell layer extracts: the printf literal, the `eval`/`trap` operands,
- * the script operand, the stdin source, the positional carrier with its two expansion caps, the
- * local generator forms, and the dynamic-carrier walk.
- */
-
 function firstCommand(source: string): CommandView | undefined {
   const node = parseCommand(source, 'posix').nodes[0];
   return node?.kind === 'command' ? node : undefined;
 }
 
-/** The words of the first command of a source, for the extractors that take words alone. */
 function firstWords(source: string) {
   const command = firstCommand(source);
   if (!command) throw new Error(`no command in: ${source}`);
@@ -42,12 +35,8 @@ describe('gate/analyzer/shell-execution', () => {
       { source: 'printf %s one two', output: 'onetwo' },
       { source: 'printf "%s\\n" one two', output: 'one\ntwo\n' },
       { source: 'printf "a\\tb\\r"', output: 'a\tb\r' },
-      // A conversion the extractor does not model, an unknown escape, and a non-literal word all
-      // leave the output unknown.
       { source: 'printf "%d" 3', output: undefined },
       { source: 'printf "\\q"', output: undefined },
-      // contract: src/gate/analyzer/shell-execution.ts:63 — each backslash is checked on its own,
-      // so the second half of an escaped backslash reads as an unknown escape.
       { source: 'printf "b\\\\c"', output: undefined },
       { source: 'printf "$HOME"', output: undefined },
       { source: 'printf hello > out', output: 'hello' },
@@ -75,7 +64,6 @@ describe('gate/analyzer/shell-execution', () => {
     ];
     for (const row of evalRows)
       expect(extractEvalSource(firstWords(row.source).words), row.source).toStrictEqual(row.result);
-    // A word with no parser facts is judged by its text.
     expect(extractEvalSource(textCommandWords(['eval', 'echo', '$X']))).toStrictEqual({
       kind: 'dynamic',
     });
@@ -101,7 +89,6 @@ describe('gate/analyzer/shell-execution', () => {
       { source: 'trap -l', result: { kind: 'none' } },
       { source: 'trap -p EXIT', result: { kind: 'none' } },
       { source: 'trap "" EXIT', result: { kind: 'none' } },
-      // Without a signal operand the word is not an action.
       { source: 'trap "rm -rf /tmp/x"', result: { kind: 'none' } },
       { source: 'trap', result: { kind: 'none' } },
     ];
@@ -119,7 +106,6 @@ describe('gate/analyzer/shell-execution', () => {
       { source: 'bash -- script.sh', result: { kind: 'literal', source: 'script.sh' } },
       { source: 'bash "$FILE"', result: { kind: 'dynamic' } },
       { source: 'bash -Oextglob "$FILE"', result: { kind: 'dynamic' } },
-      // A selected command or stdin mode means there is no script operand.
       { source: 'bash -c "rm -rf /tmp/x"', result: { kind: 'none' } },
       { source: 'bash -c script.sh', result: { kind: 'none' } },
       { source: 'bash -s', result: { kind: 'none' } },
@@ -154,7 +140,6 @@ describe('gate/analyzer/shell-execution', () => {
     });
     for (const source of ['bash -c "rm -rf /tmp/x"', 'bash script.sh', 'cat script.sh | bash'])
       expect(stdin(source, true, 'rm -rf /tmp/x'), source).toStrictEqual({ kind: 'none' });
-    // A here-string is the command text; a file or descriptor redirect is not readable.
     expect(stdin('bash <<< "rm -rf /tmp/x"', false)).toStrictEqual({
       kind: 'literal',
       source: 'rm -rf /tmp/x',
@@ -163,7 +148,6 @@ describe('gate/analyzer/shell-execution', () => {
     expect(stdin('bash < script.sh', false)).toStrictEqual({ kind: 'dynamic' });
     expect(stdin('bash 0< script.sh', false)).toStrictEqual({ kind: 'dynamic' });
     expect(stdin('bash <&3', false)).toStrictEqual({ kind: 'dynamic' });
-    // A heredoc body is analyzed elsewhere, and a redirect on another descriptor is not stdin.
     expect(stdin('bash <<EOF\nrm -rf /tmp/x\nEOF', false)).toStrictEqual({ kind: 'none' });
     expect(stdin('bash 3< script.sh', true, 'x')).toStrictEqual({ kind: 'literal', source: 'x' });
   });
@@ -184,7 +168,6 @@ describe('gate/analyzer/shell-execution', () => {
       { script: '"$@"', argv: words, result: { kind: 'literal', source: "'rm' '-rf' '/tmp/x'" } },
       { script: '$@', argv: words, result: { kind: 'literal', source: "'rm' '-rf' '/tmp/x'" } },
       { script: '$*', argv: words, result: { kind: 'literal', source: "'rm' '-rf' '/tmp/x'" } },
-      // A quoted single value that holds whitespace is one word, so the expansion is empty.
       { script: '"$*"', argv: words, result: { kind: 'literal', source: '' } },
       { script: '"$1"', argv: single, result: { kind: 'literal', source: '' } },
       { script: '$1', argv: single, result: { kind: 'literal', source: "'rm' '-rf' '/tmp/x'" } },
@@ -211,7 +194,6 @@ describe('gate/analyzer/shell-execution', () => {
         argv: ['bash', '-c', 'PLACEHOLDER', 'sh', 'a:b'],
         result: { kind: 'literal', source: "'a:b'" },
       },
-      // An unquoted expansion is field-split, and a glob cannot be split; a quoted one is not.
       {
         script: '$@',
         argv: ['bash', '-c', 'PLACEHOLDER', 'sh', '*.txt'],
@@ -222,7 +204,6 @@ describe('gate/analyzer/shell-execution', () => {
         argv: ['bash', '-c', 'PLACEHOLDER', 'sh', '*.txt'],
         result: { kind: 'literal', source: "'*.txt'" },
       },
-      // No `-c`, no positional reference, and a trailing word are all outside the carrier shape.
       { script: '"$@"', argv: ['rm', '-rf', 'x'], result: { kind: 'none' } },
       { script: 'rm -rf "$1"', argv: single, result: { kind: 'none' } },
       { script: '$@ extra', argv: words, result: { kind: 'none' } },
@@ -257,7 +238,6 @@ describe('gate/analyzer/shell-execution', () => {
       'source <(git status)',
     ];
     const unverifiable: readonly string[] = [
-      // Anything around the substitution, or inside it beyond one plain command, breaks the shape.
       'eval -- "$(ssh-agent -s)"',
       'eval "$(ssh-agent -s)" extra',
       'eval "$(ssh-agent -s; true)"',
@@ -302,15 +282,12 @@ describe('gate/analyzer/shell-execution', () => {
     ];
     const resolved: readonly string[] = [
       'source plain.sh',
-      // A syntax check runs nothing, and `command -v` only looks a name up.
       'bash -n -c "$1"',
       'command -v bash -c "$1"',
       'echo "$1"',
       'rm -rf "$1"',
       'true',
       '',
-      // contract: src/gate/analyzer/shell-execution.ts:408-421 — the walk recognizes `source`/`.`
-      // and the shell wrappers; an `eval` body is read by extractEvalSource instead.
       'eval "$1"',
       'eval "$@"',
     ];
@@ -319,11 +296,9 @@ describe('gate/analyzer/shell-execution', () => {
     for (const source of resolved)
       expect(shellSourceHasUnresolvedDynamicExecutionCarrier(source), source).toBeFalse();
 
-    // With the dynamic names named by the caller, only those names carry.
     expect(shellSourceHasDynamicExecutionCarrier('bash -c "$X"', new Set())).toBeFalse();
     expect(shellSourceHasDynamicExecutionCarrier('bash -c "$X"', new Set(['X']))).toBeTrue();
     expect(shellSourceHasDynamicExecutionCarrier('sh -c "$CMD"', new Set(['X']))).toBeFalse();
-    // A positional parameter is always dynamic, and an assignment propagates it.
     expect(shellSourceHasDynamicExecutionCarrier('bash -c "$1"', new Set())).toBeTrue();
     expect(shellSourceHasDynamicExecutionCarrier('X=$1; bash -c "$X"', new Set())).toBeTrue();
     expect(shellSourceHasDynamicExecutionCarrier('X=1; bash -c "$X"', new Set())).toBeFalse();

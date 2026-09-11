@@ -30,16 +30,11 @@ export type InternalOptions = AnalyzeInput & {
   literalHeredocFiles?: ReadonlyMap<string, string>;
   functionDefinitions?: ReadonlyMap<string, CommandProgram>;
   wrapperNormalizationBudget?: { iterations: number };
-  /** Set when these words are a child a producer synthesized rather than the command as written. */
+
   child?: ChildProvenance;
 };
 
 export type AnalyzerRuleContext = {
-  /**
-   * Words of this command after env assignments and wrappers are removed. They are the
-   * parsed words when the parsed command still lines up with what is analyzed, and
-   * text-only stand-ins otherwise (derived commands, `env -S` splits).
-   */
   readonly words: readonly CommandWord[];
   readonly head: string;
   readonly cwd: string | undefined;
@@ -47,23 +42,16 @@ export type AnalyzerRuleContext = {
   readonly effectiveCwd: string | null | undefined;
   readonly envAssignments: ReadonlyMap<string, string>;
   readonly allowTmpdirVar: boolean;
-  /** Whether any word of this command is substitution output, so its text is unknown. */
+
   readonly dynamicArguments: boolean;
   readonly depth: number;
   readonly options: InternalOptions;
-  /**
-   * Analyzes a command this one derives from its own arguments (a find -exec child) with
-   * the parent's budget, policy and env. Only analyzeSegment can do that, and rules cannot
-   * call it directly without an import cycle.
-   */
+
   readonly analyzeChildTokens: (
     tokens: readonly string[],
     cwd: string | null | undefined,
   ) => DestructiveCommandRuleMatch | null;
-  /**
-   * Analyzes a child a producer synthesizes from its own arguments and the input it cannot see
-   * (an xargs or parallel child) through the same per-command path, carrying the provenance.
-   */
+
   readonly analyzeChild: (
     tokens: readonly string[],
     child: ChildProvenance,
@@ -169,7 +157,6 @@ function nestedCommandAnalyzeContext(context: AnalyzerRuleContext): NestedComman
   };
 }
 
-/** Reads a nested analysis result back as the match shape the rules return. */
 export function matchFromBlockResult(
   result: Omit<AnalyzeResult, 'segment'> | null,
 ): DestructiveCommandRuleMatch | null {
@@ -178,7 +165,6 @@ export function matchFromBlockResult(
     : null;
 }
 
-/** Shared with the trace path, which calls analyzeGitDetailed for the worktree relaxation. */
 export function gitAnalyzeOptions(context: AnalyzerRuleContext) {
   return {
     environment: context.options.environment,

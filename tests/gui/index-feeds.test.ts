@@ -7,13 +7,6 @@ import { type GuiHookOptions, type GuiRequest, runGuiRow } from '../helpers/gui-
 import { json, rulesConfig, v1Rulebook } from '../helpers/rulebook-seeds';
 import { createTempRoot, removeTempRoots, withProcessEnv } from '../helpers/temp-home';
 
-/**
- * The read-only feeds the dashboard opens on — activity, rulebooks, star, integrations, health —
- * and the two install routes, driven against the server over a seeded home. Every hook that would
- * spawn `gh`, a dialog, an installer or a browser is injected by the row and records what it was
- * asked for, so a row proves the routing rather than the host it would otherwise touch.
- */
-
 const USER_POLICY_FILE = 'home/.cc-safety-net/policy.json';
 const RULE_ID = 'destructive.git-push-force';
 
@@ -21,7 +14,6 @@ const withRetention = (days: number): TreeSpec => ({
   [USER_POLICY_FILE]: json({ ...DEFAULT_GUI_POLICY, audit: { retention_days: days } }),
 });
 
-/** Local noon `daysAgo` days back; `second` keeps entries written for one day apart and ordered. */
 const at = (daysAgo: number, second: number) => {
   const when = new Date();
   when.setHours(12, 0, second, 0);
@@ -54,7 +46,6 @@ const jsonl = (lines: readonly Line[], raw: readonly string[] = []) =>
     .map((line) => `${line}\n`)
     .join('');
 
-/** The dated layout the writer produces, for today, so the scan has to walk into it. */
 const stamp = at(0, 0).slice(0, 10);
 const NESTED_TODAY = `home/logs/proj/${stamp.slice(0, 7)}/${stamp}-s2.jsonl`;
 
@@ -75,7 +66,6 @@ const FEED: TreeSpec = {
     ],
     ['{ not json', JSON.stringify({ ts: 1234, command: 'ls', decision: 'allow' })],
   ),
-  // The one denial whose signature comes off the segment rather than the whole command line.
   [NESTED_TODAY]: jsonl([
     {
       daysAgo: 0,
@@ -133,7 +123,6 @@ type RulesBody = {
   warnings: string[];
 };
 
-/** The feed rows read a logs directory of their own, so no row depends on the writer's layout. */
 const readsSeededLogs = (side: { home: string }): GuiHookOptions => ({
   activityLogsDir: join(side.home, 'logs'),
 });
@@ -156,9 +145,6 @@ const readRules = async (seed: TreeSpec) => {
 afterEach(removeTempRoots);
 
 describe('the GUI activity feed over HTTP', () => {
-  // `os.homedir()` resolves once at process start, so `withProcessEnv` cannot move it. The spy
-  // hands the server the home its own requests already run under, which is what a real
-  // `cc-safety-net gui` reads.
   const homedirSpy = spyOn(os, 'homedir').mockImplementation(() => process.env.HOME ?? '');
   afterAll(() => {
     homedirSpy.mockRestore();
@@ -195,7 +181,6 @@ describe('the GUI activity feed over HTTP', () => {
     for (const response of row.responses.slice(2)) {
       expect(response.body).toStrictEqual({ error: 'days must be an integer between 1 and 10' });
     }
-    // The default window cannot outrun a retention set below it.
     expect(feedOf(short.responses[0]?.body).days).toBe(3);
   });
 
@@ -222,7 +207,6 @@ describe('the GUI activity feed over HTTP', () => {
     expect(week.counts.errors).toBe(1);
     expect(week.unreadable).toBe(2);
     expect(week.counts).toMatchObject({ blocked: 4, allowed: 2 });
-    // The ten-day window is the only one that reaches the entry nine days back.
     expect(fortnight.counts).toMatchObject({ blocked: 5, allowed: 2 });
     expect(week.entries.map((entry) => entry.command)).not.toContain('rm -rf /');
     expect(fortnight.entries.map((entry) => entry.command)).toContain('rm -rf /');
@@ -242,7 +226,6 @@ describe('the GUI activity feed over HTTP', () => {
       expect(denialsKept).toBe(keptDenied);
       expect(feed.entries.length - denialsKept).toBe(keptAllowed);
       expect(feed.truncated).toBeTrue();
-      // The tiles count the whole window even though the list below them is cut.
       expect(feed.counts).toMatchObject({ blocked: denials, allowed: allowances });
     },
     30_000,
@@ -293,15 +276,11 @@ describe('the GUI rulebook listing', () => {
 
     expect(missing.rulebooks).toStrictEqual([]);
     expect(missing.errors.join('\n')).toContain('ghost');
-    // A rule an override switched off stays listed; the override that names nothing is a warning.
     expect(stray.rulebooks[0]?.rules).toStrictEqual([]);
     expect(stray.warnings.join('\n')).toContain('team-rules/nope');
   });
 
   test('reports the platform dialog it could not open rather than opening one', async () => {
-    // The route calls the real picker rather than an injected one, so the row runs with no
-    // display and a `PATH` holding nothing: on Linux that answers before anything is spawned, and
-    // on the other platforms the dialog binary is not found.
     const row = await withProcessEnv(
       { DISPLAY: undefined, WAYLAND_DISPLAY: undefined, PATH: createTempRoot('gui-no-dialog-') },
       () =>
@@ -311,7 +290,6 @@ describe('the GUI rulebook listing', () => {
         }),
     );
 
-    // Which message depends on the platform, so the row pins that one came back, not which one.
     expect(row.responses[0]?.status).toBe(200);
     expect((row.responses[0]?.body as { error?: unknown }).error).toBeString();
   });
@@ -360,9 +338,7 @@ describe('the GUI star, integrations and install endpoints', () => {
     expect(starred.responses[0]?.body).toStrictEqual(STAR_CONTEXT);
     expect(starred.responses[1]?.body).toStrictEqual({ error: 'Forbidden' });
     expect(starred.responses[2]?.body).toStrictEqual({ ok: true });
-    // A POST carries the token twice; one place alone is not enough.
     expect(starred.responses.slice(3).map((response) => response.status)).toStrictEqual([403, 403]);
-    // The fallback the browser opens itself when `gh` could not star the repo.
     expect(refused.responses[0]?.body).toStrictEqual({
       ok: false,
       fallbackUrl: 'https://github.com/kenryu42/cc-safety-net',
@@ -412,7 +388,6 @@ describe('the GUI star, integrations and install endpoints', () => {
     expect((row.responses[1]?.body as { errors: string[] }).errors[0]).toStartWith('Invalid JSON:');
     expect(row.responses[2]).toMatchObject({ status: 200, body: { ok: true, output: 'done' } });
     expect(row.responses[3]?.status).toBe(200);
-    // The refused bodies never reached the installer.
     expect(calls).toStrictEqual([
       ['install', 'cursor'],
       ['uninstall', 'codex'],

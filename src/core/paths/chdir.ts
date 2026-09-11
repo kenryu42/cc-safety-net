@@ -2,11 +2,6 @@ import { dirname, isAbsolute, parse as parsePath, sep } from 'node:path';
 import type { PathResolver } from '../environment';
 import { isUnsupportedWindowsNamespacePath } from './canonicalization';
 
-/**
- * The directory a `cd`-like operand lands in, resolving each component through the filesystem
- * the way the shell would. Throws when a component is missing or cannot be resolved, so the
- * caller treats the cwd as unknown.
- */
 export function resolveChdirTarget(baseCwd: string, target: string, paths: PathResolver): string {
   if (isUnsupportedWindowsNamespacePath(target)) {
     throw new Error('Unsupported Windows namespace path');

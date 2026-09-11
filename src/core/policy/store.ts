@@ -31,11 +31,6 @@ import type {
 
 const SAFETY_LEVELS = new Set(['standard', 'strict', 'paranoid']);
 
-/**
- * Which protective fallback backs an unreadable policy file: `salvaged` keeps
- * every recognized valid section from readable JSON, `defaults` replaces the
- * whole file because nothing salvageable parsed.
- */
 type PolicyFallback = 'salvaged' | 'defaults';
 
 type PartialPolicy = {
@@ -78,11 +73,6 @@ export const DEFAULT_GUI_POLICY: GuiPolicy = {
   },
 };
 
-/**
- * Effective policy for a session: the user file, then the project file layered on
- * top of it. Both files feed the same diagnostics channel, so a failure in either
- * one names itself and leaves everything it did not invalidate in force.
- */
 export function loadPolicyConfig(
   environment: Environment,
   options: RulesPolicyOptions,
@@ -95,18 +85,12 @@ export function loadPolicyConfig(
       ? mergeProjectPolicy(user.gui ?? DEFAULT_GUI_POLICY, project.policy)
       : undefined;
   const errors = [...user.errors, ...projectFile.errors, ...project.diagnostics];
-  // A dropped project section leaves the rest of both files in force, which is
-  // what the salvaged fallback means for the user file too. A project file that
-  // contributes nothing never replaces a readable user policy either, so only an
-  // unreadable user file reports built-in defaults.
-  // An unreadable user file under a contributing project policy is not enforcing
-  // plain defaults — the project fields still merge in — so it reports as salvage.
+
   const fallback =
     (user.fallback === 'defaults' && merged ? 'salvaged' : user.fallback) ??
     (user.gui ? undefined : projectFile.fallback) ??
     (errors.length > 0 ? 'salvaged' : undefined);
-  // `default` means no user policy supplied a level: the file is absent, invalid,
-  // or simply never set one — a normalized default level is not user provenance.
+
   const levelScope = project.policy.safety?.level
     ? 'project'
     : user.levelPresent
@@ -116,8 +100,7 @@ export function loadPolicyConfig(
     ...(merged ? normalizePolicyConfig(merged.policy) : user.policy),
     errors,
     ...(fallback ? { fallback } : {}),
-    // Scope provenance appears whenever the project file exists: a malformed file
-    // still degrades the snapshot, so status and the GUI must still show its row.
+
     ...(projectFile.exists
       ? { policyScopes: { levelScope, weakenings: merged?.weakenings ?? [] } }
       : {}),
@@ -127,13 +110,6 @@ export function loadPolicyConfig(
 const PROJECT_AUDIT_DIAGNOSTIC =
   'project policy audit settings are ignored; audit is user scope only';
 
-/**
- * Presence-aware projection of the project policy file: only the fields the file
- * actually sets survive, so an unset field inherits from user scope instead of
- * being overwritten by the default `normalizeGuiPolicy` would substitute. Invalid
- * fields are salvaged exactly like the user file's — the recognized valid ones stay
- * in effect and the rest drops, with the diagnostics reported separately.
- */
 export function projectPolicyProjection(
   value: unknown,
   home: string,
@@ -252,19 +228,16 @@ function pickBooleans<K extends string>(
   ) as Partial<Record<K, boolean>>;
 }
 
-/** Drops the sections the project file left empty, so absence stays absence. */
 function withPresentFields<T extends Record<string, object>>(sections: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(sections).flatMap((entry) => (Object.keys(entry[1]).length > 0 ? [entry] : [])),
   ) as Partial<T>;
 }
 
-/** One field or section the salvage dropped, and the plain reason it was unusable. */
 type PolicyDrop = { readonly path: string; readonly reason: string };
 
 type ReportDrop = (path: string, reason: string) => void;
 
-/** The projections that answer with a policy alone report nothing. */
 const IGNORE_DROPS: ReportDrop = () => undefined;
 
 const NOT_A_BOOLEAN = 'not a boolean';
@@ -299,12 +272,6 @@ export function salvageUserPolicy(
   return { policy, drops };
 }
 
-/**
- * The single normalizer from untrusted JSON to the canonical policy-file shape.
- * Schema-valid input passes through unchanged (every field satisfies the per-field
- * checks); invalid input keeps each recognized valid field and substitutes a
- * protective default for the rest.
- */
 export function normalizeGuiPolicy(value: unknown, home: string): GuiPolicy {
   return salvagePolicy(value, home, IGNORE_DROPS);
 }
@@ -337,8 +304,7 @@ function salvagePolicy(value: unknown, home: string, drop: ReportDrop): GuiPolic
     drop,
   );
   const audit = readSection(value.audit, 'audit', ['retention_days'], drop);
-  // A root field the loader does not know is reported after the sections it sits beside,
-  // so the warning reads down the document.
+
   reportUnknownFields(value, USER_POLICY_FIELDS, '', drop);
   return {
     version: 1,
@@ -397,11 +363,6 @@ function salvagePolicy(value: unknown, home: string, drop: ReportDrop): GuiPolic
   };
 }
 
-/**
- * One section of the document: absent stays absent, a value that is not an object drops
- * whole without reading anything under it, and a field the section does not declare drops
- * on its own.
- */
 function readSection(
   value: unknown,
   path: string,
@@ -448,8 +409,7 @@ function readAuditRetentionDays(value: unknown, drop: ReportDrop): number {
       Number.isInteger(value) &&
       value >= MIN_AUDIT_RETENTION_DAYS &&
       value <= MAX_AUDIT_RETENTION_DAYS);
-  // The one field a drop does not replace with its default: an out-of-range window clamps
-  // into range, which is what the sweep has always enforced.
+
   if (!usable) drop('audit.retention_days', AUDIT_RETENTION_DROP);
   return clampAuditRetentionDays(value);
 }
@@ -478,7 +438,6 @@ function repairRuleOverrides(
   ) as Record<string, 'on' | 'off'>;
 }
 
-/** Each entry is judged by the same path validator the diagnostics report with. */
 function repairPaths(
   value: unknown,
   getPathError: (value: unknown, home: string) => string | null,
@@ -503,8 +462,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-// Callers mutate the result, so every call needs its own containers rather than
-// references into the shared DEFAULT_GUI_POLICY.
 export function createDefaultGuiPolicy(): GuiPolicy {
   return structuredClone(DEFAULT_GUI_POLICY);
 }
@@ -534,8 +491,7 @@ export function createPolicyPreview(
     modes.capabilities,
   );
   const values = Object.values(rules);
-  // Catastrophic rules are always enforced and not user-configurable, so they are surfaced
-  // separately in the GUI and excluded from the configurable active/disabled tallies.
+
   const configurableValues = values.filter((state) => state.source !== 'catastrophic');
   return {
     selectedPreset: policy.safety.level,
@@ -550,11 +506,6 @@ export function createPolicyPreview(
   };
 }
 
-/**
- * Reads and salvages one policy file, in either scope. `parsed` is the file's JSON whenever
- * there was any to read and `policy` is what that file leaves in force, so the drops the
- * salvage reported are the file's diagnostics.
- */
 export function readPolicyFile(
   path: string,
   home: string,
@@ -590,7 +541,6 @@ export function readPolicyFile(
       fallback: isRecord(parsed) ? 'salvaged' : 'defaults',
     };
   } catch (error) {
-    // Only a parse failure means malformed JSON; every other failure names itself.
     const message = error instanceof Error ? error.message : String(error);
     return {
       exists: true,
@@ -601,7 +551,6 @@ export function readPolicyFile(
   }
 }
 
-/** A whole-document drop is the document's own reason; a field drop names its path first. */
 function renderPolicyDrop(drop: PolicyDrop): string {
   return drop.path === '' ? drop.reason : `${drop.path}: ${drop.reason}`;
 }
@@ -614,16 +563,11 @@ function readPolicyConfig(
   gui?: GuiPolicy;
   errors: string[];
   fallback?: PolicyFallback;
-  /** A valid level the file itself set; normalization fills one either way. */
+
   levelPresent?: boolean;
 } {
   const file = readPolicyFile(path, home);
   if (!file.exists) {
-    // A machine with no policy file of its own — an Amp Orb — reads the snapshot that
-    // `install --amp` stamped onto the published plugin artifact, normalized here exactly
-    // like file contents would be, so home-relative paths resolve against this machine.
-    // No diagnostics are computed for it: the snapshot is not an editable file the user can
-    // fix here, so a malformed one degrades to protective defaults instead of reporting.
     const embedded = (globalThis as Record<string, unknown>).__CC_SAFETY_NET_EMBEDDED_POLICY__;
     if (!isRecord(embedded)) return { policy: createEmptyPolicy(), errors: [] };
     const gui = normalizeGuiPolicy(embedded, home);
@@ -641,9 +585,7 @@ function readPolicyConfig(
       ...(file.fallback ? { fallback: file.fallback } : {}),
     };
   }
-  // Field-level salvage keeps every recognized valid section active and substitutes
-  // protective defaults for the rest, so one bad field cannot drop protections the rest
-  // of the file still configures.
+
   return {
     policy: normalizePolicyConfig(file.policy),
     gui: file.policy,
@@ -658,7 +600,6 @@ function hasOwnSafetyLevel(value: unknown): boolean {
   return SAFETY_LEVELS.has(safety.level as string);
 }
 
-// A rule in the default-off tier stays off until an explicit 'on' override opts into it.
 export function resolveSecretDisabledRules(overrides: Record<string, 'on' | 'off'>): string[] {
   const entries = Object.entries(overrides);
   const optedIn = new Set(entries.flatMap(([id, value]) => (value === 'on' ? [id] : [])));
@@ -686,7 +627,6 @@ function createEmptyPolicy(): PartialPolicy {
   };
 }
 
-// Projects the canonical policy-file shape onto the camelCase runtime policy.
 function normalizePolicyConfig(config: GuiPolicy): PartialPolicy {
   return {
     safety: normalizeSafety(config.safety),
@@ -703,8 +643,6 @@ function normalizePolicyConfig(config: GuiPolicy): PartialPolicy {
   };
 }
 
-// Undefined override keys are stripped rather than stored, so a policy that sets none
-// projects to `{ level }` instead of a record of undefined capabilities.
 export function normalizeSafety(safety: GuiPolicy['safety']): PolicySafety {
   const overrides = {
     ...(safety.overrides.fail_closed !== undefined

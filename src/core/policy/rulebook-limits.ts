@@ -66,7 +66,7 @@ export function isRulebookWithinAcceptanceLimits(rulebook: Record<string, unknow
       ) {
         return false;
       }
-      // A version 2 rule spends the same budget on its match token lists.
+
       const match =
         candidate.match && typeof candidate.match === 'object'
           ? (candidate.match as Record<string, unknown>)

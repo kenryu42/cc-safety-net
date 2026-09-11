@@ -1,12 +1,3 @@
-/**
- * OpenClaw plugin detection.
- *
- * Reads the managed `<state dir>/extensions/cc-safety-net/` directory for installed, loadable,
- * and outdated state, then OpenClaw's own `plugins` config in `<state dir>/openclaw.json` for
- * enablement. The enablement rules mirror the host's `collectExplicitEffectivePluginIds`:
- * the global switch, the allow list, the deny list, and the per-plugin entry all take part.
- */
-
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
@@ -35,7 +26,6 @@ import { getPackageVersion } from '@/hosts/system-info';
 const PLATFORM = 'openclaw';
 const ENABLE_HINT = `run \`openclaw plugins enable ${OPENCLAW_PLUGIN_ID}\``;
 
-/** Read one file from the installed plugin, reporting why it cannot be trusted. */
 function readPluginFile(dir: string, name: string): { content: string } | { error: string } {
   const path = join(dir, name);
   const info = lstatOrUndefined(path);
@@ -58,7 +48,6 @@ function parseJson(content: string): unknown {
   }
 }
 
-/** The manifest OpenClaw validates before loading plugin code must still claim our id. */
 function manifestError(dir: string): string | undefined {
   const file = readPluginFile(dir, OPENCLAW_PLUGIN_MANIFEST_FILE);
   if ('error' in file) return file.error;
@@ -66,11 +55,6 @@ function manifestError(dir: string): string | undefined {
   return `${join(dir, OPENCLAW_PLUGIN_MANIFEST_FILE)} is not a valid ${OPENCLAW_PLUGIN_ID} manifest; run install --openclaw`;
 }
 
-/**
- * OpenClaw imports the runtime entry named by `openclaw.extensions`, so a package manifest that
- * is gone or no longer points at it leaves a plugin that cannot load however healthy the other
- * two files look.
- */
 function packageError(dir: string): string | undefined {
   const file = readPluginFile(dir, OPENCLAW_PLUGIN_PACKAGE_FILE);
   if ('error' in file) return file.error;
@@ -87,7 +71,6 @@ function stringList(value: unknown): string[] {
     : [];
 }
 
-/** Why OpenClaw would not load the plugin, or `undefined` when it would. */
 function enablementError(environment: Environment): string | undefined {
   const configPath = getOpenClawConfigPath(environment);
   if (!lstatOrUndefined(configPath)) return `${OPENCLAW_PLUGIN_ID} is not enabled; ${ENABLE_HINT}`;
@@ -122,7 +105,6 @@ function enablementError(environment: Environment): string | undefined {
   return `${OPENCLAW_PLUGIN_ID} is not enabled; ${ENABLE_HINT}`;
 }
 
-/** The stamp the build writes into the runtime entry, in the installed and the packaged copy. */
 function artifactVersion(content: string): string | undefined {
   return /^\/\/ version:\s*(.+)$/m.exec(content)?.[1]?.trim();
 }

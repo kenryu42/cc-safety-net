@@ -17,10 +17,6 @@ const SIGNATURES: readonly { name: string; source: string | undefined; key: stri
   { name: 'has no key for nothing at all', source: undefined, key: null },
 ];
 
-/**
- * Distances that print the same text no matter which side of a millisecond the clock is read on:
- * each sits far from the boundary of the unit it prints.
- */
 const DISTANCES: readonly { name: string; ago: number; text: string }[] = [
   { name: '5 seconds', ago: 5_000, text: 'just now' },
   { name: '90 seconds', ago: 90_000, text: '1m ago' },

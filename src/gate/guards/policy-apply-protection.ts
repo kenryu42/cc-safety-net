@@ -18,8 +18,6 @@ export function findPolicyApplyInvocationInSemanticFacts(
   environment: EnvironmentContext,
   budget: Budget,
 ): PolicyApplyTarget | null {
-  // Only command and unknown routes carry an input candidate, so a file path that
-  // happens to read like this invocation never reaches the recognizer.
   const command = getCommandSyntaxFact(facts, 'input-candidate');
   if (!command) return null;
 
@@ -58,12 +56,6 @@ export function findPolicyApplyInvocationInCommand(
   );
 }
 
-/**
- * The segment as written when it invokes `policy apply`, else null. `-g`/`--global`
- * are the only flags the policy command accepts and it parses them from any
- * position, so they are skipped before matching the two subcommand tokens;
- * `policy check` and every other subcommand stay allowed by construction.
- */
 function findPolicyApplySegment(
   segment: readonly string[],
   environment: EnvironmentContext,

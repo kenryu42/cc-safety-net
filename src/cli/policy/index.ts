@@ -1,15 +1,3 @@
-/**
- * `policy check` and `policy apply`: the human gesture behind every policy write.
- * The agent proposes a policy JSON and verifies it with `check`; `apply` is
- * the terminal command the human runs, so it confirms interactively and refuses
- * to run without a TTY. There is deliberately no `--yes` and no non-interactive
- * mode — an invocation laundered past the guard would otherwise apply silently.
- * A project proposal is written with only the fields it sets, so everything it
- * leaves out keeps inheriting from the user policy, and its diff compares the
- * effective user-plus-project merge — the level a sparse proposal would drop or
- * restore has to be visible in the confirmation the human reads.
- */
-
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -33,7 +21,7 @@ import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics'
 
 type PolicyCommandOptions = {
   cwd?: string;
-  /** Confirmation seams, so the prompt is exercised without a real terminal. */
+
   input?: NodeJS.ReadStream;
   output?: NodeJS.WriteStream;
 };
@@ -80,8 +68,7 @@ export async function runPolicyCommand(
     ...getUserPolicyDiagnostics(proposal.value, environment.home).map(
       (error) => `${file}: ${error}`,
     ),
-    // Writing while silently omitting a validated section would let apply claim
-    // success for a policy that is not the one the proposal described.
+
     ...(!parsed.flags.global && isRecord(proposal.value) && proposal.value.audit !== undefined
       ? [
           `${file}: audit settings are user scope only; remove the audit section from a project proposal`,
@@ -143,10 +130,6 @@ function confirmApply(
 ): Promise<boolean> {
   const prompt = createInterface({ input, output, terminal: false });
   return new Promise((resolve) => {
-    // EOF (Ctrl-D) closes the stream without ever delivering a line; treat it as
-    // a decline so the command cannot hang on a callback that will never fire.
-    // The answer callback resolves before closing: close() emits synchronously,
-    // and resolving after it would let the decline win over a typed yes.
     prompt.once('close', () => resolve(false));
     prompt.question(question, (answer) => {
       resolve(/^y(es)?$/i.test(answer.trim()));
@@ -170,7 +153,6 @@ function writeScopePolicy(
   writeJsonAtomic(path, buildProjectPolicyFileValue(proposalValue, normalized));
 }
 
-/** Renders the shared diff rows; an absent side reads as `(unset)`. */
 function printPolicyDiff(current: GuiPolicy, proposed: GuiPolicy, global: boolean): void {
   const rows = diffPolicyRows(current, proposed, global);
   if (rows.length === 0) {

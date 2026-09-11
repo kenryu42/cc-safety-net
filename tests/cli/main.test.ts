@@ -4,13 +4,6 @@ import { installCursor } from '@/hosts/cursor/install';
 import { type CliRow, runCliDifferential } from '../helpers/cli-differential';
 import { environmentFor, removeTempRoots } from '../helpers/temp-home';
 
-/**
- * Dispatch is contract: the same argument vector has to reach the same handler, print the same
- * bytes and exit the same way, even though the bin resolves the hook verb before it loads the CLI
- * chunk at all. Every row below is one argument vector; the record pins what came back, and the
- * pin behind it stops a row passing by staying silent.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -78,9 +71,6 @@ describe('version', () => {
     }, 60_000);
   }
 
-  // The ported bin resolves the legacy top-level hook flags itself, so the global scan has to
-  // gate that lookup: without it `-cc -V` would run the Claude Code hook over an empty stdin
-  // instead of answering the version request.
   test('`-cc -V` prints the version instead of running the Claude Code hook', async () => {
     const outcome = await differential({ args: ['-cc', '-V'] });
     expect(outcome.exitCode).toBe(0);
@@ -122,7 +112,6 @@ describe('hook', () => {
     }, 60_000);
   }
 
-  // The other half of the scan gate: the flag names an integration, but the request is for help.
   test('`hook --claude-code --help` prints the hook help', async () => {
     const outcome = await differential({ args: ['hook', '--claude-code', '--help'] });
     expect(outcome.exitCode).toBe(0);
@@ -168,8 +157,6 @@ describe('install, update and uninstall reach the Phase 6 flows', () => {
     expect(outcome.stderr).toBe('Unknown option for update: --nope\n');
   }, 60_000);
 
-  // The one `gui` vector both bins can run to completion: the usage error is decided before a
-  // server is ever bound, so neither side is left holding a listener that never exits.
   test('`gui --bad` fails on the flag before the server is bound', async () => {
     const outcome = await differential({ args: ['gui', '--bad'] });
     expect(outcome.exitCode).toBe(1);

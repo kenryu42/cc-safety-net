@@ -8,12 +8,6 @@ import {
 import { withStdoutTTY } from '../../helpers/fake-tty';
 import { withProcessEnv } from '../../helpers/temp-home';
 
-/**
- * `shouldUseColor()` is read per call, so the whole surface is sampled under one fixed
- * terminal: the escapes are contract (a doctor line that loses its color code is a visible change),
- * and the seeded palette is what keeps two runs of `explain` coloring the same token the same way.
- */
-
 const NAMES = ['red', 'green', 'dim', 'bold', 'yellow'] as const;
 
 const portedSample = () => ({

@@ -18,16 +18,8 @@ import {
   withProcessEnv,
 } from './temp-home';
 
-/**
- * The whole command as a user runs it: its own root, its own seeded home and its own fake host CLIs
- * in front of `PATH`. A row therefore records everything the command is: its exit code, what it
- * printed, what it reported as a failure, which host commands it ran and where, and the bytes it
- * left in the home and the temp dir.
- */
-
 const REPO_ROOT = join(import.meta.dir, '..', '..');
 
-/** Everything but `input`/`output`, which the harness owns so every row is recorded alike. */
 export type FlowOptions = Omit<RunInstallCommandOptions, 'input' | 'output'> & {
   showBanner?: boolean;
   checkLatestVersion?: () => Promise<UpdateInfo>;
@@ -36,9 +28,7 @@ export type FlowOptions = Omit<RunInstallCommandOptions, 'input' | 'output'> & {
 
 export type FlowSpec = {
   seed?: TreeSpec;
-  /** Written into `<root>/tmp`: the `TMPDIR` the run resolves caches and checkouts against. */
   seedTmp?: TreeSpec;
-  /** `<home>` and `<root>` inside an entry stand for the run's paths. */
   script?: readonly FakeScriptEntry[];
   extraCommands?: readonly string[];
   invoke: 'install' | 'uninstall' | 'update';
@@ -57,7 +47,6 @@ async function runSide(spec: FlowSpec) {
   const fakeBin = createFakeBin(
     root,
     JSON.parse(
-      // The paths are spliced into a JSON document, so they are spelled as one (`\\` on Windows).
       JSON.stringify(spec.script ?? [])
         .replaceAll('<home>', JSON.stringify(home).slice(1, -1))
         .replaceAll('<root>', JSON.stringify(root).slice(1, -1)),
@@ -82,8 +71,6 @@ async function runSide(spec: FlowSpec) {
     ...spec.options?.(home),
   };
   const args = spec.args ?? [];
-  // Detection also reads `<cwd>/.claude` and `<cwd>/.github`, so the row owns the working
-  // directory too, not the checkout the suite happens to run from.
   const previousCwd = process.cwd();
   process.chdir(root);
   const exitCode = await withProcessEnv(isolationEnv(home, { ...fakeBin.env, TMPDIR: tmp }), () => {
@@ -105,17 +92,10 @@ async function runSide(spec: FlowSpec) {
       tree: snapshotHome(home),
       tmp: snapshotTree(tmp),
     },
-    [
-      [home, '<home>'],
-      [root, '<root>'],
-      [REPO_ROOT, '<repo>'],
-      // The separator is folded with the paths, so a `<home>/`-spelled expectation holds on Windows.
-      ...WINDOWS_SEPARATOR_FOLDS,
-    ],
+    [[home, '<home>'], [root, '<root>'], [REPO_ROOT, '<repo>'], ...WINDOWS_SEPARATOR_FOLDS],
   );
 }
 
-/** One run of the flow, which mutates `process.env` and the console while it lasts. */
 export async function runFlowDifferential(spec: FlowSpec) {
   return runSide(spec);
 }

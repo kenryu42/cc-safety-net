@@ -2,14 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { RulesConfig } from '@/core/policy/rules-config';
 import { getRemoveMatches, getSelectedUpdateSpecs } from '@/rules-manager/sources';
 
-/**
- * Which configured sources a match string selects decides which files `rule remove` deletes and
- * which sources `rule update` refetches, so a widened match removes a rulebook the user meant to
- * keep. One fixed config carries every shape that can collide — two refs of one repository, one
- * rulebook name under both, a name unique to a third — and each row resolves its match before
- * the refusal wording is pinned.
- */
-
 const CONFIGURED = [
   'local-a',
   'acme/repo#main/x',
@@ -97,11 +89,6 @@ describe('an update selection matches what the shipped module selects', () => {
       },
     }) as const;
 
-  /**
-   * `update` knows exact specs and rulebook names only. A repository or a repository-and-ref is a
-   * selection for `remove` but names no rulebook here, so it reports no match rather than the
-   * refs `remove` would have offered.
-   */
   test.each([
     ['acme/repo#main/x', { ok: true, specs: ['acme/repo#main/x'] }],
     ['local-a', { ok: true, specs: ['local-a'] }],

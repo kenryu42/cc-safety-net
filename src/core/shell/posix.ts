@@ -822,11 +822,6 @@ function readSubstitution(
   };
 }
 
-// An unquoted heredoc delimiter leaves the body subject to parameter, command, and
-// arithmetic expansion, so its $(...) and backtick substitutions are live code even
-// though the surrounding lines stay data. A backslash escapes the next character, and
-// process substitution is not expanded in a heredoc body, so \$(...), <(...) and >(...)
-// remain inert text.
 function readHeredocBodySubstitutions(
   source: string,
   start: number,

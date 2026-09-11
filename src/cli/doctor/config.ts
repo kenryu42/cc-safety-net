@@ -1,7 +1,3 @@
-/**
- * Rulebook-backed configuration display with source tracking.
- */
-
 import { dirname } from 'node:path';
 import type { Environment } from '@/core/environment';
 import {

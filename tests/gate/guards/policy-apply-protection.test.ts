@@ -13,17 +13,9 @@ import { createToolInvocation, type ToolRoute } from '@/gate/invocation';
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome, writeTree } from '../../helpers/fixture-tree';
 
-/**
- * Only the user may apply a policy proposal, so this guard must recognize the invocation through
- * every runner spelling, wrapper prelude and `cd` the segment walk can carry — and must keep
- * `policy check` and every other subcommand allowed. Both properties are stated over the
- * commands below.
- */
-
 let root = '';
 let workspace = '';
 
-/** The command as the recognizer sees it: the row's cwd, its environment, a fresh budget. */
 function findPair(command: string) {
   const environments = pairedEnvironments({ HOME: join(root, 'home') }, join(root, 'home'));
   return describeOutcome(() =>
@@ -81,8 +73,6 @@ const RUNNER_SPELLINGS: readonly string[] = [
 ];
 
 const UNBLOCKED_SPELLINGS: readonly string[] = [
-  // `time` is a shell keyword the segment walk does not peel, so the guard has never recognized
-  // this form.
   'time cc-safety-net policy apply proposal.json',
   'cc-safety-net policy check proposal.json',
   'cc-safety-net policy show',
@@ -138,7 +128,6 @@ describe('policy apply protection', () => {
     expect(find('echo hi && cc-safety-net policy apply proposal.json')).toStrictEqual({
       target: 'cc-safety-net policy apply proposal.json',
     });
-    // A nested shell is walked, so an invocation inside one is still found.
     expect(find('( cc-safety-net policy apply proposal.json )')).toStrictEqual({
       target: 'cc-safety-net policy apply proposal.json',
     });
@@ -162,7 +151,6 @@ describe('policy apply protection', () => {
       },
       { command: 'bun dist/bin/cc-safety-net.js policy apply proposal.json', blocked: true },
       { command: 'git status && cc-safety-net policy apply proposal.json', blocked: true },
-      // A different package, a different entrypoint or quoted prose is a different program.
       { command: 'npx -y @scope/cc-safety-net policy apply proposal.json', blocked: false },
       { command: 'bunx ./vendor/cc-safety-net policy apply proposal.json', blocked: false },
       { command: 'bun run src/cli/other.ts policy apply proposal.json', blocked: false },
@@ -188,7 +176,6 @@ describe('policy apply protection', () => {
     ];
     const invocation = 'cc-safety-net policy apply proposal.json';
     for (const route of routes) {
-      // A command route and the unknown route carry the input candidate; the others do not.
       const carriesCommand = route.kind === 'command' || route.kind === 'unknown';
       expect(
         factsPair('Bash', { command: invocation }, route, invocation),
@@ -198,7 +185,6 @@ describe('policy apply protection', () => {
         factsPair('Bash', { command: 'cc-safety-net policy check proposal.json' }, route, null),
         route.kind,
       ).toStrictEqual({ ok: true, value: null });
-      // A path that reads like the invocation must not reach the recognizer.
       expect(
         factsPair('Write', { file_path: invocation }, route, null),
         `${route.kind}: path input`,

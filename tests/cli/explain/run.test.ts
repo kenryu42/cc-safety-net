@@ -11,16 +11,6 @@ import {
 import { EXPLAIN_CASES, LIMIT_MESSAGES, LIMIT_SLUGS } from '../../helpers/explain-cases';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * `explain` is the surface a user reads when a denial surprises them, so both renderings of every
- * fixed command are pinned as a snapshot. The pin next to each row names what the row exists to
- * show — the rule that answered, the step the analyzer took, the redaction the recorder applied —
- * so a snapshot refreshed by hand cannot quietly accept a changed verdict.
- *
- * Nothing here is normalized beyond the temp root and the repository root the harness already
- * replaces: `explain` reads no clock, no version and no host.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -31,7 +21,6 @@ const explain = (row: CliRow) =>
 const isParseStep = (step: TraceStep): step is Extract<TraceStep, { type: 'parse' }> =>
   step.type === 'parse';
 
-/** What a row still has to report. Keys the pin leaves out must be absent from the document. */
 function reportFacts(document: ExplainResult) {
   return {
     result: document.result,
@@ -61,7 +50,6 @@ const PINS: Record<string, Facts> = {
     result: 'blocked',
     ruleId: 'git.reset-hard',
     segment: 'FOO=<redacted> git reset --hard',
-    // The recorder learns the assignment's value from the parse step and redacts it everywhere.
     parseInput: 'FOO=<redacted> git reset --hard',
     steps: ['parse'],
     segments: [['env-strip', 'rule-check']],
@@ -138,7 +126,6 @@ const PINS: Record<string, Facts> = {
     parseInput: 'rm -rf "$target"',
     steps: ['parse'],
     segments: [['tmpdir-check', 'rule-check', 'fallback-scan', 'custom-rules-check']],
-    // The rule the command would have matched had its activation capability been on.
     activation: 'rm.recursive-force-dynamic-target',
   },
   '11-allowed': {
@@ -151,7 +138,6 @@ const PINS: Record<string, Facts> = {
     result: 'blocked',
     ruleId: 'secret.basename.env',
     segment: '.env',
-    // A protection answered before the analyzer ran, so there is no parse step to show.
     steps: [],
     segments: [['rule-check']],
   },
@@ -257,8 +243,6 @@ describe('explain reports an analysis budget breach as bounded output', () => {
       expect(outcome.exitCode).toBe(1);
       expect(asJson.stdout).toMatchSnapshot('json');
 
-      // The human form writes the message to stderr and leaves stdout empty, so there is
-      // nothing to pin as a rendering.
       const asHuman = await explain(
         rowFor(slug, {
           args: ['explain', EXPLAIN_CASES.find((e) => e.slug === slug)?.command ?? ''],
@@ -284,8 +268,6 @@ describe('explain flags', () => {
       exitCode: 0,
     },
     { name: 'multiple positionals', args: ['explain', 'git', 'reset', '--hard'], exitCode: 0 },
-    // The global scan stops at the bare `--`, so `--version` is analyzer input rather than a
-    // request for the version.
     {
       name: 'command after a bare double dash',
       args: ['explain', '--json', '--', '--version'],
@@ -304,29 +286,19 @@ describe('explain flags', () => {
   }
 });
 
-/**
- * The inputs design §8.4 changed on purpose. Each is run and its verdict pinned, so the change
- * stays the decided one rather than whatever the port happens to produce.
- */
 const KNOWN_GAPS = [
   {
     name: 'a partial program is analyzed as raw text, not as the command it resembles',
-    // Before the cutover, explain analyzed the partial program and reported `git.reset-hard`
-    // where the hook answered with the raw-text rule. §8.4 drops the divergence.
     command: "git reset --hard 'unterminated",
     ported: { result: 'blocked', ruleId: 'raw-text.dangerous-command' },
   },
   {
     name: 'a partial program with no dangerous text is scanned rather than parsed',
-    // Same divergence with an allowed verdict: only the trace differs, `dangerous-text` where
-    // the retired trace recorded `fallback-scan` and `custom-rules-check`.
     command: "echo 'unterminated",
     ported: { result: 'allowed', ruleId: undefined },
   },
   {
     name: 'a PowerShell command is matched in its own dialect',
-    // The retired explain routed the pre-analysis protections as posix, so `$env:HOME` read as
-    // the variable `env` followed by literal text; the pipeline parses the real dialect.
     command: 'Get-Content "$env:HOME/.ssh/id_rsa"',
     ported: { result: 'blocked', ruleId: 'secret.home.ssh' },
   },
@@ -341,8 +313,6 @@ describe('explain diverges from the shipped CLI only where the design says it mu
     }, 30_000);
   }
 
-  // The two PowerShell commands the design named as the dialect case: both parse to the same
-  // words under either dialect, so the change is invisible here and they are recorded instead.
   for (const command of [
     'Remove-Item . -Recurse -Force',
     'Get-ChildItem . -Recurse | Remove-Item -Force',
@@ -353,7 +323,6 @@ describe('explain diverges from the shipped CLI only where the design says it mu
     }, 30_000);
   }
 
-  // In strict mode the partial program is unparseable, and the trace says so.
   test('strict mode answers a partial program identically', async () => {
     const outcome = await explain({
       args: ['explain', '--json', "git reset --hard 'unterminated"],

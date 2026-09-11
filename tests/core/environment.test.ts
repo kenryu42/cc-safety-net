@@ -32,19 +32,14 @@ afterAll(() => {
 
 describe('process environment', () => {
   test('resolves entries like the shipped resolver', () => {
-    // The temp root can itself be reached through a symlink (macOS spells it `/private/var/...`),
-    // so the answers are stated against the canonical root the resolver hands back.
     const canonical = realpathSync(root);
     const answers = {
       dir: { realpath: join(canonical, 'dir'), entryKind: 'present' },
       file: { realpath: join(canonical, 'file'), entryKind: 'present' },
-      // A link resolves to its target and is still named a link.
       link: { realpath: join(canonical, 'dir'), entryKind: 'symlink' },
-      // A dangling link and a two-link cycle resolve to nothing, and are links all the same.
       broken: { realpath: null, entryKind: 'symlink' },
       'loop-a': { realpath: null, entryKind: 'symlink' },
       missing: { realpath: null, entryKind: 'missing' },
-      // The empty name is the root itself.
       '': { realpath: canonical, entryKind: 'present' },
     } as const;
     for (const [name, answer] of Object.entries(answers)) {
@@ -55,7 +50,6 @@ describe('process environment', () => {
   });
 
   test('a path under a regular file is missing or refused, never an entry', () => {
-    // Linux and macOS refuse the stat with ENOTDIR; Windows answers that nothing is there.
     const under = join(root, 'file', 'under');
     expect(processPathResolver.realpath(under)).toBeNull();
     expect(describeOutcome(() => processPathResolver.entryKind(under))).toSatisfy(
@@ -118,8 +112,6 @@ describe('test environment', () => {
 describe('git facts through the seam', () => {
   test('gitMetadata agrees with the shipped resolver and is memoized per cwd', () => {
     const environment = createProcessEnvironment();
-    // Inside the repository, and from a directory under it, the same repository is found; outside
-    // it, and above it, there is none.
     expect(environment.gitMetadata(join(root, 'repo', 'nested'))).toEqual(
       environment.gitMetadata(join(root, 'repo')),
     );

@@ -14,7 +14,6 @@ import {
 import { getGitExecutionContext, hasGitContextEnvOverride } from './worktree';
 
 export interface GitAnalyzeOptions {
-  /** Process state the Git context resolution reads: the inherited environment and path facts. */
   environment: EnvironmentContext;
   cwd?: string;
   envAssignments?: ReadonlyMap<string, string>;
@@ -46,9 +45,6 @@ export function getGitWorktreeRelaxationForMatch(
     return null;
   }
 
-  // One seam call for what the shipped code read from disk in two places: null means the
-  // directory is not a verified linked worktree, or its effective Git config could not be read,
-  // and both of those refused the relaxation before.
   const facts = options.environment.worktreeFacts(context.gitCwd);
   if (!facts) {
     return null;
@@ -153,11 +149,6 @@ function countCleanForceFlags(tokens: readonly string[]): number {
   return count;
 }
 
-/**
- * Whether `submodule.recurse` is on for this command: the command line wins over the
- * environment, which wins over the repository config the environment seam read. An override the
- * scan cannot resolve counts as on, so the relaxation fails closed.
- */
 function hasRecursiveSubmoduleConfig(
   tokens: readonly string[],
   env: ReadonlyMap<string, string>,

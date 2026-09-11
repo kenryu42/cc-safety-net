@@ -3,15 +3,6 @@ import { chargeScan } from './text-scanner';
 
 const ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
-/**
- * Decides whether a dangerous-text match on a cleanly parsed quoted-literal assignment
- * (`W='rm -rf ~'`) can defer to use-time rules. The assignment segment itself executes
- * nothing, and a quoted expansion stays one argv word, so it cannot split into a command
- * plus flags; code-string consumers (eval, sh -c, pipes into shells) block variable input
- * independently. Any reference the scan cannot prove is such a data use — unquoted,
- * command position, inside a substitution, or in an expanding heredoc body — keeps the
- * assignment-time block.
- */
 export function isDataOnlyQuotedAssignment(
   view: CommandView,
   program: CommandProgram | undefined,

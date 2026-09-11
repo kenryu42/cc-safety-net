@@ -25,20 +25,12 @@ import {
   withProcessEnv,
 } from '../../helpers/temp-home';
 
-/**
- * OpenClaw keeps plugin state in its own index, so install is two native commands over a packaged
- * directory. What this side owns is where that directory is (both env overrides expand a leading
- * `~` the way OpenClaw expands it), the guard that keeps `--force` off anything that is not our
- * install, and the runtime check that refuses to call a plugin that never loaded a success.
- */
-
 const PLUGIN_DIR = '.openclaw/extensions/cc-safety-net';
 const REFUSAL = `Refusing to modify <home>/${PLUGIN_DIR}: it does not hold a cc-safety-net managed OpenClaw plugin. Move or remove it, then run the command again.`;
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 const INSPECT_ARGS = ['plugins', 'inspect', 'cc-safety-net', '--runtime', '--json'];
 const INSPECT_HINT = 'Run `openclaw plugins inspect cc-safety-net --runtime` for details.';
 
-/** A packaged install: the built entry under its managed header plus the two metadata files. */
 const PACKAGED: TreeSpec = {
   [OPENCLAW_PLUGIN_ENTRY_FILE]: `${buildOpenClawArtifactHeader('dev')}export default {};\n`,
   [OPENCLAW_PLUGIN_MANIFEST_FILE]: '{"id":"cc-safety-net"}\n',
@@ -55,9 +47,6 @@ const installedPlugin = (overrides: TreeSpec = {}): TreeSpec => ({
 afterEach(removeTempRoots);
 
 describe('resolving the OpenClaw state directory', () => {
-  /** Both overrides, spelled every way OpenClaw's own `resolveUserPath` accepts them: the state
-   * directory decides where extensions live, the config path decides where the config is, and a
-   * blank state directory defers to the config path's directory before falling back. */
   test.each([
     [undefined, undefined, '<home>/.openclaw/openclaw.json', '<home>/.openclaw/extensions'],
     ['~', undefined, '<home>/openclaw.json', '<home>/extensions'],

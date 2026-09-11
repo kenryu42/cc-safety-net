@@ -10,13 +10,6 @@ import {
 import { runConfiguredHookAdapter as portedRunAdapter } from '@/hosts/hook/common';
 import { captureHookRun, readAuditEntries } from '../../helpers/hook-capture';
 
-/**
- * The hook runner itself, driven through one fake host whose documents are `{deny}` and `{allow}`
- * so every row shows the runner's own decisions rather than a host's formatting. The stdout
- * lines, the stderr lines and the audit tree are recorded per row; the last case is the port's
- * own contract, an adapter failure that reaches the host format instead of escaping.
- */
-
 type FakeInput = {
   event?: string;
   tool?: unknown;
@@ -54,7 +47,6 @@ type Row = {
   input: (fixture: Fixture) => string | Uint8Array;
   env?: Record<string, string | undefined>;
   breaks?: 'analyzer' | 'context';
-  /** Text the deny or allow document must carry, so a row cannot pass by printing nothing. */
   contains?: string;
   lines: number;
 };
@@ -256,7 +248,6 @@ describe('one payload through both runners', () => {
     test(row.name, async () => {
       const ported = await runSide(row);
 
-      // The row without a cwd of its own falls back to the checkout the suite runs in.
       expect(ported.entries).toHaveLength(row.lines);
       expect(ported.stdout.join('\n')).toContain(row.contains ?? '');
       expect(ported.stdout).toHaveLength(row.contains === undefined ? 0 : 1);

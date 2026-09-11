@@ -9,12 +9,6 @@ import {
   withProcessEnv,
 } from '../../helpers/temp-home';
 
-/**
- * Every host CLI an installer runs goes through this one spawn. What a caller sees of it is the
- * merged output on success and, on failure, a single message naming the command, the exit status
- * and both streams — the text the install report prints, so it is contract.
- */
-
 const SCRIPT: readonly FakeScriptEntry[] = [
   { command: 'tool', args: ['go'], stdout: 'out\n', stderr: 'err\n' },
   { command: 'tool', args: ['fail'], stdout: 'out', stderr: 'err', exit: 2 },
@@ -29,7 +23,6 @@ type NativeModule = {
   runNativeCleanupCommands: typeof nextNative.runNativeCleanupCommands;
 };
 
-/** Run one call with its own fake bin and call log. */
 async function forBoth<T>(run: (native: NativeModule) => Promise<T>) {
   const root = createTempRoot('next-native-');
   const runOne = async (name: string, native: NativeModule) => {
@@ -67,8 +60,6 @@ describe('running a host CLI', () => {
     const ported = await forBoth((native) =>
       describeAsyncOutcome(() => native.runNativeCommand(['nope', '--x'])),
     );
-    // The runtime words the spawn failure ("ENOENT" under node, "not found in $PATH" under bun);
-    // what the runner owes is that wording plus the command that could not run.
     expect(ported.value.kind === 'threw' && ported.value.message).toStartWith(
       'Failed to run nope --x.\n',
     );

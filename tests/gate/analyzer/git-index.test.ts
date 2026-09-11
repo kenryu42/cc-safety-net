@@ -9,13 +9,6 @@ import { createLinkedWorktreeFixture, withLinkedWorktreeFixture } from '../../he
 import { runGit } from '../../helpers/git-worktree';
 import { corpusCommands } from '../../helpers/shell-inputs';
 
-/**
- * The Git entry point is the only analyzer module whose answer depends on the filesystem: a
- * local discard is relaxed inside a linked worktree and blocked everywhere else. The tests run
- * against one real `git worktree add` fixture, so the `worktreeFacts` seam resolves a real
- * repository.
- */
-
 const fixture = createLinkedWorktreeFixture();
 
 afterAll(() => {
@@ -70,7 +63,6 @@ const GIT_ARGVS: readonly (readonly string[])[] = [
   ['git', '-c', 'core.sshCommand=touch pwned', 'fetch'],
   ['git', '-c', 'core.sshCommand=touch pwned', 'status'],
   ['git', '-C', 'sub', 'checkout', '--', '.'],
-  // A resolvable -C, so the command-line config scan still runs after the global option.
   ['git', '-C', '.', '-c', 'submodule.recurse=true', 'checkout', '--', '.'],
   ['git', '-C', '.', '-c', 'submodule.recurse=false', 'checkout', '--', '.'],
   ['git', '--git-dir=.git', 'checkout', '--', '.'],
@@ -123,7 +115,6 @@ function policyPair(
   } satisfies DestructiveCommandRulePolicy;
 }
 
-/** Standard, strict, master-off, and one rule turned off by name. */
 const POLICIES = [
   undefined,
   policyPair(true, {}, false),
@@ -139,7 +130,6 @@ function gitCorpusArgvs(): readonly (readonly string[])[] {
 }
 
 describe('gate/analyzer/git', () => {
-  // Spawns git once per environment row, so the default per-test timeout is too short.
   test('every Git command is decided in and out of a linked worktree', () => {
     const rows = [...GIT_ARGVS, ...gitCorpusArgvs()];
     let matches = 0;
@@ -219,8 +209,6 @@ describe('gate/analyzer/git', () => {
     expect(relaxed).toBeGreaterThan(3);
   });
 
-  // The `-c` rows above stop at the command-line scan; only a repository that sets
-  // `submodule.recurse` itself reaches the fact the environment seam reads.
   test('submodule.recurse in the worktree config withholds the relaxation', async () => {
     await withLinkedWorktreeFixture((configured) => {
       runGit(configured.linkedWorktree, ['config', 'submodule.recurse', 'true']);
@@ -250,7 +238,6 @@ const REASON_GIT_SSH_ENV =
 const REASON_GIT_ALIAS_CONFIG =
   'Git aliases supplied through command-line or environment config can hide or execute commands. Run git without Git alias overrides, or ask the user to run it manually.';
 
-/** The `GIT_CONFIG_COUNT` protocol: a count and one key/value pair per entry. */
 function configEnv(count: number, entries: readonly (readonly [string, string])[] = []) {
   const assignments = new Map<string, string>([['GIT_CONFIG_COUNT', String(count)]]);
   entries.forEach(([key, value], index) => {
@@ -296,7 +283,6 @@ describe('git configuration read through the environment', () => {
         envAssignments: configEnv(1, [['alias.nuke', 'reset --hard']]),
       })?.id,
     ).toBe('git.reset-hard');
-    // The last entry for a key wins, and keys are compared case-folded.
     expect(
       analyze(['git', 'nuke'], {
         envAssignments: configEnv(2, [
@@ -324,7 +310,6 @@ describe('git configuration read through the environment', () => {
       Array.from({ length: 1024 }, (_unused, index) => [`user.safety${index}`, ''] as const),
     );
     expect(analyze(['git', 'status'], { envAssignments: atLimit })).toBeNull();
-    // A counted entry whose key or value is missing cannot be read either.
     expect(analyze(['git', 'status'], { envAssignments: configEnv(1) })?.id).toBe(
       'git.alias-config',
     );
@@ -335,7 +320,6 @@ describe('git configuration read through the environment', () => {
     ).toBe('git.alias-config');
     expect(
       analyze(['git', '-c', 'alias.wipe=!rm -rf /', 'wipe'], {
-        // With the alias rule off the expanded tokens are analyzed instead.
         policy: policyPair(true, { 'git.alias-config': 'off' }, true),
         envAssignments: configEnv(1025),
       }),
@@ -386,7 +370,6 @@ describe('git configuration read through the environment', () => {
     expect(relaxed(['git', 'reset', '--hard'], { cwd: fixture.mainWorktree }).match?.id).toBe(
       'git.reset-hard',
     );
-    // Config that could redirect what the command touches withholds the relaxation.
     expect(
       relaxed(['git', 'reset', '--hard'], {
         envAssignments: configEnv(1, [['include.path', '.gitconfig-extra']]),

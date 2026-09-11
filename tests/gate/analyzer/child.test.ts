@@ -11,13 +11,6 @@ import { pairedEnvironments } from '../../core/differential-inputs';
 import { writeTree } from '../../helpers/fixture-tree';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * A child command reaches the rule sets only after the wrapper prelude, the transparent
- * wrappers and busybox have been peeled, and the peel is bounded. Each row states what
- * normalization yields for a candidate; the rules the dispatch then reports are stated in
- * tests/gate/analyzer/segment.test.ts.
- */
-
 let root = '';
 let home = '';
 let workspace = '';
@@ -108,7 +101,6 @@ describe('child command normalization', () => {
         head: 'git',
         child: ['git', 'status'],
         wrappedByTransparent: false,
-        // An `env -S` string is re-split, and the directory it would run in is not known.
         cwd: undefined,
       },
       {
@@ -123,7 +115,6 @@ describe('child command normalization', () => {
         child: ['git', 'reset', '--hard'],
         wrappedByTransparent: true,
       },
-      // A command that is not a wrapper is its own child.
       {
         tokens: ['xargs', 'rm', '-rf'],
         head: 'xargs',
@@ -163,7 +154,6 @@ describe('child command normalization', () => {
     expect(chdir.wrapperCwd).toBe(join(root, 'elsewhere'));
     expect(chdir.cwd).toBe(join(root, 'elsewhere'));
 
-    // An assignment the caller already tracked stays in the child's environment.
     const seeded = normalizeChildCommand(['rm', '-rf', 'build'], normalizationContext(true));
     expect([...seeded.envAssignments]).toStrictEqual([['SEEDED', 'yes']]);
     expect([...seeded.wrapperEnvAssignments]).toStrictEqual([]);
@@ -179,7 +169,6 @@ describe('child command normalization', () => {
     const wrapped = [...normalizeChildCommands(['uv', 'run', 'rm', '-rf', 'build'], context)];
     expect(wrapped.map((candidate) => candidate.head)).toStrictEqual(['rm']);
     expect(wrapped[0]?.wrappedByTransparent).toBeTrue();
-    // An `env -S` value that needs the quote language has no channel for a match.
     expect(() => normalizeChildCommand(['env', '-S', 'echo "quoted"'], context)).toThrow();
     expect(normalizeChildCommand(['env', '-S', 'a b', 'sudo'], context).tokens).toStrictEqual([
       'a',

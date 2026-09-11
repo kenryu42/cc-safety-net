@@ -13,17 +13,6 @@ import { pairedEnvironments } from '../../core/differential-inputs';
 import { describeOutcome } from '../../helpers/fixture-tree';
 import { policySnapshot, testModes } from '../../helpers/policy';
 
-/**
- * `xargs` reads its arguments from a stream nobody can see, so the analyzer asks two questions of
- * every child: what appended input can still change, and what a replacement token could be made to
- * spell. Each row states the verdict the analyzer reaches over the option shapes, child heads and
- * policy states, and the nested sources it hands back to the caller.
- *
- * The paths here are lexical, not a fixture tree: every verdict `xargs` reaches is decided by the
- * option scan and the child dispatch, and the canonicalization underneath is pinned by the path
- * tests under `tests/core/`.
- */
-
 const AGENT_HOME = '/srv/agent';
 const CHECKOUT = '/srv/agent/checkout';
 
@@ -69,7 +58,6 @@ const SETTINGS: readonly XargsSetting[] = [
   { label: 'dynamic rule off', ruleOff: 'xargs.shell-dynamic', rules: DEPLOY_RULES },
 ];
 
-/** The one effective-rule state a setting can carry: a single rule switched off by an override. */
 function ruleStates(id: string | undefined) {
   if (id === undefined) return {};
   return {
@@ -86,7 +74,6 @@ function snapshotFor(setting: XargsSetting) {
   return policySnapshot({ rules: setting.rules ?? [], transparent_wrappers: ['uv'] });
 }
 
-/** One token list through the analyzer, with its own budget and nested-source log. */
 function runBothXargs(tokens: readonly string[], setting: XargsSetting) {
   const paired = pairedEnvironments({ HOME: AGENT_HOME, PATH: '/usr/bin:/bin' }, AGENT_HOME);
   const asked: string[] = [];
@@ -104,9 +91,6 @@ function runBothXargs(tokens: readonly string[], setting: XargsSetting) {
     strict: setting.strict,
     worktreeMode: setting.worktreeMode,
   };
-  // The dispatch the analyzer entry point would hand this producer, so a child reaches the same
-  // rules it reaches through the whole gate. The capabilities are inert here: the modes each
-  // child is judged under are the ones `shared` already carries.
   const dispatchOptions = {
     ...shared,
     policySnapshot: snapshotFor(setting),
@@ -137,7 +121,6 @@ function runBothXargs(tokens: readonly string[], setting: XargsSetting) {
   };
 }
 
-/** Option shapes: the replacement forms, the value-taking options and the terminators. */
 const OPTION_SHAPES: readonly (readonly string[])[] = [
   ['xargs'],
   ['xargs', 'rm', '-rf'],
@@ -173,7 +156,6 @@ const OPTION_SHAPES: readonly (readonly string[])[] = [
   ['xargs', '-I', '{}'],
 ];
 
-/** Child heads: every branch of the executed-source question. */
 const CHILD_SHAPES: readonly (readonly string[])[] = [
   ['xargs', 'cat'],
   ['xargs', 'rm', '-rf', 'dist'],
@@ -274,7 +256,6 @@ describe('xargs option parsing', () => {
         tokens: ['xargs', '-J', '%', 'cp', 'src', '%'],
         info: { childStart: 3, replacementToken: '%' },
       },
-      // Value-taking options consume their value, attached or separate.
       { tokens: ['xargs', '-0', 'rm'], info: { childStart: 2, replacementToken: null } },
       { tokens: ['xargs', '-n', '1', 'rm'], info: { childStart: 3, replacementToken: null } },
       { tokens: ['xargs', '-n1', 'rm'], info: { childStart: 2, replacementToken: null } },
@@ -313,7 +294,6 @@ describe('xargs option parsing', () => {
 });
 
 describe('xargs analysis', () => {
-  /** The rule one child earns under one of the settings above. */
   function ruleIdFor(tokens: readonly string[], label: string): string | null {
     const setting = SETTINGS.find((row) => row.label === label);
     if (!setting) throw new Error(`unknown setting: ${label}`);
@@ -331,15 +311,12 @@ describe('xargs analysis', () => {
       { tokens: ['xargs', 'git'], id: 'xargs.shell-dynamic' },
       { tokens: ['xargs', 'find', '.'], id: 'xargs.shell-dynamic' },
       { tokens: ['xargs', 'rm', '-rf'], id: 'xargs.rm-recursive-force-dynamic' },
-      // A child that only reads, or one whose options are already closed, has nothing to change.
       { tokens: ['xargs', 'cat'], id: null },
       { tokens: ['xargs', 'echo'], id: null },
       { tokens: ['xargs', 'printf', '%s'], id: null },
       { tokens: ['xargs', 'node', '-e', 'console.log(1)', '--'], id: null },
       { tokens: ['xargs', 'git', 'status'], id: null },
-      // busybox is peeled by the child dispatch, so the applet is the child that is judged.
       { tokens: ['xargs', 'busybox', 'rm', '-rf'], id: 'xargs.rm-recursive-force-dynamic' },
-      // A literal catastrophic target is judged by the child's own rule.
       { tokens: ['xargs', '-I', '{}', 'rm', '-rf', '/'], id: 'rm.recursive-force-root-or-home' },
       {
         tokens: ['xargs', '-I', '{}', 'busybox', 'rm', '-rf', '/'],
@@ -359,15 +336,12 @@ describe('xargs analysis', () => {
       { tokens: ['xargs', '-I', '{}', 'awk', '-f', '{}'], id: 'xargs.shell-dynamic' },
       { tokens: ['xargs', '-I', '{}', 'git', 'reset', '{}'], id: 'xargs.shell-dynamic' },
       { tokens: ['xargs', '-I', '{}', 'rm', '-{}', '/'], id: 'xargs.shell-dynamic' },
-      // A replacement that can only be an operand leaves the child as written.
       { tokens: ['xargs', '-I', '{}', 'echo', '{}'], id: null },
       { tokens: ['xargs', '-I', '{}', 'git', 'status', '--', '{}'], id: null },
       { tokens: ['xargs', '-I', '{}', 'rm', '--', '{}'], id: null },
     ];
     for (const row of rows)
       expect(ruleIdFor(row.tokens, 'defaults'), row.tokens.join(' ')).toBe(row.id);
-    // With the dynamic-source rule off, the replacement still reaches `rm`'s own options, so the
-    // dynamic-input rm rule is what remains.
     expect(ruleIdFor(['xargs', '-I', '{}', 'rm', '-{}', '/'], 'dynamic rule off')).toBe(
       'xargs.rm-recursive-force-dynamic',
     );
@@ -415,11 +389,9 @@ describe('xargs analysis', () => {
   });
 
   test('a reader child is allowed where a deleting child is not', () => {
-    // `printf / | xargs rm -rf` denies without a replacement token: appended input is the target.
     const appended = runBothXargs(['xargs', 'rm', '-rf'], { label: 'defaults' }).match;
     expect(appended.ok && appended.value?.id).toBe('xargs.rm-recursive-force-dynamic');
     expect(appended.ok && appended.value?.reason).toBe(REASON_XARGS_RM);
-    // `echo x | xargs cat` reads, it does not execute, so there is nothing to deny.
     expect(runBothXargs(['xargs', 'cat'], { label: 'defaults' }).match).toStrictEqual({
       ok: true,
       value: null,

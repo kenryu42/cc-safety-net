@@ -111,16 +111,6 @@ export async function syncRulesConfigWithHooks(
   );
 }
 
-/**
- * Validating each source does not prove the synchronized scope loads cleanly: an unknown override
- * key only appears once the policy is reloaded the way the guard loads it.
- * Report what that reload finds instead of reporting success while the runtime state stays degraded.
- * The reload covers the scope being synchronized, so diagnostics owned by the other scope are left
- * alone: this run cannot repair them, and failing on them would break synchronizing one scope while
- * the other is still being set up. A rulebook name colliding across scopes is one of those, and it
- * resolves deterministically in favour of the first claim, so it warns rather than failing here.
- * `--check` validates the scope in isolation and would miss the same classes, so it verifies too.
- */
 function verifyRuntimeRulesPolicy(
   environment: Environment,
   options: SyncRulesConfigOptions,
@@ -158,10 +148,7 @@ async function syncRulesConfigInternal(
     if (!selectedSpecs.ok) {
       return selectedSpecs.result;
     }
-    // Every configured source is resolved so the report covers the whole scope; only the
-    // selected ones re-fetch, and everything else reads the file already on disk. A newly
-    // added source always re-fetches: a leftover vendored file under the same name would
-    // otherwise be activated under the new spec without ever being fetched or validated.
+
     const refetched = new Set([...(options.refresh ? selectedSpecs.specs : []), ...forceRefetch]);
     const resolveSpec = (spec: string) =>
       resolveRulebookSourceForSync(
@@ -170,13 +157,10 @@ async function syncRulesConfigInternal(
         scope.filesystemScope,
         operation,
         refetched.has(spec),
-        // A selective update must not fetch its unselected siblings; every other
-        // run may vendor a missing source so the whole scope converges.
+
         !options.refresh || refetched.has(spec),
       );
-    // `rule update` refreshes each selected source independently: a source that fails to fetch
-    // or validate keeps its vendored copy instead of blocking the sources that did update.
-    // Resource-budget failures stay fatal for the whole operation.
+
     const resolutions = await mapRulebookSources<string, SourceResolution>(
       config.rules,
       options.refresh
@@ -198,23 +182,13 @@ async function syncRulesConfigInternal(
     const resolved = resolutions
       .filter((item): item is Extract<SourceResolution, { ok: true }> => item.ok)
       .map((item) => item.item);
-    // A rulebook name is a file path, so two sources claiming one name vendor into the same
-    // file: writing would destroy the other source's active rulebook, which no later restore
-    // brings back. Refuse the write instead and name both sources. Names that differ only in
-    // case collide too, because a case-insensitive filesystem maps them to the same file.
+
     const collisions = resolved.flatMap((item) => getNameCollisionFailure(item, config.rules));
-    // A file already sitting at a newly added source's target has unknown provenance —
-    // a hand-authored rulebook that was never listed in rule.json. Overwriting it is
-    // unrecoverable data loss, so the add refuses instead.
+
     const unclaimed = resolved.flatMap((item) => getUnclaimedFileFailure(item, newlyAdded, scope));
     const blocked = new Set([...collisions, ...unclaimed].map((failure) => failure.spec));
     const reported = [...failures, ...collisions, ...unclaimed];
-    // A failing add rolls its config edit back, so vendoring any newly added
-    // sibling would strand a file no source claims — and that orphan then trips
-    // the unclaimed-file refusal on the next add once upstream content moves.
-    // A write that throws mid-sequence restores every file this run already
-    // replaced: fetch failures keep per-source semantics, but a half-applied
-    // write batch must not stay active under a result that reports failure.
+
     const written: { target: PolicyFilesystemTarget; previous: string | null }[] = [];
     const changes = runRestoringWrittenOnFailure(written, () =>
       resolved.flatMap((item) =>
@@ -272,11 +246,6 @@ function getUnclaimedFileFailure(
   ];
 }
 
-/**
- * A remote rulebook becomes a file in the repository, next to the local ones: the fetched bytes
- * are written verbatim so the diff a reviewer sees is the rulebook itself, and every later load
- * reads that file instead of the network.
- */
 function vendorRulebook(
   item: ResolvedRulebook,
   scope: ScopePaths,
@@ -293,7 +262,6 @@ function vendorRulebook(
   return describeVendoredChange(item, previous);
 }
 
-/** Restores the recorded writes when the wrapped vendoring throws, then rethrows. */
 function runRestoringWrittenOnFailure<T>(
   written: readonly { target: PolicyFilesystemTarget; previous: string | null }[],
   run: () => T,
@@ -322,8 +290,7 @@ function describeVendoredChange(item: ResolvedRulebook, previous: string | null)
     `Updated ${item.spec} (${before?.version ?? 'unreadable'} -> ${item.rulebook.version})`,
     ...[...afterRules].filter((name) => !beforeRules.has(name)).map((name) => `  + ${name}`),
     ...[...beforeRules.keys()].filter((name) => !afterRules.has(name)).map((name) => `  - ${name}`),
-    // A changed matcher or reason under an unchanged name is what the reviewer of
-    // an update most needs to see; name sets alone would show nothing.
+
     ...item.rulebook.rules
       .filter((rule) => {
         const existing = beforeRules.get(rule.name);
@@ -448,9 +415,7 @@ async function addRulebookSourceInternal(
         selected: selectedNames,
         added,
         alreadyConfigured: selectedNames.filter((name) => !added.includes(name)),
-        // Discovery resolved the ref once, so every rulebook this add vendored came
-        // from that single commit. An idempotent re-add vendors nothing, and naming
-        // the advanced commit would describe content the files do not contain.
+
         commits: sources.length > 0 ? [repository.commit] : [],
       },
     };
@@ -500,10 +465,6 @@ function selectRepositoryRulebooks(
   return selected;
 }
 
-/**
- * The same rulebook can already be configured under a spec pinned at the very commit this ref
- * resolves to; adding it again must reuse that spec rather than configure the rulebook twice.
- */
 function getConfiguredRepositorySpec(
   configured: string[],
   repository: DiscoveredGitHubRepository,
@@ -711,7 +672,6 @@ function getLocalSourceDirsForDelete(
   specs: string[],
   filesystemScope: PolicyFilesystemScope,
 ): { ok: true; dirs: string[] } | { ok: false; result: SyncRulesConfigResult } {
-  // A bare name is the whole identity of a local source, and it is also its directory.
   const errors = specs.flatMap((spec) =>
     NAME_PATTERN.test(spec) ? [] : ['--delete-source can only delete local rulebook sources'],
   );
@@ -726,8 +686,6 @@ function getLocalSourceDirsForDelete(
     : { ok: true, dirs };
 }
 
-// The caller only reaches here with a bare-name spec, so the directory is a single child of
-// the config dir by construction: there is no path to resolve and nowhere to escape to.
 function getLocalSourceDirDeleteError(
   dir: string,
   filesystemScope: PolicyFilesystemScope,
@@ -752,9 +710,6 @@ function getLocalSourceDirDeleteError(
   return [];
 }
 
-// `dirs` holds at most one entry: duplicate config specs are rejected at
-// validation and GitHub multi-matches are refused by the local-only check, so
-// a failed delete never leaves other requested source dirs partially removed.
 function deleteLocalSourceDirs(
   dirs: string[],
   hooks: RuleSyncTestHooks,
@@ -762,10 +717,6 @@ function deleteLocalSourceDirs(
 ): { ok: true } | { ok: false; result: SyncRulesConfigResult } {
   const errors = dirs.flatMap((dir) => {
     try {
-      // The preflight check ran before the sync, which can await network
-      // fetches; files a concurrent process added during that gap must refuse
-      // the delete, not be swept up by it. A directory that vanished during
-      // the same gap is the requested end state, not a failure.
       if (!readPolicyDirectoryEntries(getPolicyFilesystemTargetForPath(filesystemScope, dir))) {
         return [];
       }
@@ -793,11 +744,7 @@ function deleteLocalSourceDir(
     hooks._testDeleteLocalSourceDir(dir);
     return;
   }
-  // Delete exactly what the revalidation approved — the rulebook file, then
-  // the directory only if still empty — instead of a recursive delete that
-  // would also take files added between the revalidation and this point. A
-  // file that lands after the unlink surfaces as an rmdir failure with that
-  // file preserved; only the user-requested rulebook file is ever deleted.
+
   removePolicyFile(getPolicyFilesystemTargetForPath(filesystemScope, join(dir, RULEBOOK_FILE)));
   removeEmptyPolicyDirectory(getPolicyFilesystemTargetForPath(filesystemScope, dir));
 }

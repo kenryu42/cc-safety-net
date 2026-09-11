@@ -10,12 +10,6 @@ import {
   OPENCLAW_PLUGIN_PACKAGE_FILE,
 } from '@/hosts/openclaw/artifact';
 
-/**
- * OpenClaw validates the manifest before it imports a single line of plugin code, and doctor
- * compares an install against the packaged copy byte for byte. Both make these bytes contract:
- * the id, the entry path and the version stamp have to survive the port unchanged.
- */
-
 const DESCRIPTION =
   'Block destructive commands and secret-file access before OpenClaw runs a tool.';
 
@@ -33,8 +27,6 @@ describe('the OpenClaw plugin artifact', () => {
         name: 'CC Safety Net',
         description: DESCRIPTION,
         version,
-        // The gate has to be in place before the first tool call, so the plugin loads on startup
-        // and takes no configuration of its own.
         activation: { onStartup: true },
         configSchema: { type: 'object', additionalProperties: false, properties: {} },
       },
@@ -46,7 +38,6 @@ describe('the OpenClaw plugin artifact', () => {
         openclaw: { extensions: [`./${OPENCLAW_PLUGIN_ENTRY_FILE}`] },
       },
     ]);
-    // Both files are written the way the packaged copy is, so doctor's byte comparison holds.
     for (const manifest of manifests) {
       expect(manifest.content).toBe(`${JSON.stringify(JSON.parse(manifest.content), null, 2)}\n`);
     }
@@ -66,7 +57,6 @@ describe('the OpenClaw plugin artifact', () => {
     expect(OPENCLAW_MANAGED_HEADER).toBe(
       '// cc-safety-net managed OpenClaw plugin. Do not edit. Reinstall with: npx -y cc-safety-net install --openclaw',
     );
-    // The entry the host imports declares the same three fields the manifest does.
     expect(OPENCLAW_PLUGIN_ENTRY).toEqual({
       id: 'cc-safety-net',
       name: 'CC Safety Net',

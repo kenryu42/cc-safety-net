@@ -22,18 +22,12 @@ import {
 import { getScopePaths, type ScopePaths } from '@/rules-manager/paths';
 import type { SyncRulesConfigOptions } from '@/rules-manager/types';
 
-/**
- * `rule sync` no longer synchronizes anything: every rulebook is a live file. What is left is a
- * one-time, offline migration of the lock and cache a version 2 install published, so a scope that
- * still carries them keeps enforcing the rulebooks it already had.
- */
 const DEPRECATION_NOTICE =
   '`cc-safety-net rule sync` is deprecated: rulebooks are live files that need no synchronization. This run only migrates the lock and cache an earlier version left behind.';
 
 const CACHE_DIR = 'cache';
 const CACHE_RULEBOOKS_DIR = 'rulebooks';
 
-/** The v2 lock is read once, here, so nothing else has to model a retired file format. */
 interface V2LockEntry {
   spec: string;
   digest: string;
@@ -64,9 +58,7 @@ export function runRuleSyncMigration(
 
   const entries = readV2LockEntries(lock);
   const configRead = readRulesConfig(scope.configTarget);
-  // An unreadable config still lists sources whose only offline copies are the lock
-  // and cache, and a missing config with lock entries leaves the lock as the only
-  // record of the source specs; pruning either would destroy them with no way back.
+
   if (!configRead.config && (readPolicyFile(scope.configTarget) !== null || entries.size > 0)) {
     console.error(
       `Cannot migrate: the rules config in ${dirname(scope.configDir)} is missing or unreadable while v2 leftovers remain. Restore rule.json, then re-run rule sync.`,
@@ -86,7 +78,6 @@ export function runRuleSyncMigration(
   return 0;
 }
 
-/** The leftovers doctor reports, in both scopes, without reading or removing anything. */
 export function findRuleV2Leftovers(environment: Environment, cwd: string): string[] {
   return [
     ...new Set(
@@ -98,10 +89,6 @@ export function findRuleV2Leftovers(environment: Environment, cwd: string): stri
   ].filter((path) => existsSync(path));
 }
 
-/**
- * A cached copy that still matches its recorded digest is the same content `rule add` would have
- * vendored, so it migrates offline. Anything else has to be fetched again.
- */
 function migrateVendoredRulebook(
   spec: string,
   entries: Map<string, V2LockEntry>,
@@ -128,8 +115,7 @@ function migrateVendoredRulebook(
     ];
   }
   writePolicyFileAtomic(target, cached);
-  // A broken destination counted as migrated would delete the last digest-verified
-  // copy while the source stays inactive, so it is restored instead.
+
   if (existing !== null) return [`Restored ${spec} from the v2 cache over an invalid file.`];
   return [`Vendored ${spec} from the v2 cache.`];
 }
@@ -158,7 +144,6 @@ function readCachedRulebook(
   return content;
 }
 
-/** Where a v2 install cached rulebooks: a `cache` directory beside the scope's `rules` one. */
 function getV2CacheDir(configDir: string): string {
   return join(dirname(configDir), CACHE_DIR);
 }

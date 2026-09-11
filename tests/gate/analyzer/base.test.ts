@@ -51,8 +51,6 @@ import {
   wordAt,
 } from '@/gate/analyzer/text-scanner';
 
-/** The leaf analyzer modules that carry no dispatch of their own. */
-
 function argvOf(line: string): string[] {
   return line.split(/\s+/).filter((word) => word.length > 0);
 }
@@ -123,9 +121,7 @@ describe('text scanner', () => {
       { text: 'rm -rf /', index: 0, fixed: true, word: false, boundary: true },
       { text: 'rm -rf /', index: 1, fixed: false, word: false, boundary: false },
       { text: 'rm -rf /', index: 2, fixed: false, word: false, boundary: true },
-      // Neither side of the index is a word character, so there is no boundary.
       { text: 'rm -rf /', index: 7, fixed: false, word: false, boundary: false },
-      // A word must not run into a longer identifier.
       { text: 'systemd', index: 0, fixed: false, word: false, boundary: true },
       { text: 'x system(', index: 2, fixed: false, word: true, boundary: true },
       { text: 'x system(', index: 0, fixed: false, word: false, boundary: true },
@@ -170,17 +166,14 @@ describe('rm flags', () => {
       { argv: ['rm', '-r', '-f', '/tmp/x'], recursiveForce: true, recursive: true },
       { argv: ['rm', '-R', '--force', '/tmp/x'], recursiveForce: true, recursive: true },
       { argv: ['rm', '--recursive', '--force'], recursiveForce: true, recursive: true },
-      // A long option may be abbreviated to any prefix, down to one letter.
       { argv: ['rm', '--rec', '--for'], recursiveForce: true, recursive: true },
       { argv: ['rm', '--r', '--f'], recursiveForce: true, recursive: true },
-      // An abbreviation that is not a prefix names no option.
       { argv: ['rm', '--rf'], recursiveForce: false, recursive: false },
       { argv: ['rm', '--recursively', 'x'], recursiveForce: false, recursive: false },
       { argv: ['rm', '-r'], recursiveForce: false, recursive: true },
       { argv: ['rm', '-f'], recursiveForce: false, recursive: false },
       { argv: ['rm', '-i', '-rf'], recursiveForce: true, recursive: true },
       { argv: ['rm', '-vRf', 'x'], recursiveForce: true, recursive: true },
-      // After `--` an option-shaped token is an operand.
       { argv: ['rm', '--', '-rf'], recursiveForce: false, recursive: false },
       { argv: ['rm', '-rf', '--', '-r'], recursiveForce: true, recursive: true },
       { argv: ['chmod', '-R', '777', '/'], recursiveForce: false, recursive: true },
@@ -265,18 +258,15 @@ describe('deferred assignment', () => {
       { source: 'W=\'rm -rf ~\'; echo "$W"', dataOnly: true },
       { source: "W='rm -rf ~'; echo '$W'", dataOnly: true },
       { source: "W='rm -rf ~'; echo \\$W", dataOnly: true },
-      // A name the reference does not end on is a different variable.
       { source: "W='rm -rf ~'; echo $WORD", dataOnly: true },
       { source: "W='rm -rf ~'; cat <<'EOF'\n$W\nEOF", dataOnly: true },
       { source: 'W="rm -rf ~"; echo "$W"', dataOnly: true },
-      // An unquoted expansion is field-split before it is used.
       { source: "W='rm -rf ~'; echo $W", dataOnly: false },
       { source: "W='rm -rf ~'; $W", dataOnly: false },
       { source: "W='rm -rf ~'; eval $W", dataOnly: false },
       { source: "W='rm -rf ~'; echo ${W}", dataOnly: false },
       { source: "W='rm -rf ~'; echo $(echo $W)", dataOnly: false },
       { source: "W='rm -rf ~'; cat <<EOF\n$W\nEOF", dataOnly: false },
-      // Two words are not a lone assignment.
       { source: "W='rm -rf ~' X='echo'", dataOnly: false },
       { source: "1W='rm -rf ~'; echo $1W", dataOnly: false },
     ];
@@ -285,7 +275,6 @@ describe('deferred assignment', () => {
       const view = projectCommandViews(program)[0];
       if (!view) throw new Error(`no command view for ${row.source}`);
       expect(isDataOnlyQuotedAssignment(view, program), row.source).toBe(row.dataOnly);
-      // Without the surrounding program the later uses cannot be read, so nothing is data only.
       expect(isDataOnlyQuotedAssignment(view, undefined), `${row.source} (no program)`).toBeFalse();
     }
   });
@@ -320,14 +309,11 @@ describe('heredoc files', () => {
       resolveTrackedHeredocPath(source, cwd, processPathResolver, createBudget());
 
     expect(resolve('dir/file', root)).toBe(join(root, 'dir', 'file'));
-    // A symlinked directory resolves to the directory it points at.
     expect(resolve('link/file', root)).toBe(join(root, 'dir', 'file'));
     expect(resolve('file', join(root, 'dir'))).toBe(join(root, 'dir', 'file'));
-    // A tail that does not exist yet is kept as written.
     expect(resolve('missing/deep/file', root)).toBe(join(root, 'missing', 'deep', 'file'));
     expect(resolve(join(root, 'dir', 'file'), null)).toBe(join(root, 'dir', 'file'));
     expect(resolve(join(root, 'dir', 'file'), undefined)).toBe(join(root, 'dir', 'file'));
-    // A relative path with no directory to resolve against is not a path.
     expect(resolve('dir/file', null)).toBeUndefined();
     expect(resolve('dir/file', undefined)).toBeUndefined();
     expect(resolve('dir/file', '')).toBeUndefined();
@@ -340,7 +326,6 @@ describe('heredoc files', () => {
       { path: '/dev/null', persistent: false },
       { path: '/proc/1/fd/2', persistent: false },
       { path: '/sys', persistent: false },
-      // A path that merely starts with the same letters is an ordinary file.
       { path: '/devices/x', persistent: true },
       { path: '/tmp/out', persistent: true },
     ];
@@ -366,7 +351,6 @@ describe('device commands', () => {
         },
       },
       { argv: ['dd', 'if=/dev/zero', 'of=/tmp/x'], match: null },
-      // The target has to name something under /dev.
       { argv: ['dd', 'of=/dev/'], match: null },
       { argv: ['dd'], match: null },
       {
@@ -399,7 +383,6 @@ describe('device commands', () => {
         },
       },
       { argv: ['shred'], match: null },
-      // Another tool writing to a device is not this module's rule.
       { argv: ['rm', '-rf', '/dev/sda'], match: null },
     ];
     for (const row of rows) {
@@ -430,7 +413,6 @@ describe('git environment', () => {
     for (const row of rows) {
       const env = new Map([['GIT_CONFIG_COUNT', row.value]]);
       expect(resolveGitConfigCount(env), row.value).toStrictEqual(row.resolution);
-      // An assignment on the command line masks the inherited value.
       expect(resolveGitConfigCount(new Map(), env), `assigned ${row.value}`).toStrictEqual(
         row.resolution,
       );
@@ -463,7 +445,6 @@ describe('git environment', () => {
       { name: 'GIT_SSH_VARIANT', override: false, tracked: true },
       { name: 'HOME', override: false, tracked: true },
       { name: 'XDG_CONFIG_HOME', override: false, tracked: true },
-      // A key index that is not a number names no config entry.
       { name: 'GIT_CONFIG_KEY_X', override: false, tracked: false },
       { name: 'PATH', override: false, tracked: false },
       { name: '', override: false, tracked: false },
@@ -486,7 +467,6 @@ describe('git environment', () => {
     expect(getGitEnvValue('GIT_DIR', env, assignments)).toBe('/assigned/git');
     expect(getGitEnvValue('GIT_DIR', env)).toBe('/env/git');
     expect(getGitEnvValue('HOME', env, assignments)).toBe('/env/home');
-    // An assignment to the empty string is a value, not an absence.
     expect(getGitEnvValue('GIT_SSH_COMMAND', env, assignments)).toBe('');
     expect(getGitEnvValue('PATH', env, assignments)).toBeUndefined();
 
@@ -526,7 +506,6 @@ describe('git environment', () => {
         assigned: { name: 'HOME', value: '/extra' },
         plain: { name: 'HOME', value: '/extra' },
       },
-      // A name the analyzer does not track carries no Git meaning.
       { token: 'PATH+=:/extra', assigned: null, plain: null },
       { token: 'TMPDIR+=/extra', assigned: null, plain: null },
       { token: 'GIT_DIR=/plain', assigned: null, plain: null },
@@ -594,14 +573,12 @@ describe('git command line parsing', () => {
     const rows: readonly { readonly line: string; readonly configured: boolean }[] = [
       { line: 'git -c core.sshCommand=ssh clone url', configured: true },
       { line: 'git -ccore.sshCommand=ssh clone url', configured: true },
-      // The key is compared case-folded, as Git reads it.
       { line: 'git -c CORE.SSHCOMMAND=ssh clone url', configured: true },
       { line: 'git --config-env core.sshCommand=SSH fetch', configured: true },
       { line: 'git --config-env=core.sshCommand=SSH fetch', configured: true },
       { line: 'git status', configured: false },
       { line: 'git -C /tmp -c a.b=c checkout -- .', configured: false },
       { line: 'not-git -c core.sshCommand=ssh clone url', configured: false },
-      // The scan stops at the subcommand, so a later `-c` is that subcommand's own option.
       { line: 'git clone url -c core.sshCommand=ssh', configured: false },
     ];
     for (const row of rows) {

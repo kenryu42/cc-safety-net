@@ -13,18 +13,8 @@ import {
   type RulesPolicyOptions,
 } from '@/core/policy/paths';
 
-/**
- * Path resolution is pure computation over the caller's options and the environment, so every row
- * states the absolute path it must produce. The filesystem scope each config is read inside is
- * part of that: it is the capability that bounds the read, and a scope rooted one directory too
- * high would let a symlinked config escape the scope it belongs to.
- */
-
-/** The paths are joined with the host's separator; the rows spell them with `/`. */
 const slash = (path: string) => path.split(sep).join('/');
 
-// Absolute on the host: Windows resolves a `/`-rooted spelling onto the current drive, and the
-// rows are the paths the resolver produces from them.
 const ROOT = slash(resolve('/srv/root'));
 const NESTED = slash(resolve('/srv/root/workspaces/app'));
 const OUTSIDE = slash(resolve('/srv/policy-paths-sibling'));
@@ -43,7 +33,6 @@ const USER_SCOPES: readonly {
   readonly rulesDir: string;
   readonly configPath: string;
   readonly policyPath: string;
-  /** The root of the capability the user config is read inside. */
   readonly scopeRoot: string;
   readonly targetRelativePath: string;
 }[] = [
@@ -146,8 +135,6 @@ const PROJECT_SCOPES: readonly {
     targetRelativePath: 'config/rules/rule.json',
   },
   {
-    // A config outside the project cannot be read inside the project's capability, so the scope
-    // is rebound to the config's own grandparent instead of widening the project scope.
     behavior: 'a config outside the project is scoped to its own grandparent directory',
     cwd: ROOT,
     projectConfigPath: `${OUTSIDE}/.cc-safety-net/rules/rule.json`,

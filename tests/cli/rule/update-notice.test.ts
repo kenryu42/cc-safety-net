@@ -8,14 +8,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { runManagerDifferential } from '../../helpers/rules-manager-differential';
 import { environmentFor, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * The notice `rule doc` appends. Every row fixes `now`, pins the running version through the
- * package-version export the notice reads, and answers the registry from a recorder, so what is
- * recorded is the decision itself: whether the poll happened, what the cache kept and
- * whether the user is told. Under `bun test` the real version is `dev`, which `isNewerVersion`
- * refuses outright, so without the spy no row could reach a notice at all.
- */
-
 const NOW = 1_700_000_000_000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -160,10 +152,6 @@ describe('the update notice both implementations decide on', () => {
               urls.push(String(input));
               return (row.reply ?? served(LATEST))();
             }) as typeof fetch;
-            // A row that moves a variable needs the run to read the moved value, so the
-            // environment is rebuilt here rather than taken as the harness handed it over.
-            // The suite sets the opt-out globally to keep the real registry out of every other
-            // test, and clearing it is what puts this one back on the path being compared.
             const values = {
               CC_SAFETY_NET_NO_UPDATE_CHECK: undefined,
               ...side.values,
@@ -184,11 +172,6 @@ describe('the update notice both implementations decide on', () => {
   }
 });
 
-/**
- * The one command that prints the notice. `rule doc` writes the guide to stdout and the notice to
- * stderr, and the split is the contract: a notice on stdout would land in whatever file an agent
- * redirects the guide into.
- */
 describe('rule doc appends the notice to the guide', () => {
   for (const optedOut of [false, true]) {
     test(
@@ -196,8 +179,6 @@ describe('rule doc appends the notice to the guide', () => {
       async () => {
         const spies = [
           spyOn(portedSystemInfo, 'getPackageVersion').mockReturnValue(RUNNING),
-          // `rule doc` asks for the notice without a `now`, so without a fixed clock the run
-          // would stamp its cache at whatever the wall clock said.
           spyOn(Date, 'now').mockReturnValue(NOW),
         ];
         try {

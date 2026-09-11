@@ -114,8 +114,6 @@ export function getCommandSyntaxFact(
 }
 
 export function projectSensitiveShellText(source: string, environment: Environment): string {
-  // Scanning asks for this per token and per candidate path, so text that cannot expand
-  // must not pay for the expansion walk at all.
   if (!source.includes('$')) return source;
   return expandSupportedPathEnvironmentVariables(source, environment);
 }

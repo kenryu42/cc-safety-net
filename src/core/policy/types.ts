@@ -1,21 +1,19 @@
 import type { BlockIntent } from '@/core/decision';
 import type { CustomRuleMatch, PolicyRule, RuleActivationCapability } from '@/core/rules/types';
 
-/** Custom blocking rule definition. */
 export interface CustomRule {
-  /** Unique identifier for the rule */
   name: string;
-  /** Base command to match (e.g., "git", "npm") */
+
   command: string;
-  /** Optional subcommand to match (e.g., "add", "install") */
+
   subcommand?: string;
-  /** Arguments that trigger the block */
+
   block_args: string[];
-  /** Rulebook v2 matching contract; v1 rules leave it unset */
+
   match?: CustomRuleMatch;
-  /** Message shown when blocked */
+
   reason: string;
-  /** Optional agent behavior intent for the block message footer */
+
   intent?: BlockIntent;
 }
 
@@ -40,7 +38,6 @@ export interface SecretProtectionConfig {
 
 export type DestructiveCommandRuleOverride = 'on' | 'off';
 
-/** The canonical policy-file shape, as `policy.json` states it in either scope. */
 export type GuiPolicy = {
   version: 1;
   safety: {
@@ -147,17 +144,11 @@ export type CustomRuleMetadata = {
   };
 };
 
-/**
- * Which scope supplied the effective safety level, and one preformatted line per
- * field a project policy weakened relative to the user policy. Present only when a
- * project policy file was read.
- */
 export type PolicyScopes = {
   readonly levelScope: 'user' | 'project' | 'default';
   readonly weakenings: readonly string[];
 };
 
-/** How a surface names the scope a value came from, next to the value itself. */
 export function describePolicyScope(scope: PolicyScopes['levelScope']): string {
   return scope === 'default' ? 'built-in default' : `${scope} policy`;
 }
@@ -179,11 +170,10 @@ export type PolicySnapshot =
       readonly policyScopes?: PolicyScopes;
     };
 
-/** The runtime configuration state as diagnostic surfaces report it. */
 export type ConfigStateInfo =
   | { readonly state: 'ready' }
   | {
       readonly state: 'degraded';
-      /** The failing source, what is not active, and the repair. */
+
       readonly reason: string;
     };

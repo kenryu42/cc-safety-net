@@ -7,13 +7,6 @@ import { rainbowColorEscape } from '@/cli/utils/lolcat';
 import { createFakeOutput } from '../../helpers/fake-tty';
 import { describeAsyncOutcome } from '../../helpers/temp-home';
 
-/**
- * The spinner's schedule is the whole behavior: nothing is drawn while the work beats the delay,
- * and once drawn the line is always cleared and the cursor restored, success or failure. A queue
- * of pending sleeps stands in for the clock, so each frame is released by the test rather than
- * by a timer.
- */
-
 const CLEAR_LINE = '\r\x1b[2K';
 const HIDE_CURSOR = '\x1b[?25l';
 const RESET_FOREGROUND = '\x1b[39m';
@@ -102,7 +95,6 @@ describe('cli/startup/banner', () => {
 
   test('a rejection propagates and still restores the cursor on both implementations', async () => {
     const ported = await driveSpinner({ frames: 2, fail: true });
-    // The two frames drawn before the rejection stay drawn, and the clear-and-restore still runs.
     expect(ported).toEqual({
       chunks: [HIDE_CURSOR, spinnerFrame(0), spinnerFrame(1), `${CLEAR_LINE}${SHOW_CURSOR}`],
       outcome: { kind: 'threw', message: 'startup failed' },

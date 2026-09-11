@@ -26,8 +26,6 @@ type AntigravityHookDefinition = {
   [key: string]: unknown;
 };
 
-// Read-side values stay unknown: the file is hand-editable, so any key can
-// hold any JSON shape and must be preserved rather than crashed on.
 type AntigravityHooksConfig = Record<string, unknown>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

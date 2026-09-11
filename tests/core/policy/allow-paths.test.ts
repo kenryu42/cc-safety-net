@@ -7,13 +7,6 @@ import {
   getSecretDenyPathError,
 } from '@/core/policy/allow-paths';
 
-/**
- * These three validators decide what a user may vouch for, and the GUI and `policy apply` print
- * the message they return next to the offending entry, so both the accept/reject decision and the
- * exact wording are contract. Everything runs against a literal home, so nothing here depends on
- * the machine the test runs on.
- */
-
 const HOME = '/srv/home/tester';
 
 const NOT_A_PATH = 'must be a non-empty path string';
@@ -201,8 +194,6 @@ const ROWS: readonly Row[] = [
     secretAllow: HAS_GLOB,
   },
   {
-    // The reason globs are rejected outright: this entry's literal prefix is harmless, and it
-    // still reaches ~/.ssh/config.
     behavior: 'a home-anchored glob that can reach around its own root is rejected on the glob',
     value: '~/**/.ssh/config',
     destructive: null,

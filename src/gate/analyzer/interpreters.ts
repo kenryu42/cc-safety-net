@@ -352,7 +352,6 @@ export function parseInterpreterArgv(tokens: readonly string[]): InterpreterArgv
         return finishInterpreterArgv(interpreter, codeArgs, sources, executableSourcesValid);
       }
       if (CLUSTERED_CODE_FLAGS.get(interpreter)?.has(option)) {
-        // For node/python/ruby/perl, everything after the code flag in the same token is code.
         codeArg = token.slice(optionIndex + 1) || tokens[i + 1];
         consumesNext = optionIndex + 1 === token.length;
         break;
@@ -492,8 +491,7 @@ function supportsInlineEval(interpreter: string): boolean {
 export function containsDangerousCode(code: string, scanWork?: { units: number }): boolean {
   const executableCode = collapseInterpreterShellContinuations(code, scanWork);
   if (!interpreterCodeHasDangerousText(executableCode, scanWork)) return false;
-  // A match confined to string literals is inert data unless the code can hand
-  // it to a shell: rescan with literals stripped, then look for an exec sink.
+
   chargeNativeLinearPass(scanWork, executableCode);
   const strippedCode = stripStringLiterals(executableCode);
   if (interpreterCodeHasDangerousText(strippedCode, scanWork)) return true;
@@ -519,7 +517,7 @@ function stripStringLiterals(code: string): string {
     while (end < code.length && !code.startsWith(delimiter, end)) {
       end += code[end] === '\\' ? 2 : 1;
     }
-    // Unterminated literal: keep the tail so the conservative scan still sees it.
+
     if (end >= code.length) break;
     parts.push(code.slice(plainStart, i), ' ');
     i = end + delimiter.length;

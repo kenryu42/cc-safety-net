@@ -16,19 +16,9 @@ import {
   withProcessEnv,
 } from './temp-home';
 
-/**
- * One argument vector over its own temp root, with every home the CLI reads pointed inside it and
- * a `PATH` that holds one empty directory, so every host, node, npm and git probe fails with
- * ENOENT instead of finding whatever the machine installed. `runCliDifferential` runs the bin as
- * a child process; `runCliCommand` calls a command handler in this process over the same fixture.
- * What is recorded is what a user sees: the stdout bytes, the stderr bytes, the exit code and the
- * tree the run left behind.
- */
-
 export const REPO_ROOT = join(import.meta.dir, '..', '..');
 export const PORTED_ENTRY = join(REPO_ROOT, 'src/entries/bin.ts');
 
-/** The temp root one side of a row runs against, handed to `seed` and `cwd`. */
 export type CliSide = {
   root: string;
   home: string;
@@ -38,9 +28,7 @@ export type CliSide = {
 
 export type CliRow = {
   args: readonly string[];
-  /** Writes the fixture this row reads, with the side's own env already resolved. */
   seed?: (side: CliSide) => void;
-  /** Where the CLI runs; the project directory by default. */
   cwd?: (side: CliSide) => string;
   env?: Record<string, string | undefined>;
   stdin?: string;
@@ -53,7 +41,6 @@ export type CliOutcome = {
   tree: TreeEntry[];
 };
 
-/** The mode, debug and audit variables a developer's shell may carry into the run. */
 const BLANKED_ENV_NAMES = [
   'CC_SAFETY_NET_LEVEL',
   'CC_SAFETY_NET_STRICT',
@@ -73,24 +60,14 @@ const BLANKED_ENV_NAMES = [
   'FORCE_COLOR',
 ];
 
-/**
- * Scaffolding rather than something the run wrote: the fake bin's own files, and the transpiler
- * cache `bun run` fills under the isolated `HOME`, whose content-keyed entries name the build that
- * filled them.
- */
 const SCAFFOLDING = /^(bin|fake-script\.json|fake-log\.txt|home\/\.bun)(\/|$)/;
 
 function createSide(row: CliRow): CliSide {
-  // A short label: a row that renders a path into a fixed-width column truncates it, so the
-  // root's length is part of what `status` prints, and macOS spells the temp root eight
-  // characters longer once canonicalized (`/private/tmp/…`).
   const root = createTempRoot('cli-');
   const home = join(root, 'home');
   const project = join(root, 'project');
   mkdirSync(home, { recursive: true });
   mkdirSync(project, { recursive: true });
-  // Drop blanked names rather than stringifying undefined, and remove an inherited Windows Path
-  // before installing the fake bin's PATH. Row overrides apply after the fixture environment.
   const env = isolatedSpawnEnv(home, {
     ...createFakeBin(root, []).env,
     TZ: 'UTC',
@@ -141,11 +118,6 @@ function outcome(
   };
 }
 
-/**
- * Command behavior over the same real fixture as the subprocess runner. Only the entry point is
- * bypassed; the caller supplies the real handler. Dispatch, stdin and process-exit tests must use
- * runCliDifferential. This changes process globals and must not run concurrently with other tests.
- */
 export async function runCliCommand(
   row: Omit<CliRow, 'stdin'>,
   run: (environment: Environment) => number | Promise<number>,
@@ -203,7 +175,6 @@ export async function runCliCommand(
   }
 }
 
-/** Write a row's fixture under its temp root, with paths spelled from the root. */
 export function seedFiles(side: CliSide, spec: TreeSpec): void {
   writeTree(side.root, spec);
 }

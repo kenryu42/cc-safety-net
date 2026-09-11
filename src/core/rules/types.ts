@@ -1,12 +1,10 @@
 import type { BlockIntent } from '@/core/decision';
 
-/** Exact-token matching contract for rulebook_version 2 rules. */
 export interface CustomRuleMatch {
-  /** Command words that must follow the command, after global options are skipped */
   readonly command_path: readonly string[];
-  /** At least one of these exact argument tokens must be present */
+
   readonly any_args?: readonly string[];
-  /** Any of these exact argument tokens prevents the match */
+
   readonly exclude_args?: readonly string[];
 }
 

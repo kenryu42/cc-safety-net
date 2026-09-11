@@ -6,9 +6,6 @@ import { isSameOrInsidePath } from '@/gate/intake';
 
 type ClaudeShapeAgent = 'codex' | 'copilot-cli' | 'claude-code' | 'unknown';
 
-/** Detect the caller behind a Claude Code-shaped hook payload. The path is
- *  externally supplied JSON, so any non-string shape must degrade to
- *  'unknown' rather than crash the hook before analysis. */
 export function detectClaudeShapeAgent(
   transcriptPath: unknown,
   environment: Environment,

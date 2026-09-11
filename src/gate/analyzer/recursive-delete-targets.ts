@@ -16,7 +16,6 @@ const BRACE_EXPANSION_LIMIT = 64;
 const BRACE_EXPANDED_LENGTH_LIMIT = 16_384;
 
 export interface RecursiveDeleteTargetTrustOptions {
-  /** Process state the trust checks read instead of touching env or home. */
   environment: EnvironmentContext;
   cwd?: string;
   originalCwd?: string;
@@ -72,9 +71,8 @@ export type RecursiveDeleteTargetClassification =
   | { kind: 'outside_anchored_cwd' };
 
 export interface DeleteTargetWordFacts {
-  /** Literal brace alternatives to classify instead of the word itself. */
   readonly expandedTargets: readonly string[] | undefined;
-  /** Brace expansion hit a limit, so the deleted set is unknown. */
+
   readonly unsafeBraceExpansion: boolean;
   readonly targetIsLiteral: boolean;
   readonly tmpdirWordSplittingProtected: boolean;
@@ -98,8 +96,6 @@ export function deleteTargetWordFacts(word: CommandWord): DeleteTargetWordFacts 
   };
 }
 
-// A $TMPDIR reference inside double quotes cannot word-split, so a hostile TMPDIR value
-// cannot turn one target into several.
 function isTmpdirExpansionWordSplittingProtected(word: CommandWord): boolean {
   const tmpdirParts = word.parts.filter(
     (part) =>
@@ -219,7 +215,6 @@ export function classifyRecursiveDeleteTarget(
     return { kind: 'dynamic_target' };
   }
 
-  // User-configured allow paths behave like trusted temp roots for verified literal targets.
   if (isAllowedPathTarget(target, ctx, targetIsLiteral)) {
     return { kind: 'temp_target' };
   }
@@ -331,7 +326,7 @@ function isCanonicalHomeTarget(
   targetIsLiteral: boolean,
 ): boolean {
   const trimmed = target.trim();
-  // A quoted literal `*` names a single file, not a glob over the directory contents.
+
   const candidate = targetIsLiteral
     ? trimmed
     : trimmed === '*'
@@ -436,8 +431,7 @@ function resolveAllowRoots(
     if (!isAbsolute(expanded)) return [];
     try {
       const canonical = resolveExistingPath(expanded, paths, budget);
-      // Re-check against home after symlink resolution so a link into or above
-      // home cannot widen the allowed root.
+
       if (getAllowPathHomeConflictError(canonical, resolveExistingPath(homeDir, paths, budget))) {
         return [];
       }

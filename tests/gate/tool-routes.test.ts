@@ -8,13 +8,6 @@ import { createGateTree, portedVerdict, toolCall } from '../helpers/gate-differe
 import { policySnapshot } from '../helpers/policy';
 import { pipelineContractCases } from './pipeline-contract-cases';
 
-/**
- * Hosts hand the gate more than shell commands: a file to read, a patch to apply, a directory to
- * search. Those payloads never reach the analyzer, so the routing table and the guards are the
- * only things deciding them, and every row records how they were routed and decided. Every row
- * runs at standard and at strict.
- */
-
 const tree = createGateTree('gate-tool-routes-');
 const environment = createProcessEnvironment();
 const home = homedir();
@@ -29,7 +22,6 @@ const LEVELS = {
   strict: policySnapshot({ safety: { level: 'strict' } }),
 };
 
-/** The gate's verdict for a call at one level. */
 function verdictFor(toolName: string, input: unknown, cwd: string, level: keyof typeof LEVELS) {
   const route =
     toolName === 'Bash'
@@ -40,19 +32,12 @@ function verdictFor(toolName: string, input: unknown, cwd: string, level: keyof 
   });
 }
 
-/** What a row is about: which way the call went and, when it was refused, on whose authority. */
 const decisionOf = (verdict: ReturnType<typeof verdictFor>) => ({
   outcome: verdict.outcome,
   stage: verdict.stage,
   ruleId: verdict.ruleId,
 });
 
-/**
- * The safety level tunes command analysis, and none of these payloads reaches it: a path, a patch
- * or a search is decided by the routing table and the guards alone. So every row must decide the
- * same way at standard and at strict, and a row that started depending on the level would be a
- * change of which stage owns it.
- */
 function decisionAtEveryLevel(toolName: string, input: unknown, cwd: string) {
   const standard = verdictFor(toolName, input, cwd, 'standard');
   expect(decisionOf(verdictFor(toolName, input, cwd, 'strict'))).toStrictEqual(
@@ -94,7 +79,6 @@ describe('the pipeline corpus rows that carry no command', () => {
   });
 });
 
-/** One payload per host-shaped tool, with the sensitive path reached through its own field. */
 const PAYLOADS = [
   {
     name: 'Read follows a tilde path',
@@ -137,8 +121,6 @@ const PAYLOADS = [
     denies: 'git-metadata',
   },
   {
-    // Both gates agree, and the agreement is the point: through a path route the Git guard
-    // protects the hook directories and the repository's own markers, not every file in `.git`.
     name: 'Write targets the Git config file',
     toolName: 'Write',
     input: { file_path: join(tree.repository, '.git', 'config'), content: '[core]\n' },
@@ -229,8 +211,6 @@ const PAYLOADS = [
     denies: 'secret.home.ssh',
   },
   {
-    // The other half of an unknown route: the path-like fields, which the secret guard reads
-    // alongside the command candidate. Both gates deny it at standard and at strict.
     name: 'an unrouted tool names a private key in its path field',
     toolName: 'MysteryTool',
     input: { file_path: join(home, '.ssh', 'id_rsa') },
@@ -245,7 +225,6 @@ describe('hand-built host payloads', () => {
       const verdict = decisionAtEveryLevel(payload.toolName, payload.input, cwd);
 
       if (payload.denies === null) {
-        // An allowed payload never reached a guard that could name a rule for it.
         expect(decisionOf(verdict)).toStrictEqual({
           outcome: 'allow',
           stage: 'non-command',
@@ -253,8 +232,6 @@ describe('hand-built host payloads', () => {
         });
         return;
       }
-      // The policy and Git-metadata guards refuse a place rather than a catalogued secret, so
-      // they answer with a stage and no rule id.
       const protects = payload.denies === 'policy' || payload.denies === 'git-metadata';
       expect(decisionOf(verdict)).toStrictEqual({
         outcome: 'deny',

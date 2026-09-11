@@ -26,12 +26,11 @@ const REASON_DYNAMIC_EXECUTABLE =
   'dynamic command name contains shell substitution output and cannot be verified safely. Use a literal executable name.';
 const REASON_DYNAMIC_STRUCTURE =
   'shell substitution output can change guarded command structure and cannot be verified safely. Use literal subcommands and options.';
-/** Whether any part of the word is substitution output, so its text is unknown. */
+
 function hasCommandSubstitutionPart(word: CommandWord | undefined): boolean {
   return word?.parts.some((part) => part.provenance === 'command-substitution') ?? false;
 }
 
-/** Whether the word starts a literal option, so substitution output can extend it. */
 function hasOptionLiteralPart(word: CommandWord | undefined): boolean {
   return (
     word?.parts.some(
@@ -48,8 +47,6 @@ export function analyzeDynamicCommandStructure(
   strict = false,
   policy?: CommandAnalysisPolicy,
 ): DestructiveCommandRuleMatch | null {
-  // A variable executable name is only judged here for the command as written: derived
-  // commands reach this path as reconstructed words their own carriers already fail closed on.
   const dynamicHead =
     isDynamicExecutable(dialect, words) ||
     (topLevel && dialect !== 'powershell' && words[0]?.provenance === 'variable');
@@ -125,9 +122,7 @@ function analyzeDynamicStructure(
     const dataBoundary = words.findIndex(
       (word, index) => index > 0 && analysisWordText(word) === '--',
     );
-    // A trailing substitution is left to the rm rules only when literal recursive+force flags
-    // make rm.recursive-force-dynamic-target judge it; any other substitution output before a
-    // literal `--` can inject options.
+
     const trailingJudgedByRmRules = hasRecursiveForceFlags(words.map(analysisWordText));
     return destructiveCommandRuleIsEnabled(policy, 'shell.dynamic-structure', strict) &&
       dynamicIndexes.some(
@@ -234,10 +229,6 @@ function findGitSubcommandIndex(words: readonly CommandWord[]): number {
   return i;
 }
 
-/**
- * Whether substitution output can reach a position that changes what find traverses,
- * deletes or executes, rather than only a value the expression matches against.
- */
 function hasDynamicFindStructure(words: readonly CommandWord[]): boolean {
   let expressionStarted = false;
   let valuesRemaining = 0;
@@ -286,10 +277,6 @@ function hasDynamicFindStructure(words: readonly CommandWord[]): boolean {
   return false;
 }
 
-/**
- * Whether an executable source the head reads is not a literal, so derived input decides
- * what runs.
- */
 export function hasDynamicExecutableSource(
   sources: readonly { tokenIndex: number; kind: string; value: string }[],
   words: readonly CommandWord[],

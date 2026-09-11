@@ -1,16 +1,8 @@
 import { appendFileSync, cpSync, readFileSync } from 'node:fs';
 import type { FakeScriptEntry } from './fake-bin';
 
-/**
- * The body every fake CLI on the test `PATH` runs: `bun fake-command.ts <name> <args…>`. It logs
- * the call, then replays the first scripted entry whose command matches and whose arguments are a
- * prefix of the call. An unscripted call fails loudly rather than pretending the host succeeded.
- */
-
 const [name = '', ...args] = process.argv.slice(2);
 
-// The `.cmd` shim hands `%*` on as cmd.exe quoted it, so an argument that carried a space still
-// wears its quotes here; the log spells every argument bare, as the caller passed it.
 const logged = process.platform === 'win32' ? args.join(' ').replaceAll('"', '') : args.join(' ');
 
 appendFileSync(process.env.CC_SAFETY_NET_FAKE_LOG ?? '', `${name} ${logged}\t${process.cwd()}\n`);

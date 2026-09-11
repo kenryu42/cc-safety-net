@@ -11,13 +11,6 @@ import {
   expectFallbackDeny,
 } from '../../helpers/in-process';
 
-/**
- * The OpenClaw `before_tool_call` hook driven through a fake plugin API: the returned decision,
- * the stderr lines and the audit tree are recorded per row. The last case is the port's own
- * contract — a host context that throws denies in OpenClaw's own form instead of escaping the
- * handler.
- */
-
 const AGENT = 'agent-1';
 const SESSION = 'openclaw-1';
 const WORKSPACE_FAILURE = 'injected workspace failure';
@@ -35,11 +28,9 @@ type Row = {
   name: string;
   event: (fixture: HookFixture) => unknown;
   ctx?: (fixture: HookFixture) => Ctx;
-  /** How the fake API answers `resolveAgentWorkspaceDir`; the project directory by default. */
   workspace?: 'throws';
   breaks?: boolean;
   env?: Record<string, string | undefined>;
-  /** Text the block reason must carry, so a row cannot pass by blocking with a bare frame. */
   contains?: string;
   blocked: boolean;
   lines: number;

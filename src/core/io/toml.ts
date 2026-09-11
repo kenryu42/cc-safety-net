@@ -1,19 +1,11 @@
 import { findMatchingBracket, getLineIndent, removeArrayRangeItem, type TextRange } from './jsonc';
 
-/**
- * TOML surgery for a host config that keeps hooks either in a top-level `key = [ … ]` inline
- * array or in `[[key]]` table blocks. Edits splice the original text so everything outside the
- * touched array or block survives byte for byte. Keys are bare TOML keys used verbatim inside a
- * pattern; nothing dotted or quoted is expected.
- */
-
 function skipTomlComment(content: string, index: number) {
   if (content[index] !== '#') return index;
   const newlineIndex = content.indexOf('\n', index + 1);
   return newlineIndex === -1 ? content.length : newlineIndex + 1;
 }
 
-/** The `[` … `]` of a top-level `key = [` array: one written before any table header. */
 export function findTopLevelTomlArray(
   content: string,
   key: string,
@@ -38,7 +30,6 @@ export function findTopLevelTomlArray(
   return undefined;
 }
 
-/** Appends `item` as the last entry of the inline array, on its own line under the last one. */
 export function appendTomlArrayItem(content: string, array: TextRange, item: string): string {
   const beforeClose = content.slice(0, array.end).trimEnd();
   const closingIndent = getLineIndent(content, array.end);
@@ -48,7 +39,6 @@ export function appendTomlArrayItem(content: string, array: TextRange, item: str
   return `${beforeClose}${needsComma ? ',' : ''}\n${itemIndent}${item}${content.slice(array.end)}`;
 }
 
-/** Removes the entry whose text is exactly `item` from the inline array; unchanged when absent. */
 export function removeTomlArrayItem(content: string, array: TextRange, item: string): string {
   const itemStart = content.indexOf(item, array.start);
   if (itemStart === -1 || itemStart > array.end) return content;
@@ -56,7 +46,6 @@ export function removeTomlArrayItem(content: string, array: TextRange, item: str
   return removeArrayRangeItem(content, { start: itemStart, end: itemStart + item.length });
 }
 
-/** Drops a top-level `key = []` line, so a table block can take the key over. */
 export function removeTopLevelEmptyTomlArray(content: string, key: string): string {
   const emptyArray = new RegExp(`^\\s*${key}\\s*=\\s*\\[\\s*]\\s*(?:#.*)?$`);
   const lines = content.split('\n');
@@ -67,11 +56,9 @@ export function removeTopLevelEmptyTomlArray(content: string, key: string): stri
   return [...topLevel.filter((line) => !emptyArray.test(line)), ...tables].join('\n');
 }
 
-/** Drops every `[[key]]` table block that carries `marker`, and trims the trailing whitespace. */
 export function removeTomlTableBlocks(content: string, key: string, marker: string): string {
   const header = new RegExp(`^\\s*\\[\\[${key}]]\\s*$`, 'm');
-  // Split at every table header, not just [[key]]: a managed block ends where the
-  // next table begins, so unrelated tables after it are not swallowed with it.
+
   return content
     .split(/(?=^\s*\[)/m)
     .filter((block) => !header.test(block) || !block.includes(marker))

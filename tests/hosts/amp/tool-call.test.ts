@@ -10,13 +10,6 @@ import {
   expectFallbackDeny,
 } from '../../helpers/in-process';
 
-/**
- * The Amp `tool.call` event driven through a fake plugin API: the workspace root arrives as a URI
- * the fake resolves to the fixture project, and the shell command through Amp's own extractor. The
- * returned action, the stderr lines and the audit tree are recorded per row; the last case is the
- * port's own contract — an API that throws rejects in Amp's form instead of escaping the handler.
- */
-
 const THREAD = 'amp-1';
 const ANALYZER_FAILURE = 'injected analyzer failure';
 const SECRET_SCAN_FAILURE = 'injected secret scan failure';
@@ -30,11 +23,9 @@ type ShellEvent = { tool?: unknown; input?: unknown; thread?: { id?: unknown } }
 type Row = {
   name: string;
   event: (fixture: HookFixture) => unknown;
-  /** The fake API's answers: no workspace root, or a helper that throws. */
   api?: 'no-root' | 'uri-throws' | 'extractor-throws';
   breaks?: 'analyzer' | 'secret-scan';
   env?: Record<string, string | undefined>;
-  /** Text the rejection must carry, so a row cannot pass by rejecting with a bare frame. */
   contains?: string;
   rejected: boolean;
   lines: number;
@@ -62,7 +53,6 @@ function createFakeAmp(fixture: HookFixture, api: Row['api']) {
         if (api === 'uri-throws') throw new Error(URI_FAILURE);
         return fixture.project;
       },
-      // Amp's own extractor: only its shell tools carry a command, everything else is a plain tool.
       shellCommandFromToolCall: (event: ShellEvent) => {
         if (api === 'extractor-throws') throw new Error(EXTRACTOR_FAILURE);
         if (event.tool !== 'Bash') return null;
@@ -101,7 +91,6 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    // Amp canonicalizes without containing, so a command outside the workspace is analyzed there.
     name: 'a directory outside the workspace',
     event: (fixture) => shell('git status', fixture.outside),
     rejected: false,
@@ -195,8 +184,6 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    // The one route where the evidence is dropped. The tool input carries a command anyway, so
-    // the rejection would name it if the route flag were wrong.
     name: 'a secret scan that fails on a read',
     event: () => ({
       tool: 'Read',

@@ -13,13 +13,6 @@ import {
 import { runManagerDifferential } from '../../helpers/rules-manager-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * `rule migrate` converts a version 0 inline config into a rulebook and lists it, in both scopes,
- * and every one of its outcomes is a pair: what the two implementations printed and what they left
- * on disk. A failed scope has to leave the tree exactly as it found it, so the seeded files are
- * part of the comparison rather than a setup detail.
- */
-
 const PROJECT_LEGACY = 'project/.safety-net.json';
 const PROJECT_CONFIG = 'project/.cc-safety-net/rules/rule.json';
 const USER_LEGACY = 'home/.cc-safety-net/config.json';
@@ -42,8 +35,6 @@ const NO_CURL_PIPE: SeedRule = {
 const PUSH_FIXTURE = { command: 'git push --force', expect: 'blocked', rule: 'no-force-push' };
 const CURL_FIXTURE = { command: 'curl |', expect: 'blocked', rule: 'no-curl-pipe' };
 
-/** The rulebook a migration writes, spelled out rather than recomputed: the commands it collects
- *  and the fixture it derives per rule are the parts a silent change would move. */
 const migratedRulebook = (fields: {
   name: string;
   from: string;

@@ -1,7 +1,3 @@
-/**
- * Grok Build hook detection.
- */
-
 import { existsSync, readFileSync } from 'node:fs';
 import type { DetectContext, HookDetection } from '@/hosts/detect/context';
 import {
@@ -29,11 +25,9 @@ function _findGrokBuildManagedEntries(config: unknown): Array<Record<string, unk
 
 function _grokBuildDriftErrors(entry: Record<string, unknown>): string[] {
   const handlers = Array.isArray(entry.hooks) ? entry.hooks.filter(_isRecord) : [];
-  // Validate one coherent handler: two half-right handlers must not read as healthy.
+
   const managed = handlers.find((hook) => hook.command === GROK_BUILD_HOOK_COMMAND);
   return [
-    // Grok Build treats an absent, empty, or "*" matcher as matching every tool
-    // (xai-grok-hooks matcher.rs compiles "" and "*" to MatcherKind::All, never an error).
     ...(entry.matcher === undefined || entry.matcher === '' || entry.matcher === '*'
       ? []
       : ['Managed hook has a "matcher" that narrows coverage; reinstall to repair']),

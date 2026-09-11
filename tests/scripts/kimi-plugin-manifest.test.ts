@@ -45,8 +45,6 @@ describe('Kimi Code plugin manifest', () => {
   test('targets a loader whose hook bundle is present', () => {
     const target = readManifest().hooks[0]?.command.split(' ')[1] ?? '';
     expect(existsSync(target)).toBeTrue();
-    // The bin is a loader over one self-contained CommonJS bundle, so the only relative
-    // specifier it names is that bundle, and the bundle names no chunk of its own.
     const bundles = getRuntimeImportSpecifiers(readFileSync(target, 'utf8')).filter((specifier) =>
       specifier.startsWith('.'),
     );

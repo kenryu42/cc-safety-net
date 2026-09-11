@@ -3,11 +3,6 @@ import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics'
 
 const HOME = '/srv/home/tester';
 
-/**
- * The diagnostics `doctor`, `policy check` and the GUI report a user policy with. The runtime
- * salvages the same document in its own plain wording; `store-parity.test.ts` states both
- * verdicts for every fixture document.
- */
 describe('user policy diagnostics', () => {
   test.each([
     ['the minimal document is accepted', { version: 1 }, []],

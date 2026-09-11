@@ -6,13 +6,6 @@ import * as ported from '@/core/policy/diff';
 import { normalizeGuiPolicy } from '@/core/policy/store';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * `policy check` prints these rows and `policy apply` writes what they describe, so how the diff
- * flattens, orders and words them is contract. The baseline read is the one place it could
- * diverge quietly: it mirrors the runtime's precedence — an existing file wins even when it is
- * unreadable, and the embedded Amp snapshot stands in only when none exists.
- */
-
 const HOME = '/srv/home/tester';
 const environment = createTestEnvironment({ home: HOME });
 const EMBEDDED = '__CC_SAFETY_NET_EMBEDDED_POLICY__';
@@ -154,7 +147,6 @@ describe('the changed rows between two policies', () => {
     expect(ported.diffPolicyRows(policy, policy, true)).toEqual([]);
   });
 
-  // Row order follows the first policy's fields, so the comparison is by field, not by position.
   test('reversing a comparison reports the same fields with the two sides swapped', () => {
     const byField = (rows: readonly ported.PolicyDiffRow[]) =>
       [...rows].sort((a, b) => a.field.localeCompare(b.field));
@@ -206,7 +198,6 @@ describe('the sparse project file a proposal writes', () => {
   });
 });
 
-/** A home whose policy file holds `file`, or none when `file` is undefined. */
 function policyHome(file?: string) {
   const root = createTempRoot('policy-diff-');
   mkdirSync(join(root, '.cc-safety-net'), { recursive: true });
@@ -247,7 +238,6 @@ describe('reading the policy file behind the diff', () => {
     const read = ported.readPolicyJson(home.path);
     expect(read.value).toBeUndefined();
     expect(read.errors).toHaveLength(1);
-    // The parser's own wording moves between runtimes; the classification and the path do not.
     expect(read.errors[0]).toStartWith(`${home.path}: Invalid JSON:`);
   });
 
@@ -275,7 +265,6 @@ describe('the baseline the effective diff merges against', () => {
   test('a file the schema rejects is salvaged into the baseline and reports the schema diagnostics', () => {
     const home = policyHome('{"version":1,"safety":{"level":"nope"},"tier":"gold"}');
     const read = ported.readRuntimeUserBaseline(environment, home.options);
-    // The rejected level falls back to the protective default rather than to the file's value.
     expect(read.baseline.safety.level).toBe('standard');
     expect(read.diagnostics).toEqual([
       'unknown field "tier"',

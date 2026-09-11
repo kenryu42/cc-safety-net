@@ -11,7 +11,6 @@ const NOW_MS = Date.parse('2026-05-17T12:34:56.789Z');
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-/** Everything the default 30-day window takes out of the fixture tree, in sorted order. */
 const REMOVED_AT_THIRTY_DAYS = [
   'logs/legacy-expired.jsonl',
   'logs/proj-a',
@@ -27,7 +26,6 @@ const POLICIES = [
   {
     name: 'a three-day window',
     content: JSON.stringify({ version: 1, audit: { retention_days: 3 } }),
-    // Only the day whose end falls between the two cutoffs moves.
     removed: [...REMOVED_AT_THIRTY_DAYS, 'logs/proj-b/2026-04/2026-04-17-sess.jsonl'].sort(),
   },
   { name: 'a malformed policy', content: '{ not json', removed: REMOVED_AT_THIRTY_DAYS },
@@ -46,7 +44,6 @@ function makeRoot(label: string): string {
   return root;
 }
 
-/** An audit root and the user policy the sweep reads its window from, one per implementation. */
 function prepare(label: string, policy: string | null) {
   const container = makeRoot(label);
   const tree = join(container, 'tree');
@@ -56,7 +53,6 @@ function prepare(label: string, policy: string | null) {
   return { tree, configRoot, logs: writeAuditFixture(tree, NOW_MS) };
 }
 
-/** An empty audit root, so the throttle cases decide what lands in it and when. */
 function prepareEmpty(label: string) {
   const container = makeRoot(label);
   const configRoot = join(container, 'config');
@@ -107,7 +103,6 @@ describe('audit retention throttle', () => {
     expect(snapshotTree(nextSide.logs)).toStrictEqual([
       { path: '.last-prune', kind: 'file', content: '' },
     ]);
-    // Owner-only; Windows has no POSIX mode to assert.
     if (process.platform !== 'win32') expect(statSync(marker).mode & 0o777).toBe(0o600);
     expect(statSync(marker).mtimeMs).toBe(NOW_MS);
 
@@ -117,7 +112,6 @@ describe('audit retention throttle', () => {
     expect(statSync(marker).mtimeMs).toBe(NOW_MS);
 
     sweep(NOW_MS + DAY_MS);
-    // The expired file goes, and the directories it was the only content of go with it.
     expect(snapshotTree(nextSide.logs)).toStrictEqual([
       { path: '.last-prune', kind: 'file', content: '' },
     ]);

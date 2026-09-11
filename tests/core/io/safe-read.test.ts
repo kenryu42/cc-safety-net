@@ -35,13 +35,6 @@ import {
   writeTree,
 } from '../../helpers/fixture-tree';
 
-/**
- * One fixture tree holds every shape the guard has to judge: plain files, a nested directory, an
- * empty directory, a symlinked leaf and a symlinked parent that both point at a sentinel outside
- * the root, a regular file where a directory is expected, and a symlink standing in for the root.
- * Each row states the outcome the contract in `safe-read.ts` requires, and every refusal is the
- * one fixed diagnostic its scope carries.
- */
 const TREE: TreeSpec = {
   'root/policy.json': '{"level":"standard"}\n',
   'root/rules/team/rule.json': '{"rules":[]}\n',
@@ -58,12 +51,10 @@ const TREE: TreeSpec = {
 
 const SENTINEL = 'TOPSECRET\n';
 
-/** The contents a read inside the root may legitimately return. */
 const READABLE = ['{"level":"standard"}\n', '{"rules":[]}\n', 'plain text\n', 'leaf\n'];
 
 const LABELS: readonly PolicyFilesystemLabel[] = ['user policy', 'project policy', 'rules policy'];
 
-/** Every relative path the guard is asked for, valid and hostile. */
 const RELATIVE_PATHS = [
   'policy.json',
   './policy.json',
@@ -87,7 +78,6 @@ const RELATIVE_PATHS = [
   '/etc/hostname',
 ];
 
-/** Scope roots relative to the fixture base: a directory, a link to it, a missing one, a file. */
 const SCOPE_ROOTS = ['root', 'alias', 'nowhere', 'root/not-a-dir', 'root/linked-dir'];
 
 let base = '';
@@ -218,7 +208,6 @@ describe('safe policy reads', () => {
         path: Parameters<typeof fs.readFileSync>[0],
         options: Parameters<typeof fs.readFileSync>[1],
       ) => {
-        // The descriptor read is the window: swap the path's entry before the identity check.
         if (typeof path === 'number') {
           const policy = join(base, 'root', 'policy.json');
           rmSync(policy);
@@ -261,7 +250,6 @@ describe('safe policy reads', () => {
   });
 });
 
-/** Windows has no POSIX mode to assert. */
 const posixModes = process.platform !== 'win32';
 
 describe('atomic policy writes', () => {
@@ -303,7 +291,6 @@ describe('atomic policy writes', () => {
   });
 
   test('writes beside a scope root that is itself a symlink to a directory', () => {
-    // A root the caller chose to alias is trusted; a link *inside* the root is not.
     writePolicyFileAtomic(target('root/linked-dir', 'beside.json', 'user policy'), 'beside\n');
     expect(readFileSync(join(base, 'outside', 'beside.json'), 'utf-8')).toBe('beside\n');
     expect(sentinel()).toBe(SENTINEL);
@@ -352,15 +339,12 @@ describe('atomic policy writes', () => {
     expect(dirname(staged[0]?.from ?? '')).toBe(dir);
     expect(relative(dir, staged[0]?.from ?? '')).toMatch(/^policy\.json\.[0-9a-f]{16}\.tmp$/);
     if (posixModes) expect(staged[0]?.mode).toBe(0o600);
-    // The destination still holds the old bytes while the new ones sit in the temp file.
     expect(staged[0]?.destination).toBe('{"level":"standard"}\n|{"level":"strict"}\n');
     expect(
       staged[0]?.listing.map((entry) => entry.replace(/\.[0-9a-f]{16}\.tmp$/, '.<temp>')),
     ).toEqual(['linked-dir', 'nested', 'not-a-dir', 'policy.json', 'policy.json.<temp>', 'rules']);
 
-    // A failed rename raises the scope's fixed diagnostic, not the underlying error.
     expect(outcome).toEqual({ ok: false, error: refusal('rules policy') });
-    // The temp file is cleaned up and the destination is exactly as it was.
     expect(readdirSync(dir).sort()).toEqual([
       'linked-dir',
       'nested',
@@ -388,11 +372,9 @@ describe('atomic policy writes', () => {
       }),
     );
     expect(surprises).toEqual([]);
-    // No write through a linked leaf or a linked parent reached the sentinel.
     expect(sentinel()).toBe(SENTINEL);
     expect(readFileSync(join(base, 'root', 'rules', 'link.json'), 'utf-8')).toBe(SENTINEL);
     expect(lstatSync(join(base, 'root', 'rules', 'link.json')).isSymbolicLink()).toBe(true);
-    // Nothing was left staged anywhere under the fixture.
     expect(snapshotTree(base).filter((entry) => entry.path.includes('.tmp'))).toEqual([]);
   });
 });
@@ -551,7 +533,6 @@ describe('policy removals', () => {
   });
 
   test('refuses to remove a directory that still holds entries', () => {
-    // rmdir refuses a non-empty directory, so entries another process added survive.
     expect(() => removeEmptyPolicyDirectory(target('root', 'rules/team', 'rules policy'))).toThrow(
       refusal('rules policy').message,
     );

@@ -8,15 +8,6 @@ import { evaluateGuard } from '@/gate/pipeline';
 import { bashCall, createGateTree, portedVerdict } from '../helpers/gate-differential';
 import { policySnapshot, testModes } from '../helpers/policy';
 
-/**
- * Every cap the analyzer used to enforce with a budget of its own now counts on the one Budget and
- * throws `AnalysisLimit{kind}`. One row per counter, each proving three things: which counter the
- * input actually breaches (the kind the analyzer entry throws, so a row cannot silently start
- * testing a different cap), that the pipeline answers with the wording and audit class the table
- * assigns that kind instead of failing closed, and what the gate's recorded verdict is.
- * A companion input just short of the cap keeps each row honest about the cap being the cause.
- */
-
 const tree = createGateTree('gate-analysis-budget-');
 const environment = createProcessEnvironment();
 const snapshot = policySnapshot();
@@ -27,7 +18,6 @@ afterAll(() => {
   tree.remove();
 });
 
-/** The analyzer entry's own input: the same process state and cwd the pipeline hands it. */
 const analysisInput = {
   cwd: tree.workspace,
   shell: 'posix' as const,
@@ -67,21 +57,18 @@ const ROWS: readonly { kind: LimitKind; name: string; breaching: string; below: 
     below: copies(63, (index) => `export GIT_WORK_TREE=w${index}`).join(' && '),
   },
   {
-    // The segment peel: each `busybox` hands the rest of the segment back to the same analysis.
     kind: 'wrapperPeelIterations',
     name: 'wrapper peel iterations',
     breaching: `${copies(21, () => 'busybox').join(' ')} echo ok`,
     below: `${copies(19, () => 'busybox').join(' ')} echo ok`,
   },
   {
-    // The same counter through the other site: normalizing a derived child command.
     kind: 'wrapperPeelIterations',
     name: 'child normalization peels',
     breaching: `find . -exec ${copies(24, () => 'busybox').join(' ')} rm {} \\;`,
     below: `find . -exec ${copies(10, () => 'busybox').join(' ')} rm {} \\;`,
   },
   {
-    // An `env -S` value needing the quote language has no channel for a match on either side.
     kind: 'derivedCommandShape',
     name: 'an unnormalizable derived child',
     breaching: `xargs env -S 'echo "quoted"'`,
@@ -113,7 +100,6 @@ const ROWS: readonly { kind: LimitKind; name: string; breaching: string; below: 
   },
 ];
 
-/** The counter this command breaches, read off the exception the analyzer entry throws. */
 function breachedKind(command: string): LimitKind | 'analyzed without a breach' {
   try {
     analyzeCommandWithProgram(command, analysisInput);
@@ -148,8 +134,6 @@ describe('one budget, one report per analyzer cap', () => {
     });
 
     test(`${row.name}: the shipped gate reaches the same verdict, and not below the cap`, () => {
-      // The gate the hosts call answers the breach with the same capped denial the pipeline
-      // reports above, and the command one step below the cap never reaches that reason.
       expect(
         portedVerdict(bashCall(row.breaching, tree.workspace), environment, dependencies).reason,
       ).toBe(LIMITS[row.kind].reason);
@@ -182,20 +166,7 @@ describe('one budget, one report per analyzer cap', () => {
   });
 });
 
-/**
- * The other half of the unification: not only does each cap report once, the whole evaluation
- * counts on one Budget. Every `createBudget` call made inside `src/` while the evaluation runs is
- * counted, so a guard or an analyzer entry that quietly builds its own budget again shows up as a
- * second call. The one budget deliberately outside the count is the git-metadata resolver's own:
- * the rows resolve metadata before the spy is installed, so a production run — where the
- * environment resolves it inside the evaluation — makes that call as well. The rows below run the
- * stages that used to create their own: the protection walk with a tracked cwd and an assignment,
- * a heredoc the analyzer tracks as a file, and the three derived `rm` children — `find -exec`, an
- * `xargs` pipeline and a `parallel` expansion.
- */
 describe('one Budget per evaluation', () => {
-  // Real metadata, so the git-metadata guard does its path work instead of returning at
-  // `!metadata`; resolved once here, because the resolver charges a budget of its own.
   const metadata = resolveProtectedGitMetadata(tree.repository, environment);
   const inRepository = { loadPolicySnapshot: () => snapshot, resolveGitMetadata: () => metadata };
 

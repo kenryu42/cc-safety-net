@@ -7,11 +7,6 @@ import { GIT_GLOBAL_OPTS_WITH_VALUE } from '@/core/rules/constants';
 import type { GitExecutionContext } from '@/gate/analyzer/git/worktree';
 import { getGitExecutionContext, hasGitContextEnvOverride } from '@/gate/analyzer/git/worktree';
 
-/**
- * Worktree relaxation only applies to the directory Git would actually run in, so the reader has
- * to land on the right directory for every `-C`, `--git-dir` and `--work-tree` form.
- */
-
 let root = '';
 const paths = { repo: '', sub: '', deep: '', outside: '' };
 
@@ -109,8 +104,6 @@ describe('gate/analyzer/git/worktree', () => {
         context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
       },
       {
-        // contract: src/core/paths/chdir.ts — a `-C` through a symlink lands on the physical
-        // directory, as a shell `cd` would.
         tokens: ['git', '-C', 'link', 'status'],
         cwd: () => paths.repo,
         context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
@@ -176,8 +169,6 @@ describe('gate/analyzer/git/worktree', () => {
         context: () => ({ gitCwd: paths.sub, hasExplicitGitContext: false }),
       },
       {
-        // contract: src/gate/analyzer/git/worktree.ts:41 — `--` ends the global options, so what
-        // follows is an operand rather than a directory change.
         tokens: ['git', '--', '-C', 'sub'],
         cwd: () => paths.repo,
         context: () => ({ gitCwd: paths.repo, hasExplicitGitContext: false }),
@@ -214,7 +205,6 @@ describe('gate/analyzer/git/worktree', () => {
       { env: [], override: false },
       { env: [['PATH', '/usr/bin']], override: false },
       { env: [['GIT_CONFIG_COUNT', '1']], override: false },
-      // contract: src/gate/analyzer/git/env.ts — the override names are matched exactly.
       { env: [['git_dir', '/tmp/other.git']], override: false },
       { env: [['GIT_DIR', '/tmp/other.git']], override: true },
       { env: [['GIT_WORK_TREE', '/tmp/tree']], override: true },

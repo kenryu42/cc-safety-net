@@ -1,20 +1,9 @@
-/**
- * Fixture documents for the policy differential tests: a canonical file of each kind, one
- * document per failure class the validators report, and a seeded mutator that walks a
- * document and applies a few edits from a fixed vocabulary. Shared with the loader tests,
- * which write the same documents to disk.
- */
-
 import { createSeededRandom, FUZZ_SEED } from '../../helpers/shell-inputs';
 
 const LONG_REASON = 'r'.repeat(257);
 
 const MUTATIONS_PER_VALUE = 300;
 
-/**
- * Each fixture document and 300 seeded mutations of it, which is the corpus every validator
- * property runs over. One generator per call, so the corpus is the same in every file.
- */
 export function samples(values: readonly unknown[]): unknown[] {
   const random = createSeededRandom(FUZZ_SEED);
   return values.flatMap((value) => [
@@ -23,7 +12,6 @@ export function samples(values: readonly unknown[]): unknown[] {
   ]);
 }
 
-/** The document, trimmed, so a disagreement names the input that produced it. */
 export const named = (value: unknown) => String(JSON.stringify(value)).slice(0, 300);
 
 export const USER_POLICY_VALUES: readonly unknown[] = [
@@ -188,7 +176,6 @@ export const RULES_CONFIG_VALUES: readonly unknown[] = [
     },
   },
   { version: 1, overrides: { 'a/i': { reason: '' }, 'a/j': { reason: LONG_REASON } } },
-  // A non-string reason still carries a `length`, which the schema checks beside the type error.
   { version: 1, overrides: { 'a/m': { reason: [...LONG_REASON] } } },
   { version: 1, overrides: { 'a/k': { reason: 'ok', intent: 'scope_down' } } },
   { version: 1, overrides: { plain: 'off', 'too/many/slashes': 'off', '/leading': 'off' } },
@@ -357,11 +344,6 @@ const SWAPPED_PATHS = ['~', '/', '$HOME', '   '] as const;
 
 type Container = Record<string, unknown> | unknown[];
 
-/**
- * One to three edits from a fixed vocabulary, applied to a deep copy of the document at
- * positions the seeded random picks. The mutations are for the differential assertions,
- * so an edit that cannot apply to its position is simply skipped.
- */
 export function mutate(value: unknown, random: () => number): unknown {
   return Array.from({ length: 1 + Math.floor(random() * 3) }).reduce<unknown>(
     (current) => applyEdit(current, random),

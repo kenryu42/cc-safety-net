@@ -10,8 +10,6 @@ const SELECTION: readonly InstallTarget[] = ['pi', 'cursor', 'amp', 'cursor'];
 
 describe('install targets', () => {
   test('the table is the catalog row for row', () => {
-    // The flag names the target on the command line and the probe is what `install` runs to see
-    // whether the host is on PATH, so both are contract; the rows are in label order.
     expect(INSTALL_TARGETS).toEqual([
       { target: 'amp', label: 'Amp Code', flag: '--amp', probeCommand: ['amp', '--version'] },
       {
@@ -43,7 +41,6 @@ describe('install targets', () => {
         target: 'copilot-cli',
         label: 'GitHub Copilot CLI',
         flag: '--copilot-cli',
-        // Copilot answers `--version` with the extension's version, not the binary's.
         probeCommand: ['copilot', '--binary-version'],
       },
       {

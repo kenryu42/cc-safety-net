@@ -12,14 +12,6 @@ import { loadPolicySnapshot as loadPortedSnapshot } from '@/core/policy/snapshot
 import type { PolicySnapshot } from '@/core/policy/types';
 import { snapshotTree, type TreeSpec, writeTree } from '../../helpers/fixture-tree';
 
-/**
- * The loader is the one reader behind the gate, the CLI, the GUI and audit retention, so every
- * row of `docs/config-recovery.md` is contract — the whole snapshot, not just its state. Each
- * row builds its own tree under one temp root, records the snapshot the loader returns and
- * checks the documented fallback on it. The tree is captured before and after: loading writes
- * nothing.
- */
-
 const HOME = createProcessEnvironment().home;
 
 const USER_POLICY = 'home/.cc-safety-net/policy.json';
@@ -88,7 +80,6 @@ const WIPE_RULE: FixtureRule = {
   intent: 'use_alternative',
 };
 
-/** A project scope that stays active with one override key rejected. */
 const IGNORED_OVERRIDE_PROJECT = {
   [PROJECT_RULES]: json({
     version: 1,
@@ -173,7 +164,6 @@ const ROWS: readonly Row[] = [
     tree: { [USER_POLICY]: json({ version: 1, tier: 'gold', safety: { level: 'strict' } }) },
     check: (snapshot) => {
       expect(reasonOf(snapshot)).toContain('the salvaged policy with protective defaults');
-      // The warning names the dropped field in the loader's own wording.
       expect(reasonOf(snapshot)).toContain('policy.json: tier: unknown field');
       expect(snapshot.policy.safety.level).toBe('strict');
     },
@@ -188,8 +178,6 @@ const ROWS: readonly Row[] = [
         destructive_command_protection: {
           enabled: 'yes',
           overrides: { 'git.no-such-rule': 'off', 'git.alias-config': 'sometimes' },
-          // The root above the home: `/` on POSIX, the home's drive on Windows, where `/` names
-          // the current drive and need not be above the home at all.
           allow_paths: [parse(HOME).root, '~', 'rel'],
         },
         secret_protection: { deny_paths: ['~'] },
@@ -365,8 +353,6 @@ const ROWS: readonly Row[] = [
     },
   },
   {
-    // The only row where an unreadable project file decides the fallback on its own:
-    // with a user policy present the user scope answers first.
     name: 'a malformed project policy with no user policy',
     tree: { [PROJECT_POLICY]: '{"version": 1,' },
     check: (snapshot) => {
@@ -403,7 +389,6 @@ const ROWS: readonly Row[] = [
       ...IGNORED_OVERRIDE_PROJECT,
     },
     check: (snapshot) => {
-      // Dropped sources come first, then the parts that were ignored, then the policy file.
       const reason = reasonOf(snapshot);
       expect(reason.indexOf(DROPPED_SOURCE_ADVICE)).toBeLessThan(
         reason.indexOf('unknown override key'),

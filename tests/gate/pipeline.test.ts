@@ -17,12 +17,6 @@ import {
 import { writeTree } from '../helpers/fixture-tree';
 import { policySnapshot } from '../helpers/policy';
 
-/**
- * One hand-built row per stage exit through `evaluateGuard`, pinning the whole `GuardEvaluation`.
- * The gate reads its process state from a snapshot, so no variable is mutated for a row. The
- * corpora themselves are pinned row by row in `contract.test.ts`.
- */
-
 const fixtureRoot = mkdtempSync(join(systemTemp(), 'gate-pipeline-differential-'));
 const project = join(fixtureRoot, 'checkout');
 const tooling = join(fixtureRoot, 'tooling');
@@ -70,11 +64,6 @@ type GuardOutcome =
       readonly evaluation: unknown;
     };
 
-/**
- * The evaluation, or the fail-closed error the guard threw, in one shape. The error's `cause` is
- * left out on purpose: what a row pins is the stage, the name and the evaluation the guard failed
- * closed with, not the class the injected cause happened to be.
- */
 function guardOutcome(run: () => GuardEvaluation): GuardOutcome {
   try {
     return { kind: 'evaluation', evaluation: run() };
@@ -108,8 +97,6 @@ function stageOf(outcome: GuardOutcome): unknown {
   return outcome.kind === 'evaluation' ? outcome.evaluation.stage : outcome.stage;
 }
 
-// Longer than the parser's 131,072 code-unit cap, so the program it yields carries status
-// `limited` and the gate exits before any guard runs.
 const OVERSIZED_COMMAND = `echo ${'x'.repeat(131_072)}`;
 
 const STAGE_EXITS: readonly {
@@ -117,7 +104,6 @@ const STAGE_EXITS: readonly {
   readonly stage: GuardStage;
   readonly call: ToolInvocation;
   readonly snapshot?: ReturnType<typeof policySnapshot>;
-  /** Absent where the row is expected to allow, so every row pins its own outcome. */
   readonly denyReason?: string;
 }[] = [
   {
@@ -135,7 +121,6 @@ const STAGE_EXITS: readonly {
   {
     label: 'a redirection into the user policy file',
     stage: 'policy-protection',
-    // A shell operand: spelled with `/`, which Windows reads as a separator and a shell as text.
     call: bash(`printf x > ${userPolicyPath.split(sep).join('/')}`, plain),
     denyReason: 'protected policy config',
   },
@@ -235,10 +220,6 @@ function throwing(error: Error): () => never {
   };
 }
 
-/**
- * The three classes a seam can throw: an ordinary fault, and the two budget breaches that must
- * still report the analysis-limit wording rather than the generic one.
- */
 const INJECTED_CAUSES: readonly {
   readonly label: string;
   readonly ported: () => never;
@@ -347,8 +328,6 @@ describe('the analyzer receives the same input from both pipelines', () => {
       command: 'rm -rf build',
       options: { cwd: project, shell: 'posix', strict: false, worktreeMode: false },
     });
-    // The gate hands the analyzer the Budget the evaluation created, so the analyzer counts on the
-    // same one the guards already charged.
     expect(budgets.ported).toMatchObject({
       counters: expect.any(Map),
       resolvedPaths: expect.any(Map),
@@ -381,8 +360,6 @@ describe('git metadata for the execution and configuration directories', () => {
     return seen.ported as { entries: readonly string[] } | null;
   }
 
-  // An anchor is the repository's canonical path as the resolver compares it: through `realpath`,
-  // and on Windows lower-cased and spelled with `/`.
   const anchor = (repository: string) => {
     const path = join(realpathSync(repository), '.git');
     return process.platform === 'win32' ? path.replaceAll('\\', '/').toLowerCase() : path;

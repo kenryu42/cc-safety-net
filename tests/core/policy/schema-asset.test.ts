@@ -6,11 +6,6 @@ import { RULE_SOURCE_LIMIT } from '@/core/policy/resource-limits';
 import { RULE_OVERRIDE_KEY_PATTERN, RULES_CONFIG_FIELDS } from '@/core/policy/rules-config';
 import { COMMAND_PATTERN, MAX_REASON_LENGTH } from '@/core/rules/constants';
 
-/**
- * `assets/cc-safety-net.schema.json` is published for editors and is written by hand, so nothing
- * but this test stops it from describing a `rule.json` the validator no longer accepts. It holds
- * the asset to every acceptance decision the validator makes that the schema also states.
- */
 describe('the published JSON Schema asset', () => {
   const schema = JSON.parse(
     readFileSync(

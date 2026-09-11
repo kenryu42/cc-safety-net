@@ -12,12 +12,10 @@ import { firstTrustedRoot, getToolRoute, resolveContainedCwd } from '@/gate/inta
 import type { CommandToolKind, ToolCallContext } from '@/gate/invocation';
 import { runConfiguredHookAdapter } from '@/hosts/hook/common';
 
-/** Config file holding the Antigravity CLI PreToolUse hook registrations. */
 export function getAntigravityHooksPath(homeDir: string): string {
   return join(homeDir, '.gemini', 'config', 'hooks.json');
 }
 
-/** Antigravity CLI PreToolUse hook input format */
 interface AntigravityCliHookInput {
   toolCall?: {
     name?: string;
@@ -30,7 +28,6 @@ interface AntigravityCliHookInput {
   artifactDirectoryPath?: string;
 }
 
-/** Antigravity CLI PreToolUse hook output format */
 interface AntigravityCliHookOutput {
   decision: 'deny';
   reason: string;

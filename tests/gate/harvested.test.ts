@@ -19,34 +19,10 @@ import { policySnapshot } from '../helpers/policy';
 import { FUZZ_SAMPLE_COUNT, FUZZ_SEED, fuzzShellSources } from '../helpers/shell-inputs';
 import { normalize, rootFolds, withProcessEnv } from '../helpers/temp-home';
 
-/**
- * Every string the retired test suites spelled out, replayed as a command through the gate at two
- * places and two levels. Those suites proved thousands of small facts one at a time; replaying
- * their literals keeps all of them pinned without importing or copying a single test file.
- *
- * The oracle is `tests/fixtures/gate/harvested-verdicts.jsonl`: one row per literal, one cell per
- * place and level, each cell naming the outcome, the rule id and the stage rather than a hash, so
- * a flipped literal is a named row a reviewer can read. The contract anchors below spell out, in
- * the test itself, the decisions §9 of `docs/greenfield-contract.md` names for commands the
- * harvest contains, so the table cannot drift past them unnoticed. The seeded fuzz pins the
- * properties that must hold for every generated source, not the source-by-source outcomes.
- */
-
 const tree = createGateTree('gate-harvested-');
 
 const environment = createProcessEnvironment();
 
-/**
- * What the gate reads out of the process while a batch runs. It reads a snapshot of `process.env`,
- * so a literal spelling `$TMPDIR` or `~` would otherwise decide on whatever the host set — `allow`
- * where `TMPDIR` is unset, `deny` where it names a directory above the fixture — and a recorded
- * verdict would carry the machine's own paths. The two variables that reach a verdict point into
- * the fixture; the rest are the synthetic values the trace recordings already use. Every `GIT_*`
- * variable the host exports is blanked: the git analyzer reads `GIT_CONFIG_COUNT` and its
- * `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` pairs from the process, so a literal that sets the count
- * and a key would borrow the host's value where the host exports one and fail closed where it
- * does not.
- */
 const PINNED_PROCESS = {
   ...Object.fromEntries(
     Object.keys(process.env)
@@ -61,20 +37,12 @@ const PINNED_PROCESS = {
   USER: 'agent',
 };
 
-/**
- * One batch over the pinned process, with the gate's snapshot taken inside the pinned window. The
- * fixture tree is static for the whole run, so one batch shares its path lookups.
- */
 const withPinnedProcess = <T>(batch: (environment: Environment) => T): T =>
   withProcessEnv(PINNED_PROCESS, () => {
     const environment = createProcessEnvironment();
     return batch({ ...environment, paths: memoizedPaths(environment.paths) });
   });
 
-/**
- * Both directories are real, so a relative operand resolves; only one of them is a repository.
- * `where` is the column prefix the recorded table uses.
- */
 const PLACES = [
   {
     where: 'work',
@@ -88,10 +56,6 @@ const PLACES = [
   },
 ] as const;
 
-/**
- * The level comes from the policy the gate is handed. `getCCSafetyNetEnvModes` can still raise it
- * from an ambient `CC_SAFETY_NET_*` variable, which the pinned process decides.
- */
 const LEVELS = [
   { level: 'standard', snapshot: policySnapshot() },
   { level: 'strict', snapshot: policySnapshot({ safety: { level: 'strict' } }) },
@@ -109,42 +73,25 @@ const PARANOID_LEVELS = [
 ] as const;
 
 const home = homedir();
-// The fixture does not move: canonicalizing its root for every verdict repeats filesystem work.
 const folds = rootFolds(tree.root);
 
-/**
- * The recorded shape of a verdict. Home text reaches one only through a `~` or `$HOME` expansion
- * in `evidence.segment`, and is folded only where the input does not spell the home itself: a
- * sandbox whose home is `/root` must keep a literal `/root` in an input the way every other
- * machine sees it.
- */
 const folded = <T>(input: string, verdict: T): T =>
   normalize(verdict, [...folds, ...(input.includes(home) ? [] : [[home, '<home>'] as const])]);
 
 const recorded = loadHarvestedVerdicts();
 
-/**
- * A run with no table to compare against records one instead. To regenerate the table, delete
- * `tests/fixtures/gate/harvested-verdicts.jsonl` and run this file once locally; a row that a
- * change flips is edited by hand, with the reason stated in the commit message.
- */
 const RECORDING = recorded === null;
 
-/** One row per literal, in the literal's order: what this run decided. */
 const rows: HarvestedRow[] = [];
 
 afterAll(() => {
-  // The local `bun test` path when the table is missing; under CI the
-  // missing-table test has already failed instead, so a renamed column cannot pass vacuously.
   if (RECORDING && !process.env.CI && rows.length === HARVESTED_LITERAL_COUNT)
     writeHarvestedVerdicts(rows);
   tree.remove();
 });
 
-/** Room for a slow machine: a batch decides a few thousand invocations. */
 const BATCH_TIMEOUT_MS = 30_000;
 
-/** Which verdicts the replay actually reached, so the batches cannot pass by deciding nothing. */
 const reached = new Set<string>();
 
 function decide(input: string, index: number, environment: Environment) {
@@ -161,8 +108,6 @@ function decide(input: string, index: number, environment: Environment) {
   );
   const row = {
     literal: input,
-    // The table records cells, not evidence trees. Normalize only what is compared here; fuzz
-    // below still normalizes and compares the entire verdict on both executions.
     ...Object.fromEntries(
       decided.map((cell) => [cell.column, folded(input, harvestedVerdictCell(cell.verdict))]),
     ),
@@ -171,19 +116,6 @@ function decide(input: string, index: number, environment: Environment) {
   return { row, verdicts: decided.map((cell) => cell.verdict) };
 }
 
-/**
- * The literals whose verdict is decided by something no two hosts share, with the cell Windows
- * reaches instead. Every column of these rows carries the same value, so one cell per literal
- * says it. Three facts account for all of them:
- *
- * - `/tmp` is where the fixture itself lives on a POSIX host, which puts the user policy config
- *   underneath it, so a command that deletes `/tmp` is a policy-protection denial there. On
- *   Windows `/tmp` names a directory on the current drive that holds nothing of ours.
- * - A backslash is a separator on Windows, so a quoted regex like `"\.npmrc"` reads as a path
- *   whose basename is a secret's rather than as an escaped dot.
- * - `$HOME` expands to a Windows home the home-anchored secret rule does not match, so the
- *   basename rule names the same file instead.
- */
 const WINDOWS_CELLS: Readonly<Record<string, string>> = {
   'find /tmp -depth -delete': 'deny find.delete @command-analysis',
   'find /tmp -execdir env rm -rf {} +': 'deny find.exec-rm-recursive-force @command-analysis',
@@ -197,7 +129,6 @@ const WINDOWS_CELLS: Readonly<Record<string, string>> = {
   'rm -rf /tmp target in home cwd allowed': 'allow',
 };
 
-/** Every cell of a row that disagrees with the table, named so the reader sees what flipped. */
 function mismatchesAgainstTable(row: HarvestedRow, index: number): string[] {
   const label = `literal ${index + 1} ${JSON.stringify(row.literal).slice(0, 120)}`;
   const expected = recorded?.[index];
@@ -215,8 +146,6 @@ const BATCH_SIZE = 250;
 
 describe(`${HARVESTED_LITERAL_COUNT} literals harvested from the shipped test suite`, () => {
   test('a recorded verdict table is present to compare against', () => {
-    // Under CI a missing table fails instead of being written, the way bun refuses to create a
-    // missing snapshot there.
     expect(
       RECORDING && process.env.CI !== undefined,
       'no recorded verdict table; run without CI to record one',
@@ -228,8 +157,6 @@ describe(`${HARVESTED_LITERAL_COUNT} literals harvested from the shipped test su
     for (const known of ['rm -rf /', 'git reset --hard', 'cat ~/.ssh/config', 'npm run build']) {
       expect(HARVESTED_LITERALS).toContain(known);
     }
-    // A literal this long means the scanner lost the quote state and swallowed source: the
-    // longest the retired suites actually spelled out is a few hundred characters.
     expect(HARVESTED_LITERALS.filter((literal) => literal.length > 2_000)).toStrictEqual([]);
   });
 
@@ -240,16 +167,12 @@ describe(`${HARVESTED_LITERAL_COUNT} literals harvested from the shipped test su
       () =>
         withPinnedProcess((environment) => {
           const decided = batch.map((input, offset) => decide(input, start + offset, environment));
-          // Whatever the gate throws it reports as a verdict, so no literal escapes the catch
-          // boundary; a failure names the literal that did.
           expect(
             decided
               .filter((entry) => entry.verdicts.some((verdict) => verdict.outcome === 'uncaught'))
               .map((entry) => entry.row.literal),
           ).toStrictEqual([]);
           if (RECORDING) return;
-          // Every flipped cell in the batch at once: one failure names them all rather than
-          // stopping at the first, so a reader sees the whole shape of a change.
           expect(
             decided.flatMap((entry, offset) => mismatchesAgainstTable(entry.row, start + offset)),
           ).toStrictEqual([]);
@@ -271,17 +194,11 @@ describe(`${HARVESTED_LITERAL_COUNT} literals harvested from the shipped test su
       'work/standard',
       'work/strict',
     ]);
-    // The two paranoid overrides are decided for every tenth literal, and only there.
     expect(rows.filter((row) => row['work/paranoid_rm'] !== undefined).length).toBe(
       Math.ceil(HARVESTED_LITERAL_COUNT / 10),
     );
   });
 
-  /**
-   * What §9 of the contract says about commands the harvest happens to contain. These are the
-   * assertions a reviewer can check against the document; the table pins the rest of the corpus
-   * to whatever these same rules decided for it.
-   */
   const ANCHORS = [
     { name: 'a status query is allowed at both levels', literal: 'git status', cells: 'allow' },
     { name: 'a package build is allowed at both levels', literal: 'npm run build', cells: 'allow' },
@@ -366,7 +283,6 @@ describe(`${HARVESTED_LITERAL_COUNT} literals harvested from the shipped test su
 
 const FUZZ_BATCH_SIZE = 500;
 
-/** The stages a decision may come from, so a new one has to be named here to pass. */
 const STAGES = new Set([
   'command-validation',
   'command-analysis',
@@ -374,7 +290,6 @@ const STAGES = new Set([
   'secret-protection',
 ]);
 
-/** The intents the hosts render; a deny always carries one of them. */
 const INTENTS = new Set([
   'hard_stop',
   'stop_and_explain',
@@ -383,14 +298,8 @@ const INTENTS = new Set([
   'scope_down',
 ]);
 
-/** A rule id is a dotted lowercase identifier, never a sentence or a path. */
 const RULE_ID = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$/;
 
-/**
- * Every denial the fuzz reaches without a rule id: the closed set of texts a host may display for
- * a source no rule matched. Spelled out rather than imported, because the text is the contract —
- * a new entry is a new user-visible failure mode and has to be added here deliberately.
- */
 const UNRULED_DENIAL_REASONS = [
   'CC Safety Net could not analyze the command because it exceeds safe analysis limits. Simplify or split the command and retry.',
   'CC Safety Net failed closed because command analysis failed unexpectedly. This is not caused by your command. Report it to the user.',
@@ -398,7 +307,6 @@ const UNRULED_DENIAL_REASONS = [
   'shell execution source cannot be verified safely. Use a literal command string or ask the user to run it manually.',
 ];
 
-/** The rules a fuzz source can reach: the alphabet carries `rm -rf`, `~/.ssh/config` and `del`. */
 const FUZZ_RULE_IDS = [
   'raw-text.dangerous-command',
   'rm.recursive-force-outside-cwd',
@@ -417,11 +325,6 @@ describe(`${FUZZ_SAMPLE_COUNT} seeded fuzz sources hold the gate's invariants`, 
   const seenReasons = new Set<string>();
   const seenRuleIds = new Set<string>();
 
-  /**
-   * One representative source per shape the fuzz alphabet builds, with the decision the contract
-   * gives it, so the invariants below are not the only thing standing between a broken gate and a
-   * green run.
-   */
   const SHAPES = [
     {
       name: 'an empty command fails closed',
@@ -502,19 +405,16 @@ describe(`${FUZZ_SAMPLE_COUNT} seeded fuzz sources hold the gate's invariants`, 
             if (entry.verdict.outcome === 'deny' && entry.verdict.ruleId === undefined)
               seenReasons.add(String(entry.verdict.reason));
           });
-          // Nothing escapes the catch boundary: whatever the gate throws it reports as a verdict.
           expect(
             decided
               .filter((entry) => entry.verdict.outcome === 'uncaught')
               .map((entry) => entry.source),
           ).toStrictEqual([]);
-          // Every decision names a stage the audit trail knows.
           expect(
             decided
               .filter((entry) => !STAGES.has(String(entry.verdict.stage)))
               .map((entry) => entry.source),
           ).toStrictEqual([]);
-          // Every denial the agent reads carries an intent and a reason it can act on.
           expect(
             decided
               .filter(
@@ -528,8 +428,6 @@ describe(`${FUZZ_SAMPLE_COUNT} seeded fuzz sources hold the gate's invariants`, 
               )
               .map((entry) => entry.source),
           ).toStrictEqual([]);
-          // A denial either names a rule id of the documented shape or one of the documented
-          // texts for a source no rule matched.
           expect(
             decided
               .filter(
@@ -541,7 +439,6 @@ describe(`${FUZZ_SAMPLE_COUNT} seeded fuzz sources hold the gate's invariants`, 
               )
               .map((entry) => `${entry.verdict.ruleId ?? entry.verdict.reason}: ${entry.source}`),
           ).toStrictEqual([]);
-          // The same source decided twice decides the same way: no state survives a call.
           expect(
             decided
               .filter(

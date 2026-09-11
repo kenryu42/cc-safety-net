@@ -9,12 +9,6 @@ import {
 import { writeTree } from '../../helpers/fixture-tree';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * The state-file helpers every detector shares. A runtime's file is either missing (an answer),
- * readable (an answer) or neither, and the third case must stay distinguishable from the first so
- * a host with an unreadable config is reported as uninspected rather than as not installed.
- */
-
 const stripComments = (raw: string) => raw.replace(/^\s*\/\/.*$/gm, '');
 
 function seed() {

@@ -17,13 +17,12 @@ import {
 } from '@/core/policy/paths';
 import type { SyncRulesConfigOptions } from './types';
 
-/** Retired in version 3: kept only so the migration command can find and prune it. */
 const RULES_LOCK_FILE = 'rule.lock';
 
 export interface ScopePaths {
   configDir: string;
   configPath: string;
-  /** The retired v2 lockfile, carried only so the migration command can prune it. */
+
   lockPath: string;
   filesystemScope: PolicyFilesystemScope;
   configTarget: PolicyFilesystemTarget;

@@ -45,22 +45,11 @@ export type GuardStage = AuditFailureStage;
 export type GuardEvaluation = {
   stage: GuardStage;
   decision: Decision;
-  /**
-   * Effective safety level in force for this evaluation. Absent when the guard
-   * returned before the policy snapshot resolved, since those denials (input
-   * limits, policy and git metadata protection) do not depend on the level.
-   */
+
   level?: EffectiveSafetyLevel;
-  /**
-   * Set when the snapshot enforced a fallback policy instead of the configured one.
-   * The reason names the failing source, what is not active, and the repair, so
-   * diagnostic surfaces can relay all of it.
-   */
+
   configFallback?: { reason: string };
-  /**
-   * The audit class of the analysis limit this denial reports, set only where the pipeline
-   * mapped an analyzer-cap breach to the denial the analyzer produces for it.
-   */
+
   errorCode?: AnalysisErrorCode;
 };
 
@@ -80,13 +69,12 @@ export type GuardDependencies = {
 };
 
 export type GuardOptions = {
-  /** Process state for this evaluation: every stage reads it instead of the ambient process. */
   environment: EnvironmentContext;
   auditAllowed?: boolean;
   policyOptions?: Omit<PolicySnapshotOptions, 'cwd'>;
   dependencies?: Partial<GuardDependencies>;
   factParserDependencies?: Partial<FactParserDependencies>;
-  /** Passive recorder for `explain`; decisions never consult it. */
+
   trace?: CommandTraceContext;
 };
 
@@ -148,8 +136,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
       },
     };
   }
-  // One Budget for the whole evaluation: every stage after the structural returns counts its
-  // path work on it, so the caps hold over the call rather than per guard.
+
   const budget = createBudget();
   const protectedGitMetadata = callDependency('policy-protection', command, () =>
     dependencies.resolveGitMetadata(
@@ -213,8 +200,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   );
   const policy = snapshot.policy;
   const modes = dependencies.getModes(policy, options.environment.env);
-  // Every decision made after the snapshot resolved reports the level in force and,
-  // when a fallback policy is enforced, the reason behind it.
+
   const reported = { level: modes.effectiveLevel, ...getConfigFallback(snapshot) };
   const secretTarget =
     policy.secretProtection.enabled === false
@@ -259,8 +245,6 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     };
   }
 
-  // A cap the analyzer owns is a documented limit the command crossed: it answers with the
-  // analyzer's own denial and carries the audit class. Everything else still fails closed.
   const analysis = callDependency('command-analysis', command, () =>
     analyzeOrCapBreach(
       () =>
@@ -278,8 +262,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
             paranoidInterpreters: modes.paranoidInterpreters,
             worktreeMode: modes.worktreeMode,
             budget,
-            // Only when a caller asked for one: the analysis options are otherwise the exact
-            // set the shipped pipeline hands the analyzer.
+
             ...(options.trace ? { trace: options.trace } : {}),
           },
           getDeclaredCommandProgram(facts),
@@ -300,11 +283,6 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   return { stage: 'command-analysis', ...reported, decision: { kind: 'allow' } };
 }
 
-/**
- * Git control-plane paths for the directories this invocation runs against. The environment
- * resolves and memoizes one repository per directory, so the gate unions the execution and
- * configuration results when the two directories sit in different repositories.
- */
 function resolveGitMetadataForCwds(
   cwds: readonly (string | undefined)[],
   environment: EnvironmentContext,
@@ -374,8 +352,6 @@ function failedClosedEvaluation(
   command: string | null | undefined,
   cause?: unknown,
 ): GuardEvaluation {
-  // Analysis budgets are documented limits the command crossed, so they get
-  // actionable wording instead of the internal-fault report.
   const isAnalysisLimit =
     cause instanceof AnalysisLimit || cause instanceof StructuralShellSyntaxLimitError;
   return {

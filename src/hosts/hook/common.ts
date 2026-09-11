@@ -53,8 +53,6 @@ type ConfiguredHookAdapter<T> = Omit<HookAdapter<T>, 'outputDeny' | 'outputAllow
 
 type ToolInputResult = { ok: true; input: unknown; route: ToolRoute } | { ok: false };
 
-/** The context every host that reports its own cwd resolves: the hook's `cwd` field, falling back
- *  to the process's. */
 export const getStandardHookContext: HookAdapter<{ cwd?: string }>['getContext'] = (
   input,
   toolInput,

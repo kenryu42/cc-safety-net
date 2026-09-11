@@ -2,8 +2,6 @@ import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:pa
 import { AnalysisLimit, type Budget, LIMITS } from '../budget';
 import type { Environment, PathResolver } from '../environment';
 
-// The cap bounds walk cost, not trust: a path whose nearest existing ancestor is this far up
-// names no existing file, so stopping at the lexical reconstruction hides nothing.
 const MAX_MISSING_SUFFIX_COMPONENTS = 256;
 
 const SUPPORTED_PATH_ENV_NAMES = new Set([
@@ -129,14 +127,14 @@ function expandBracedPathEnvironmentVariable(
     return match;
   }
   if (!SUPPORTED_PATH_ENV_NAMES.has(name)) return match;
-  // Assignment operators require write semantics we do not model.
+
   if (operator.endsWith('=')) throw new AnalysisLimit('pathEnvironmentExpansion');
 
   const environmentValue = getSupportedPathEnvironmentValue(name, environment);
   const usable = operator.startsWith(':')
     ? environmentValue !== null && environmentValue !== ''
     : environmentValue !== null;
-  // Error operators (? / :?) only fail closed when the value is missing/unusable.
+
   if (operator.endsWith('?') && !usable) throw new AnalysisLimit('pathEnvironmentExpansion');
   if (operator.endsWith('-') || operator.endsWith('?')) {
     return usable
@@ -205,9 +203,6 @@ export function probeExistingPath(
   paths: PathResolver,
   budget: Budget,
 ): string | null {
-  // A cached value may come from a full walk of a nonexistent path; returning it
-  // is safe because callers compare it against a known identity rather than
-  // treating it as proof the path exists.
   const cached = budget.resolvedPaths.get(path);
   if (cached !== undefined) return cached;
 
@@ -222,11 +217,6 @@ function chargeRealpath(budget: Budget, candidate: string): void {
   budget.charge('processedCandidateBytes', Buffer.byteLength(candidate));
 }
 
-/**
- * The protected-path guards' view of a candidate: supported variables and `~` expanded, MSYS
- * drive form normalized, resolved against the cwd, canonicalized through the existing prefix,
- * and reported with forward slashes.
- */
 export function normalizeProtectedPathCandidate(
   target: string,
   cwd: string,
@@ -238,13 +228,6 @@ export function normalizeProtectedPathCandidate(
   return resolveExistingPath(lexical, environment.paths, budget).replace(/\\/g, '/');
 }
 
-/**
- * Canonicalizes like normalizeProtectedPathCandidate, but skips the ancestor walk
- * for candidates whose basename cannot match the protected file: resolveExistingPath
- * appends missing components verbatim, so a nonexistent path always resolves to its
- * own lexical basename. A single budgeted probe still catches an existing symlink
- * aliasing the protected file. Returns null when the candidate is disqualified.
- */
 export function normalizeProtectedFileCandidate(
   target: string,
   cwd: string,

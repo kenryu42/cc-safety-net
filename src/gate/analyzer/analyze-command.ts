@@ -110,8 +110,7 @@ export function analyzeCommandInternal(
   }
 
   const originalCwd = options.cwd;
-  // Preserve effectiveCwd from caller (e.g., after cd in prior segment of outer command)
-  // undefined = use cwd, null = unknown (after cd/pushd)
+
   const effectiveCwd = options.effectiveCwd !== undefined ? options.effectiveCwd : options.cwd;
   const shellGitContextState = createShellGitContextEnvState(
     options.environment.env,
@@ -285,8 +284,7 @@ function analyzeProgram(
         );
         if (result) return { result, states };
         const functionBody = getCalledFunctionBody(node, analyzedState.functionDefinitions);
-        // Every call site re-analyzes the whole body, so a chain of functions that each call
-        // the next several times fans out far past what the recursion depth cap bounds.
+
         if (functionBody) {
           options.budget.charge('derivedTokens', countCommandProgramWords(functionBody));
         }
@@ -708,7 +706,7 @@ function analyzeCommandView(
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
         literalHeredocFiles: state.literalHeredocFiles,
-        // A child shell inherits no functions, so only same-shell callers pass them on.
+
         functionDefinitions: overrides?.functionDefinitions,
         worktreeMode: overrides?.worktreeMode ?? options.worktreeMode,
         trace: options.trace
@@ -946,8 +944,6 @@ function isBareCommandWord(word: CommandWord | undefined, value: string): boolea
   );
 }
 
-// An unquoted body free of `$`, backtick, and backslash undergoes no expansion or
-// escape processing, so the shell delivers it byte-for-byte like a quoted one.
 function isLiteralHeredoc(heredoc: CommandHeredoc): boolean {
   return heredoc.quotedDelimiter || !/[$`\\]/.test(heredoc.body);
 }
@@ -985,8 +981,7 @@ function getHeredocReason(commandView: CommandView): string | undefined {
       ? REASON_UNSUPPORTED_HEREDOC
       : undefined;
   }
-  // Message sinks read stdin as data they store or publish, never as a program, so a
-  // commit message or PR body that describes a destructive command stays inert.
+
   const head = commandView.words[0];
   const sub = commandView.words[1];
   if (
@@ -1046,10 +1041,6 @@ function analyzeUnsupportedHeredoc(
   return result ? { ...result, segment: commandView.displayText } : null;
 }
 
-// A literal heredoc feeding an interpreter's stdin is that interpreter's program, so
-// scan it like inline -c/-e code instead of raw unparseable shell text. Returns
-// undefined when the heredoc is not a literal interpreter program (fall back to the
-// raw-text scan) and null when the body is analyzed and allowed.
 function analyzeInterpreterHeredocMatch(
   commandView: CommandView,
   heredocs: readonly CommandRedirection[],

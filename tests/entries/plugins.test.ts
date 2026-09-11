@@ -3,12 +3,6 @@ import portedAmpPlugin from '@/entries/amp';
 import { CCSafetyNetPlugin as portedOpenCodePlugin } from '@/entries/index';
 import portedPiExtension from '@/entries/pi';
 
-/**
- * What each in-process entry claims from its host at load time. The entries do no work of their
- * own beyond registration, so the check is that an entry registers for the events below, in that
- * order.
- */
-
 function recordHostEvents(register: (host: never) => void): string[] {
   const events: string[] = [];
   register({

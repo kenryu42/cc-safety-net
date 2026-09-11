@@ -10,13 +10,6 @@ import { analyzeCommand, analyzeOrCapBreach } from '@/gate/analyzer';
 import { REASON_RECURSION_LIMIT } from '@/gate/analyzer/reasons';
 import { policySnapshot } from '../../helpers/policy';
 
-/**
- * The analyzer entry point decides the whole destructive half of the gate, so each level states
- * the rule a command reaches under one policy, one capability set and one process state. Every
- * budget the entry owns also gets a breach and a below-the-cap counterpart, so a cap that silently
- * moves fails here rather than in a later phase.
- */
-
 const workspace = mkdtempSync(join(systemTempRoot(), 'analyze-command-'));
 const agentHome = join(workspace, 'agent-home');
 const scratch = join(workspace, 'scratch');
@@ -44,8 +37,6 @@ const environment = createTestEnvironment({
   paths: portedPaths,
 });
 
-// Resolved once, so the stated decisions isolate the entry point from anchor resolution
-// (pinned by tests/core/git/metadata.test.ts).
 const gitMetadata = resolveProtectedGitMetadata(project, environment);
 
 const customRules = [
@@ -102,10 +93,6 @@ const strict = mode('strict', { strict: true });
 const paranoidRm = mode('paranoid_rm', { paranoidRm: true });
 const paranoidInterpreters = mode('paranoid_interpreters', { paranoidInterpreters: true });
 
-/**
- * The analyzer throws the caps the pipeline maps back into denials; this maps them the same way
- * and rethrows the rest.
- */
 function decisionAt(cwd: string, command: string, analysis: AnalysisMode) {
   return analyzeOrCapBreach(
     () =>
@@ -148,13 +135,11 @@ describe('analyzeCommand', () => {
       { command: 'git push --force', ruleId: 'git.push-force' },
       { command: 'rm -rf /', ruleId: 'rm.recursive-force-root-or-home' },
       { command: 'echo $(rm -rf /)', ruleId: 'rm.recursive-force-root-or-home' },
-      // The fixture checkout holds a `.git`, which a delete rooted at `.` would reach.
       { command: 'find . -delete', ruleId: 'find.delete-git-metadata' },
       { command: 'find logs -exec rm -rf {} +', ruleId: 'find.exec-rm-recursive-force' },
       { command: 'echo / | xargs rm -rf', ruleId: 'xargs.rm-recursive-force-dynamic' },
       { command: 'parallel r$(printf m) -rf ::: child', ruleId: 'parallel.shell-dynamic' },
       { command: 'terraform destroy -auto-approve', ruleId: 'custom.terraform-destroy' },
-      // A transparent wrapper lets the custom rules inspect the command it runs.
       { command: 'doas terraform destroy -auto-approve', ruleId: 'custom.terraform-destroy' },
       { command: 'nice -n 5 helm uninstall release', ruleId: 'custom.helm-uninstall' },
       {
@@ -189,7 +174,6 @@ describe('analyzeCommand', () => {
         reason: 'xargs rm -rf with dynamic input is dangerous. Use explicit file list instead.',
         segment: 'xargs rm -rf',
       },
-      // busybox is peeled by the child dispatch, never by the wrapper prelude.
       {
         command: 'echo / | xargs busybox rm -rf',
         ruleId: 'xargs.rm-recursive-force-dynamic',
@@ -197,7 +181,6 @@ describe('analyzeCommand', () => {
         reason: 'xargs rm -rf with dynamic input is dangerous. Use explicit file list instead.',
         segment: 'xargs busybox rm -rf',
       },
-      // An argument list expands the job, so it is analyzed as the command it runs.
       {
         command: 'parallel rm -rf / ::: a',
         ruleId: 'rm.recursive-force-root-or-home',
@@ -237,7 +220,6 @@ describe('analyzeCommand', () => {
           "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.",
         segment: 'sh -c git reset --hard',
       },
-      // The unknown head scans its own suffix for a command it would run.
       {
         command: 'unknown-head -x git reset --hard',
         ruleId: 'git.reset-hard',
@@ -246,7 +228,6 @@ describe('analyzeCommand', () => {
           "git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.",
         segment: 'unknown-head -x git reset --hard',
       },
-      // An embedded child reaches the custom rules only through a transparent wrapper.
       {
         command: 'unknown-head -x doas terraform destroy -auto-approve',
         ruleId: 'custom.terraform-destroy',
@@ -255,8 +236,6 @@ describe('analyzeCommand', () => {
           '[terraform-destroy] Terraform destroy removes live infrastructure. Ask the user to run it.',
         segment: 'unknown-head -x doas terraform destroy -auto-approve',
       },
-      // `eval` is not a head of the dynamic-execution carrier walk: an eval body inside a child
-      // shell is read by the producer's own scan of the script it would run.
       {
         command: 'echo x | xargs sh -c \'eval "$1"\' _',
         ruleId: 'xargs.shell-dynamic',
@@ -275,7 +254,6 @@ describe('analyzeCommand', () => {
         evidence: [{ kind: 'command', command: row.command, segment: row.segment }],
       });
     }
-    // Without the wrapper the same embedded command is only a command.
     expect(decision('unknown-head -x terraform destroy -auto-approve', standard)).toBeNull();
   });
 
@@ -321,7 +299,6 @@ describe('analyzeCommand', () => {
         intent: 'scope_down',
         segment: 'custom-tool -x find . -exec xargs rm -rf',
       },
-      // No rule owns an unverifiable shell source; the reason stands on its own.
       {
         command: "foo find . -exec sh -c 'exec $X' ;",
         intent: 'stop_and_explain',
@@ -432,7 +409,6 @@ describe('analyzeCommand', () => {
   });
 });
 
-/** Nests `bash -c` so the analyzer meets the recursion cap before it meets the payload. */
 function nestShellWrappers(depth: number, payload: string): string {
   let command = payload;
   for (let level = 0; level < depth; level++) {
@@ -458,8 +434,6 @@ const BUDGET_BREACHES: readonly {
     reason: REASON_RECURSION_LIMIT,
   },
   {
-    // Each `&&` step keeps the state before it and the state with the new function defined, so
-    // the distinct states outrun the control-flow cap that deduplication enforces.
     budget: 'control-flow states',
     breaching: repeatWords(64, (index) => `{ state${index}() { :; }; } &&`).slice(0, -3),
     allowed: repeatWords(63, (index) => `{ state${index}() { :; }; } &&`).slice(0, -3),
@@ -472,8 +446,6 @@ const BUDGET_BREACHES: readonly {
     reason: REASON_DERIVED_COMMAND_WORK_LIMIT,
   },
   {
-    // Every embedded shell token reserves the words left after it, so the reservations sum past
-    // the derived-command cap well before the token list itself is remarkable.
     budget: 'derived command work',
     breaching: `unknown-head ${repeatWords(181, () => 'bash')}`,
     allowed: `unknown-head ${repeatWords(180, () => 'bash')}`,

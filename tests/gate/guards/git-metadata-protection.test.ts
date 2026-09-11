@@ -18,13 +18,6 @@ import {
   type LinkedWorktreeFixture,
 } from '../../helpers';
 
-/**
- * The Git control plane is protected by three different shapes of test — an exact or ancestor
- * delete, a write-like target, and a hook-name selection — over metadata that differs between a
- * plain repository, a linked worktree and a submodule. Each shape is stated against the resolved
- * metadata, so a change cannot hide behind a different anchor.
- */
-
 let worktrees: LinkedWorktreeFixture;
 let submodule: FakeGitFileFixture;
 
@@ -82,16 +75,12 @@ describe('protected git delete targets', () => {
       { target: join(repository.cwd, '.git'), recursive: false, expected: true },
       { target: '.git/hooks', recursive: false, expected: true },
       { target: '.git/hooks/pre-commit', recursive: false, expected: true },
-      // The delete test is exact or hook-rooted: an ordinary file inside the Git directory is
-      // not one of the protected entries.
       { target: '.git/config', recursive: false, expected: false },
-      // `.git/hooks/../refs` normalizes out of the hooks directory before it is compared.
       { target: '.git/hooks/../refs', recursive: false, expected: false },
       { target: 'nested/.git', recursive: true, expected: false },
       { target: 'file.txt', recursive: true, expected: false },
       { target: '', recursive: true, expected: false },
       { target: '   ', recursive: true, expected: false },
-      // An ancestor of the Git directory counts only for a recursive delete.
       { target: '..', recursive: true, expected: true },
       { target: '..', recursive: false, expected: false },
       { target: '../*', recursive: true, expected: true },
@@ -122,16 +111,11 @@ describe('protected git delete targets', () => {
     const main = repositories.find((row) => row.label === 'main worktree');
     if (!main) throw new Error('missing fixture');
     for (const label of ['linked worktree', 'submodule']) {
-      // The `.git` marker file that points at the real Git directory is itself protected.
       expect(protect(label, '.git', false), label).toBeTrue();
-      // Its hooks live under the Git directory the marker points at, not under the checkout.
       expect(protect(label, '.git/hooks', false), label).toBeFalse();
     }
-    // From a linked worktree, the main repository's Git directory is protected as written.
     expect(protect('linked worktree', join(main.cwd, '.git'), true)).toBeTrue();
-    // The main worktree keeps its own hooks directory, which is inside its checkout.
     expect(protect('main worktree', '.git/hooks', false)).toBeTrue();
-    // A redirection can overwrite the marker file, so it is denied where one exists.
     const linked = repositories.find((row) => row.label === 'linked worktree');
     if (!linked) throw new Error('missing fixture');
     expect(
@@ -163,11 +147,9 @@ describe('protected git delete targets', () => {
     expect(protect('.git', false)).toBeTrue();
     expect(protect('.git/hooks/pre-commit', false)).toBeTrue();
     expect(protect('file.txt', true)).toBeFalse();
-    // `*` skips dot entries, so only a dot-glob or a PowerShell wildcard reaches `.git`.
     expect(protect('*', true)).toBeFalse();
     expect(protect('.*', true)).toBeTrue();
     expect(protect('*', true, true)).toBeTrue();
-    // An ancestor only counts for a recursive delete.
     expect(protect('..', true)).toBeTrue();
     expect(protect('..', false)).toBeFalse();
     expect(
@@ -183,12 +165,9 @@ describe('protected git hook name selection', () => {
       readonly selectedIn: readonly string[];
     }[] = [
       { startingPoints: [], selectedIn: [] },
-      // The hooks of a linked worktree or a submodule live outside the checkout, so only a
-      // starting point above it reaches them.
       { startingPoints: ['.'], selectedIn: ['main worktree', 'outside any repository'] },
       { startingPoints: ['.git'], selectedIn: ['main worktree', 'outside any repository'] },
       { startingPoints: ['.git/hooks'], selectedIn: ['main worktree', 'outside any repository'] },
-      // A single hook file names the file, not the directory the names are read from.
       { startingPoints: ['.git/hooks/pre-commit'], selectedIn: [] },
       {
         startingPoints: ['..'],
@@ -280,23 +259,15 @@ describe('git metadata mutation targets in semantic facts', () => {
       { command: 'mv /tmp/payload .git/hooks/pre-commit', target: '.git/hooks/pre-commit' },
       { command: 'mv -t .git/hooks /tmp/pre-commit', target: '.git/hooks' },
       { command: 'mv --target-directory=.git/hooks /tmp/pre-commit', target: '.git/hooks' },
-      // The operand is reported before expansion, so a tracked variable keeps its spelling.
       { command: 'G=.git; mv $G /tmp/stash', target: '${G}' },
       { command: 'G=.git && mv ${G}/hooks /tmp/stash', target: '${G}/hooks' },
-      // A `cd` moves the directory the later operand resolves against.
       { command: 'cd .git && mv hooks /tmp/stash', target: 'hooks' },
-      // A nested shell is walked, so a move inside one still reports its operand — but its `cd`
-      // ends with it, so a later operand resolves against the repository again.
       { command: '( mv .git /tmp/stash )', target: '.git' },
       { command: '(cd .git) && mv .git /tmp/stash', target: '.git' },
       { command: 'sudo mv .git /tmp/stash', target: '.git' },
       { command: 'env -i mv .git /tmp/stash', target: '.git' },
-      // A redirection is compared against the marker files, and a plain checkout has none: its
-      // `.git` is a directory, which a redirection cannot overwrite.
       { command: 'echo payload > .git', target: null },
       { command: 'echo payload >> .git/hooks/pre-commit', target: '.git/hooks/pre-commit' },
-      // A write inside the Git directory that is neither the entry nor a hook is left to the
-      // delete and move tests.
       { command: 'echo payload > .git/config', target: null },
       { command: 'echo payload > file.txt', target: null },
       { command: 'mv file.txt other.txt', target: null },
@@ -343,7 +314,6 @@ describe('git metadata mutation targets in semantic facts', () => {
     ];
     for (const route of NON_COMMAND_ROUTES) {
       for (const row of rows) {
-        // Only the patch, path and unknown routes carry paths to test; grep and glob do not.
         const carriesPaths =
           route.kind === 'patch' || route.kind === 'path' || route.kind === 'unknown';
         expect(
@@ -364,12 +334,9 @@ describe('git metadata mutation targets in semantic facts', () => {
       target: '.git/hooks/post-commit',
     });
     expect(find('mv file.txt other.txt')).toBeNull();
-    // A read-only tool never mutates, and no metadata means nothing to protect.
     expect(
       nextMutation('Read', { file_path: '.git/config' }, { kind: 'path' }, null, repository),
     ).toBeNull();
-    // The write-like test covers the `.git` entry itself and anything under a hooks directory;
-    // an ordinary file inside the Git directory is left to the delete and move tests.
     expect(
       nextMutation('Write', { file_path: '.git/config' }, { kind: 'path' }, null, repository),
     ).toBeNull();

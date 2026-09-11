@@ -11,10 +11,8 @@ import { getRulebookSourceSyntaxError } from './source-syntax';
 import { isReservedTransparentWrapper } from './transparent-wrappers';
 import type { CustomRule } from './types';
 
-/** Disable a rule, or replace its block reason and intent. */
 export type RuleOverride = 'off' | { reason: string; intent?: BlockIntent };
 
-/** The validated shape of one scope's `rule.json`. */
 export type RulesConfig = {
   version: 1;
   rules: string[];
@@ -29,7 +27,6 @@ export const DEFAULT_CONFIG: RulesConfig = {
   transparent_wrappers: [],
 };
 
-/** What a rulebook contributes once it is loaded, for reports and command output. */
 export interface ActiveRulebookSummary {
   spec: string;
   name: string;
@@ -49,9 +46,9 @@ export interface LoadedRulesPolicy {
   rules: CustomRule[];
   transparent_wrappers: string[];
   rulebooks: LoadedRulebookInfo[];
-  /** Diagnostics whose failing source is dropped, so its rules are not enforced. */
+
   errors: string[];
-  /** Diagnostics that leave the source active, with only the rejected part ignored. */
+
   warnings: string[];
   userConfig?: RulesConfig;
   projectConfig?: RulesConfig;
@@ -75,8 +72,7 @@ export function readRulesConfig(path: string | PolicyFilesystemTarget): {
     if (validation.errors.length > 0) {
       return { config: null, errors: validation.errors };
     }
-    // Validation already accepted every recognized field, so the canonical config is
-    // that pick with the loader's defaults for the fields the file left out.
+
     return {
       config: {
         version: 1,
@@ -90,9 +86,7 @@ export function readRulesConfig(path: string | PolicyFilesystemTarget): {
     if (error instanceof PolicyFilesystemError) {
       return { config: null, errors: [error.message] };
     }
-    // Only a parse failure means the file is malformed; anything else — a schema
-    // dependency that will not load, say — has to name itself instead of blaming
-    // valid JSON.
+
     const message = error instanceof Error ? error.message : String(error);
     return {
       config: null,
@@ -105,16 +99,6 @@ function toTarget(path: string | PolicyFilesystemTarget): PolicyFilesystemTarget
   return typeof path === 'string' ? bindDelegatedPolicyFilesystemTarget(path) : path;
 }
 
-/**
- * `rule.json` acceptance: the loader runs this on the hook's hot path, `doctor` and `explain`
- * report the same document through it, and `tests/core/policy/schema-asset.test.ts` holds the
- * published JSON Schema asset to the fields, limits and patterns it accepts.
- *
- * An issue is emitted in document order and carries the kind the renderer needs: a `typed` or
- * `custom` reason, the `unknownKeys` of a strict object (one issue per key), a record `key` error
- * that already names its key, or a whole-document `limit`. Rulebook validation shares the
- * renderer from `rulebook.ts`.
- */
 export type Issue = {
   path: readonly PropertyKey[];
   message: string;
@@ -133,10 +117,6 @@ export const custom = (path: readonly PropertyKey[], message: string): Issue => 
   kind: 'custom',
 });
 
-/**
- * Inline rules clash by name case-insensitively, in both a rulebook and a version-0 config.
- * A rule whose name is missing or misspelled still clashes with a later copy of it.
- */
 export function duplicateRuleNameIssues(rules: readonly unknown[]): Issue[] {
   const names = new Set<string>();
   return rules.flatMap((rule, index) => {
@@ -173,8 +153,7 @@ export function getRulesConfigValidation(config: unknown): {
 
 function rulesConfigIssues(config: unknown): Issue[] {
   if (!isRecord(config)) return [typed([], 'Config must be an object')];
-  // Over the source limit the config is replaced by a stand-in that carries the limit
-  // error alone, so no source reports a problem of its own.
+
   const overLimit = Array.isArray(config.rules) && config.rules.length > RULE_SOURCE_LIMIT;
   return [
     ...(config.version === 1 ? [] : [typed(['version'], 'must be 1')]),
@@ -196,8 +175,7 @@ function ruleSourceIssues(rules: unknown, overLimit: boolean): Issue[] {
   if (!Array.isArray(rules)) {
     return [
       typed(['rules'], 'must be an array of rulebook source strings'),
-      // A length bound judges anything that has a length, so a long string is over the
-      // source limit too — and names the field, because the limit is not an array's.
+
       ...(exceedsLength(rules, RULE_SOURCE_LIMIT)
         ? [typed(['rules'], RULE_SOURCE_LIMIT_ERROR)]
         : []),
@@ -219,10 +197,6 @@ function ruleSourceIssues(rules: unknown, overLimit: boolean): Issue[] {
   });
 }
 
-/**
- * A length bound runs on any value that carries a length, which the string and array
- * types themselves reject; both bounds report the value they were given.
- */
 function exceedsLength(value: unknown, maximum: number): boolean {
   const length = lengthOf(value);
   return length !== undefined && !(length <= maximum);
@@ -243,7 +217,6 @@ function duplicateRuleSourceIssues(rules: unknown): Issue[] {
   if (!Array.isArray(rules)) return [];
   const sources = new Set<string>();
   return rules.flatMap((source, index) => {
-    // Non-strings and empty strings already carry the element's own issue.
     if (typeof source !== 'string' || source === '') return [];
     if (source.trim() === '') {
       return [custom(['rules', index], 'must be a non-empty rulebook source string')];
@@ -276,8 +249,6 @@ function ruleOverrideIssues(overrides: unknown): Issue[] {
 
 function overrideReasonIssues(reason: unknown, path: readonly PropertyKey[]): Issue[] {
   if (typeof reason !== 'string') {
-    // The lower bound repeats the type error word for word, so only the upper one can
-    // add a diagnostic of its own here.
     return [
       typed(path, 'required non-empty string'),
       ...(exceedsLength(reason, MAX_REASON_LENGTH)
@@ -327,10 +298,6 @@ function reservedWrapperIssues(wrappers: unknown): Issue[] {
   });
 }
 
-/**
- * Sources that carry no issue of their own stay usable even when the rest of the
- * config is rejected; an over-limit or non-array `rules` field yields none.
- */
 function collectValidSources(
   config: unknown,
   issues: readonly { path: readonly PropertyKey[] }[],
@@ -352,9 +319,6 @@ function collectValidSources(
   );
 }
 
-/**
- * Issues are reported grouped by top-level field in the order the diagnostics have always used.
- */
 export function sortIssues<T extends { path: readonly PropertyKey[] }>(
   issues: readonly T[],
   fields: readonly string[],
@@ -374,12 +338,6 @@ export function sortIssues<T extends { path: readonly PropertyKey[] }>(
     .map((entry) => entry.issue);
 }
 
-/**
- * Renders issues as this project's diagnostic strings: a `field.path` prefix joined to a
- * short reason, where nested fields use `separator` and top-level ones use
- * `topLevelSeparator`. Two checks can name the same problem, so an identical string is
- * reported once.
- */
 export function formatIssues(
   issues: readonly Issue[],
   separator: string,
@@ -392,8 +350,7 @@ export function formatIssues(
         if (issue.kind === 'unknownKeys') {
           return `${rendered ? `${rendered}.` : ''}unknown field "${issue.message}"`;
         }
-        // A record key error already names its key; a collection size limit describes
-        // the whole document, not one field of it.
+
         if (issue.kind === 'key' || issue.kind === 'limit' || issue.path.length === 0) {
           return issue.message;
         }

@@ -9,7 +9,6 @@ import {
 import type { CommandToolKind, ToolCallContext } from '@/gate/invocation';
 import { runConfiguredHookAdapter } from '@/hosts/hook/common';
 
-/** Cursor preToolUse hook input format */
 interface CursorHookInput {
   conversation_id?: string;
   hook_event_name?: string;
@@ -23,7 +22,6 @@ interface CursorHookInput {
   workspace_roots?: string[];
 }
 
-/** Cursor preToolUse hook output format */
 type CursorHookOutput =
   | { permission: 'allow' }
   | { permission: 'deny'; user_message: string; agent_message: string };

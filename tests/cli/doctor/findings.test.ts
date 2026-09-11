@@ -2,15 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { deriveDoctorFindings as derivePorted } from '@/cli/doctor/findings';
 import type { DoctorReport } from '@/hosts/doctor-types';
 
-/**
- * The finding catalog is the doctor's failure contract: an `error` finding is what makes the
- * command exit 1, and the ids are what a user greps for. Every rule gets a row built from hand,
- * so a rule that stops firing — or starts firing on the wrong facts — fails here rather than
- * silently turning a red report green. The severity is stated per
- * rule below, because it decides the exit code; the wording of the two findings that assemble
- * their own text is stated where those rows are.
- */
-
 type DoctorFacts = Omit<DoctorReport, 'findings'>;
 
 const CAPABILITY_OFF = { enabled: false, source: 'preset', sources: [] } as const;
@@ -219,7 +210,6 @@ const rows: Array<{ name: string; facts: DoctorFacts; ids: string[] }> = [
   },
 ];
 
-/** What each rule costs the run: an `error` is what makes `doctor` exit 1. */
 const SEVERITIES: Readonly<Record<string, 'error' | 'warning' | 'info'>> = {
   'integration.none-configured': 'error',
   'integration.inspection-failed': 'error',
@@ -242,7 +232,6 @@ describe('deriveDoctorFindings', () => {
       expect(ported.map((finding) => `${finding.checkId} ${finding.severity}`)).toEqual(
         row.ids.map((id) => `${id} ${SEVERITIES[id]}`),
       );
-      // Every finding is read by a person: it says what is wrong and what to do about it.
       for (const finding of ported) {
         expect(finding.title, finding.checkId).not.toBe('');
         expect(finding.detail, finding.checkId).not.toBe('');

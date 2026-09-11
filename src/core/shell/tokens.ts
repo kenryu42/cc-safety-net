@@ -53,7 +53,6 @@ const SHORT_VALUE_OPTIONS = new Map([
 const ATTACHED_SHORT_VALUE_OPTIONS = new Map([['zsh', new Set(['o'])]]);
 const LONG_VALUE_OPTIONS = new Map([['bash', new Set(['--init-file', '--rcfile'])]]);
 
-/** Returns the command string selected by shell argv before any script positional. */
 export function getShellCommandString(command: string, args: readonly string[]): string | null {
   for (let index = 0; index < args.length; index++) {
     const token = args[index];

@@ -1,10 +1,3 @@
-/**
- * Amp install, in personal scope: the managed plugin lives in the user's hosted Amp Personal
- * Plugins repository, so it also applies to Orb threads. `amp plugins add` can only target
- * system or workspace scope, so the transport is a throwaway clone of that repository plus a
- * commit and a push; every subprocess goes through the injected runner.
- */
-
 import {
   existsSync,
   lstatSync,
@@ -94,7 +87,6 @@ async function runAmpStep(run: AmpRunner, command: readonly [string, ...string[]
   );
 }
 
-/** The clone reference of the account's writable Personal Plugins repository. */
 async function requirePersonalPluginsRef(run: AmpRunner): Promise<string> {
   const result = await run(['amp', 'plugins', 'repositories', '--json']);
   if (result.status === null)
@@ -127,10 +119,6 @@ async function requirePersonalPluginsRef(run: AmpRunner): Promise<string> {
   return cloneRef;
 }
 
-/**
- * A fresh clone per run, removed afterwards: the checkout is disposable state, so `finally`
- * only cleans it up and never hides why a step failed.
- */
 async function withAmpCheckout<T>(
   run: AmpRunner,
   environment: Environment,
@@ -145,7 +133,6 @@ async function withAmpCheckout<T>(
   }
 }
 
-/** The command that resumes what the guard interrupted, so uninstall never says "install". */
 function rerun(action: 'overwrite' | 'remove'): string {
   return `rerun ${action === 'overwrite' ? 'install' : 'uninstall'} --amp`;
 }
@@ -170,12 +157,6 @@ function readManagedPluginFile(
   );
 }
 
-/**
- * Current managed directory-plugin entry, or undefined when the directory is absent. Files the
- * user keeps beside our entry are ignored on purpose — deliberately unlike OpenClaw's
- * `holdsOnlyOurPlugin`, which guards a recursive delete of the whole directory, while here
- * install and uninstall only ever write or `git rm` the single entry file.
- */
 function readManagedPluginDirectory(checkout: string, action: 'overwrite' | 'remove') {
   const directory = join(checkout, AMP_PLUGIN_DIRECTORY);
   const info = lstatOrUndefined(directory);
@@ -187,11 +168,6 @@ function readManagedPluginDirectory(checkout: string, action: 'overwrite' | 'rem
   return readManagedPluginFile(checkout, AMP_PLUGIN_ENTRY, action);
 }
 
-/**
- * The legacy root file as uninstall sees it: present only when it is still ours. Anything else —
- * absent, unmanaged, a symlink, a directory — is left untouched rather than refused, since
- * removing the directory plugin never needs to touch it.
- */
 function readRemovableLegacyFile(checkout: string) {
   const dest = join(checkout, AMP_LEGACY_PLUGIN_FILE);
   const info = lstatOrUndefined(dest);
@@ -200,7 +176,6 @@ function readRemovableLegacyFile(checkout: string) {
   return isManagedAmpArtifact(current) ? current : undefined;
 }
 
-/** False when staging left nothing to commit, so the repository is already up to date. */
 async function commitAndPush(
   run: AmpRunner,
   checkout: string,
@@ -208,14 +183,10 @@ async function commitAndPush(
   message: string,
 ): Promise<boolean> {
   await runAmpStep(run, stage, checkout);
-  // Under core.autocrlf the clone smudges the committed LF plugin to CRLF, so the artifact
-  // differs byte-for-byte while `git add` renormalizes the index straight back to HEAD; a
-  // commit would then fail with "nothing to commit" on every rerun.
+
   const staged = await runAmpStep(run, ['git', 'status', '--porcelain'], checkout);
   if (staged.stdout.trim() === '') return false;
-  // A machine-generated commit in a throwaway checkout: the user's global signing config
-  // would otherwise stop the install on a signing prompt or a missing key, and a machine
-  // without a global git identity would fail the commit with "Please tell me who you are".
+
   await runAmpStep(
     run,
     [
@@ -232,17 +203,11 @@ async function commitAndPush(
     ],
     checkout,
   );
-  // The personal plugins repository can still be unborn, which a bare `git push` cannot handle.
+
   await runAmpStep(run, ['git', 'push', 'origin', 'HEAD'], checkout);
   return true;
 }
 
-/**
- * A managed local plugin masks the personal one, so it goes once the personal copy is in place.
- * An unmanaged file, symlink, or other non-regular entry is preserved, but the install fails:
- * success would hide that the local entry keeps masking the published hook. Uninstall keeps the
- * silent skip — with the personal copy removed there is nothing left to mask.
- */
 function removeMaskingLocalPlugin(environment: Environment, onUnmanaged: 'fail' | 'keep'): void {
   removeMaskingLocalFile(environment, onUnmanaged);
   removeMaskingLocalDirectory(environment, onUnmanaged);
@@ -266,11 +231,6 @@ function removeMaskingLocalFile(environment: Environment, onUnmanaged: 'fail' | 
   keepUnmanagedLocalPlugin(local, onUnmanaged);
 }
 
-/**
- * The shipped artifact is a directory, so a hand-copied one masks the personal plugin too.
- * Removal here is recursive, so it demands a directory holding nothing but our entry — unlike
- * the hosted repository, where uninstall removes that one entry and leaves the rest alone.
- */
 function removeMaskingLocalDirectory(environment: Environment, onUnmanaged: 'fail' | 'keep'): void {
   const local = join(environment.home, '.config', 'amp', 'plugins', AMP_PLUGIN_DIRECTORY);
   const info = lstatOrUndefined(local);
@@ -292,14 +252,6 @@ function holdsOnlyManagedEntry(directory: string): boolean {
   );
 }
 
-/**
- * The user's policy, as one appended assignment the plugin reads on an Orb — a remote machine
- * whose home holds no policy file. Normalizing and re-stringifying is the injection barrier:
- * raw file bytes never reach the emitted code. An absent, empty, or non-object policy file
- * publishes nothing, so such an Orb behaves like any machine without a policy file.
- * Deliberately not covered: audit retention (reads the real file and keeps its default here),
- * user rulebooks, and project-scope policy; a policy edit ships on the next install or update.
- */
 function embeddedPolicyStamp(environment: Environment): string {
   const path = getUserPolicyPath(environment);
   if (!existsSync(path)) return '';
@@ -334,8 +286,7 @@ export async function installAmp(
     const pushed = await commitAndPush(
       run,
       checkout,
-      // Explicit pathspecs, never the directory: a gitignored plugin path then fails loudly
-      // instead of staging nothing and reporting the install as already up to date.
+
       ['git', 'add', '--', AMP_PLUGIN_ENTRY, ...(legacy ? [AMP_LEGACY_PLUGIN_FILE] : [])],
       `chore: update cc-safety-net plugin to v${getPackageVersion()}`,
     );
@@ -353,7 +304,7 @@ export async function uninstallAmp(
   return withAmpCheckout(run, environment, async (checkout) => {
     const current = readManagedPluginDirectory(checkout, 'remove');
     const legacy = readRemovableLegacyFile(checkout);
-    // A checkout that never migrated holds only the root file, so that is what was removed.
+
     const path = `${cloneRef}/${legacy && !current ? AMP_LEGACY_PLUGIN_FILE : AMP_PLUGIN_DIRECTORY}`;
     if (!current && !legacy) {
       removeMaskingLocalPlugin(environment, 'keep');
@@ -363,7 +314,7 @@ export async function uninstallAmp(
     await commitAndPush(
       run,
       checkout,
-      // Only our own entry, never `-r` on the directory: whatever else the user keeps there stays.
+
       [
         'git',
         'rm',

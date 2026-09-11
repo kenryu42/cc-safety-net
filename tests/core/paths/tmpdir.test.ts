@@ -11,21 +11,8 @@ import {
 } from '@/core/paths/tmpdir';
 import { corpusWords, pairedEnvironments, pickWord, seededRandom } from '../differential-inputs';
 
-/**
- * Which temp locations `rm -rf` may treat as disposable: the fixed roots and the OS temp
- * directory, canonicalized through the filesystem, and only when the value that names them is a
- * literal the gate can read. A `TMPDIR` an agent assigns itself, a value carrying shell
- * expansion, and a word-splitting `IFS` all put the target back under ordinary protection.
- */
-
 const HOME = '/srv/home/tester';
-// Every row spells the POSIX temp roots. Windows has none of them: its trusted root is the system
-// temp directory alone, and `/tmp` there names a directory on the current drive that does not
-// exist, so the fixture cannot even be made.
 const POSIX_TEMP_ROOTS = process.platform !== 'win32';
-// Made under the literal `/tmp` root rather than `tmpdir()`: the OS temp directory is only a
-// trusted root on darwin when it is the per-user `/var/folders/xx/yyy/T` form, so a session with
-// `TMPDIR` set elsewhere would otherwise decide these fixtures differently.
 const root = POSIX_TEMP_ROOTS ? mkdtempSync('/tmp/next-tmpdir-') : '';
 const outside = POSIX_TEMP_ROOTS ? mkdtempSync('/tmp/next-tmpdir-outside-') : '';
 if (POSIX_TEMP_ROOTS) {
@@ -255,11 +242,6 @@ describe.skipIf(!POSIX_TEMP_ROOTS)('tmpdir trust for a command', () => {
   }
 });
 
-/**
- * The properties every TMPDIR value must decide by, over values glued from the fragments a shell
- * can spell and the words the two contract corpora carry: what a caller may not get is a crash,
- * a value trusted while it still carries expansion, or an override that disagrees with trust.
- */
 describe.skipIf(!POSIX_TEMP_ROOTS)('tmpdir trust invariants over generated values', () => {
   const FRAGMENTS = [
     '/tmp',
@@ -284,7 +266,6 @@ describe.skipIf(!POSIX_TEMP_ROOTS)('tmpdir trust invariants over generated value
   ];
   const SPLITTING_IFS = ['', ' \t\n', ':', 'x'];
 
-  /** Every answer for one generated value, or what deciding it threw. */
   function decide(value: string, ifs: string) {
     const assignedOnly = pairedEnvironments({}, HOME);
     const inheritedWithIfs = pairedEnvironments({ TMPDIR: value, IFS: ifs }, HOME);

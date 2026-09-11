@@ -7,11 +7,6 @@ import {
   type ShellStartupLoaderMetadata,
 } from '@/gate/analyzer/shell-wrappers';
 
-/**
- * The wrapper argv reader decides which operand of `bash -c …` is a command and which startup
- * file a shell would source, so each row states the argv and the answer it earns.
- */
-
 const label = (tokens: readonly string[]) => tokens.join(' ') || '(empty)';
 
 describe('gate/analyzer/shell-wrappers', () => {
@@ -26,10 +21,8 @@ describe('gate/analyzer/shell-wrappers', () => {
       { tokens: ['sh', '-xc', 'rm -rf /'], arg: 'rm -rf /' },
       { tokens: ['bash', '-c'], arg: null },
       { tokens: ['bash', '-lc'], arg: null },
-      // The scan runs past `--` for compatibility with the historical wrapper peel.
       { tokens: ['bash', '--', '-c', 'echo'], arg: 'echo' },
       { tokens: ['bash', '--rcfile', 'script'], arg: null },
-      // A clustered option refuses a dash-led operand; a standalone `-c` accepts one.
       { tokens: ['bash', '-lc', '-x'], arg: null },
       { tokens: ['bash', '-c', '-x', 'echo hi'], arg: '-x' },
       { tokens: ['bash', '-l', '-c', 'echo ok'], arg: 'echo ok' },
@@ -47,9 +40,7 @@ describe('gate/analyzer/shell-wrappers', () => {
       { tokens: ['bash', '-c', 'rm -rf /', '-n'], check: false },
       { tokens: ['bash', '-n', '+n', '-c', 'rm -rf /'], check: false },
       { tokens: ['bash', '-n', '--', '-c', 'x'], check: true },
-      // A long option ends the short-option scan.
       { tokens: ['bash', '--norc', '-n', '-c', 'x'], check: false },
-      // zsh and ksh go through the argv parser, where `-onotify` is an option name, not flags.
       { tokens: ['zsh', '-onotify', '-c', 'echo hi'], check: false },
       { tokens: ['zsh', '-n', '-c', 'echo hi'], check: true },
       { tokens: ['ksh', '-onotify', '-c', 'echo hi'], check: false },
@@ -112,7 +103,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // The last startup option wins.
         tokens: ['bash', '--init-file', 'first.sh', '--rcfile', 'second.sh', '-i', '-c', 'echo hi'],
         metadata: {
           argvSource: { kind: 'literal', value: 'second.sh' },
@@ -122,7 +112,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // Only the two-token spelling is recorded; `--rcfile=…` is skipped as an ordinary option.
         tokens: ['bash', '--rcfile=inline.sh', '-i', '-c', 'echo hi'],
         metadata: {
           argvSource: null,
@@ -132,7 +121,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // A short option closes bash's long options, so a later `--rcfile` is not a startup file.
         tokens: ['bash', '-i', '--rcfile', 'evil.sh', '-c', 'echo hi'],
         metadata: {
           argvSource: null,
@@ -178,8 +166,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // contract: src/gate/analyzer/shell-wrappers.ts:140 — a `+i` scan reports no interactive
-        // option, and the outer flag is only written when one is reported, so it stays set.
         tokens: ['sh', '-i', '+i'],
         metadata: {
           argvSource: null,
@@ -240,7 +226,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // `--` before `-c` makes the next operand a script, not a command.
         tokens: ['bash', '--', '-c', 'rm -rf /tmp/x'],
         parsed: {
           command: null,
@@ -321,7 +306,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // `--rcfile` consumes its value for bash; `--rcfile=…` does not.
         tokens: ['bash', '--rcfile', 'evil.sh', '-c', 'x'],
         parsed: {
           command: 'x',
@@ -342,7 +326,6 @@ describe('gate/analyzer/shell-wrappers', () => {
         },
       },
       {
-        // ksh `-o` takes an option name, attached or separate.
         tokens: ['ksh', '-o', 'notify', '-c', 'echo hi'],
         parsed: {
           command: 'echo hi',

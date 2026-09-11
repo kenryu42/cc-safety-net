@@ -5,7 +5,6 @@ const PRIVATE_KEY =
   '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy0AYc5\n-----END RSA PRIVATE KEY-----';
 
 const FIXED: readonly string[] = [
-  // Environment assignments in every quoting form.
   'TOKEN=abc123 npm publish',
   'export GITHUB_TOKEN="ghp_abcdefghijklmnopqrstuvwxyz0123" gh auth status',
   "AWS_SECRET_ACCESS_KEY='wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' aws s3 ls",
@@ -28,7 +27,6 @@ const FIXED: readonly string[] = [
   'echo TOKEN=not-at-start-but-preceded-by-space',
   'A=B=C D==E =F G= H',
   '1TOKEN=digit-first _TOKEN=underscore-first',
-  // Bearer and API tokens, headers, and JWTs.
   'curl -H "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz0123" https://api.github.com',
   "curl -H 'x-api-key: sk-ant-api03-abcdefghijklmnopqrstuvwxyz' https://api.example.com",
   'authorization: Basic dXNlcjpwYXNzd29yZA==',
@@ -39,7 +37,6 @@ const FIXED: readonly string[] = [
   'token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
   'AKIAIOSFODNN7EXAMPLE and ASIAIOSFODNN7EXAMPLE',
   'gho_abcdefghijklmnopqrstuvwxyz0123 github_pat_11ABCDEFG0123456789abcdef',
-  // The Slack sample is assembled at runtime so the file never carries a token-shaped literal.
   `glpat-abcdefghijklmnopqrstuv ${['xoxb', '1234567890', 'abcdefghijklmnop'].join('-')} npm_abcdefghijklmnopqrstuvwxyz`,
   'pypi-AgEIcHlwaS5vcmcCJDAwMDAwMDAw sk_live_abcdefghijklmnopqrstuv rk_test_abcdefghijklmnopqrstuv',
   'sk-proj-abcdefghijklmnopqrstuvwxyz sk_abcdefghijklmnopqrstuvwxyz',
@@ -48,7 +45,6 @@ const FIXED: readonly string[] = [
   `fw_${'h'.repeat(20)} fwp_${'i'.repeat(20)} tp-${'j'.repeat(20)} psk-${'k'.repeat(8)}-${'l'.repeat(8)}`,
   `${'0'.repeat(32)}.${'A'.repeat(16)} looks like a paired token`,
   'ghp_short xoxb-short sk-short',
-  // URLs with embedded credentials and signed URLs.
   'git clone https://user:s3cr3t@github.com/org/repo.git',
   'git remote add origin https://token@github.com/org/repo.git',
   'curl ftp://anonymous:me@ftp.example.com/file',
@@ -59,7 +55,6 @@ const FIXED: readonly string[] = [
   'curl --user=admin:password https://example.com',
   'curl --user admin https://example.com',
   'mongodb+srv://app:pw@cluster0.example.net/db',
-  // Private-key blocks and mixed shell text.
   `echo "${PRIVATE_KEY}" > key.pem`,
   `cat <<EOF > id_rsa\n${PRIVATE_KEY}\nEOF`,
   '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----',
@@ -68,7 +63,6 @@ const FIXED: readonly string[] = [
   'sh -c \'export API_KEY=xyz; curl -H "x-api-key: $API_KEY" https://api\'',
   'echo password=hunter2 | tee creds.txt',
   'docker run -e POSTGRES_PASSWORD=pw -e DB_URL=postgres://a:b@c/d image',
-  // Nothing to redact.
   '',
   'git status',
   'ls -la ~/projects',
@@ -111,8 +105,6 @@ describe('redaction', () => {
       expect(next.getEnvAssignmentValues(row.text), row.text).toStrictEqual([...row.values]);
       expect(next.redactEnvAssignmentValues(row.text), row.text).toBe(row.redacted);
     }
-    // contract: src/core/redaction.ts:94 — the prefilter only looks for a name followed by `=`,
-    // so it answers true for text the extractor then reads no assignment from.
     for (const row of [
       { text: 'TOKEN=abc', might: true },
       { text: 'prefix-TOKEN=value', might: true },
@@ -167,7 +159,6 @@ describe('redaction', () => {
     for (const row of rows) {
       expect(next.redactSecrets(row.text), row.text).toBe(row.redacted);
     }
-    // Build synthetic provider tokens at runtime to avoid push-protection false positives.
     for (const token of [
       ['xoxb', '123456789012', '123456789012', 'abcdefghijklmnopqrstuvwx'].join('-'),
       'npm_abcdefghijklmnopqrstuvwxyz1234567890',
@@ -190,7 +181,6 @@ describe('redaction', () => {
         next.redactNonAssignmentSecrets(next.redactEnvAssignmentValues(text)),
       );
     }
-    // The assignment pass redacts values only; a provider token elsewhere in the text survives it.
     expect(next.redactEnvAssignmentValues('curl -H "Authorization: Bearer abc123"')).toBe(
       'curl -H "Authorization: Bearer abc123"',
     );

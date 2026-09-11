@@ -2,7 +2,6 @@ import { getToolRoute, parseHookJson, resolveStandardHookContext } from '@/gate/
 import type { CommandToolKind } from '@/gate/invocation';
 import { runConfiguredHookAdapter } from '@/hosts/hook/common';
 
-/** GitHub Copilot CLI preToolUse hook input format */
 interface CopilotCliHookInput {
   sessionId: string;
   timestamp: number;
@@ -11,7 +10,6 @@ interface CopilotCliHookInput {
   toolArgs: string;
 }
 
-/** GitHub Copilot CLI preToolUse hook output format */
 interface CopilotCliHookOutput {
   permissionDecision: 'allow' | 'deny' | 'ask';
   permissionDecisionReason?: string;

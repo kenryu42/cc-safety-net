@@ -8,13 +8,6 @@ import {
 } from '../helpers/cli-fixtures';
 import { removeTempRoots } from '../helpers/temp-home';
 
-/**
- * The statusline is one line of glyphs a teammate reads without opening anything, so each row
- * pins the whole line: the plugin probe answers first, then the level glyph, then the worktree,
- * weakening and degraded suffixes. A JSON payload on stdin is the host's own status document
- * and is swallowed; anything else is echoed in front of the line.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -47,8 +40,6 @@ describe('statusline', () => {
     ['standard', {}, '🛡️ CC Safety Net ✅\n'],
     ['strict', { env: { CC_SAFETY_NET_LEVEL: 'strict' } }, '🛡️ CC Safety Net 🔒\n'],
     ['paranoid', { env: { CC_SAFETY_NET_LEVEL: 'paranoid' } }, '🛡️ CC Safety Net 👁️\n'],
-    // A rule switched off against what the level grants replaces the level glyph rather than
-    // adding to it: the line reports the level it no longer has.
     [
       'a rule override that changes inherited behaviour',
       { seed: enabled({ [USER_POLICY]: RULE_SWITCHED_OFF }) },

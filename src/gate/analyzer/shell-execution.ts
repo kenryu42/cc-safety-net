@@ -187,11 +187,6 @@ const REMOTE_FETCHERS = new Set([
   'netcat',
 ]);
 
-/**
- * Whether the command is `eval "$(CMD)"` or `source`/`.` `<(CMD)` where CMD is a single
- * fully literal local command: no dynamic word, no compound body, no remote fetcher,
- * and no shell or wrapper head that could forward to one.
- */
 export function isVerifiableLocalGeneratorSource(command: CommandView): boolean {
   if (
     command.words.length !== 2 ||
@@ -331,10 +326,6 @@ function splitLiteralShellFields(value: string, ifs: string): string[] | undefin
     : value.split(ifs).filter(Boolean);
 }
 
-/**
- * Whether the word is a literal execution source. Parsed words answer from provenance;
- * text-only stand-ins carry none, so they keep the text test the token path used.
- */
 function isLiteralWord(word: CommandWord | undefined): boolean {
   if (!word) return true;
   return word.provenance === 'unknown'

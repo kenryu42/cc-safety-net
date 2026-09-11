@@ -11,12 +11,6 @@ import {
   WINDOWS_SEPARATOR_FOLDS,
 } from '../../helpers/temp-home';
 
-/**
- * `rule verify` is the one diagnostic that writes: a valid config missing its `$schema` gets one
- * inserted. So each case states the lines the report has to carry,
- * the exit code, and what the run left in the tree.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -70,7 +64,6 @@ function runVerify(label: string, spec: TreeSpec, call: (context: VerifyContext)
   const home = join(root, 'home');
   const env = isolationEnv(home);
   writeTree(root, spec);
-  // The report is one stream to the reader, so both channels land in one list in call order.
   const written: string[] = [];
   const spies = (['log', 'error'] as const).map((channel) =>
     spyOn(console, channel).mockImplementation((...parts: unknown[]) => {
@@ -123,7 +116,6 @@ describe('rule verify', () => {
     );
     expect(outcome.report).toContain('    1. team-rules');
     expect(outcome.report).toContain('\nAll configs valid.');
-    // The insertion is the only write the command makes, and it leads the rewritten file.
     expect(configContent(outcome.tree, USER_RULES_CONFIG)).toContain(`{\n  "$schema": "https:`);
   });
 
@@ -147,7 +139,6 @@ describe('rule verify', () => {
     });
     expect(outcome.code).toBe(1);
     expect(outcome.report).toContain('unknown override key "team-rules/no-such-rule" in ');
-    // A config the run refused is a config it does not rewrite.
     expect(configContent(outcome.tree, USER_RULES_CONFIG)).not.toContain('$schema');
   });
 

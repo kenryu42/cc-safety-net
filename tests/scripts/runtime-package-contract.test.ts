@@ -31,8 +31,6 @@ describe('published runtime contract', () => {
   test('pins the supported build and runtime dependency contract', () => {
     expect(pkg.packageManager).toMatch(/^bun@\d+\.\d+\.\d+$/);
     expect(pkg.engines).toEqual({ node: '>=18' });
-    // Everything shipped is self-contained: the package has no runtime dependencies at all, so
-    // the manifest declares none and consumers install nothing beyond it.
     expect(pkg.dependencies).toBeUndefined();
     expect(pkg.devDependencies).toMatchObject({
       '@ampcode/plugin': '0.0.0-20260724002649-ga3413e7',

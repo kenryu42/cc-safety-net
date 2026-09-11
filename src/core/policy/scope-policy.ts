@@ -60,8 +60,6 @@ export function loadRulesPolicy(
   const userReadErrors = formatPolicyReadErrors(paths.userConfigPath, user.errors);
   const projectReadErrors = formatPolicyReadErrors(paths.projectConfigPath, project.errors);
 
-  // Shared across both scopes so a name claimed by the user scope shadows the
-  // project one, keeping user policy authoritative over an ambiguous name.
   const claimedRulebookNames = new Set<string>();
   const userPolicy = user.config
     ? loadScopePolicy(
@@ -193,8 +191,7 @@ export function loadScopePolicy(
       return [];
     }
     const rulebook = loadedRulebook.rulebook;
-    // Colliding names make rule identity ambiguous, so the first claim wins and
-    // the later rulebook contributes nothing rather than shadowing its rules.
+
     if (claimedRulebookNames.has(rulebook.name)) {
       warnings.push(
         `duplicate active rulebook name "${rulebook.name}" for ${spec}; keeping the first and ignoring this one, so its rules are not active; rename one of them in its rulebook file and in the rules config that lists it`,
@@ -233,10 +230,6 @@ export function loadScopePolicy(
   };
 }
 
-/**
- * Version 2 rules carry a match contract instead of block arguments; version 1 rules keep
- * theirs and drop any stray `match` key so a loose rulebook cannot opt into v2 matching.
- */
 function toPolicyRules(rulebook: Rulebook): CustomRule[] {
   if (rulebook.rulebook_version === 2) {
     return rulebook.rules.map((rule) => ({
@@ -255,12 +248,6 @@ function toPolicyRules(rulebook: Rulebook): CustomRule[] {
   }));
 }
 
-/**
- * Every source is a live file: a local rulebook is authored in place and a remote one is
- * vendored by `rule add` or `rule update`, so both load from `rules/<name>/rulebook.json` with
- * no lock entry or cached copy in between. The validation is the one a cached rulebook already
- * went through, moved to the source file.
- */
 function loadRulebookForSpec(
   spec: string,
   configDir: string,
@@ -283,9 +270,7 @@ function loadRulebookForSpec(
       errors: [`invalid rulebook ${path}: ${validated.problem}; fix that file`],
     };
   }
-  // The source name is the rulebook's identity: rule ids are `<name>/<rule>`, so a
-  // name that drifts from its source silently renames every rule the overrides in
-  // `rule.json` refer to.
+
   if (validated.rulebook.name !== name) {
     return {
       rulebook: null,
@@ -297,7 +282,6 @@ function loadRulebookForSpec(
   return { rulebook: validated.rulebook, errors: [] };
 }
 
-/** The rulebook name a source claims, which is also the directory its rulebook file lives in. */
 export function getRulebookNameForSpec(spec: string): string {
   return isGitHubRulebookSource(spec) ? parseGitHubSource(spec).name : spec;
 }
@@ -320,7 +304,6 @@ function readRulebookFile(
   }
 }
 
-/** Schema validation only; fixtures stay with `rule verify`, so loading is a pure read. */
 export function validateRulebookContent(
   content: string,
 ): { rulebook: Rulebook } | { problem: string } {

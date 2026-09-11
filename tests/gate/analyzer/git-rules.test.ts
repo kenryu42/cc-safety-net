@@ -9,11 +9,6 @@ import { getGitWorktreeRelaxationForMatch } from '@/gate/analyzer/git/worktree-r
 import { pairedEnvironments } from '../../core/differential-inputs';
 import { createLinkedWorktreeFixture } from '../../helpers';
 
-/**
- * The Git rule dispatch has to walk the global-option, alias and short-option forms before it
- * sees a subcommand, so each row states the rule a command line reaches.
- */
-
 function argvOf(line: string): string[] {
   return line.split(/\s+/).filter((word) => word.length > 0);
 }
@@ -71,8 +66,6 @@ describe('git rule dispatch', () => {
       { line: 'git --namespace ns reset --hard', id: 'git.reset-hard' },
       { line: 'git checkout HEAD -- src/file.ts', id: 'git.checkout-ref-path' },
       { line: 'git checkout --force main', id: 'git.checkout-force' },
-      // contract: src/gate/analyzer/git/rules.ts:55 — `-b` takes a value, so `-bf` names a
-      // branch called `f` rather than adding `-f`.
       { line: 'git checkout -bf feature', id: null },
       { line: 'git checkout -f main', id: 'git.checkout-force' },
       { line: 'git checkout -b feature', id: null },
@@ -80,7 +73,6 @@ describe('git rule dispatch', () => {
       { line: 'git checkout --pathspec-from-file=list', id: 'git.checkout-pathspec-from-file' },
       { line: 'git checkout main other', id: 'git.checkout-ambiguous' },
       { line: 'git checkout main', id: null },
-      // The mode word an option owns is not a positional.
       { line: 'git checkout --recurse-submodules on-demand one', id: null },
       { line: 'git checkout --recurse-submodules bogus one', id: 'git.checkout-ambiguous' },
       { line: 'git switch --discard-changes main', id: 'git.switch-discard-changes' },
@@ -93,7 +85,6 @@ describe('git rule dispatch', () => {
       { line: 'git restore -p', id: 'git.restore-unstaged' },
       { line: 'git restore --patch --staged', id: null },
       { line: 'git reset --merge', id: 'git.reset-merge' },
-      // An abbreviation of at least four characters still names the option.
       { line: 'git reset --har', id: 'git.reset-hard' },
       { line: 'git clean -n -fd', id: null },
       { line: 'git rm --force file', id: 'git.rm-force' },
@@ -118,7 +109,6 @@ describe('git rule dispatch', () => {
       { line: 'git reflog delete HEAD@{0}', id: 'git.reflog-delete' },
       { line: 'git reflog show', id: null },
       { line: 'git submodule update --init', id: null },
-      // An alias is not expanded here, so `co` is not a subcommand the dispatch knows.
       { line: 'git -c alias.co=checkout co -- .', id: null },
     ];
     for (const row of rows) {
@@ -134,7 +124,6 @@ describe('git rule dispatch', () => {
     }[] = [
       { token: '--force', option: '--force', matches: true },
       { token: '--for', option: '--force', matches: true },
-      // contract: src/gate/analyzer/git/rules.ts:84 — the four characters include the dashes.
       { token: '--fo', option: '--force', matches: true },
       { token: '--f', option: '--force', matches: false },
       { token: '--force=x', option: '--force', matches: true },
@@ -176,7 +165,6 @@ describe('git alias resolution', () => {
       { line: 'git -c alias.=checkout co', expanded: false, blocked: false },
       { line: 'git -c alias.co=!rm co', expanded: true, blocked: true },
       { line: 'git -c alias.co= co', expanded: true, blocked: true },
-      // Aliases that expand into each other run past the resolution depth.
       { line: 'git -c alias.a=b -c alias.b=a a', expanded: true, blocked: true },
       {
         line: 'git co',
@@ -265,14 +253,11 @@ describe('worktree relaxation', () => {
       { line: 'git restore .', relaxed: true },
       { line: 'git clean -fd', relaxed: true },
       { line: 'git reset --hard', relaxed: true },
-      // Two forces reach beyond the worktree, so the relaxation does not apply.
       { line: 'git clean -ffd', relaxed: false },
       { line: 'git checkout -f -B main origin/main', relaxed: false },
       { line: 'git switch -f -C main', relaxed: false },
-      // A reset that moves the ref is not a local discard.
       { line: 'git reset --hard HEAD~1', relaxed: false },
       { line: 'git push --force origin main', relaxed: false },
-      // An argument the reader cannot resolve leaves the affected paths unknown.
       { line: 'git checkout -- "$FILE"', relaxed: false },
       { line: 'git checkout -- *.ts', relaxed: false },
       { line: 'git checkout -- .', options: { dynamicArguments: true }, relaxed: false },
@@ -312,7 +297,6 @@ describe('worktree relaxation', () => {
         relaxed: false,
       },
       {
-        // A changed HOME changes which config Git would read.
         line: 'git checkout -- .',
         options: { assignments: new Map([['HOME', '/tmp/elsewhere']]) },
         relaxed: false,

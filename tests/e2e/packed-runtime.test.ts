@@ -14,26 +14,12 @@ import {
   rootFolds,
 } from '../helpers/temp-home';
 
-/**
- * The runtime bundle the build emits into a temp outdir, answering the journeys a packed install
- * runs. Every row runs `node` over that bundle under its own temp root, with its homes inside that
- * root, and records what a user of the published artifact sees: the stdout bytes, the stderr bytes
- * and the exit code. Unlike the source-level CLI differential these run the minified, split,
- * define-substituted output, so a bundling difference the sources cannot show — a chunk the entry
- * never reaches, a value the define left unreplaced — surfaces here.
- *
- * The command strings in the rows are analyzer input: node runs nothing but the built bin and the
- * two eval scripts that import the bundle's own entry points.
- */
-
 const NODE = (() => {
   const executable = Bun.which('node');
   if (executable) return executable;
   throw new Error('Node.js is required to run the built runtime bundles');
 })();
 
-// `process.argv[1]` under `--eval` is the first argument after the script, so each consumer is
-// handed the entry point of the bundle under test rather than resolving an installed package.
 const API_SCRIPT = `
   import { pathToFileURL } from 'node:url';
   const { checkCommand } = await import(pathToFileURL(process.argv[1]).href);
@@ -58,9 +44,7 @@ type Journey = {
   name: string;
   args: (side: Side) => string[];
   stdin?: (side: Side) => string;
-  /** Folds what neither side can pin, applied after the temp paths are spelled from the root. */
   normalize?: (text: string) => string;
-  /** What the built bin has to have answered, so a row cannot pass on a silent failure. */
   check: (outcome: Outcome) => void;
 };
 
@@ -117,8 +101,6 @@ const JOURNEYS: readonly Journey[] = [
     },
   },
   {
-    // An isolated home has findings, so the exit code is the record's to pin rather than a
-    // constant to assert; what this row checks is that the document is whole.
     name: 'doctor renders a parseable report',
     args: (side) => [side.bin, 'doctor', '--json', '--skip-update-check'],
     normalize: normalizeDoctorJson,
@@ -145,8 +127,6 @@ const JOURNEYS: readonly Journey[] = [
   },
 ];
 
-// Named here but created in `beforeAll`, so a run whose rows are all filtered out leaves no
-// directory behind: `afterAll` never fires for a file that contributed no test.
 const buildRoot = join(
   process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(),
   `packed-runtime-${process.pid}`,
@@ -176,9 +156,6 @@ function runSide(outdir: string, journey: Journey): Outcome {
   };
   mkdirSync(side.home, { recursive: true });
   mkdirSync(side.project, { recursive: true });
-  // PATH holds one empty directory, so every host, node and npm probe `doctor` and `status`
-  // make fails with ENOENT rather than reaching whatever CLI happens to sit beside `node` on
-  // this machine; the bins themselves are spawned through the absolute `NODE` path.
   const emptyBin = join(root, 'bin');
   mkdirSync(emptyBin, { recursive: true });
   const result = spawnSync(NODE, journey.args(side), {

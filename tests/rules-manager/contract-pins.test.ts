@@ -16,13 +16,6 @@ import {
   removeTempRoots,
 } from '../helpers/temp-home';
 
-/**
- * The manager's differentials all end when `src/` is deleted, and these values would then have
- * nothing holding them: the fetch bounds a user is promised, the refusal wording a script may
- * match on, and the starter file `rule init` writes. Each is asserted against a literal here, so
- * a later edit to any of them fails a test rather than shipping quietly.
- */
-
 const STARTER_PROJECT_RULEBOOK = `{
   "rulebook_version": 1,
   "name": "project-rules",

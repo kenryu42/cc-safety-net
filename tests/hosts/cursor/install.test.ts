@@ -4,12 +4,6 @@ import { installCursor, uninstallCursor } from '@/hosts/cursor/install';
 import { expectRow, fileAt, hostRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Cursor keeps its hooks in a plain JSON file the user also edits, so the port has to reproduce
- * three things exactly: the bytes we write, the foreign entries we leave alone, and the shapes we
- * refuse. The seeds below are the states a real `~/.cursor/hooks.json` turns up in.
- */
-
 const CONFIG = '.cursor/hooks.json';
 const CONFIG_PATH = `<home>/${CONFIG}`;
 const MANAGED = 'npx -y cc-safety-net hook --cursor';

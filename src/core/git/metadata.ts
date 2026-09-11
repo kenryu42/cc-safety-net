@@ -5,10 +5,6 @@ import type { Environment } from '../environment';
 import { normalizeProtectedPathCandidate } from '../paths/canonicalization';
 import { findDotGitInAncestors, resolveDotGitFileTargets } from './worktree';
 
-/**
- * Git control-plane paths that must not be mutated, resolved once per directory. The gate
- * unions the results for the execution and configuration directories when they differ.
- */
 export type ProtectedGitMetadata = Readonly<{
   entries: readonly string[];
   markerFiles: readonly string[];
@@ -58,8 +54,7 @@ function resolveGitMetadataAnchor(
     ).flatMap((path) =>
       path ? [comparePath(normalizeProtectedPathCandidate(path, cwd, environment, budget))] : [],
     );
-    // A symlinked .git directory canonicalizes to its external target, so keep
-    // the lexical entry too — deleting the repository unlinks the control plane.
+
     const directories = [
       ...new Set(
         stat.isDirectory()
@@ -71,12 +66,10 @@ function resolveGitMetadataAnchor(
       entry: comparePath(entry),
       markerFile: markerFile ? comparePath(markerFile) : null,
       directories,
-      // Keep both the lexical hooks path and its canonical target so a
-      // symlinked hooks directory stays protected on either alias.
+
       hooksDirectories: [
         ...new Set(
           directories.flatMap((directory) => {
-            // `join` spells the Windows separator, which the canonical entry beside it does not.
             const lexical = comparePath(join(directory, 'hooks').replace(/\\/g, '/'));
             return [
               lexical,

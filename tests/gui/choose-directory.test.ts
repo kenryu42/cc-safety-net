@@ -9,12 +9,6 @@ import {
 import { createFakeBin, type FakeScriptEntry } from '../helpers/fake-bin';
 import { createTempRoot, normalize, removeTempRoots } from '../helpers/temp-home';
 
-/**
- * The native folder dialog: which platforms can open one, and what the picked path comes back as.
- * Every row pins the answer and the argv the fake dialog recorded — a fake `zenity`, `kdialog` or
- * missing `osascript` on a `PATH` of our own, so no test opens a window.
- */
-
 const EXECUTE_BIT = process.platform !== 'win32';
 
 const executableDir = (root: string, name: string) => {
@@ -51,8 +45,6 @@ describe('whether a folder dialog can be opened', () => {
       ['freebsd', { DISPLAY: ':0', PATH: zenity }, false],
     ];
 
-    // A Linux dialog is found by its execute bit, which a Windows filesystem has no way to set,
-    // so the rows that find one only hold on a host that has the bit.
     for (const [platform, env, available] of rows.filter(
       ([host, , found]) => !found || EXECUTE_BIT || host !== 'linux',
     )) {

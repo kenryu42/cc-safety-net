@@ -11,13 +11,6 @@ import { createFakeBin, type FakeScriptEntry } from '../helpers/fake-bin';
 import { writeTree } from '../helpers/fixture-tree';
 import { createTempRoot, removeTempRoots, withProcessEnv } from '../helpers/temp-home';
 
-/**
- * The version probes doctor and the install picker run. Two things are contract here: a
- * `.cmd` shim has to be handed to COMSPEC rather than spawned directly (npm-distributed CLIs
- * exist as nothing else on Windows), and a probe that fails, stalls or prints nothing reports the
- * version as unavailable instead of guessing one.
- */
-
 const ANSI_VERSION = `\u001b[32mv2.0.0\u001b[0m\n`;
 
 const SCRIPT: readonly FakeScriptEntry[] = [
@@ -34,8 +27,6 @@ afterEach(removeTempRoots);
 
 describe('the Windows-safe argv', () => {
   test('hands a shim to COMSPEC and spawns everything else directly', () => {
-    // The fixture names carry PATHEXT's own spelling: on a case-sensitive filesystem
-    // `tool.cmd` would not answer a lookup for `tool.CMD`.
     const dir = createTempRoot('next-spawn-');
     writeTree(dir, { 'tool.CMD': '', 'other.EXE': '' });
     const windows = {
@@ -99,11 +90,9 @@ describe('the system report', () => {
       return { calls, info };
     };
     const ported = await record(getSystemInfo);
-    // The report names the machine it ran on.
     expect(Object.keys(ported.info.versions)).toEqual(
       installIntegrationMetadata.map((integration) => integration.id),
     );
-    // Only the two plugin listings get the long timeout; a cold one fetches over the network.
     expect(ported.calls.filter((call) => call.timeoutMs !== undefined)).toEqual([
       { args: ['codex', 'plugin', 'list'], timeoutMs: 30_000 },
       { args: ['amp', 'plugins', 'list'], timeoutMs: 30_000 },

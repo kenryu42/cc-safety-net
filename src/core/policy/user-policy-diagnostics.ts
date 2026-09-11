@@ -8,15 +8,6 @@ import {
 import { MAX_AUDIT_RETENTION_DAYS, MIN_AUDIT_RETENTION_DAYS } from './audit-retention-days';
 import { custom, formatIssues, type Issue, sortIssues, typed } from './rules-config';
 
-/**
- * The diagnostics `doctor`, `policy check` and the GUI report a `policy.json` with. The runtime
- * salvages the same document in its own plain wording, and `store-parity.test.ts` states both
- * verdicts for every fixture document.
- *
- * Issues are emitted in document order and carry the kind the renderer needs, exactly as
- * `rules-config.ts` does for `rule.json`; `sortIssues` then groups them into the field order the
- * diagnostics have always used.
- */
 const USER_POLICY_FIELDS = [
   'version',
   'safety',
@@ -118,10 +109,6 @@ function userPolicyIssues(config: unknown, home: string): Issue[] {
 
 const SAFETY_OVERRIDE_FIELDS = ['fail_closed', 'paranoid_rm', 'paranoid_interpreters'];
 
-/**
- * A section is optional and strict: absent is fine, a non-object is one issue, and anything
- * else reports its own fields before the keys it does not recognize.
- */
 function section(
   value: unknown,
   path: readonly PropertyKey[],
@@ -144,11 +131,6 @@ function booleanIssues(value: unknown, path: readonly PropertyKey[]): Issue[] {
     : [typed(path, 'must be a boolean')];
 }
 
-/**
- * The rule id lives in the record key, so a `key` issue is the only one that can name it; a
- * key nobody recognizes still has its value judged, so an unknown id set to a bad value
- * reports both.
- */
 function overrideIssues(
   value: unknown,
   path: readonly PropertyKey[],
@@ -182,7 +164,6 @@ function pathIssues(
   if (value === undefined) return [];
   if (!Array.isArray(value)) return [typed(path, 'must be an array of paths')];
   return value.flatMap((entry, index) => {
-    // Only a string reaches the path validators; the element type is the array's own error.
     if (typeof entry !== 'string') {
       return [typed([...path, index], 'must be a non-empty path string')];
     }

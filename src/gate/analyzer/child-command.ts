@@ -8,7 +8,6 @@ import { isStandardCommandWrapper, unwrapTransparentWrapper } from './transparen
 import { reconstructEnvSplitWords, stripWrappersWithInfo } from './wrapper-prelude';
 
 export interface ChildCommandContext {
-  /** Process state nested analysis reads instead of touching env, home or the filesystem. */
   environment: EnvironmentContext;
   cwd: string | undefined;
   envAssignments?: ReadonlyMap<string, string>;
@@ -37,25 +36,18 @@ export interface NormalizedChildCommand {
   wrappedByTransparent: boolean;
 }
 
-/**
- * Where a synthesized child came from and what its producer already knows about the input that
- * completes it. The dispatch reads it at the points where a child a producer built from its own
- * arguments differs from the command as written: an exec'd child has no parent redirections, no
- * stdin script and no suffix to scan, and the producer, not the dispatch, owns the reason the
- * input it cannot see earns.
- */
 export interface ChildProvenance {
   readonly producer: 'xargs' | 'parallel' | 'unknown-head';
-  /** Directory the child runs in once its wrappers are peeled. */
+
   readonly cwd: string | undefined;
-  /** Directory the analysis started from; undefined once a wrapper made it unknown. */
+
   readonly originalCwd: string | undefined;
-  /** Directory a nested source analyzes in; null when it cannot be known. */
+
   readonly effectiveCwd: string | null | undefined;
   readonly envAssignments: ReadonlyMap<string, string>;
   readonly allowTmpdirVar: boolean;
   readonly worktreeMode: boolean | undefined;
-  /** An embedded child reaches the custom rules only through a transparent wrapper. */
+
   readonly wrappedByTransparent: boolean;
   readonly dynamicInput?: boolean;
   readonly dynamicRmInput?: boolean;
@@ -113,9 +105,6 @@ function* normalizeChildCommandCandidates(
   const childWrapperCwd = wrapperInfo.cwd;
 
   if (wrapperInfo.envSplitValues) {
-    // `env -S` execs its whitespace-split argv without a shell, so inert values splice ahead of
-    // the retained operands and normalize as the real child command. Values needing the
-    // quote/expansion/comment language still have no channel for a match and fail closed.
     const spliced = reconstructEnvSplitWords(wrapperInfo.envSplitValues, childTokens);
     if (!spliced) throw new AnalysisLimit('derivedCommandShape');
     reserveChildNormalization(budget);

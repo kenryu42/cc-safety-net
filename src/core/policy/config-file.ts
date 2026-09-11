@@ -1,13 +1,3 @@
-/**
- * The legacy config validator and the atomic JSON writer the diagnostic surfaces need:
- * `doctor` reports on both rule configs and on a `.safety-net.json` left over from version 0,
- * `rule verify` and `policy apply` write through the same atomic path.
- *
- * The inline rules a version-0 config carries are validated here as an issue list, the way
- * `rules-config.ts` validates `rule.json`; rulebooks accept the same rules with their own
- * wording, which `rulebook.ts` reports.
- */
-
 import { dirname, join, resolve } from 'node:path';
 import type { Environment } from '@/core/environment';
 import {
@@ -46,11 +36,9 @@ function toTarget(path: string | PolicyFilesystemTarget): PolicyFilesystemTarget
   return typeof path === 'string' ? bindDelegatedPolicyFilesystemTarget(path) : path;
 }
 
-/** Result of config validation */
 export interface ValidationResult {
-  /** List of validation error messages */
   errors: string[];
-  /** Set of rule names found (for duplicate detection) */
+
   ruleNames: Set<string>;
 }
 
@@ -72,10 +60,6 @@ function legacyConfigIssues(config: unknown): Issue[] {
   ];
 }
 
-/**
- * Every rule reports the fields it failed before any duplicate name is named, so a config
- * with several broken rules reads as one list of shapes followed by the clashes between them.
- */
 function legacyRuleIssues(rules: unknown): Issue[] {
   if (rules === undefined) return [];
   if (!Array.isArray(rules)) return [typed(['rules'], 'must be an array')];
@@ -181,7 +165,7 @@ function readConfigFileInput(path: string | PolicyFilesystemTarget): ConfigFileI
       errors.push(error.message);
       return { ok: false, result: { errors, ruleNames } };
     }
-    // Only a parse failure means malformed JSON; every other failure names itself.
+
     const message = error instanceof Error ? error.message : String(error);
     errors.push(error instanceof SyntaxError ? 'Invalid JSON' : message);
     return { ok: false, result: { errors, ruleNames } };

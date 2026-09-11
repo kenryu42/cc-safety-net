@@ -6,12 +6,6 @@ import {
   buildAmpArtifactHeader,
 } from '@/hosts/amp/artifact';
 
-/**
- * The ownership marker the build stamps into the published plugin and the installer reads back out
- * of the user's hosted repository. A changed byte here makes every previously installed artifact
- * look unmanaged, so install would refuse to overwrite what it wrote itself.
- */
-
 describe('the Amp artifact markers', () => {
   test('name the same header, directory and entry the shipped build stamps', () => {
     expect(AMP_MANAGED_HEADER).toBe(

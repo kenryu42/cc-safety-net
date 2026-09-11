@@ -1,10 +1,6 @@
 import { writeAuditLog } from '@/audit/writer';
 import { createTestEnvironment } from '@/core/environment';
 
-/**
- * One process of the concurrent-append case: fifty records into the same session file.
- * Invoked as `bun <this file> <audit home> <session id> <worker id>`.
- */
 const [home = '', sessionId = '', worker = ''] = process.argv.slice(2);
 const environment = createTestEnvironment({ home });
 

@@ -14,7 +14,6 @@ const CATASTROPHIC_DESTRUCTIVE_COMMAND_RULE_IDS = new Set(
   DESTRUCTIVE_COMMAND_RULE_METADATA.filter((rule) => rule.catastrophic).map((rule) => rule.id),
 );
 
-/** Resolved policy fields the destructive-command rule gates read. */
 export type DestructiveCommandRulePolicy = Pick<
   CommandAnalysisPolicy,
   'destructiveCommandProtectionEnabled' | 'effectiveDestructiveCommandRules'

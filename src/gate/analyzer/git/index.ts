@@ -78,7 +78,6 @@ function evaluateGit(
   return null;
 }
 
-/** One-pass Git decision detail used by intrinsic command traces. */
 export function analyzeGitDetailed(
   words: readonly CommandWord[],
   options: GitAnalyzeOptions,

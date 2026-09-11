@@ -1,11 +1,3 @@
-/**
- * Field-level policy comparison, shared by the CLI `policy check`/`apply` diff and
- * the GUI project-draft endpoints. Both surfaces must describe the same proposal
- * identically — a second implementation of the flatten, the baseline precedence or
- * the sparse file shape is how the two drift apart and start telling the human
- * different things about the same write.
- */
-
 import { existsSync, readFileSync } from 'node:fs';
 import type { Environment } from '@/core/environment';
 import { getUserPolicyPath, type UserScopeOptions } from './paths';
@@ -13,7 +5,6 @@ import { normalizeGuiPolicy } from './store';
 import type { GuiPolicy } from './types';
 import { getUserPolicyDiagnostics } from './user-policy-diagnostics';
 
-/** One changed field; an absent side means the field is not present in that policy. */
 export type PolicyDiffRow = { field: string; before?: string; after?: string };
 
 /**
@@ -44,7 +35,6 @@ export function flattenPolicy(policy: GuiPolicy, includeAudit: boolean): Record<
   };
 }
 
-/** The changed fields between two policies, in first-seen field order. */
 export function diffPolicyRows(
   current: GuiPolicy,
   proposed: GuiPolicy,
@@ -57,19 +47,6 @@ export function diffPolicyRows(
   );
 }
 
-/**
- * The user baseline the effective diff merges against, mirroring the runtime's
- * precedence exactly: an existing file wins even when unreadable (the runtime
- * degrades it to protective defaults), and the embedded snapshot an Amp install
- * ships (`readPolicyConfig` reads the same global) stands in only when no file
- * exists at all. The diagnostics come from that same read: a caller that gates on
- * them (the GUI draft refuses to inherit from protective defaults) would otherwise
- * risk a second read disagreeing with the baseline it is describing. A file that
- * parses but fails the schema is salvaged into the baseline the same way, so its
- * diagnostics have to come from the schema too - reporting only JSON errors would
- * make this gate weaker than the recovery banner the rest of the GUI shows for
- * exactly that file.
- */
 export function readRuntimeUserBaseline(
   environment: Environment,
   options?: UserScopeOptions,
@@ -95,7 +72,6 @@ export function readRuntimeUserBaseline(
   };
 }
 
-/** Reads one policy file's JSON; `value` is absent when `errors` says why. */
 export function readPolicyJson(path: string): { value?: unknown; errors: string[] } {
   if (!existsSync(path)) return { errors: [`${path}: file not found`] };
   try {
@@ -108,12 +84,6 @@ export function readPolicyJson(path: string): { value?: unknown; errors: string[
   }
 }
 
-/**
- * The project policy file as it gets written: only the fields the proposal sets,
- * because a field absent from the project file inherits from the user policy at
- * load time and writing defaults instead would silently pin them (e.g. materialize
- * level "standard" under a strict user).
- */
 export function buildProjectPolicyFileValue(
   proposalValue: unknown,
   normalized: GuiPolicy,
@@ -137,10 +107,6 @@ function flattenSection(prefix: string, values: Record<string, string | boolean 
   ) as Record<string, string>;
 }
 
-// Display rendering, kept byte-identical to the CLI's diff output - not a
-// canonical encoding. The rows only describe the change; the apply writes the
-// proposal itself, so a pathological path containing ", " can at worst hide a
-// row, never alter what is written.
 function flattenList(values: readonly string[]): string {
   return values.length === 0 ? '(none)' : values.join(', ');
 }

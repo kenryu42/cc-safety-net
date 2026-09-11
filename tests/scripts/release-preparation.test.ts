@@ -41,8 +41,6 @@ describe('release file preparation', () => {
     await withTempDir('cc-safety-net-prepare-', (directory) => {
       mkdirSync(join(directory, '.claude-plugin'));
       mkdirSync(join(directory, '.codex-plugin'));
-      // Biome collapses short arrays onto one line; a reserialized manifest would expand
-      // them and the release commit would then fail biome ci on the tag.
       const formatted =
         '{\n  "name": "fixture",\n  "version": "1.0.0",\n  "keywords": ["kimi-code", "security"]\n}\n';
       writeFileSync(join(directory, 'package.json'), formatted);

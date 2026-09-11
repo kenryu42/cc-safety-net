@@ -19,15 +19,6 @@ import {
   destructiveCommandMatch,
 } from '@/core/rules/destructive';
 
-/**
- * Rule activation is a pure function of the resolved capabilities and the policy overrides. The
- * capability objects come from the resolver itself, so the provenance they carry is real.
- *
- * Two gates read the result: the analyzer filters a match through `filterDestructiveCommandMatch`
- * and every reporting surface asks `destructiveCommandRuleIsEnabled`. They must never disagree
- * about the same rule, which is the property the whole cross product is checked against below.
- */
-
 const CAPABILITY_SETS: readonly {
   readonly label: string;
   readonly env: Record<string, string>;
@@ -85,7 +76,6 @@ const capabilitiesFor = (label: string) => {
   return CAPABILITIES[index] as EffectiveSafetyCapabilities;
 };
 
-/** One catalog rule per activation class, so a row can name the behavior it pins. */
 const CATASTROPHIC_ID = 'rm.recursive-force-root-or-home';
 const FAIL_CLOSED_ID = 'rm.recursive-force-dynamic-target';
 const PARANOID_RM_ID = 'rm.recursive-force-paranoid';
@@ -304,10 +294,6 @@ describe('resolving one rule against a policy and a capability set', () => {
   });
 });
 
-/**
- * The generated cross product is here for the properties that must hold for every one of its
- * cells; the rows above pin what each individual resolution reports.
- */
 describe('properties every policy and capability set must satisfy', () => {
   test('the resolved table is frozen and holds exactly the catalog, one entry per rule', () => {
     for (const capabilities of CAPABILITIES) {

@@ -99,7 +99,6 @@ export const mockVersionFetcher: VersionFetcher = async (args: string[]) => {
     return 'cc-safety-net https://github.com/kenryu42/cc-safety-net.git installed, enabled';
   }
 
-  // Handle multi-word commands like `copilot plugin list`
   if (args[0] === 'copilot' && args[1] === 'plugin') {
     return 'Installed plugins:\n  • copilot-safety-net (v1.0.0)';
   }
@@ -131,16 +130,10 @@ export const mockVersionFetcher: VersionFetcher = async (args: string[]) => {
   return mockVersions[cmd ?? ''] ?? null;
 };
 
-/**
- * Convert Windows backslashes to forward slashes for shell command embedding.
- * The POSIX parser reads backslashes as escape characters, which corrupts
- * Windows paths like C:\Users\... into C:Users...
- */
 function toShellPath(p: string): string {
   return p.replace(/\\/g, '/');
 }
 
-/** Convert a native path to one safely quoted POSIX shell word. */
 export function quoteShellPath(p: string): string {
   return `'${toShellPath(p).replaceAll("'", `'\\''`)}'`;
 }
@@ -174,8 +167,6 @@ function getLinkedWorktreeSeed(): string {
   const rootDir = mkdtempSync(
     join(process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(), 'safety-net-worktree-seed-'),
   );
-  // Bun's test runner never emits `exit`, so the seed is dropped by the scope that built it and
-  // rebuilt by the next one that asks for it, rather than surviving the run in the temp root.
   afterAll(() => {
     rmSync(rootDir, { recursive: true, force: true });
     linkedWorktreeSeed = undefined;

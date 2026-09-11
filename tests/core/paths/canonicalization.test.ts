@@ -20,12 +20,6 @@ import {
   writeSymlinkLoopTree,
 } from '../differential-inputs';
 
-/**
- * The view the protected-path guards get of a candidate: supported variables and `~` expanded,
- * unsupported forms failing closed under `pathEnvironmentExpansion`, the existing prefix
- * canonicalized within the realpath budget, and the answer spelled with forward slashes.
- */
-
 const root = mkdtempSync(join(tmpdir(), 'next-canonicalization-'));
 const home = join(root, 'home');
 writeSymlinkLoopTree(root, {
@@ -34,12 +28,9 @@ writeSymlinkLoopTree(root, {
   alias: { symlink: join(root, 'existing') },
 });
 
-/** The fixture as a canonicalized candidate spells it: symlinks resolved, forward slashes. */
 const canonicalRoot = realpathSync(root).replace(/\\/g, '/');
 const under = (...parts: string[]) => posix.join(canonicalRoot, ...parts);
 
-/** The fixture as `resolveExistingPath` and `probeExistingPath` hand it back: canonical, in the
- *  host's own spelling. Only the protected-path candidates above it are reported with `/`. */
 const resolved = (...parts: string[]) => join(realpathSync(root), ...parts);
 
 const environment = pairedEnvironments(
@@ -53,7 +44,6 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-/** What the call settled with, so one invariant can hold over both outcomes. */
 function settle<T>(call: () => T): { value: T } | { error: unknown } {
   try {
     return { value: call() };
@@ -215,7 +205,6 @@ describe('supported path variable expansion', () => {
     });
   }
 
-  /** Forms whose shell semantics the gate does not model: it refuses the candidate instead. */
   const refusals = [
     { name: 'fails closed on an assignment operator', target: '${HOME=x}', environment },
     { name: 'fails closed on a colon assignment operator', target: '${HOME:=x}', environment },
@@ -244,7 +233,6 @@ describe('supported path variable expansion', () => {
     });
   }
 
-  // The documented expansion-depth cap is 64 (docs/greenfield-contract.md §"Budgets").
   const nested = (depth: number) => `${'${HOME:-'.repeat(depth)}x${'}'.repeat(depth)}`;
 
   test('expands nesting at the depth cap', () => {
@@ -347,8 +335,6 @@ describe('existing-prefix resolution', () => {
   }
 
   test('stops at the 256-component cap and hands back the lexical path, leaving the link unresolved', () => {
-    // 300 missing components under `alias`: the walk gives up 256 levels up, still short of the
-    // link, so the answer never names the link's target.
     const deep = join(root, 'alias', ...Array.from({ length: 300 }, (_, index) => `m${index}`));
     expect(resolveExistingPath(deep, processPathResolver, createBudget())).toBe(deep);
   });
@@ -401,7 +387,6 @@ describe('existing-prefix resolution', () => {
     );
   });
 
-  /** The call index that first breached, and the kind it breached on. */
   function firstBreach(path: (index: number) => string, calls: number) {
     const budget = createBudget();
     const breaches = Array.from({ length: calls }, (_, index) => index).flatMap((index) => {
@@ -412,7 +397,6 @@ describe('existing-prefix resolution', () => {
   }
 
   test('breaches the 16,384 realpath-attempt cap on the call that crosses it', () => {
-    // Each call walks leaf → parent → root: three attempts, so attempt 16,385 falls in call 5,461.
     expect(firstBreach((index) => join(root, `missing-${index}`, 'leaf'), 6000)).toEqual({
       index: 5461,
       kind: 'realpathAttempts',
@@ -507,11 +491,6 @@ describe('protected path candidates', () => {
   });
 });
 
-/**
- * The properties every candidate must have, over targets glued from the tricky fragments and the
- * words the two contract corpora spell: what a guard may not be handed is a relative answer, a
- * separator it does not compare on, an unresolved `..`, or an exception it does not classify.
- */
 describe('canonicalization invariants over generated candidates', () => {
   const FRAGMENTS = [
     '$HOME',

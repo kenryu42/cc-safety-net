@@ -4,12 +4,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { detectionRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Gemini records an installed extension as a directory and a switched-off one as a `!`-prefixed
- * override beside it, so the two facts are read from two places and neither implies the other:
- * an extension directory with no enablement file at all is on.
- */
-
 const EXTENSIONS = '.gemini/extensions';
 const EXTENSION_DIR = `${EXTENSIONS}/gemini-safety-net`;
 const ENABLEMENT = `${EXTENSIONS}/extension-enablement.json`;

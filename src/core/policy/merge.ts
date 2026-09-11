@@ -8,11 +8,6 @@ import type { DestructiveCommandRuleOverride, GuiPolicy, PolicySafetyLevel } fro
 
 const LEVEL_RANK: Record<PolicySafetyLevel, number> = { standard: 0, strict: 1, paranoid: 2 };
 
-/**
- * The project policy as the file actually states it: every field is optional and an
- * absent one inherits from user scope, which the dense `GuiPolicy` shape cannot
- * express because it substitutes defaults. `audit` has no project scope at all.
- */
 export type ProjectPolicyProjection = {
   safety?: {
     level?: PolicySafetyLevel;
@@ -32,15 +27,6 @@ export type ProjectPolicyProjection = {
   };
 };
 
-/**
- * Effective policy = user policy, then project policy. Scalars and per-feature
- * enablement take the project value where the project sets one; per-rule overrides
- * merge by rule id; path lists are the union of both scopes, so neither scope
- * silently erases the other's entries. Audit stays user scope only.
- *
- * The weakenings are preformatted display lines, one per field the project relaxed
- * relative to the user baseline, for the surfaces that report the merge result.
- */
 export function mergeProjectPolicy(
   user: GuiPolicy,
   project: ProjectPolicyProjection,
@@ -126,8 +112,7 @@ function collectWeakenings(user: GuiPolicy, project: ProjectPolicyProjection): s
           : user.secret_protection.overrides[id] !== 'off' &&
             !SECRET_DEFAULT_OFF_RULE_ID_SET.has(id)),
     ),
-    // An allow path only loosens something when the user scope had the protection
-    // in force; below a disabled baseline every path was already allowed.
+
     ...(user.destructive_command_protection.enabled
       ? addedPaths(
           user.destructive_command_protection.allow_paths,
@@ -142,7 +127,6 @@ function collectWeakenings(user: GuiPolicy, project: ProjectPolicyProjection): s
   ];
 }
 
-/** Rules the project turns off that the user scope leaves in force. */
 function disabledRules(
   overrides: Record<string, DestructiveCommandRuleOverride> | undefined,
   wasEnabled: (id: string) => boolean,
@@ -152,7 +136,6 @@ function disabledRules(
   );
 }
 
-/** Allow entries the project contributes: each one vouches for a path the user scope did not. */
 function addedPaths(user: readonly string[], project: readonly string[] | undefined): string[] {
   return (project ?? []).filter((path) => !user.includes(path));
 }

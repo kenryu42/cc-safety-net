@@ -1,12 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { managedHookCommands } from '@/hosts/managed-command';
 
-/**
- * One spelling per host, derived from the catalog's long runtime flag. The literals below are the
- * ones `src/` writes into host configs, so a wrong flag in the catalog — or a host whose runtime
- * row is dropped — shows up here rather than as an installed hook no detector recognises.
- */
-
 describe('the managed hook command', () => {
   test('spells out what every npx-launched host runs', () => {
     expect(managedHookCommands).toEqual({

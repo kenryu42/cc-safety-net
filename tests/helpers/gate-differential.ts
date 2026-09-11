@@ -11,16 +11,6 @@ import {
 } from '@/gate/pipeline';
 import { writeTree } from './fixture-tree';
 
-/**
- * The gate under test. The end-to-end files (`harvested`, `tool-routes`, `failure-injection`) all
- * need the same three things — a fixture the corpora and the harvest can name, one invocation
- * shape, and one verdict — so they share them here instead of spelling them out three times.
- */
-
-/**
- * Process state for the traces: a synthetic home over an empty filesystem, so a verdict depends on
- * nothing but the command — no path exists and `realpath` answers null.
- */
 export const SYNTHETIC_ENVIRONMENT = createTestEnvironment({
   env: new Map([
     ['HOME', '/home/agent'],
@@ -33,7 +23,6 @@ export const SYNTHETIC_ENVIRONMENT = createTestEnvironment({
   tmpdir: '/tmp',
 });
 
-/** A plain workspace, a real repository and an empty home under one removable root. */
 export function createGateTree(prefix: string) {
   const root = mkdtempSync(join(tmpdir(), prefix));
   writeTree(root, { workspace: null, repository: null, home: null });
@@ -48,12 +37,6 @@ export function createGateTree(prefix: string) {
   };
 }
 
-/**
- * A resolver that asks the filesystem once per path. The gate caches realpath results only for the
- * life of one decision, so a replay that decides tens of thousands of commands against a fixture
- * tree that never changes re-resolves the same cwd, home, policy and coding-CLI roots every time;
- * that lookup was 43% of the replay's CPU. Sound only while nothing under the tree moves.
- */
 export function memoizedPaths(paths: PathResolver): PathResolver {
   const realpaths = new Map<string, string | null>();
   const kinds = new Map<string, ReturnType<PathResolver['entryKind']>>();
@@ -96,12 +79,6 @@ export function toolCall(
   );
 }
 
-/**
- * Everything a caller may read about one evaluation: the stage, the decision's own fields, the
- * level in force, and — where the guard failed closed — the class it threw. An exception that is
- * not a `GuardEvaluationError` is reported rather than rethrown, so a leak past the catch boundary
- * shows up in the record instead of as a crashed test.
- */
 export type GateVerdict = Readonly<{
   stage?: unknown;
   outcome: 'allow' | 'deny' | 'uncaught';

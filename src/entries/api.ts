@@ -15,15 +15,7 @@ export type CheckCommandResult =
   | Readonly<{ kind: 'allow' }>
   | Readonly<{ kind: 'deny'; reason: string; ruleId?: string }>;
 
-/**
- * Checks one shell command against the current CC Safety Net policy without
- * executing it, writing audit data, or touching the network. Reads local
- * policy and filesystem facts on every call. If this function throws, the
- * caller must not execute the command.
- */
 export function checkCommand(input: CheckCommandInput): CheckCommandResult {
-  // Plain JavaScript callers and untyped boundaries can pass anything, so the
-  // boundary re-checks what TypeScript already promises.
   if (typeof input !== 'object' || input === null) {
     throw new TypeError('checkCommand requires an input object with command and cwd');
   }
@@ -33,10 +25,7 @@ export function checkCommand(input: CheckCommandInput): CheckCommandResult {
   if (typeof input.cwd !== 'string' || input.cwd.trim() === '' || !isAbsolute(input.cwd)) {
     throw new TypeError('cwd must be an absolute directory path');
   }
-  // Same normalization and usability check as the OpenCode integration, and
-  // deliberately no realpath step, so both surfaces decide alike for one
-  // directory. An unusable cwd fails closed instead of checking the wrong
-  // project.
+
   const cwd = resolve(input.cwd);
   if (!isUsableDirectory(cwd)) {
     return { kind: 'deny', reason: REASON_SAFETY_NET_FAILED_CLOSED };
@@ -54,9 +43,6 @@ export function checkCommand(input: CheckCommandInput): CheckCommandResult {
   );
 }
 
-// A known dependency failure carries a fail-closed evaluation; surfacing it as
-// a deny keeps that failure class from becoming a fail-open caller mistake.
-// Every other throw is a code defect and stays visible to the caller.
 function evaluateCommandGuard(invocation: Parameters<typeof evaluateGuard>[0]): Decision {
   try {
     return evaluateGuard(invocation, { environment: createProcessEnvironment() }).decision;

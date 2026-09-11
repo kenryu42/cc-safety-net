@@ -20,13 +20,6 @@ import {
   withProcessEnv,
 } from '../helpers/temp-home';
 
-/**
- * The three probes the dashboard opens on that reach outside the policy files: the integrations
- * table, the overview health strip and the installer the Integrations tab drives. Each helper reads
- * its home off the `Environment` it is handed, so every row runs over a seeded home with a stubbed
- * version fetcher — nothing here spawns a host CLI, and no probe reaches npm or the network.
- */
-
 const PLUGIN_ID = 'cc-safety-net@cc-marketplace';
 const CLAUDE_PLUGINS = '.claude/plugins/installed_plugins.json';
 
@@ -81,7 +74,6 @@ describe('the GUI integrations probe', () => {
     expect(status.targets.map((entry) => entry.label)).toStrictEqual(
       installIntegrationMetadata.map((meta) => getIntegrationDisplayName(meta.id)),
     );
-    // The versions come from the stubbed fetcher, so the row proves the mapping and not a host.
     expect(status.targets.find((entry) => entry.target === 'claude-code')?.version).toBe('1.0.0');
     expect(status.system.version).toBe('dev');
     expect(status.system.platform).toBe(`${process.platform} ${process.arch}`);
@@ -117,7 +109,6 @@ describe('the GUI health probe', () => {
       label: getIntegrationDisplayName('claude-code'),
       configured: true,
     });
-    // A runtime with nothing installed is absent from the strip rather than listed as inactive.
     expect(bare.hooks.map((hook) => hook.platform)).not.toContain('claude-code');
     expect(bare.update).toStrictEqual(UPDATE);
   });
@@ -127,8 +118,6 @@ describe('the GUI installer wrapper', () => {
   afterEach(removeTempRoots);
 
   const CURSOR_HOOKS = '.cursor/hooks.json';
-  // Nothing this row runs may probe a host CLI, ask npm for a version or read what is configured
-  // on the machine, so the three discovery inputs are answered before the install starts.
   const OVERRIDES = {
     probeTargets: () => false,
     fetchVersion: async () => null,
@@ -176,15 +165,12 @@ describe('the GUI installer wrapper', () => {
       ok: true,
       output: `Uninstalled Cursor hook from <home>/${CURSOR_HOOKS}`,
     });
-    // The uninstall empties the hook list the install added; the runtime keeps its own file.
     expect(hooksFile(result.removed)).not.toContain('cc-safety-net');
   });
 
   test('reports a failed install with the error the installer printed', async () => {
     const result = (await bothSides((run, home) =>
       withProcessEnv(isolationEnv(home), async () => {
-        // The suite runs as root, so an unwritable location is modelled as a file where the
-        // installer needs a directory.
         writeFileSync(join(home, '.cursor'), 'not a directory\n');
         return folded(await run('install', 'cursor', OVERRIDES), home);
       }),
@@ -207,8 +193,6 @@ describe('the GUI installer wrapper', () => {
       tree: { path: string }[];
     };
 
-    // The install ran first and the uninstall undid it, which only holds if the queue kept them
-    // in order rather than letting the second capture start inside the first.
     expect(result.first.output).toBe(
       `Installed Cursor hook in ${posix.join('<home>', CURSOR_HOOKS)}`,
     );

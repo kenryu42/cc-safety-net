@@ -17,17 +17,6 @@ import {
 } from '../../helpers/rulebook-seeds';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * The whole `rule` handler. Every row is one argument vector over one seeded scope,
- * and what is compared is what a user and their editor see: the stdout bytes, the stderr bytes,
- * the exit code and the tree the run left behind. The pin behind each row names the line or the
- * file that carries the meaning, so a run that goes silent still fails.
- *
- * No row reaches the network: `rule add owner/repo` would fetch, so the repository forms live in
- * the in-process differential under tests/rules-manager instead, and only the flag errors
- * that are decided before any request appear here.
- */
-
 afterEach(() => {
   removeTempRoots();
 });
@@ -35,7 +24,6 @@ afterEach(() => {
 const P = 'project/.cc-safety-net/rules';
 const U = 'home/.cc-safety-net/rules';
 
-/** The update check is off for every row: `rule doc` would otherwise probe the registry. */
 const rule = async (args: readonly string[], files: TreeSpec = {}) =>
   await runCliCommand(
     {
@@ -136,7 +124,6 @@ describe('help', () => {
   }, 60_000);
 });
 
-/** Every rejection `validateRuleFlags` and the two argument guards produce, with its exact line. */
 const usageErrors: [readonly string[], string][] = [
   [['bogus'], 'Unknown rule subcommand: bogus'],
   [['--delete-source'], "--delete-source is only valid with 'rule remove'"],
@@ -184,7 +171,6 @@ describe('usage errors', () => {
     }, 60_000);
   }
 
-  // The one flag error that has no subcommand to name: the help stands in for the message.
   test('`rule --check` with no subcommand answers with the tree', async () => {
     const outcome = await rule(['--check']);
     expect(outcome.exitCode).toBe(1);
@@ -233,8 +219,6 @@ describe('init', () => {
     expect(holds(outcome, 'project/.cc-safety-net')).toBeFalse();
   }, 60_000);
 
-  // Pinned as found: `ensureRulesConfig` returns on a config it cannot parse and the runtime
-  // check finds no config to complain about, so the malformed file survives a reported success.
   test('a malformed config is left as it is and still reported as initialized', async () => {
     const outcome = await rule(['init'], { [`${P}/rule.json`]: 'not json' });
     expect(outcome.exitCode).toBe(0);
@@ -333,8 +317,6 @@ describe('add of a local source', () => {
     expect(fileAt(outcome, `${U}/rule.json`)).toBe(rulesConfig(['team']));
   }, 60_000);
 
-  // Pinned as found: only `rule update` reloads the scope the way the guard does, so an add over
-  // a config with a stale override key succeeds and leaves the key for the next update to report.
   test('a stale override key does not stop the add that would surface it', async () => {
     const config = rulesConfig([], { overrides: { 'team/nope': 'off' } });
     const outcome = await rule(['add', 'team'], {
@@ -561,8 +543,6 @@ describe('update', () => {
     expect(outcome.stderr).toBe('Invalid JSON\n');
   }, 60_000);
 
-  // The reload the change ends with: the scope loads the way the guard loads it, and what that
-  // finds decides the exit code even though every rulebook resolved.
   test('a stale override key fails the update that reloads the scope', async () => {
     const config = rulesConfig(['team'], { overrides: { 'team/nope': 'off' } });
     const outcome = await rule(['update'], {
@@ -739,7 +719,6 @@ describe('wrapper', () => {
     expect(fileAt(outcome, `${P}/rule.json`)).toBe(configured);
   }, 60_000);
 
-  // The removal is reported either way, and either way the config is rewritten without it.
   for (const [name, configured] of [
     ['remove drops the command', rulesConfig([], { transparent_wrappers: ['rtk'] })],
     ['removing a command that was never there still reports the removal', rulesConfig([])],

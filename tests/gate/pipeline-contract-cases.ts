@@ -4,18 +4,11 @@ import type { PolicySafetyLevel } from '@/core/policy/types';
 import type { ToolRoute } from '@/gate/invocation';
 import type { GuardStage } from '@/gate/pipeline';
 
-/**
- * Contract rows that only the full guard pipeline can decide: secret-path,
- * policy-file, policy-apply, and Git-metadata protection, tool routing, and
- * fail-closed input handling. `behavioral-contract-cases.ts` owns the
- * destructive-command rows; both corpora run through `contract.test.ts`.
- */
 export interface PipelineContractCase {
   name: string;
   toolName: string;
   input: unknown;
   route: ToolRoute;
-  /** Which of the fixture directories the invocation runs in. */
   cwd: 'workspace' | 'repo';
   level?: PolicySafetyLevel;
   expected:
@@ -29,10 +22,6 @@ export interface PipelineContractCase {
       };
 }
 
-/**
- * Denial reasons hosts display. Contract constants: every implementation
- * reproduces them verbatim, so the corpus imports nothing but types.
- */
 const REASON_SECRET_PROTECTION = 'Access to a sensitive path is not allowed.';
 const REASON_POLICY_CONFIG_PROTECTION =
   'This path contains the protected policy config and you must not modify or delete it.';

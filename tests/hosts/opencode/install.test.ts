@@ -9,13 +9,6 @@ import type { TreeSpec } from '../../helpers/fixture-tree';
 import { differential, fileAt } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * OpenCode fails open: a plugin it cannot load is a session warning, not a refusal, so `opencode
- * plugin` exiting 0 proves nothing. The installer therefore clears the cache, and the verification
- * step re-does the host's own acceptance — reify, resolve `main`, require a callable export.
- * Uninstall is the mirror image: only our own item leaves the plugin array, byte for byte.
- */
-
 const CONFIG = '.config/opencode/opencode.json';
 const CONFIG_C = '.config/opencode/opencode.jsonc';
 const CACHE = '.cache/opencode/packages/cc-safety-net@latest';
@@ -116,8 +109,6 @@ describe('taking the plugin back out of the config', () => {
     return { outcome: result.outcome, tree: result.tree };
   };
 
-  // Only the item and the separator that held it go; the whitespace that framed it stays, so the
-  // file keeps the shape its author gave it rather than a formatter's.
   test('removes only our item from a formatted opencode.json', async () => {
     const result = await uninstall({
       [CONFIG]: '{\n  "$schema": "x",\n  "plugin": ["other", "cc-safety-net", "third"]\n}\n',

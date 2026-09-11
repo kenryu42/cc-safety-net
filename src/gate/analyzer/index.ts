@@ -13,7 +13,6 @@ import type { SemanticFactStore } from '@/gate/facts';
 import type { CommandTraceContext } from '@/gate/trace';
 import { analyzeCommandInternal } from './analyze-command';
 
-/** The caps the analyzer answers for itself: a denial naming the command, not a fail-closed report. */
 const ANALYZER_CAP_KINDS = new Set<LimitKind>([
   'derivedTokens',
   'trackedHeredocFiles',
@@ -31,7 +30,6 @@ export function analyzeCommand(command: string, options: AnalyzeInput) {
   return analyzeCommandWithProgram(command, options);
 }
 
-/** Canonical pre-parsed command-analysis entry point. */
 export function analyzeCommandWithProgram(
   command: string,
   options: AnalyzeInput,
@@ -59,11 +57,6 @@ export function analyzeCommandWithProgram(
   };
 }
 
-/**
- * Runs one analysis and maps a cap the analyzer owns to the denial it answers with, so the
- * pipeline, the trace wrapper and the differential all read a breach the same way. Every other
- * cause — a path-canonicalization breach, an intake limit, a bug — is rethrown to fail closed.
- */
 export function analyzeOrCapBreach(
   run: () => Extract<Decision, { kind: 'deny' }> | null,
   command: string,

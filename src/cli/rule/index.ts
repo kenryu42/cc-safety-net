@@ -73,9 +73,7 @@ async function runRuleCommandInternal(
   args: readonly string[],
 ): Promise<number> {
   const flags = parseRuleFlags(args);
-  // An incomplete invocation such as `rule wrapper --help` is a help request, not the
-  // mistake the parser reports. A name that resolves to nothing — `rule bogus --help` —
-  // is still a typo, so it falls through to the error below.
+
   const helpCommand = flags.help ? getRuleHelpCommand(flags.positionals) : null;
   if (helpCommand) {
     printCommandHelp(helpCommand);
@@ -101,7 +99,7 @@ async function runRuleCommandInternal(
     const rulebookTarget = getPolicyFilesystemTargetForPath(scope.filesystemScope, rulebookPath);
     if (flags.example && readPolicyFile(rulebookTarget) === null)
       writeStarterRulebook(rulebookTarget, 'example-rules');
-    // Nothing to synchronize: the scope is validated the way the guard loads it.
+
     const errors = getRulesConfigRuntimeErrorsForConfig(scope.configPath, scope.filesystemScope);
     for (const error of errors) console.error(error);
     if (errors.length > 0) return 1;
@@ -182,17 +180,13 @@ async function runRuleCommandInternal(
   return 1;
 }
 
-/**
- * Reuses the existing per-leaf entries so `rule <leaf> --help` describes that leaf, not the
- * tree. Returns null when the positionals name nothing the help can answer for.
- */
 function getRuleHelpCommand(positionals: string[]) {
   if (positionals.length === 0) return ruleCommand;
   const leaves = ruleCommand.subcommands.filter(
     (leaf) => leaf.usage.split(' ')[0] === positionals[0],
   );
   if (leaves.length === 0) return null;
-  // `rule wrapper` covers three actions; showing one of them would hide the other two.
+
   if (positionals.length === 1 && leaves.length > 1) {
     return {
       name: `rule ${positionals[0]}`,
@@ -258,10 +252,7 @@ function validateRuleFlags(flags: RuleFlags): void {
       flags.errors.push("--delete-source is only valid with 'rule remove'");
     }
   }
-  // No subcommand carries --check honestly any more: sync migrates leftovers, and an
-  // add or update dry-run would have to fetch and validate the candidate to mean
-  // anything, so accepting the flag reports success for content nothing checked.
-  // `rule verify` is the offline validation command.
+
   if (flags.check && subcommand) {
     flags.errors.push(unknownRuleOption(subcommand, '--check'));
   }
@@ -293,11 +284,6 @@ function validateRuleFlags(flags: RuleFlags): void {
   }
 }
 
-/**
- * A selection alone names the official repository: `--ref`/`--only` only mean anything for an
- * owner/repo source, so omitting it there is the shorthand, not a mistake. A bare `rule add`
- * keeps erroring, so taking the whole official catalog stays an explicit act.
- */
 function resolveRuleAddSource(flags: RuleFlags): string | undefined {
   if (flags.positionals[1]) return flags.positionals[1];
   if (flags.ref || flags.only.length > 0) return OFFICIAL_RULEBOOKS_SOURCE;

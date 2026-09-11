@@ -15,20 +15,8 @@ import { bashCall, createGateTree } from '../helpers/gate-differential';
 import { readAuditEntries } from '../helpers/hook-capture';
 import { auditDirnameFolds, normalize, rootFolds } from '../helpers/temp-home';
 
-/**
- * The host audit projection: what an evaluation becomes as an audit descriptor, and what that
- * descriptor becomes on disk. The projection's two switches are what the matrix below is for — an
- * allow is projected only where allow auditing is on, a denial always is — and the writer's job is
- * to put the descriptor in the log named after the working directory, under the session id, or to
- * write nothing at all when there is no session to attribute the line to.
- */
-
 const tree = createGateTree('next-hosts-audit-');
 
-/**
- * The workspace an evaluation ran in, as a descriptor spells it and as the audit writer spells it
- * in the log directory it names after that directory, with every separator replaced by `-`.
- */
 const FOLDS = [...rootFolds(tree.root), ...auditDirnameFolds(tree.root, '<root>')];
 
 afterAll(() => {
@@ -47,7 +35,6 @@ const DENIAL: IntegrationDenial = {
   toolName: 'Bash',
 };
 
-/** One evaluation for one command; `echo ok` fails inside the analyzer. */
 function evaluatedRow(command: string, failing = false) {
   const call = bashCall(command, tree.workspace);
   const dependencies = failing
@@ -78,7 +65,6 @@ test('the rows carry one allow and three denials on both sides', () => {
   expect(ROWS.map((row) => row.ported.decision.kind)).toStrictEqual([...kinds]);
 });
 
-/** What each row projects to, before the two switches and the failure fields are applied. */
 const DESCRIPTORS: Readonly<Record<string, Record<string, unknown>>> = {
   'git status': {
     decision: 'allow',
@@ -104,7 +90,6 @@ const DESCRIPTORS: Readonly<Record<string, Record<string, unknown>>> = {
   'cat ~/.ssh/id_rsa': {
     decision: 'deny',
     command: 'cat ~/.ssh/id_rsa',
-    // The evidence names the operand the secret guard answered on, not the whole command line.
     segment: '~/.ssh/id_rsa',
     reason: 'Access to a sensitive path is not allowed.',
     cwd: tree.workspace,
@@ -121,7 +106,6 @@ const DESCRIPTORS: Readonly<Record<string, Record<string, unknown>>> = {
       'CC Safety Net failed closed because command analysis failed unexpectedly. This is not caused by your command. Report it to the user.',
     cwd: tree.workspace,
     toolName: 'Bash',
-    // A fail-closed denial is answered by no rule and settles before a level is resolved.
     intent: 'stop_and_explain',
   },
 };
@@ -141,15 +125,10 @@ describe('an evaluation projected as an audit descriptor', () => {
             );
             const descriptor = DESCRIPTORS[row.command];
 
-            // An allow is recorded only where allow auditing is on, and never carries a failure:
-            // the call went through, so there is nothing that failed closed to report.
             if (descriptor?.decision === 'allow') {
               expect(projected).toEqual((auditAllowed ? descriptor : undefined) as never);
               return;
             }
-            // A denial is recorded whatever the allow setting says. `includeCommand` decides the
-            // command of a denial that carries no command evidence; each of these carries some,
-            // so the evidence wins either way.
             expect(projected).toEqual({
               ...descriptor,
               failureStage: failure?.stage,
@@ -162,8 +141,6 @@ describe('an evaluation projected as an audit descriptor', () => {
   }
 });
 
-// The descriptors themselves are stated above; what is under test here is only what the writer
-// does with one.
 const descriptorOf = (row: (typeof ROWS)[number]) =>
   portedProjectGuardAudit(row.call, row.ported, true, true, row.failure);
 
@@ -171,14 +148,12 @@ const refuseSession = () => {
   throw new Error('session lookup failed');
 };
 
-/** Every line the writer stamps on top of the descriptor it was handed. */
 const stamped = { sessionId: SESSION, v: 'dev', agent: 'hosts-test', shape: 'claude-code' };
 
 const WRITE_ROWS: readonly {
   name: string;
   run: (host: Environment) => void;
   entries: Record<string, unknown>[];
-  /** The log the line lands in, relative to the audit home, with the date left to the test. */
   directory?: string;
 }[] = [
   ...ROWS.map((row) => ({
@@ -222,7 +197,6 @@ const WRITE_ROWS: readonly {
         cwd: null,
       },
     ],
-    // With no directory to name the log after, the lines go to one shared place.
     directory: 'no-cwd',
   },
   {
@@ -240,7 +214,6 @@ const WRITE_ROWS: readonly {
         agent: 'codex',
         shape: 'claude-code',
         decision: 'deny',
-        // A denial that names no command still records the empty one it was given.
         command: '',
         segment: '',
         reason: DENIAL.reason,
@@ -250,7 +223,6 @@ const WRITE_ROWS: readonly {
     directory: '<root>-workspace',
   },
   {
-    // Without a session id there is no log to attribute the line to, so nothing is written.
     name: 'a session lookup that throws',
     run: (host: Environment) => {
       portedWriteGuardAudit(host, descriptorOf(DENIED), refuseSession, { agent: 'hosts-test' });
@@ -290,7 +262,6 @@ describe('a descriptor written to the audit log', () => {
       const day = new Date().toISOString().slice(0, 10);
 
       expect(written.map((line) => line.entry)).toEqual(row.entries);
-      // Spelled with `join`, since the writer spells the path with the host's own separator.
       expect(written.map((line) => normalize(line.file, FOLDS))).toEqual(
         row.entries.map(() => join(`${row.directory}`, day.slice(0, 7), `${day}-${SESSION}.jsonl`)),
       );

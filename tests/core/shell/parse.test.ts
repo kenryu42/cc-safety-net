@@ -25,7 +25,6 @@ describe('core/shell/parse', () => {
       ['git', 'reset', '--hard'],
       ['rm', '-rf', '/tmp/x'],
     ]);
-    // The parse is a pure function of the source: a second parse is the same program.
     expect(
       parseCommand('echo "\u{1F600}" && git reset --hard\r\nrm -rf /tmp/x', 'posix'),
     ).toStrictEqual(program);
@@ -91,7 +90,6 @@ describe('core/shell/parse', () => {
     expect(
       projectCommandViews(body ?? definition).map((view) => view.words.map((word) => word.text)),
     ).toStrictEqual([['rm', '-rf', 'build']]);
-    // A definition alone runs nothing, so it projects no command view.
     expect(projectCommandViews(definition)).toStrictEqual([]);
     for (const source of [
       'function cleanup { echo ok; }',
@@ -150,17 +148,13 @@ describe('core/shell/parse', () => {
     const rows = [
       ['rm -rf x', 'posix'],
       ['Remove-Item x', 'powershell'],
-      // A PowerShell environment variable, which posix would read as a literal.
       ['cat $env:TEMP\\x', 'powershell'],
-      // Nothing to go on falls back to posix.
       ['', 'posix'],
     ] as const;
     for (const [source, dialect] of rows) {
       const program = parseCommand(source);
       expect(program.dialect, source).toBe(dialect);
       expect(program.status, source).toBe('complete');
-      // Naming `auto` explicitly is the same parse, so the default is the dialect and not a
-      // separate path through the parser.
       expect(program).toStrictEqual(parseCommand(source, 'auto'));
     }
   });
@@ -191,8 +185,6 @@ describe('parser caps yield status limited without throwing', () => {
     for (const row of overCap) {
       for (const dialect of row.dialects) {
         const program = parseCommand(row.source, dialect, small);
-        // Refused for being too big, not misread: the parse still covers the whole source and
-        // reports the dialect it was asked for.
         expect(program.status, `${dialect} ${row.source}`).toBe('limited');
         expect(program.span).toStrictEqual({ start: 0, end: row.source.length });
         if (dialect !== 'auto') expect(program.dialect).toBe(dialect);

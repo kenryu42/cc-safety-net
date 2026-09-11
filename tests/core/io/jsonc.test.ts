@@ -10,18 +10,10 @@ import {
 import { describeOutcome } from '../../helpers/fixture-tree';
 import { corpusStrings, seededRandom } from '../differential-inputs';
 
-/**
- * The JSONC editor's contract: comments are stripped only to parse, and an edit splices the
- * original text so every byte outside the edited range survives. Each row below names the
- * behavior it pins; the generated documents at the end pin the properties that must hold for
- * every input, well-formed or not.
- */
-
 const ERRORS = { stringError: 'unterminated string', bracketError: 'unmatched bracket' };
 
 const MANAGED = 'cc-safety-net';
 
-/** Whether `part` can be read off `whole` in order: what a stripper that only deletes produces. */
 function isSubsequence(part: string, whole: string): boolean {
   return (
     [...whole].reduce((matched, char) => {
@@ -145,7 +137,6 @@ describe('findMatchingBracket', () => {
   });
 
   test('counts a bracket inside a comment when no comment skipper is supplied', () => {
-    // The primitive is format-agnostic: only a caller that knows its comment syntax skips one.
     expect(findMatchingBracket('[ // ]\n 1 ]', 0, ERRORS)).toBe(5);
   });
 
@@ -257,7 +248,6 @@ describe('findJsonArrayProperty and findJsonStringItems', () => {
   });
 });
 
-/** The OpenCode uninstall flow rebuilt over the core primitives. */
 function removeManaged(content: string) {
   const array = findJsonArrayProperty(content, 'plugin', ERRORS);
   if (!array) throw new Error('plugin array not found');
@@ -271,11 +261,6 @@ function removeManaged(content: string) {
   };
 }
 
-/**
- * Each row is a host config file and the exact bytes the uninstall must leave behind. Where the
- * removal merges the indentation of the line it emptied into the next one, the row spells that
- * out: the document still parses to the intended plugin list.
- */
 const OPENCODE_ROWS: readonly {
   name: string;
   content: string;
@@ -426,7 +411,6 @@ describe('the OpenCode plugin-array edit', () => {
   });
 });
 
-/** Fragments that put brackets, quotes, escapes and comment openers next to each other. */
 const BRACKET_FRAGMENTS: readonly string[] = [
   '{',
   '}',
@@ -465,7 +449,6 @@ function fuzzDocuments(count: number, seed: number): readonly string[] {
   );
 }
 
-/** A JSON value of a few shapes, so the generated documents carry real content to preserve. */
 function fuzzValue(random: () => number, depth: number): unknown {
   const choice = Math.floor(random() * (depth > 2 ? 5 : 7));
   if (choice === 0) return null;
@@ -487,7 +470,6 @@ function fuzzValue(random: () => number, depth: number): unknown {
   );
 }
 
-/** Pretty JSON decorated with the comments and trailing commas a hand-edited config carries. */
 function fuzzJsonc(count: number, seed: number): readonly { document: string; value: unknown }[] {
   const random = seededRandom(seed);
   return Array.from({ length: count }, () => {

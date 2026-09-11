@@ -8,13 +8,6 @@ import { type TreeSpec, writeTree } from '../../helpers/fixture-tree';
 import { fileAt } from '../../helpers/host-differential';
 import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * `cc-safety-net install|uninstall --<target>` end to end: the argument parsing, the host CLI
- * calls, the files written and removed, and every line the command prints. Each row runs the flow
- * over a seeded home with fake CLIs on `PATH`, so a change in a message, a command, an exit code
- * or a byte fails the row.
- */
-
 const flow = async (spec: FlowSpec) => await runFlowDifferential(spec);
 
 const TARGET_FLAGS =
@@ -50,7 +43,6 @@ test('an unknown flag is reported by the parser', async () => {
   });
 });
 
-/** An npx cache entry of ours, which every hook-config install clears before it writes. */
 const NPX_ENTRY = '.npm/_npx/dd7a/node_modules/cc-safety-net/package.json';
 
 const CONFIG_HOSTS = [
@@ -76,7 +68,6 @@ for (const host of CONFIG_HOSTS) {
       log: [],
     });
     expect(written).toBeString();
-    // The stale npx entry is gone with the cache directory itself left in place.
     expect(installed.tree.map((entry) => entry.path)).toContain('.npm/_npx');
     expect(installed.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/dd7a');
 
@@ -125,7 +116,6 @@ test('a file part-way down the config path gets the parent-path hint', async () 
   expect(result.errors[0]).toEndWith('\nCheck that every parent path component is a directory.');
 });
 
-/** The seeded copy of what a previous run wrote, so the next row starts from a real install. */
 function filesUnder(tree: readonly { path: string; content?: string }[], prefix: string) {
   return Object.fromEntries(
     tree
@@ -519,7 +509,6 @@ test('Pi drops the extensions filter its settings carried', async () => {
   );
 });
 
-/** A directory a fake CLI copies into place, standing in for what the host would download. */
 function fixtureDir(spec: TreeSpec): string {
   const dir = join(createTempRoot('cc-safety-net-fixture-'), 'fixture');
   mkdirSync(dir, { recursive: true });
@@ -584,7 +573,6 @@ test('uninstalling OpenCode drops our entry and leaves the JSONC comments alone'
     lines: [`Uninstalled OpenCode plugin from <home>/${config}`, ''],
     log: [],
   });
-  // Removing the first item takes its comma with it and leaves the separating space.
   expect(fileAt(result.tree, config)).toBe('{\n  // plugins\n  "plugin": [ "other-plugin"]\n}\n');
 });
 
@@ -703,7 +691,6 @@ test('Amp commits the plugin with the embedded policy into the personal reposito
     'staged/cc-safety-net',
     'staged/cc-safety-net/index.ts',
   ]);
-  // Sliced rather than matched: the artifact is 400 KB, and a failed match would print it whole.
   const staged = result.tmp.find((entry) => entry.path === 'staged/cc-safety-net/index.ts');
   expect(staged?.content?.slice(0, AMP_MANAGED_HEADER.length)).toBe(AMP_MANAGED_HEADER);
   expect(staged?.content?.slice(-AMP_POLICY_STAMP.length)).toBe(AMP_POLICY_STAMP);

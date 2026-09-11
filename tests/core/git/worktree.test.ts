@@ -23,9 +23,6 @@ import { createLinkedWorktreeFixture } from '../../helpers';
 const fixture = createLinkedWorktreeFixture();
 let scratch = '';
 
-/** A link to the linked worktree whose name needs every escape the config parser decodes. Windows
- *  refuses a quote, a control character and a backslash in a name, so there the name only needs
- *  the quoting a space calls for. */
 const ODD_LINK_NAME = process.platform === 'win32' ? 'odd name' : 'odd "\\\t\n\bname';
 
 const GIT_CONFIG_ESCAPED: Readonly<Record<string, string>> = {
@@ -67,14 +64,10 @@ describe('linked worktree facts', () => {
   test('a directory is a linked worktree only inside the checkout that is one', () => {
     const rows = () =>
       [
-        // The main checkout owns the repository; it is not a linked worktree of it.
         [fixture.mainWorktree, false],
         [fixture.linkedWorktree, true],
-        // Anywhere inside it counts, because the walk finds the same `.git` file.
         [join(fixture.linkedWorktree, 'nested'), true],
-        // A directory that is not there resolves to nothing to verify.
         [join(fixture.linkedWorktree, 'missing'), false],
-        // Above the checkouts, and outside any repository at all.
         [fixture.rootDir, false],
         [scratch, false],
         [join(scratch, 'file'), false],
@@ -87,7 +80,6 @@ describe('linked worktree facts', () => {
     expect(findDotGitInAncestors(fixture.linkedWorktree)).toBe(
       join(fixture.linkedWorktree, '.git'),
     );
-    // From a subdirectory, and from one that does not exist, the same ancestor answers.
     for (const name of ['nested', 'missing']) {
       expect(findDotGitInAncestors(join(fixture.linkedWorktree, name))).toBe(
         join(fixture.linkedWorktree, '.git'),
@@ -99,10 +91,6 @@ describe('linked worktree facts', () => {
   });
 
   test('a .git file names its git directory and the common one; a .git directory names neither', () => {
-    // The linked checkout's `.git` is a file pointing into the main checkout's repository. The
-    // file carries whichever spelling `git worktree add` recorded, and git resolves symlinks on
-    // the way: under a macOS temp root that is `/private/tmp/...` where the fixture says `/tmp`.
-    // So both sides are compared as the directories they name, not as the strings they are.
     const targets = resolveDotGitFileTargets(join(fixture.linkedWorktree, '.git'));
     expect(realpathSync(targets?.gitDir ?? '.')).toBe(
       realpathSync(join(fixture.mainWorktree, '.git', 'worktrees', 'linked')),
@@ -110,7 +98,6 @@ describe('linked worktree facts', () => {
     expect(realpathSync(targets?.commonDir ?? '.')).toBe(
       realpathSync(join(fixture.mainWorktree, '.git')),
     );
-    // A real `.git` directory, an ordinary file and a path that is not there all name nothing.
     for (const dotGit of [
       join(fixture.mainWorktree, '.git'),
       join(scratch, 'file'),
@@ -136,29 +123,16 @@ describe('linked worktree facts', () => {
       fixture.mainWorktree,
       quoteForGitConfig(join(scratch, ODD_LINK_NAME)),
     ];
-    // Whether each spelling of `core.worktree` still names this worktree. A value that decodes to
-    // another name is a worktree the checkout does not belong to, and the directory stops being a
-    // verified linked worktree.
     const accepted: readonly (readonly [string, boolean])[] = [
-      // The path as git itself would write it.
       [quoted, true],
-      // `\n` and `\t` decode to a newline and a tab, so the name is not this one.
       [`"${escaped}\\n"`, false],
       [`"${escaped}\\t"`, false],
-      // A trailing backslash: the comparison reads one as a separator and drops a trailing one.
       [`"${escaped}\\"`, true],
-      // Git quotes with double quotes only, so single ones stay part of the value.
       [`'${escaped}'`, false],
-      // An unquoted value is taken as it stands.
       [escaped, true],
-      // Nothing between the quotes.
       ['"', false],
-      // An unknown escape is kept as written, so the value reads one directory deeper.
       [`"${escaped}\\q"`, false],
-      // A real directory, but the other checkout's.
       [fixture.mainWorktree, false],
-      // Only a full decode of the odd name lands on this worktree, so a wrong escape table here
-      // reads as "not a linked worktree".
       [quoteForGitConfig(join(scratch, ODD_LINK_NAME)), true],
     ];
     expect(accepted.map(([value]) => value)).toEqual(values);
@@ -173,17 +147,11 @@ describe('linked worktree facts', () => {
     }
   });
 
-  /**
-   * The spelling two paths are compared in: the Windows namespace prefix dropped, backslashes
-   * read as separators, one trailing separator dropped, and on Windows the whole path case-folded
-   * so a comparison there is case-insensitive.
-   */
   test.each([
     ['\\\\?\\C:\\x\\', 'C:/x'],
     ['\\\\?\\UNC\\srv\\share\\', '//srv/share'],
     ['C:\\x\\y\\', 'C:/x/y'],
     ['/a/b/', '/a/b'],
-    // The root is the one path a trailing separator is not dropped from.
     ['/', '/'],
     ['x/', 'x'],
     ['', ''],
@@ -197,7 +165,6 @@ describe('linked worktree facts', () => {
     expect(normalizePathForComparison('C:\\X')).toBe(
       process.platform === 'win32' ? 'c:/x' : 'C:/X',
     );
-    // A real path keeps its own spelling either way.
     expect(normalizePathForComparison(fixture.linkedWorktree)).toBe(
       process.platform === 'win32'
         ? fixture.linkedWorktree.replaceAll('\\', '/').toLowerCase()
@@ -209,12 +176,6 @@ describe('linked worktree facts', () => {
     const commonConfig = join(fixture.mainWorktree, '.git', 'config');
     const worktreeConfig = join(linkedGitDir(), 'config.worktree');
     const original = readFileSync(commonConfig, 'utf-8');
-    /**
-     * Whether a local discard may be relaxed: `submodule.recurse` off is the only answer that
-     * says so. Unset is off; the worktree's own config wins over the common one; a bare key is
-     * on; and a config the walk cannot read through — an include it cannot follow — is treated
-     * as on rather than assumed off.
-     */
     const variants: [common: string, worktree: string | null, recursive: boolean][] = [
       ['', null, false],
       ['[submodule]\n\trecurse = true\n', null, true],
@@ -249,8 +210,6 @@ describe('linked worktree facts', () => {
     );
   });
 
-  // A fake git is a script, and `resolveWorktreeFacts` spawns the binary it is given without a
-  // shell, which on Windows can only start a real executable — there is nothing to point it at.
   test.skipIf(process.platform === 'win32')(
     'takes the answer from the git binary it is pointed at',
     () => {
@@ -270,12 +229,9 @@ describe('linked worktree facts', () => {
     },
   );
 
-  // Same fake-git script as above: on Windows the spawn fails before the timeout can matter.
   test.skipIf(process.platform === 'win32')(
     'gives up without relaxation when git hangs past the timeout',
     () => {
-      // Between the 100ms cap and the 1s the fake sleeps: a run that waited for the fake fails
-      // here, and the margin above the cap is the process teardown a loaded machine adds to it.
       const started = performance.now();
       expect(resolveWorktreeFacts(fixture.linkedWorktree, fakeGit('sleep 1'), 100)).toBeNull();
       const elapsed = performance.now() - started;

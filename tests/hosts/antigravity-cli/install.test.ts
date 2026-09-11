@@ -4,12 +4,6 @@ import { installAntigravityCli, uninstallAntigravityCli } from '@/hosts/antigrav
 import { expectRow, fileAt, hostRunner } from '../../helpers/host-differential';
 import { removeTempRoots } from '../../helpers/temp-home';
 
-/**
- * Antigravity keys its hook definitions by name, so ours is one entry among the user's. The rows
- * below cover the states that decide whether install writes, flips `enabled`, or does nothing, and
- * what uninstall is allowed to leave behind: the definition itself, emptied.
- */
-
 const CONFIG = '.gemini/config/hooks.json';
 const CONFIG_PATH = `<home>/${CONFIG}`;
 const MANAGED = 'npx -y cc-safety-net hook --agy-cli';

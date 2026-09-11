@@ -1,17 +1,9 @@
-/**
- * OpenCode hook detection.
- */
-
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stripJsonComments } from '@/core/io/jsonc';
 import type { DetectContext, HookDetection } from '@/hosts/detect/context';
 import { getOpenCodeConfigDir } from '@/hosts/opencode/install';
 
-/**
- * Detect OpenCode plugin configuration.
- * OpenCode only has 'configured' or 'n/a' status (no disabled state).
- */
 export function detect(context: DetectContext): HookDetection {
   const errors: string[] = [];
   const configDir = getOpenCodeConfigDir(context.environment);
@@ -39,7 +31,6 @@ export function detect(context: DetectContext): HookDetection {
         }
       } catch (e) {
         errors.push(`Failed to parse ${filename}: ${e instanceof Error ? e.message : String(e)}`);
-        // Continue to check next candidate
       }
     }
   }

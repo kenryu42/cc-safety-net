@@ -3,12 +3,6 @@ import { join } from 'node:path';
 import type { AuditLogEntry } from '@/core/audit';
 import { commandSignature } from './display';
 
-/**
- * `skips` counts what the scan had to drop — an unreadable directory or file, a
- * malformed record — so a caller can say its answer is incomplete instead of
- * presenting the survivors as the whole log. A directory that does not exist is
- * an empty history, not a dropped one, so it is not counted.
- */
 export function listAuditLogFiles(logsDir: string, skips?: { count: number }): string[] {
   try {
     return readdirSync(logsDir, { withFileTypes: true, encoding: 'utf8' }).flatMap((entry) => {
@@ -23,13 +17,6 @@ export function listAuditLogFiles(logsDir: string, skips?: { count: number }): s
   }
 }
 
-/**
- * Denials that read as false positives rather than catches: a fail-closed
- * denial reports that analysis failed, not that the command was dangerous, and
- * a signature one session was blocked on twice is a workload that kept wanting
- * the command. Repeats are counted over exactly the entries passed in, so the
- * caller owns the window.
- */
 export function findSuspectEntries(entries: readonly AuditLogEntry[]): Set<AuditLogEntry> {
   const signatureKey = (entry: AuditLogEntry) =>
     `${entry.sessionId}\n${commandSignature(entry.segment || entry.command)}`;
@@ -46,8 +33,6 @@ export function findSuspectEntries(entries: readonly AuditLogEntry[]): Set<Audit
   );
 }
 
-/** Fields readers dereference with string methods or use as record keys.
- *  Legacy entries may omit them, so they are only type-checked when present. */
 const OPTIONAL_STRING_FIELDS = [
   'segment',
   'reason',
@@ -67,7 +52,6 @@ function isReadableAuditLogEntry(value: unknown): value is AuditLogEntry {
   );
 }
 
-/** See `listAuditLogFiles` for `skips`. */
 export function readAuditLogEntries(filePath: string, skips?: { count: number }): AuditLogEntry[] {
   try {
     return readFileSync(filePath, 'utf-8')

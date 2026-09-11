@@ -7,15 +7,6 @@ import { withEnv } from '../helpers';
 import { createHookFixture, hostEnv } from '../helpers/hook-hosts';
 import { describeDifferential } from '../helpers/in-process';
 
-/**
- * The library API (contract W5) over one input: `checkCommand` reads the policy, home and working
- * directory the row names, and either returns a result or throws a `TypeError`. Every row pins what
- * that outcome is, because a surface that answered `{ kind: 'allow' }` to everything would still
- * record a snapshot. The rows the caller cannot type-check (a null, a string, a missing command)
- * are the boundary the API re-checks for untyped callers, so they are passed through an unchecked
- * signature.
- */
-
 type Outcome = { returned: CheckCommandResult } | { thrown: string };
 
 type Row = { name: string; input: unknown; expected: Outcome };
@@ -32,8 +23,6 @@ const failedClosed: Outcome = {
 };
 const allowed: Outcome = { returned: { kind: 'allow' } };
 
-// The three rule-driven reasons are spelled out rather than imported, because they are the bytes
-// a caller reads back and two of them have no exported constant to import.
 const ROWS: readonly Row[] = [
   {
     name: 'a null input',
@@ -131,7 +120,6 @@ describeDifferential(
   ROWS,
   async (row) =>
     withEnv(scope, () => {
-      // Untyped callers reach this surface, so the rows keep their declared shape all the way in.
       const check = portedCheckCommand as (input: unknown) => CheckCommandResult;
       try {
         return { returned: check(row.input) } satisfies Outcome;
@@ -146,8 +134,6 @@ describeDifferential(
   },
 );
 
-// W5: the library check writes no audit. Every row above ran with the audit home inside the
-// fixture, so an accidental write would have left a logs tree behind.
 test('neither implementation wrote an audit log', () => {
   expect(existsSync(join(fixture.home, 'audit', '.cc-safety-net', 'logs'))).toBe(false);
 });
