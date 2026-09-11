@@ -1,8 +1,17 @@
 import { afterAll } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { removeCanonicalStub } from './helpers/fake-bin';
+
+// macOS spells its per-user temp root `/var/folders/<xx>/<hash>/T`. A fixture that nests its own
+// `TMPDIR` under a temp root there is not under any root the gate trusts, so `$TMPDIR` literals
+// decide `deny`, and `status` truncates the long root before a `<root>` fold can match it.
+// Every run therefore uses one short root, as the macOS CI job did before this moved here.
+if (process.platform === 'darwin') {
+  mkdirSync('/tmp/ccsn', { recursive: true });
+  process.env.TMPDIR = '/tmp/ccsn';
+}
 
 const testHome = mkdtempSync(
   join(process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(), 'cc-safety-net-test-home-'),

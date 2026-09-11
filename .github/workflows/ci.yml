@@ -69,11 +69,6 @@ jobs:
           bun-version-file: package.json
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Use a short temp directory
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p /tmp/ccsn
-          echo "TMPDIR=/tmp/ccsn" >> "$GITHUB_ENV"
       - name: Check source
         run: bun run check:ci
         env:
@@ -104,7 +99,7 @@ jobs:
         run: bun run check:ci
         env:
           CC_SAFETY_NET_E2E_ARTIFACTS: ${{ runner.temp }}/cc-safety-net-e2e
-          # A short temp root, as the macOS leg pins: a `status` row renders a fixture path into a
+          # A short temp root, as the suite preload picks on macOS: a `status` row renders a fixture path into a
           # fixed-width column, and the default user temp directory is too long for it.
           CC_SAFETY_NET_TEST_TMPDIR: ${{ runner.temp }}
       - name: Rebuild owned artifacts
