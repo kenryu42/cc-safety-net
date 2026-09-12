@@ -292,6 +292,24 @@ describe('core/tool-input', () => {
     }
   });
 
+  test('preserves non-BMP filenames in quoted Git headers with escaped tabs', () => {
+    const patch = [
+      'diff --git "a/report-😀\\t.txt" "b/report-😀\\t.txt"',
+      '--- "a/report-😀\\t.txt"',
+      '+++ "b/report-😀\\t.txt"',
+      '@@ -1 +1 @@',
+      '-before',
+      '+after',
+    ].join('\n');
+
+    expect(next.extractPatchTargetsFromToolInput({ patch })).toEqual([
+      'report-😀\t.txt',
+      'report-😀\t.txt',
+      'report-😀\t.txt',
+      'report-😀\t.txt',
+    ]);
+  });
+
   test('reads the paths a diff header names, in each spelling a patch carries', () => {
     const rows: readonly { readonly patch: string; readonly targets: readonly string[] }[] = [
       { patch: 'diff --git .env .env', targets: ['.env', '.env'] },

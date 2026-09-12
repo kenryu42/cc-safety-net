@@ -113,6 +113,27 @@ function decision(command: string, analysis: AnalysisMode) {
 }
 
 describe('analyzeCommand', () => {
+  test.each([
+    'awk --source=\'BEGIN { system("git reset --hard") }\'',
+    'awk \'BEGIN { # ignored print pipe\n print "x" | "git reset --hard" }\'',
+    'awk \'BEGIN { print "x" | command }\'',
+    'awk \'BEGIN { print "x" | "git " command }\'',
+  ])('inspects AWK executable sources and output pipes: %s', (command) => {
+    expect(decision(command, standard)).toMatchObject({
+      kind: 'deny',
+      ruleId: command.includes('reset --hard') ? 'git.reset-hard' : 'awk.system-dynamic',
+    });
+  });
+
+  test.each([
+    'awk \'/system("git reset --hard")/ { print }\'',
+    'awk \'BEGIN { value = /system("git reset --hard")/; print value }\'',
+    'awk \'BEGIN { print 8 / 2; # system("git reset --hard")\n }\'',
+    'awk \'/escaped\\/system("git reset --hard")/ { print }\'',
+  ])('does not execute AWK regexes or comments: %s', (command) => {
+    expect(decision(command, standard)).toBeNull();
+  });
+
   test('a denied command reports the rule, the intent and the segment that matched', () => {
     expect(decision('echo start && git reset --hard', standard)).toStrictEqual({
       kind: 'deny',

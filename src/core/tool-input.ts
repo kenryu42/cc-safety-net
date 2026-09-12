@@ -445,13 +445,13 @@ function parseQuotedGitDiffField(header: string, start: number, quote: string) {
   const bytes: number[] = [];
   let index = start + 1;
   while (index < header.length) {
-    const character = header[index] ?? '';
+    const character = String.fromCodePoint(header.codePointAt(index) ?? 0);
     if (character === quote) {
       return { value: UTF8_DECODER.decode(Uint8Array.from(bytes)), end: index + 1 };
     }
     if (character !== '\\' || quote === "'") {
       bytes.push(...UTF8_ENCODER.encode(character));
-      index++;
+      index += character.length;
       continue;
     }
 
