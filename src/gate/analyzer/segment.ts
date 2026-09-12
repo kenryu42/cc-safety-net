@@ -36,7 +36,7 @@ import {
   REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS,
 } from './interpreters';
-import { REASON_STRICT_UNPARSEABLE } from './reasons';
+import { REASON_STRICT_UNPARSEABLE, REASON_UNSUPPORTED_HEREDOC_SYNTAX } from './reasons';
 import { hasRecursiveForceFlags } from './rm-flags';
 import {
   ANALYZER_RULES,
@@ -494,13 +494,7 @@ export function analyzeSegment(
         effectiveCwd: nestedEffectiveCwd,
         envAssignments,
       });
-      if (
-        innerReason &&
-        innerReason.ruleId !== 'raw-text.dangerous-command' &&
-        (innerReason.reason !== REASON_STRICT_UNPARSEABLE || hasUnclosedQuotes(codeArg))
-      ) {
-        return innerReason;
-      }
+      if (innerReason && !isInterpreterShellParseNoise(innerReason, codeArg)) return innerReason;
 
       if (containsDangerousCode(codeArg, options.scanWork)) {
         const match = filterDestructiveCommandMatch(
@@ -779,13 +773,7 @@ function analyzeStreamInterpreterChild(
     return childDynamicSourceResult(child, options.policy);
   }
   const nested = options.analyzeNested(codeArg, { effectiveCwd, envAssignments });
-  if (
-    nested &&
-    nested.ruleId !== 'raw-text.dangerous-command' &&
-    (nested.reason !== REASON_STRICT_UNPARSEABLE || hasUnclosedQuotes(codeArg))
-  ) {
-    return nested;
-  }
+  if (nested && !isInterpreterShellParseNoise(nested, codeArg)) return nested;
   if (containsDangerousCode(codeArg, options.scanWork)) {
     const dangerous = filterDestructiveCommandMatch(
       destructiveCommandMatch('interpreter.dangerous-command', REASON_INTERPRETER_DANGEROUS),
@@ -794,6 +782,17 @@ function analyzeStreamInterpreterChild(
     if (dangerous) return blockResultFromMatch(dangerous);
   }
   return childDynamicSourceResult(child, options.policy);
+}
+
+// Interpreter code is not shell, so the opportunistic shell re-parse of a code
+// argument only counts when it finds a real command. Text-rule hits are
+// re-scanned by containsDangerousCode, and parse failures (strict-unparseable
+// or a heredoc opened by a stray `<<`) are noise unless the quotes themselves
+// are unbalanced.
+function isInterpreterShellParseNoise(nested: AnalyzeBlockResult, codeArg: string): boolean {
+  if (nested.ruleId === 'raw-text.dangerous-command') return true;
+  if (nested.reason.startsWith(REASON_UNSUPPORTED_HEREDOC_SYNTAX)) return true;
+  return nested.reason === REASON_STRICT_UNPARSEABLE && !hasUnclosedQuotes(codeArg);
 }
 
 function childShellDynamicResult(

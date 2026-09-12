@@ -38,7 +38,11 @@ import {
   REASON_INTERPRETER_DANGEROUS,
 } from './interpreters';
 import { analyzePowerShellCommandViewMatch } from './powershell/remove-item';
-import { REASON_RECURSION_LIMIT, REASON_STRICT_UNPARSEABLE } from './reasons';
+import {
+  REASON_RECURSION_LIMIT,
+  REASON_STRICT_UNPARSEABLE,
+  REASON_UNSUPPORTED_HEREDOC_SYNTAX,
+} from './reasons';
 import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
 import { extractLiteralPrintfOutput } from './shell-execution';
 import {
@@ -91,7 +95,7 @@ export function analyzeCommandInternal(
     const heredocIssue = program.issues.find((issue) => issue.code.includes('heredoc'));
     if (heredocIssue) {
       if (!options.strict) return analyzeUnparseableCommand(command, options);
-      const reason = `Unsupported heredoc syntax: ${heredocIssue.message}`;
+      const reason = `${REASON_UNSUPPORTED_HEREDOC_SYNTAX}: ${heredocIssue.message}`;
       options.trace?.recordGlobal({ type: 'error', message: reason });
       return { reason, segment: command, intent: 'stop_and_explain' };
     }

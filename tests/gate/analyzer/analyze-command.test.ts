@@ -526,6 +526,9 @@ describe('analyzeCommand', () => {
       'xargs git status',
       "cat <<'EOF'\nrm -rf ~ remains inert prose\nEOF",
       'TMPDIR=/tmp rm -rf $TMPDIR/test-dir',
+      // Interpreter code whose shell re-parse opens a heredoc at a stray `<<` (issue #111).
+      "node -e 'const s = `t\\n---\\n<<declare hp = 3>>`; console.log(s);'",
+      "echo x | node -e 'const s = `t\\n---\\n<<declare hp = 3>>`; console.log(s);'",
     ];
     for (const command of rows) {
       expect(decision(command, standard), command).toBeNull();
