@@ -125,6 +125,7 @@ describe('help', () => {
 });
 
 const usageErrors: [readonly string[], string][] = [
+  [['add', 'acme/repo', '--only'], '--only requires at least one value'],
   [['bogus'], 'Unknown rule subcommand: bogus'],
   [['--delete-source'], "--delete-source is only valid with 'rule remove'"],
   [['init', '--delete-source'], 'Unknown option for rule init: --delete-source'],

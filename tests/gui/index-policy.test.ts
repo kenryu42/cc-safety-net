@@ -29,7 +29,7 @@ const CONFIGURABLE_RULE = DESTRUCTIVE_COMMAND_RULE_METADATA.find((rule) => !rule
 if (!CONFIGURABLE_RULE) throw new Error('the destructive metadata carries no configurable rule');
 
 const S0: TreeSpec = {};
-const S1: TreeSpec = { [USER_POLICY_FILE]: json(USER_POLICY) };
+const S1 = { [USER_POLICY_FILE]: json(USER_POLICY) } satisfies TreeSpec;
 const S2: TreeSpec = { [USER_POLICY_FILE]: '' };
 const S3: TreeSpec = { [USER_POLICY_FILE]: '{ not json' };
 const S4: TreeSpec = {
@@ -40,14 +40,14 @@ const S4: TreeSpec = {
     secret_protection: { enabled: 'yes' },
   }),
 };
-const S5: TreeSpec = {
+const S5 = {
   ...S1,
   [PROJECT_POLICY_FILE]: json({
     version: 1,
     safety: { level: 'standard' },
     destructive_command_protection: { overrides: { [CONFIGURABLE_RULE.id]: 'off' } },
   }),
-};
+} satisfies TreeSpec;
 const S6: TreeSpec = {
   ...S1,
   [PROJECT_POLICY_FILE]: json({ version: 1, safety: { level: 'paranoid' } }),
@@ -98,6 +98,27 @@ const draft = { ...USER_POLICY, safety: { level: 'standard', overrides: {} } };
 
 describe('the policy GUI server', () => {
   afterEach(removeTempRoots);
+
+  test('malformed preview, explain, and project drafts leave saved policies unchanged', async () => {
+    const row = await runGuiRow({
+      seed: S5,
+      requests: [
+        '/api/policy/preview',
+        '/api/policy/explain',
+        '/api/policy/project/diff',
+        '/api/policy/project/apply',
+      ].map((path) => ({ method: 'POST', path, raw: '{' })),
+    });
+    expect(row.responses).toHaveLength(4);
+    for (const response of row.responses) {
+      expect(response.status).toBe(400);
+      expect(errorsOf(response.body)).toEqual([expect.stringContaining('Invalid JSON:')]);
+    }
+    expect(policyFile(row.tree)?.content).toBe(S5[USER_POLICY_FILE]);
+    expect(row.tree.find((entry) => entry.path === PROJECT_POLICY_FILE)?.content).toBe(
+      S5[PROJECT_POLICY_FILE],
+    );
+  });
 
   test('answers the favicon before the token is checked', async () => {
     const row = await runGuiRow({ seed: S0, requests: [{ path: '/favicon.ico', token: 'none' }] });

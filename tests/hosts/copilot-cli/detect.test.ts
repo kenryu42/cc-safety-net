@@ -59,6 +59,28 @@ const VERSIONS: Array<string | null> = [null, '0.0.400', '0.0.422', '1.0.8'];
 
 afterEach(removeTempRoots);
 
+test.each([
+  '{"disableAllHooks":"false"}',
+  '{"hooks":[]}',
+])('rejects malformed Copilot hook settings: %s', async (content) => {
+  expect(await detection({ [REPO_HOOK]: content }, '1.0.8')).toEqual(
+    absent([
+      `Invalid hook config ${at(REPO_HOOK)}: hooks.preToolUse must be an array of hook objects`,
+    ]),
+  );
+});
+
+test('reports a regular file occupying the Copilot hooks directory', async () => {
+  const result = await detection({ '.copilot/hooks': 'not a directory' }, '1.0.8');
+  expect(result).toMatchObject({
+    kind: 'returned',
+    value: {
+      status: 'n/a',
+      errors: [expect.stringContaining(`Failed to read ${USER_HOOK_DIR}:`)],
+    },
+  });
+});
+
 describe('the version gate on each hook source', () => {
   test.each(VERSIONS)('reports an untouched home as absent at version %s', async (version) => {
     expect(await detection({}, version)).toEqual(absent());

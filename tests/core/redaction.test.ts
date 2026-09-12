@@ -76,6 +76,12 @@ const FIXED: readonly string[] = [
 ];
 
 describe('redaction', () => {
+  test.each(['"', "'"])('diagnostics redact the entire unterminated %s assignment', (quote) => {
+    expect(next.sanitizeDiagnosticText(`PASSWORD=${quote}first secret tail`)).toBe(
+      'PASSWORD=<redacted>',
+    );
+  });
+
   test('assignment values are read and redacted whole, in every quoting form', () => {
     const rows: readonly {
       readonly text: string;

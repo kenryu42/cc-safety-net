@@ -110,6 +110,7 @@ function findAssignmentValueEnd(text: string, start: number): number {
       }
       if (text[index] === quote) return index + 1;
     }
+    return text.length;
   }
   let end = start;
   while (end < text.length && !/\s/.test(text[end] ?? '')) end++;

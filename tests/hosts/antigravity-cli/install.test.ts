@@ -33,6 +33,23 @@ const { row, detection } = hostRunner({
 afterEach(removeTempRoots);
 
 describe('the Antigravity hook config differential', () => {
+  test('adds its handler to an existing definition while preserving unrelated handlers', async () => {
+    const foreignEntry = { hooks: [{ type: 'command', command: 'echo ready' }] };
+    const seed = { 'cc-safety-net': { enabled: false, PreToolUse: [foreignEntry] } };
+    const result = await row({ [CONFIG]: hooksConfig(seed) });
+    expect(result.steps?.install.result).toMatchObject({
+      ok: true,
+      value: { alreadyInstalled: false },
+    });
+    expect(result.steps?.install.detection).toEqual(CONFIGURED);
+    expect(JSON.parse(fileAt(result.steps?.install.tree, CONFIG) ?? '{}')).toEqual({
+      'cc-safety-net': { enabled: true, PreToolUse: [foreignEntry, ...DEFINITION.PreToolUse] },
+    });
+    expect(JSON.parse(fileAt(result.tree, CONFIG) ?? '{}')).toEqual({
+      'cc-safety-net': { enabled: true, PreToolUse: [foreignEntry] },
+    });
+  });
+
   test('writes the managed definition when the host has no hook config', async () => {
     expectRow((await row({})).steps, {
       file: CONFIG,

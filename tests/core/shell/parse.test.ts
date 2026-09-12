@@ -7,6 +7,46 @@ import { differentialSources, SHELL_DIALECTS } from '../../helpers/shell-inputs'
 const STATUSES = ['complete', 'partial', 'invalid', 'limited'];
 
 describe('core/shell/parse', () => {
+  test.each([
+    ['E\\$OF', 'E$OF'],
+    ['E\\q', 'E\\q'],
+  ])('decodes a quoted heredoc delimiter %s without expanding its body', (quoted, delimiter) => {
+    const program = parseCommand(`cat <<"${quoted}"\n$value\n${delimiter}`, 'posix');
+    expect(program.status).toBe('complete');
+    expect(projectCommandViews(program)[0]?.redirections[0]?.heredoc).toMatchObject({
+      delimiter,
+      quotedDelimiter: true,
+      body: '$value\n',
+    });
+  });
+
+  test('a dangling escape in a heredoc delimiter is rejected as ambiguous', () => {
+    const program = parseCommand('cat <<EOF\\', 'posix');
+    expect(program.status).toBe('invalid');
+    expect(program.issues.map((issue) => issue.code)).toContain('ambiguous-heredoc-delimiter');
+  });
+
+  test('a quoted CRLF continuation joins one literal argument', () => {
+    const program = parseCommand('printf "first\\\r\nsecond"', 'posix');
+    expect(program.status).toBe('complete');
+    expect(projectCommandViews(program)[0]?.words.map((word) => word.text)).toEqual([
+      'printf',
+      'firstsecond',
+    ]);
+  });
+
+  test.each([
+    'echo; f() { :; }',
+    'echo > output',
+  ])('counts function names and redirect targets toward the word limit: %s', (source) => {
+    const program = parseCommand(source, 'posix', {
+      ...DEFAULT_COMMAND_PARSER_LIMITS,
+      maxWords: 1,
+    });
+    expect(program.status).toBe('limited');
+    expect(program.issues.map((issue) => issue.code)).toContain('word-limit');
+  });
+
   test('the caps a parse runs under', () => {
     expect(DEFAULT_COMMAND_PARSER_LIMITS).toEqual({
       maxInputLength: 128 * 1024,
