@@ -584,6 +584,13 @@ describe('analyzeCommand', () => {
       expect(denial?.intent, command).toBe('stop_and_explain');
       expect(denial?.reason, command).toContain('strict mode');
     }
+    // A stray `<<` in interpreter code is noise only while its quotes balance.
+    const heredoc = "node -e 'x = `helm uninstall foo <<X; echo \"unclosed`'";
+    expect(decision(heredoc, standard)).toBeNull();
+    expect(decision(heredoc, strict)).toMatchObject({
+      intent: 'stop_and_explain',
+      reason: expect.stringContaining('heredoc'),
+    });
   });
 
   test('a paranoid capability blocks what the standard level allows', () => {

@@ -791,8 +791,11 @@ function analyzeStreamInterpreterChild(
 // are unbalanced.
 function isInterpreterShellParseNoise(nested: AnalyzeBlockResult, codeArg: string): boolean {
   if (nested.ruleId === 'raw-text.dangerous-command') return true;
-  if (nested.reason.startsWith(REASON_UNSUPPORTED_HEREDOC_SYNTAX)) return true;
-  return nested.reason === REASON_STRICT_UNPARSEABLE && !hasUnclosedQuotes(codeArg);
+  return (
+    (nested.reason.startsWith(REASON_UNSUPPORTED_HEREDOC_SYNTAX) ||
+      nested.reason === REASON_STRICT_UNPARSEABLE) &&
+    !hasUnclosedQuotes(codeArg)
+  );
 }
 
 function childShellDynamicResult(
