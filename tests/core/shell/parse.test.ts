@@ -189,6 +189,8 @@ describe('core/shell/parse', () => {
       ['rm -rf x', 'posix'],
       ['Remove-Item x', 'powershell'],
       ['cat $env:TEMP\\x', 'powershell'],
+      ["python3 - <<'PY'\nRemove-Item x -Recurse -Force\nPY", 'posix'],
+      ["Remove-Item '<<' x", 'powershell'],
       ['', 'posix'],
     ] as const;
     for (const [source, dialect] of rows) {

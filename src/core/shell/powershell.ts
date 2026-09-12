@@ -68,6 +68,7 @@ export function shouldUsePowerShellParser(source: string): boolean {
     return false;
   }
   const selector = scanSelectorCommands(source);
+  if (selector.posixHeredoc) return false;
   return selector.invalidComment || selector.commands.some(isPowerShellSelectorCommand);
 }
 
@@ -622,12 +623,17 @@ function depthLimitIssue(start: number, limit: number): CommandIssue {
   };
 }
 
-function scanSelectorCommands(source: string): { commands: string[][]; invalidComment: boolean } {
+function scanSelectorCommands(source: string): {
+  commands: string[][];
+  invalidComment: boolean;
+  posixHeredoc: boolean;
+} {
   const commands: string[][] = [];
   let words: string[] = [];
   let i = 0;
   let wordCount = 0;
   let invalidComment = false;
+  let posixHeredoc = false;
   const flush = () => {
     if (words.length > 0) commands.push(words);
     words = [];
@@ -665,6 +671,7 @@ function scanSelectorCommands(source: string): { commands: string[][]; invalidCo
       i++;
       continue;
     }
+    posixHeredoc ||= source.startsWith('<<', i);
     const result = readPowerShellWord(
       source,
       i,
@@ -678,7 +685,7 @@ function scanSelectorCommands(source: string): { commands: string[][]; invalidCo
     i = result.next > i ? result.next : i + 1;
   }
   flush();
-  return { commands, invalidComment };
+  return { commands, invalidComment, posixHeredoc };
 }
 
 function selectorCommandsFromProgram(program: CommandProgram): string[][] {
