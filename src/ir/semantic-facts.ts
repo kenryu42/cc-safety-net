@@ -9,6 +9,7 @@ export type ShellSyntaxEntry =
   | {
       readonly kind: 'redirection';
       readonly operator: string;
+      readonly fd?: number;
       readonly role: 'file-read' | 'file-write' | 'here-data';
       readonly targetOrder: 'immediate' | 'legacy-segment';
       readonly target?: string;

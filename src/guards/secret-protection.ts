@@ -424,18 +424,24 @@ function extractCommandPathTargets(
     ),
   ];
   let segment: string[] = [];
+  const nonArguments = new Set<number>();
   let pipeProducer: string[] | null = null;
+
+  const segmentTargets = () => [
+    ...extractSegmentPathTargets(segment, store, options, nonArguments),
+    ...(pipeProducer === null
+      ? []
+      : extractPipeCarrierPathTargets(pipeProducer, segment, store, options)),
+  ];
 
   for (const entry of syntax.entries) {
     if (entry.kind === 'operator') {
       if (!entry.boundary) continue;
       if (segment.length > 0) {
-        targets.push(...extractSegmentPathTargets(segment, store, options));
-        if (pipeProducer !== null) {
-          targets.push(...extractPipeCarrierPathTargets(pipeProducer, segment, store, options));
-        }
+        targets.push(...segmentTargets());
         pipeProducer = PIPE_OPERATORS.has(entry.operator) ? segment : null;
         segment = [];
+        nonArguments.clear();
       } else {
         pipeProducer = null;
       }
@@ -443,21 +449,21 @@ function extractCommandPathTargets(
     }
 
     if (entry.kind === 'redirection') {
+      if (entry.fd !== undefined) nonArguments.add(segment.length - 1);
       const target = entry.target
         ? projectSensitiveShellText(rewritePowerShellHomePrefix(entry.target, powershell))
         : undefined;
-      if (target && entry.targetOrder === 'legacy-segment') segment.push(target);
-      else if (target) targets.push(target);
+      if (target && entry.targetOrder === 'legacy-segment') {
+        nonArguments.add(segment.length);
+        segment.push(target);
+      } else if (target) targets.push(target);
       continue;
     }
     segment.push(projectSensitiveShellText(rewritePowerShellHomePrefix(entry.text, powershell)));
   }
 
   if (segment.length > 0) {
-    targets.push(...extractSegmentPathTargets(segment, store, options));
-    if (pipeProducer !== null) {
-      targets.push(...extractPipeCarrierPathTargets(pipeProducer, segment, store, options));
-    }
+    targets.push(...segmentTargets());
   }
 
   return targets;
@@ -467,7 +473,19 @@ function extractSegmentPathTargets(
   tokens: readonly string[],
   store: SemanticFactStore,
   options: PathExtractionOptions,
+  nonArguments?: ReadonlySet<number>,
 ): string[] {
+  // jq's program position is defined by argv, not projected redirection words.
+  // Preserve the legacy projection for all other command extractors.
+  if (nonArguments?.size) {
+    const argv = tokens.filter((_, index) => !nonArguments.has(index));
+    if (basename(stripLeadingWrappersAndEnvAssignments(argv)[0] ?? '').toLowerCase() === 'jq') {
+      return [
+        ...tokens.filter((_, index) => nonArguments.has(index)),
+        ...extractSegmentPathTargets(argv, store, options),
+      ];
+    }
+  }
   // Capture the value bound by `VAR=value` assignments as a candidate path so
   // that later variable indirection (e.g. `f=.env; cat "$f"` or
   // `f=.env; python3 -c "open('$f')"`) is caught at the assignment site,
@@ -500,6 +518,9 @@ function extractSegmentPathTargets(
   }
   if (command === 'git') {
     return [...assignmentValues, ...extractGitOperandPathTargets(post)];
+  }
+  if (command === 'jq') {
+    return [...assignmentValues, ...extractJqPathTargets(post)];
   }
   if (PATTERN_FIRST_COMMANDS.has(command)) {
     return [...assignmentValues, ...extractPatternCommandTargets(post)];
@@ -767,6 +788,46 @@ function extractOperandPathCandidates(command: string, token: string): string[] 
   if (command === 'zip' && /\.zip$/i.test(token)) return candidates;
   candidates.push(token);
   return candidates;
+}
+
+// Omit only jq's inline program. All other operands retain generic inspection,
+// including file bindings. -f changes the first positional into a file even
+// when it appears after that positional; unknown options keep the fallback.
+function extractJqPathTargets(tokens: readonly string[]): string[] {
+  let programIndex = -1;
+  let afterDashDash = false;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index] ?? '';
+    if (!afterDashDash && token === '--') {
+      afterDashDash = true;
+      continue;
+    }
+    if (afterDashDash || !/^-(?:[A-Za-z]|-)/.test(token)) {
+      if (programIndex === -1) programIndex = index;
+      continue;
+    }
+    if (/^--(?:arg|argjson|argfile|rawfile|slurpfile)$/.test(token)) {
+      index += 2;
+      continue;
+    }
+    if (token === '--indent' || token === '-L') {
+      index++;
+      continue;
+    }
+    if (token.startsWith('-L')) continue;
+    if (
+      /^-[srjcCMaSRnbehV]+$/.test(token) ||
+      /^--(?:slurp|raw-output0?|join-output|compact-output|color-output|monochrome-output|ascii-output|unbuffered|sort-keys|raw-input|null-input|binary|tab|seq|stream|stream-errors|exit-status|args|jsonargs|help|version|build-configuration)$/.test(
+        token,
+      )
+    ) {
+      continue;
+    }
+    return tokens.flatMap((arg) => extractOperandPathCandidates('jq', arg));
+  }
+  return tokens.flatMap((token, index) =>
+    index === programIndex ? [] : extractOperandPathCandidates('jq', token),
+  );
 }
 
 function extractGitOperandPathTargets(tokens: readonly string[]): string[] {

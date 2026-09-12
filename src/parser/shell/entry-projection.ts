@@ -194,6 +194,7 @@ function projectRedirection(
     Object.freeze({
       kind: 'redirection' as const,
       operator,
+      ...(redirection.fd === undefined ? {} : { fd: redirection.fd }),
       role: getRedirectionRole(operator),
       targetOrder: LEGACY_SEGMENT_REDIRECTS.has(operator)
         ? ('legacy-segment' as const)

@@ -1038,6 +1038,69 @@ for runtime in /Users/kenryu/.nvm/versions/node/v26.0.0/bin/node /Users/kenryu/.
   });
 });
 
+describe('secret protection jq operands', () => {
+  const cwd = join(tmpdir(), 'secret-protection-project');
+
+  test.each([
+    "jq -r 'to_entries[] | .key' data.json",
+    "jq -r 'to_entries[] | .key'",
+    "jq -r 'to_entries[] | .name' data.json",
+    "jq 2>/dev/null -r 'to_entries[] | .key' data.json",
+    "jq >| output.json 'to_entries[] | .key' data.json",
+    "jq --arg name value --argjson count 2 'to_entries[] | .key' data.json",
+    "jq --rawfile text notes.txt --slurpfile rows data.json 'to_entries[] | .key'",
+    "jq --indent 2 -L modules 'to_entries[] | .key' data.json",
+    "jq -Lmodules -- 'to_entries[] | .key' data.json",
+    "jq 'to_entries[] | .key' -- data.json",
+    "jq --arg name --from-file 'to_entries[] | .key' data.json",
+    'jq -f filter.jq data.json',
+  ])('allows inline programs and ordinary files: %s', (command) => {
+    for (const strict of [false, true]) {
+      expect(findSensitiveTargetInCommand(command, cwd, undefined, { strict })).toBeNull();
+    }
+  });
+
+  test.each([
+    "jq '.a' secrets.key",
+    "jq 'to_entries[] | .key' secrets.key",
+    'jq -f secrets.key data.json',
+    'jq --from-file secrets.key data.json',
+    'jq -rf secrets.key data.json',
+    'jq secrets.key -f data.json',
+    'jq -f filter.jq secrets.key',
+    "jq --rawfile text secrets.key '.a' data.json",
+    "jq --slurpfile rows secrets.key '.a' data.json",
+    "jq --argfile rows secrets.key '.a' data.json",
+    "jq '.a' --rawfile text secrets.key data.json",
+    "jq -- '.a' secrets.key",
+    "jq '.a' -- secrets.key",
+    "jq '.a' < secrets.key",
+    "jq '.a' data.json > secrets.key",
+    "jq >| secrets.key '.' data.json",
+    'jq --arg text "$(cat secrets.key)" \'.a\' data.json',
+  ])('preserves sensitive file targets: %s', (command) => {
+    for (const strict of [false, true]) {
+      expect(findSensitiveTargetInCommand(command, cwd, undefined, { strict })).toEqual({
+        target: 'secrets.key',
+        ruleId: 'secret.ext-pattern.key',
+      });
+    }
+  });
+
+  test('preserves configured deny paths after the program', () => {
+    expect(
+      findSensitiveTargetInCommand("jq 'to_entries[] | .key' private/data.json", cwd, {
+        denyPaths: [join(cwd, 'private')],
+      }),
+    ).toEqual({ target: 'private/data.json', ruleId: 'secret.deny-path' });
+    expect(
+      findSensitiveTargetInCommand("jq >| private/data.json '.' data.json", cwd, {
+        denyPaths: [join(cwd, 'private')],
+      }),
+    ).toEqual({ target: 'private/data.json', ruleId: 'secret.deny-path' });
+  });
+});
+
 describe('secret protection curl upload extraction', () => {
   // Commands below are analyzer input strings only; they are never executed in a shell.
   const cwd = join(tmpdir(), 'secret-protection-project');

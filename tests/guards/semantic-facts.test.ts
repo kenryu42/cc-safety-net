@@ -611,6 +611,7 @@ describe('semantic facts', () => {
         {
           kind: 'redirection',
           operator: '>&',
+          fd: 2,
           role: 'file-write',
           targetOrder: 'immediate',
           target: '1',
