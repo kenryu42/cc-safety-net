@@ -40,12 +40,12 @@ export const ADOPT_AS_OPERAND: unique symbol = Symbol('adopt-as-operand');
 
 export type GuardWalkVisitor = Readonly<{
   word: (text: string) => string;
-
   segment: (
     tokens: readonly string[],
     state: ProtectedPathShellState,
     pipeProducer: readonly string[] | null,
     boundary: string | null,
+    shellWords: ReadonlySet<number>,
   ) => string | null;
   redirection: (
     redirection: GuardRedirection,
@@ -64,6 +64,7 @@ type GuardEvent =
   | {
       readonly kind: 'redirection';
       readonly operator: string;
+      readonly fd?: number;
       readonly role: 'file-read' | 'file-write' | 'here-data';
       readonly targetOrder: 'immediate' | 'legacy-segment';
       readonly target?: string;
@@ -142,37 +143,47 @@ export function walkGuardSyntax(
 ): string | null {
   let state: ProtectedPathShellState = { cwd, variables: new Map(), previous: null };
   let segment: string[] = [];
+  let shellWords = new Set<number>();
   let pipeProducer: string[] | null = null;
   const frames: {
     readonly state: ProtectedPathShellState;
     readonly segment: string[];
+    readonly shellWords: Set<number>;
     readonly pipeProducer: string[] | null;
   }[] = [];
   for (const event of guardEvents(syntax)) {
     if (event.kind === 'scope') {
       if (event.edge === 'enter') {
-        frames.push({ state, segment: [...segment], pipeProducer });
+        frames.push({
+          state,
+          segment: [...segment],
+          shellWords: new Set(shellWords),
+          pipeProducer,
+        });
         continue;
       }
-      const target = visitor.segment(segment, state, pipeProducer, null);
+      const target = visitor.segment(segment, state, pipeProducer, null, shellWords);
       if (target) return target;
       const frame = frames.pop();
       if (frame === undefined) throw new Error('scope exit without a matching enter');
       state = frame.state;
       segment = frame.segment;
+      shellWords = frame.shellWords;
       pipeProducer = frame.pipeProducer;
       continue;
     }
     if (event.kind === 'operator') {
       if (!event.boundary) continue;
-      const target = visitor.segment(segment, state, pipeProducer, event.operator);
+      const target = visitor.segment(segment, state, pipeProducer, event.operator, shellWords);
       if (target) return target;
       state = applyShellState(segment, state, environment, budget);
       pipeProducer = segment.length > 0 && PIPE_OPERATORS.has(event.operator) ? segment : null;
       segment = [];
+      shellWords = new Set();
       continue;
     }
     if (event.kind === 'redirection') {
+      if (event.fd !== undefined) shellWords.add(segment.length - 1);
       if (event.target === undefined) continue;
       const outcome = visitor.redirection(
         {
@@ -184,6 +195,7 @@ export function walkGuardSyntax(
         state,
       );
       if (outcome === ADOPT_AS_OPERAND) {
+        shellWords.add(segment.length);
         segment.push(visitor.word(event.target));
         continue;
       }
@@ -192,7 +204,7 @@ export function walkGuardSyntax(
     }
     segment.push(visitor.word(event.text));
   }
-  return visitor.segment(segment, state, pipeProducer, null);
+  return visitor.segment(segment, state, pipeProducer, null, shellWords);
 }
 
 export function readGuardTokens(syntax: GuardSyntax): readonly GuardToken[] {
@@ -402,6 +414,7 @@ function readRedirection(
     Object.freeze({
       kind: 'redirection' as const,
       operator,
+      ...(redirection.fd === undefined ? {} : { fd: redirection.fd }),
       role: getRedirectionRole(operator),
       targetOrder: LEGACY_SEGMENT_REDIRECTS.has(operator)
         ? ('legacy-segment' as const)

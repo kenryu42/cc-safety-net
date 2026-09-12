@@ -155,6 +155,7 @@ const INTERPRETERS_BY_CLUSTERED_CODE_EVAL_FLAG = new Map([
 ]);
 
 const PATTERN_FIRST_COMMANDS = new Set(['grep', 'rg']);
+const JQ_COMMANDS = new Set(['jq', 'gojq', 'jaq']);
 const PATTERN_FILE_SHORT = 'f';
 const PATTERN_FILE_LONG = 'file';
 const PATTERNLESS_FILES_LONG = 'files';
@@ -451,10 +452,18 @@ function extractCommandPathTargets(
     projectSensitiveShellText(rewritePowerShellHomePrefix(text, powershell), environment);
   walkGuardSyntax(syntax, cwd, environment, budget, {
     word: map,
-    segment: (tokens, state, pipeProducer) => {
+    segment: (tokens, state, pipeProducer, _boundary, shellWords) => {
       if (tokens.length === 0) return null;
       targets.push(
-        ...extractSegmentPathTargets(tokens, store, options, environment, state.cwd, budget),
+        ...extractSegmentPathTargets(
+          tokens,
+          store,
+          options,
+          environment,
+          state.cwd,
+          budget,
+          shellWords,
+        ),
       );
       if (pipeProducer !== null) {
         targets.push(
@@ -488,9 +497,20 @@ function extractSegmentPathTargets(
   environment: EnvironmentContext,
   cwd: string,
   budget: Budget,
+  shellWords?: ReadonlySet<number>,
 ): SecretCandidate[] {
   const here = (target: string) => ({ target, cwd });
-
+  if (shellWords?.size) {
+    const argv = tokens.filter((_, index) => !shellWords.has(index));
+    if (
+      JQ_COMMANDS.has(basename(stripLeadingWrappersAndEnvAssignments(argv)[0] ?? '').toLowerCase())
+    ) {
+      return [
+        ...tokens.filter((_, index) => shellWords.has(index)).map(here),
+        ...extractSegmentPathTargets(argv, store, options, environment, cwd, budget),
+      ];
+    }
+  }
   const assignmentValues = extractLeadingAssignmentValues(tokens).map(here);
   const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
   if (stripped.length === 0) return assignmentValues;
@@ -534,6 +554,9 @@ function extractSegmentPathTargets(
   }
   if (command === 'git') {
     return [...assignmentValues, ...extractGitOperandPathTargets(post).map(here)];
+  }
+  if (JQ_COMMANDS.has(command)) {
+    return [...assignmentValues, ...extractJqPathTargets(post).map(here)];
   }
   if (PATTERN_FIRST_COMMANDS.has(command)) {
     return [...assignmentValues, ...extractPatternCommandTargets(post).map(here)];
@@ -825,6 +848,43 @@ function extractOperandPathCandidates(command: string, token: string): string[] 
   if (command === 'zip' && /\.zip$/i.test(token)) return candidates;
   candidates.push(token);
   return candidates;
+}
+
+function extractJqPathTargets(tokens: readonly string[]): string[] {
+  let programIndex = -1;
+  let afterDashDash = false;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index] ?? '';
+    if (!afterDashDash && token === '--') {
+      afterDashDash = true;
+      continue;
+    }
+    if (afterDashDash || !/^-(?:[A-Za-z]|-)/.test(token)) {
+      if (programIndex === -1) programIndex = index;
+      continue;
+    }
+    if (/^--(?:arg|argjson|argfile|rawfile|slurpfile)$/.test(token)) {
+      index += 2;
+      continue;
+    }
+    if (token === '--indent' || token === '-L') {
+      index++;
+      continue;
+    }
+    if (token.startsWith('-L')) continue;
+    if (
+      /^-[srjcCMaSRnbehV]+$/.test(token) ||
+      /^--(?:slurp|raw-output0?|join-output|compact-output|color-output|monochrome-output|ascii-output|unbuffered|sort-keys|raw-input|null-input|binary|tab|seq|stream|stream-errors|exit-status|args|jsonargs|help|version|build-configuration)$/.test(
+        token,
+      )
+    ) {
+      continue;
+    }
+    return tokens.flatMap((arg) => extractOperandPathCandidates('jq', arg));
+  }
+  return tokens.flatMap((token, index) =>
+    index === programIndex ? [] : extractOperandPathCandidates('jq', token),
+  );
 }
 
 function extractGitOperandPathTargets(tokens: readonly string[]): string[] {

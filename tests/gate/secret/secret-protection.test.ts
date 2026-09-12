@@ -882,6 +882,206 @@ describe('the carriers a candidate path can arrive through', () => {
   });
 });
 
+describe('a jq program is a filter, not a file operand', () => {
+  const key = (target: string): Verdict => ({ target, ruleId: 'secret.ext-pattern.key' });
+  const denyPrivate = { denyPaths: [join(repo, 'private')] };
+
+  test('an inline program ending in .key reads only the files it names', () => {
+    checkCarriers([
+      {
+        name: 'the issue 112 shape',
+        command: "jq -r 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'a program with no file at all',
+        command: "jq -r 'to_entries[] | .key'",
+        expected: null,
+      },
+      {
+        name: 'a program on piped input',
+        command: "cat data.json | jq -r 'to_entries[] | .key'",
+        expected: null,
+      },
+      {
+        name: 'an fd redirection before the program does not shift its position',
+        command: "jq 2>/dev/null -r 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'a legacy-segment redirection before the program does not shift its position',
+        command: "jq >| output.json 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'a redirection after the operands',
+        command: "jq -r 'to_entries[] | .key' data.json > output.json",
+        expected: null,
+      },
+      {
+        name: 'value-taking options before the program',
+        command: "jq --arg name value --argjson count 2 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'file bindings that name ordinary files',
+        command: "jq --rawfile text notes.txt --slurpfile rows data.json 'to_entries[] | .key'",
+        expected: null,
+      },
+      {
+        name: 'an indent value and a module path',
+        command: "jq --indent 2 -L modules 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'an attached module path and a -- before the program',
+        command: "jq -Lmodules -- 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'a -- after the program',
+        command: "jq 'to_entries[] | .key' -- data.json",
+        expected: null,
+      },
+      {
+        name: 'an option after the program',
+        command: "jq 'to_entries[] | .key' -r data.json",
+        expected: null,
+      },
+      {
+        name: 'a program file that is not sensitive',
+        command: 'jq -f filter.jq data.json',
+        expected: null,
+      },
+      {
+        name: 'gojq shares the argv shape',
+        command: "gojq -r 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+      {
+        name: 'jaq shares the argv shape',
+        command: "jaq -r 'to_entries[] | .key' data.json",
+        expected: null,
+      },
+    ]);
+  });
+
+  test('every operand other than the program is still inspected', () => {
+    checkCarriers([
+      {
+        name: 'a sensitive input file',
+        command: "jq '.a' secrets.key",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a sensitive input after a .key program',
+        command: "jq 'to_entries[] | .key' secrets.key",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a sensitive program file',
+        command: 'jq -f secrets.key data.json',
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a sensitive program file through the long option',
+        command: 'jq --from-file secrets.key data.json',
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a sensitive program file through a bundled short option',
+        command: 'jq -rf secrets.key data.json',
+        expected: key('secrets.key'),
+      },
+      {
+        name: '-f after the first positional makes that positional the program file',
+        command: 'jq secrets.key -f data.json',
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a sensitive input next to a program file',
+        command: 'jq -f filter.jq secrets.key',
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a --rawfile binding',
+        command: "jq --rawfile text secrets.key '.a' data.json",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a --slurpfile binding',
+        command: "jq --slurpfile rows secrets.key '.a' data.json",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'an --argfile binding',
+        command: "jq --argfile rows secrets.key '.a' data.json",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a binding after the program',
+        command: "jq '.a' --rawfile text secrets.key data.json",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a -- before the program',
+        command: "jq -- '.a' secrets.key",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a -- after the program',
+        command: "jq '.a' -- secrets.key",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'an unknown option keeps every token inspected',
+        command: "jq --unknown-opt 'to_entries[] | .key' data.json",
+        expected: key('to_entries[] | .key'),
+      },
+      {
+        name: 'a read redirection',
+        command: "jq '.a' < secrets.key",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a write redirection',
+        command: "jq '.a' data.json > secrets.key",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a legacy-segment redirection target before the program',
+        command: "jq >| secrets.key '.' data.json",
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a substitution inside an option value',
+        command: 'jq --arg text "$(cat secrets.key)" \'.a\' data.json',
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'a substitution in the program position itself',
+        command: 'jq "$(cat secrets.key)" data.json',
+        expected: key('secrets.key'),
+      },
+      {
+        name: 'an fd redirection after an unquoted substitution still names the right word',
+        command: "jq --arg k $(echo v) '.a' secrets.key 2>/dev/null",
+        expected: key('secrets.key'),
+      },
+    ]);
+  });
+
+  test('a configured deny path is answered after the program too', () => {
+    expect(
+      secretIn("jq 'to_entries[] | .key' private/notes.txt", STRICT, denyPrivate),
+    ).toStrictEqual({ target: 'private/notes.txt', ruleId: 'secret.deny-path' });
+    expect(secretIn("jq >| private/notes.txt '.' data.json", STRICT, denyPrivate)).toStrictEqual({
+      target: 'private/notes.txt',
+      ruleId: 'secret.deny-path',
+    });
+  });
+});
+
 describe('secret protection through tool inputs', () => {
   const routeVerdict = (input: unknown, route: ToolRoute): Verdict =>
     findSensitiveTargetInToolInput(input, route, repo, environment);

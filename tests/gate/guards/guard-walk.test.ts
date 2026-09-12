@@ -49,9 +49,9 @@ function observe(
   const observations: string[] = [];
   const result = walkGuardSyntax(read(source, dialect), cwd, environment(), createBudget(), {
     word: (text) => text,
-    segment: (tokens, state, pipeProducer, boundary) => {
+    segment: (tokens, state, pipeProducer, boundary, shellWords) => {
       observations.push(
-        `segment ${JSON.stringify(tokens)} cwd=${state.cwd} pipe=${JSON.stringify(pipeProducer)} boundary=${boundary}`,
+        `segment ${JSON.stringify(tokens)} cwd=${state.cwd} pipe=${JSON.stringify(pipeProducer)} boundary=${boundary}${shellWords.size === 0 ? '' : ` shell=${JSON.stringify([...shellWords])}`}`,
       );
       return null;
     },
@@ -86,7 +86,21 @@ describe('gate/guards/guard-walk', () => {
     ]);
     expect(observe('cmd 2>&1').observations).toStrictEqual([
       'redirect >& file-write immediate 1',
-      `segment ["cmd","2"] cwd=${workspace} pipe=null boundary=null`,
+      `segment ["cmd","2"] cwd=${workspace} pipe=null boundary=null shell=[1]`,
+    ]);
+    expect(
+      observe('cmd >| legacy arg', { redirection: () => ADOPT_AS_OPERAND }).observations,
+    ).toStrictEqual([
+      `segment ["cmd","legacy","arg"] cwd=${workspace} pipe=null boundary=null shell=[1]`,
+    ]);
+    expect(observe('cmd $(echo x) 2>&1 arg').observations).toStrictEqual([
+      `segment ["cmd","${'${}'}","echo","x"] cwd=${workspace} pipe=null boundary=null`,
+      'redirect >& file-write immediate 1',
+      `segment ["cmd","${'${}'}","2","arg"] cwd=${workspace} pipe=null boundary=null shell=[2]`,
+    ]);
+    expect(segments('cmd 2>&1; next 1>&2')).toStrictEqual([
+      `segment ["cmd","2"] cwd=${workspace} pipe=null boundary=; shell=[1]`,
+      `segment ["next","1"] cwd=${workspace} pipe=null boundary=null shell=[1]`,
     ]);
     expect(observe('echo a > *.log').observations).toContain(
       'redirect > file-write immediate *.log',
@@ -214,7 +228,7 @@ describe('gate/guards/guard-walk', () => {
         redirection.targetOrder === 'legacy-segment' ? ADOPT_AS_OPERAND : null,
     });
     expect(adopting.observations).toStrictEqual([
-      `segment ["cat","/home/agent/.ssh/config"] cwd=${workspace} pipe=null boundary=null`,
+      `segment ["cat","/home/agent/.ssh/config"] cwd=${workspace} pipe=null boundary=null shell=[1]`,
     ]);
     expect(segments('cat <<< /home/agent/.ssh/config')).toStrictEqual([
       `segment ["cat"] cwd=${workspace} pipe=null boundary=null`,
