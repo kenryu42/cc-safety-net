@@ -548,10 +548,21 @@ function extractSegmentPathTargets(
     ];
   }
   if (isCodeInterpreter(command)) {
-    if (SHELL_STDIN_INTERPRETERS.has(command)) {
-      const body = getShellCommandString(command, post);
-      if (body !== null && store.getShellSyntax(body).status === 'structural-limit') {
-        throw new StructuralShellSyntaxLimitError();
+    const body = SHELL_STDIN_INTERPRETERS.has(command)
+      ? getShellCommandString(command, post)
+      : null;
+    if (body !== null) {
+      const syntax = store.getShellSyntax(body);
+      if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
+      if (syntax.status === 'complete') {
+        return [
+          ...assignmentValues,
+          ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
+          ...post
+            .slice(post.indexOf(body) + 1)
+            .filter((token) => !token.startsWith('-'))
+            .map(here),
+        ];
       }
     }
     return [

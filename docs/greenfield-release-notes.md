@@ -23,9 +23,10 @@ What changes for a user:
   `(cd ~) && cat .ssh/config` and `x=$(cd ~; ls); cat .ssh/config` read `.ssh/config` where the
   command actually runs, while `(cd project && pwd) && cat .ssh/config` from the home directory
   and `cd project && cd - && cat .ssh/config` are denied. A brace group or a function body runs in
-  the current shell, so its `cd` still counts. `pushd`/`popd` stay untracked, an operand inside an
-  interpreter body (`sh -c '…'`) resolves against the segment that runs the interpreter, and a
-  `cd` inside that body is scanned as text. A `cd` to an unset variable or to a command
+  the current shell, so its `cd` still counts. `pushd`/`popd` stay untracked. A shell interpreter
+  body (`sh -c '…'`) is walked as shell from the segment that runs the interpreter, so a `cd`
+  inside it counts and a display-only `echo` or `printf` operand inside it is not a path, the
+  same as at the top level. A `cd` to an unset variable or to a command
   substitution leaves later relative operands unresolvable, which the matcher treats as before.
 
 No policy change is needed; the rules, levels and `secretProtection` configuration are the same.

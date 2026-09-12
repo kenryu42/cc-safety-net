@@ -178,10 +178,10 @@ const ROWS: readonly {
     expected: DENIED_HOME_SSH_CONFIG,
   },
   {
-    name: 'a cd inside an interpreter body is scanned as text, not walked',
+    name: 'a cd inside a shell interpreter body is walked',
     command: "sh -c 'cd ~ && cat .ssh/config'",
     cwd: 'project',
-    expected: 'allow',
+    expected: DENIED_HOME_SSH_CONFIG,
   },
   {
     name: 'the producer of a pipe resolves against the tracked cwd',
