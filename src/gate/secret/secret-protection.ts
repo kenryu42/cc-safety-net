@@ -204,6 +204,8 @@ type SecretInspectionOptions = {
 
 type PathExtractionOptions = {
   readonly refineJavaScriptInlineData?: boolean;
+  // Inside `$( )` an echo/printf operand is captured output, not display text.
+  readonly capturedOutput?: boolean;
 };
 
 /** @internal */
@@ -503,7 +505,19 @@ function extractSegmentPathTargets(
   }
 
   if (NON_PATH_OPERAND_COMMANDS.has(command)) {
-    return assignmentValues;
+    return options.capturedOutput === true
+      ? [...assignmentValues, ...extractDisplayCommandOperands(tokens).map(here)]
+      : assignmentValues;
+  }
+
+  if (command === 'eval') {
+    const syntax = store.getShellSyntax(post.join(' '));
+    if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
+    if (syntax.status !== 'complete') return [...assignmentValues, ...post.map(here)];
+    return [
+      ...assignmentValues,
+      ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
+    ];
   }
 
   if (command === 'export') {
@@ -1121,7 +1135,14 @@ function extractCommandSubstitutionPathTargets(
 
     if (syntax.status === 'invalid') return [];
     return [
-      ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
+      ...extractCommandPathTargets(
+        syntax,
+        store,
+        { ...options, capturedOutput: true },
+        environment,
+        cwd,
+        budget,
+      ),
       ...(commandSubstitutionDecodesBase64(syntax, environment)
         ? extractBase64DecodedPathCandidates(syntax, environment).map((target) => ({ target, cwd }))
         : []),
