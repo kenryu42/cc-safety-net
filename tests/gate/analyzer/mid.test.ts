@@ -26,6 +26,10 @@ function labelOf(text: string): string | null {
 }
 
 describe('the raw-text matcher', () => {
+  test('a newline after an rm word prevents long flags combining across commands', () => {
+    expect(labelOf('rm --recursive rm\n--force child')).toBeNull();
+    expect(labelOf('rm --recursive --force child')).toBe('rm -rf');
+  });
   test('a destructive pattern in unparseable text is named', () => {
     const rows: readonly { readonly text: string; readonly label: string | null }[] = [
       { text: 'rm -rf /tmp/build', label: 'rm -rf' },

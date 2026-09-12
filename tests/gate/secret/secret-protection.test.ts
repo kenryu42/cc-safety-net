@@ -440,6 +440,16 @@ describe('the carriers a candidate path can arrive through', () => {
     ]);
   });
 
+  test.each([
+    ...MODES,
+  ])('an escaped printf percent does not interpolate a secret filename (%j)', (mode) => {
+    expect(secretIn("printf '%%s' .env | xargs cat", mode)).toBeNull();
+    expect(secretIn("printf -- '%%%%s' .env | xargs cat", mode)).toBeNull();
+    expect(secretIn("printf 'ready' .env | xargs cat", mode)).toBeNull();
+    expect(secretIn("printf '.env' ignored | xargs cat", mode)).toStrictEqual(env('.env'));
+    expect(secretIn("printf '%% %s' .env | xargs cat", mode)).toStrictEqual(env('.env'));
+  });
+
   test('a path echoed into xargs is read by the child, unless the child only prints it', () => {
     checkCarriers([
       { name: 'echo into xargs cat', command: 'echo .env | xargs cat', expected: env('.env') },
@@ -488,6 +498,16 @@ describe('the carriers a candidate path can arrive through', () => {
 
   test('a script piped into an interpreter is walked as a command', () => {
     checkCarriers([
+      {
+        name: 'a literal percent survives printf interpolation before a secret read',
+        command: `printf 'printf "%%s"; %s' 'cat .env' | sh`,
+        expected: env('.env'),
+      },
+      {
+        name: 'a literal percent and a public file read remain allowed',
+        command: `printf 'printf "%%s"; %s' 'cat report.txt' | sh`,
+        expected: null,
+      },
       {
         name: 'an explicit stdin operand executes the piped Python source',
         command: 'printf \'open(".env")\' | python3 -',

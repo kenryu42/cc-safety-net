@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir as systemTempRoot } from 'node:os';
 import { join } from 'node:path';
-import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@/core/budget';
+import { REASON_DERIVED_COMMAND_WORK_LIMIT, REASON_PARALLEL_ANALYSIS_LIMIT } from '@/core/budget';
 import { createTestEnvironment, processPathResolver as portedPaths } from '@/core/environment';
 import { resolveProtectedGitMetadata } from '@/core/git/metadata';
 import type { EffectiveSafetyCapabilities } from '@/core/policy/types';
@@ -114,6 +114,51 @@ function decision(command: string, analysis: AnalysisMode) {
 }
 
 describe('analyzeCommand', () => {
+  test('parallel stops excessive placeholder replacement within a single argument', () => {
+    expect(decision(`parallel echo ${'{}'.repeat(16385)} ::: x`, standard)).toMatchObject({
+      kind: 'deny',
+      reason: REASON_PARALLEL_ANALYSIS_LIMIT,
+    });
+    expect(decision('parallel echo {}{} ::: x', standard)).toBeNull();
+  });
+  test('parallel command lists stop before exceeding the child analysis budget', () => {
+    expect(decision(`parallel ::: ${Array(1025).fill('true').join(' ')}`, standard)).toMatchObject({
+      kind: 'deny',
+      reason: REASON_PARALLEL_ANALYSIS_LIMIT,
+    });
+    expect(decision('parallel ::: true true', standard)).toBeNull();
+  });
+  test('parallel refuses to assemble commands from multiple input lists', () => {
+    expect(decision('parallel ::: echo ::: ready', standard)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'parallel.command-stream-dynamic',
+    });
+  });
+  test('recursive shell functions stop at the analysis limit', () => {
+    expect(decision('f() { f; }; f', standard)).toMatchObject({
+      kind: 'deny',
+      reason: REASON_RECURSION_LIMIT,
+    });
+    expect(decision('f() { printf ready; }; f', standard)).toBeNull();
+  });
+  test('parallel distinguishes static Git configuration from input-controlled configuration', () => {
+    for (const config of ['-c color.ui=false', '-ccolor.ui=false', '--config-env=color.ui=COLOR']) {
+      expect(decision(`parallel git ${config} status`, standard)).toBeNull();
+    }
+    expect(decision('parallel git -c {} status', standard)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'parallel.shell-dynamic',
+    });
+  });
+
+  test('a conditional heredoc writer does not hide the script it executes next', () => {
+    expect(
+      decision("cat > script.sh <<'EOF' && bash script.sh\ngit reset --hard\nEOF", standard),
+    ).toMatchObject({
+      kind: 'deny',
+      ruleId: 'git.reset-hard',
+    });
+  });
   test('a command substitution inside arithmetic still receives destructive command analysis', () => {
     const options = {
       environment,

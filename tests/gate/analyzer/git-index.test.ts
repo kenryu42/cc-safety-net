@@ -367,6 +367,15 @@ describe('git configuration read through the environment', () => {
       },
     });
     expect(relaxed(['git', 'checkout', '--', '.']).match).toBeNull();
+    expect(relaxed(['git', '-Cmissing-directory', 'reset', '--hard']).match?.id).toBe(
+      'git.reset-hard',
+    );
+    expect(relaxed(['git', '-ccolor.ui=false', 'reset', '--hard']).match).toBeNull();
+    expect(
+      relaxed(['git', '--config-env=include.path=EXTRA_CONFIG', 'reset', '--hard'], {
+        envAssignments: new Map([['EXTRA_CONFIG', '.gitconfig-extra']]),
+      }).match?.id,
+    ).toBe('git.reset-hard');
     expect(relaxed(['git', '-csubmodule.recurse=true', 'checkout', '--', '.']).match?.id).toBe(
       'git.checkout-double-dash',
     );

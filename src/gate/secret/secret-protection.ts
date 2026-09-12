@@ -639,6 +639,15 @@ function extractDisplayCommandOperands(tokens: readonly string[]): string[] {
   const command = basename(stripped[0] ?? '').toLowerCase();
   if (!NON_PATH_OPERAND_COMMANDS.has(command)) return [];
 
+  const format = stripped[stripped[1] === '--' ? 2 : 1];
+  if (
+    command === 'printf' &&
+    format !== undefined &&
+    !format.startsWith('-') &&
+    !format.replaceAll('%%', '').includes('%')
+  ) {
+    return [decodePrintfEscapes(format.replaceAll('%%', '%'))];
+  }
   return stripped.slice(1);
 }
 

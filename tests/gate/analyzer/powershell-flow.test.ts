@@ -33,6 +33,7 @@ test.each([
   'Write-Output { Set-Location child }',
   'Start-Job { Set-Location child }',
   '$block = { Set-Location child }',
+  'if ($false) { Set-Location child }',
 ])('an isolated script block leaves the parent directory unchanged: %s', (prefix) => {
   expect(
     analyzeFromProject(`${prefix}; Remove-Item build -Recurse -Force`, {
