@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { getRulesConfigValidation } from '@/core/policy/rules-config';
 
 describe('rules config diagnostics', () => {
+  test('whitespace-only sources are rejected as empty', () => {
+    expect(getRulesConfigValidation({ version: 1, rules: [' \t '] }).errors).toContain(
+      'rules[0]: must be a non-empty rulebook source string',
+    );
+  });
   test.each([
     [
       'a scalar source list is rejected without collecting its characters as sources',

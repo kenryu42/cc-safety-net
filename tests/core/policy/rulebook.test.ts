@@ -4,6 +4,7 @@ import {
   collectCustomRuleNames,
   validateRulebook,
 } from '@/core/policy/rulebook';
+import { RULEBOOK_LIMIT_ERROR, RULEBOOK_LIMITS } from '@/core/policy/rulebook-limits';
 import { describeOutcome } from '../../helpers/fixture-tree';
 import { named, RULEBOOK_VALUES, samples } from './policy-values';
 
@@ -41,6 +42,20 @@ const V2_RULEBOOK = {
 };
 
 describe('rulebook diagnostics', () => {
+  test('rejects an oversized rule reason before detailed validation', () => {
+    expect(
+      validateRulebook({
+        ...VALID_RULEBOOK,
+        rules: [
+          {
+            ...VALID_RULEBOOK.rules[0],
+            reason: 'x'.repeat(RULEBOOK_LIMITS.maxStringCodeUnits + 1),
+          },
+        ],
+      }).errors,
+    ).toEqual([RULEBOOK_LIMIT_ERROR]);
+  });
+
   test.each([
     [
       'a valid rulebook is accepted and reports its rule names',

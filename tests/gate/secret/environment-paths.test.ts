@@ -11,6 +11,39 @@ import {
 
 afterEach(removeTempRoots);
 
+test.each([
+  ['credentials-work', 'secret.variant.credentials.separator'],
+  ['id_rsa.old', 'secret.variant.id-rsa.old'],
+])('protects credential backup %s while allowing an unrelated filename', (target, ruleId) => {
+  const home = createTempRoot('secret-variant-');
+  const environment = environmentFor(home, isolationEnv(home));
+  expect(findSensitivePathTarget([target], home, environment)).toEqual({ target, ruleId });
+  expect(
+    findSensitivePathTarget([target], home, environment, {
+      denyPaths: [],
+      disabledRules: [ruleId],
+    }),
+  ).toBeNull();
+  expect(findSensitivePathTarget(['release-notes.old'], home, environment)).toBeNull();
+});
+
+test('protects a custom OpenCode config filename while allowing a neighboring file', () => {
+  const home = createTempRoot('secret-config-');
+  writeTree(home, { 'custom/settings.json': '{}', 'neighbor/settings.json': '{}' });
+  const environment = environmentFor(
+    home,
+    isolationEnv(home, {
+      OPENCODE_CONFIG_DIR: 'custom',
+      OPENCODE_CONFIG: 'custom/settings.json',
+    }),
+  );
+  expect(findSensitivePathTarget(['custom/settings.json'], home, environment)).toEqual({
+    target: 'custom/settings.json',
+    ruleId: 'secret.cli.opencode.config',
+  });
+  expect(findSensitivePathTarget(['neighbor/settings.json'], home, environment)).toBeNull();
+});
+
 test.each(['', '-wal', '-shm'])('protects a relocated OpenCode database%s', (suffix) => {
   const home = createTempRoot('secret-database-');
   writeTree(home, { [`storage/session.sqlite${suffix}`]: 'fixture' });

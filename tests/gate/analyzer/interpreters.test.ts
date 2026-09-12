@@ -24,6 +24,27 @@ describe('interpreter denial reasons', () => {
 });
 
 describe('interpreter argv scanning', () => {
+  test.each(
+    [
+      ['node', '--print'],
+      ['node', '--require'],
+      ['node', '--loader', '--eval', 'dangerous()'],
+      ['ruby', '-r'],
+      ['perl', '-M'],
+      ['node', '--title=', '--eval', 'dangerous()'],
+    ].map((argv) => [argv]),
+  )('incomplete interpreter options do not invent executable sources: %j', (argv) => {
+    expect(parseInterpreterArgv(argv)).toEqual({ code: null, sources: [], optionsOpen: false });
+  });
+
+  test('Node print evaluates its operand as code', () => {
+    expect(parseInterpreterArgv(['node', '--print', '1 + 2'])).toEqual({
+      code: '1 + 2',
+      sources: [{ tokenIndex: 2, kind: 'inline-code', value: '1 + 2' }],
+      optionsOpen: true,
+    });
+  });
+
   test('the inline code operand is found in every attached and separate spelling', () => {
     const rows: readonly { readonly argv: readonly string[]; readonly code: string | null }[] = [
       { argv: ['python3', '-c', 'print(1)'], code: 'print(1)' },

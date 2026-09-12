@@ -489,6 +489,16 @@ describe('the carriers a candidate path can arrive through', () => {
   test('a script piped into an interpreter is walked as a command', () => {
     checkCarriers([
       {
+        name: 'an explicit stdin operand executes the piped Python source',
+        command: 'printf \'open(".env")\' | python3 -',
+        expected: env('.env'),
+      },
+      {
+        name: 'Python code evaluation does not execute its piped input',
+        command: 'printf \'open(".env")\' | python3 -c \'print("ready")\'',
+        expected: null,
+      },
+      {
         name: 'a shell script piped into bash',
         command: 'echo "cat .env" | bash',
         expected: env('.env'),

@@ -51,6 +51,19 @@ const configured = (configPath: string, errors?: string[]) => ({
 afterEach(removeTempRoots);
 
 describe('reading the installed OpenClaw plugin', () => {
+  test('an invalid JSON manifest is reported as an unusable plugin', async () => {
+    const result = await detection({
+      ...INSTALLED,
+      ...ENABLING,
+      [`${DIR}/openclaw.plugin.json`]: '{',
+    });
+    expect(result).toMatchObject({
+      kind: 'returned',
+      value: {
+        errors: [expect.stringContaining('is not a valid cc-safety-net manifest')],
+      },
+    });
+  });
   test('finds an enabled install of the running version', async () => {
     expect(await detection({ ...INSTALLED, ...ENABLING })).toEqual(configured(DIR_PATH));
   });

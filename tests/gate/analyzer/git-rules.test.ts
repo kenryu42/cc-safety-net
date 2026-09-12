@@ -14,6 +14,10 @@ function argvOf(line: string): string[] {
 }
 
 describe('git rule dispatch', () => {
+  test('restore help remains non-destructive inside a short option cluster', () => {
+    expect(analyzeGitRule(['git', 'restore', '-Wh', '.'])).toBeNull();
+    expect(analyzeGitRule(['git', 'restore', '-W', '.'])?.id).toBe('git.restore-worktree');
+  });
   test('the dispatch table names every subcommand with a rule', () => {
     expect([...GIT_RULE_SUBCOMMANDS].sort()).toStrictEqual([
       'branch',

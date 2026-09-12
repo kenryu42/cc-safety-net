@@ -527,6 +527,8 @@ describe('delete target word facts', () => {
     expect(expansion('rm -rf a{b')).toBeUndefined();
     expect(expansion('rm -rf "{a,b}"')).toBeUndefined();
     expect(expansion("rm -rf '{a,b}'")).toBeUndefined();
+    expect(expansion('rm -rf \\{a,b\\}')).toBeUndefined();
+    expect(expansion('rm -rf {a\\,b,c}')).toStrictEqual(['a,b', 'c']);
   });
 
   test('a $TMPDIR word is splitting-protected only when the variable itself is quoted', () => {
@@ -540,6 +542,8 @@ describe('delete target word facts', () => {
       'rm -rf "$TMPDIR/x"',
       'rm -rf "${TMPDIR}"/x',
       'rm -rf prefix"$TMPDIR"suffix',
+      'rm -rf "prefix""$TMPDIR"/x',
+      'rm -rf \\x"$TMPDIR"/x',
     ])
       expect(protectedWord(source), source).toBeTrue();
     for (const source of [

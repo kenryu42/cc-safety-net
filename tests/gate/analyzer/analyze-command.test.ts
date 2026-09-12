@@ -8,6 +8,7 @@ import { resolveProtectedGitMetadata } from '@/core/git/metadata';
 import type { EffectiveSafetyCapabilities } from '@/core/policy/types';
 import { analyzeCommand, analyzeOrCapBreach } from '@/gate/analyzer';
 import { REASON_RECURSION_LIMIT } from '@/gate/analyzer/reasons';
+import { withLinkedWorktreeFixture } from '../../helpers';
 import { policySnapshot } from '../../helpers/policy';
 
 const workspace = mkdtempSync(join(systemTempRoot(), 'analyze-command-'));
@@ -113,6 +114,123 @@ function decision(command: string, analysis: AnalysisMode) {
 }
 
 describe('analyzeCommand', () => {
+  test('a command substitution inside arithmetic still receives destructive command analysis', () => {
+    const options = {
+      environment,
+      cwd: project,
+      policySnapshot: snapshot,
+      effectiveCapabilities: standard.capabilities,
+      protectedGitMetadata: gitMetadata,
+    };
+    expect(analyzeCommand('echo $((1 + $(git reset --hard)))', options)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'git.reset-hard',
+    });
+    expect(analyzeCommand('echo $((1 + $(printf 2)))', options)).toBeNull();
+  });
+  test.each(['-F,', '-vlabel=ready'])('awk %s still inspects its executable program', (option) => {
+    const options = {
+      environment,
+      cwd: project,
+      policySnapshot: snapshot,
+      effectiveCapabilities: standard.capabilities,
+      protectedGitMetadata: gitMetadata,
+    };
+    expect(
+      analyzeCommand(`awk ${option} 'BEGIN { system("git reset --hard") }'`, options),
+    ).toMatchObject({
+      kind: 'deny',
+      ruleId: 'git.reset-hard',
+    });
+    expect(analyzeCommand(`awk ${option} 'BEGIN { print "ready" }'`, options)).toBeNull();
+  });
+  test('unset -v removes an inherited SSH override before a Git network command', () => {
+    const options = {
+      environment: createTestEnvironment({
+        env: new Map([...processState, ['GIT_SSH_COMMAND', 'custom-ssh']]),
+        home: agentHome,
+        tmpdir: scratch,
+        paths: portedPaths,
+      }),
+      cwd: project,
+      policySnapshot: snapshot,
+      effectiveCapabilities: standard.capabilities,
+      protectedGitMetadata: gitMetadata,
+    };
+    expect(analyzeCommand('git fetch', options)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'git.ssh-env',
+    });
+    expect(analyzeCommand('unset -v GIT_SSH_COMMAND; git fetch', options)).toBeNull();
+  });
+
+  test('unsetting inherited GIT_DIR restores the linked-worktree discard context', async () => {
+    await withLinkedWorktreeFixture((temporary) => {
+      const options = {
+        environment: createTestEnvironment({
+          env: new Map([...processState, ['GIT_DIR', join(temporary.mainWorktree, '.git')]]),
+          home: agentHome,
+          tmpdir: scratch,
+          paths: portedPaths,
+        }),
+        cwd: temporary.linkedWorktree,
+        policySnapshot: policySnapshot({ worktreeMode: true }),
+        worktreeMode: true,
+        effectiveCapabilities: standard.capabilities,
+        protectedGitMetadata: null,
+      };
+      expect(analyzeCommand('git reset --hard', { ...options, environment })).toBeNull();
+      expect(analyzeCommand('git reset --hard', options)).toMatchObject({
+        kind: 'deny',
+        ruleId: 'git.reset-hard',
+      });
+      expect(analyzeCommand('unset -v GIT_DIR; git reset --hard', options)).toBeNull();
+      expect(analyzeCommand("unset GIT_DIR; sh -c 'git reset --hard'", options)).toBeNull();
+      for (const command of [
+        'GIT_DIR=; git reset --hard',
+        'unset GIT_DIR; export GIT_DIR=; git reset --hard',
+        '(unset GIT_DIR); git reset --hard',
+        "sh -c 'unset GIT_DIR'; git reset --hard",
+        'if test -d absent; then unset GIT_DIR; fi; git reset --hard',
+      ]) {
+        expect(analyzeCommand(command, options)).toMatchObject({
+          kind: 'deny',
+          ruleId: 'git.reset-hard',
+        });
+      }
+      expect(options.environment.env.get('GIT_DIR')).toBe(join(temporary.mainWorktree, '.git'));
+    });
+  });
+
+  test('disabling the parallel shell rule still inspects each literal command', () => {
+    const options = {
+      environment,
+      cwd: project,
+      protectedGitMetadata: gitMetadata,
+      effectiveCapabilities: standard.capabilities,
+      policySnapshot: policySnapshot({
+        destructiveCommandRuleOverrides: { 'parallel.shell-dynamic': 'off' },
+      }),
+    };
+    expect(analyzeCommand("parallel bash -c '{}' ::: 'git reset --hard'", options)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'git.reset-hard',
+    });
+    expect(analyzeCommand("parallel bash -c '{}' ::: 'echo ready'", options)).toBeNull();
+  });
+
+  test.each([
+    'cat --',
+    'cat -u',
+    'tee -i script.sh',
+    'tee --ignore-interrupts script.sh',
+    'tee -- script.sh',
+  ])('tracks a literal script written by %s before shell execution', (writer) => {
+    expect(
+      decision(`${writer} > script.sh <<'EOF'\ngit reset --hard\nEOF\nbash script.sh`, standard),
+    ).toMatchObject({ kind: 'deny', ruleId: 'git.reset-hard' });
+  });
+
   test.each([
     'awk --source=\'BEGIN { system("git reset --hard") }\'',
     'awk \'BEGIN { # ignored print pipe\n print "x" | "git reset --hard" }\'',

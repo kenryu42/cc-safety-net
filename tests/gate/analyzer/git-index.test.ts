@@ -367,6 +367,20 @@ describe('git configuration read through the environment', () => {
       },
     });
     expect(relaxed(['git', 'checkout', '--', '.']).match).toBeNull();
+    expect(relaxed(['git', '-csubmodule.recurse=true', 'checkout', '--', '.']).match?.id).toBe(
+      'git.checkout-double-dash',
+    );
+    expect(relaxed(['git', '-csubmodule.recurse=false', 'checkout', '--', '.']).match).toBeNull();
+    expect(
+      relaxed(['git', '--config-env=submodule.recurse=RECURSE', 'checkout', '--', '.'], {
+        envAssignments: new Map([['RECURSE', 'true']]),
+      }).match?.id,
+    ).toBe('git.checkout-double-dash');
+    expect(
+      relaxed(['git', '--config-env=submodule.recurse=RECURSE', 'checkout', '--', '.'], {
+        envAssignments: new Map([['RECURSE', 'false']]),
+      }).match,
+    ).toBeNull();
     expect(relaxed(['git', 'reset', '--hard'], { cwd: fixture.mainWorktree }).match?.id).toBe(
       'git.reset-hard',
     );

@@ -234,6 +234,11 @@ function unsetTrackedGitContextEnvName(state: ShellGitContextEnvState, name: str
     return;
   }
   state.shellAssignments.set(name, '');
+  if (isGitContextEnvOverrideName(name) && state.env.has(name)) {
+    const env = new Map(state.env);
+    env.delete(name);
+    state.env = env;
+  }
   if (
     !isTrackedShellEnvName(name) ||
     name === TMPDIR_ENV_NAME ||

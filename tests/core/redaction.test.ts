@@ -76,6 +76,16 @@ const FIXED: readonly string[] = [
 ];
 
 describe('redaction', () => {
+  test('a quoted escape inside command substitution does not expose the assignment tail', () => {
+    expect(next.sanitizeDiagnosticText('TOKEN=$(printf "a\\" secret") echo done')).toBe(
+      'TOKEN=<redacted> echo done',
+    );
+  });
+
+  test('an unterminated command substitution is redacted through the end of input', () => {
+    expect(next.sanitizeDiagnosticText('TOKEN=$(printf "secret tail"')).toBe('TOKEN=<redacted>');
+  });
+
   test.each(['"', "'"])('diagnostics redact the entire unterminated %s assignment', (quote) => {
     expect(next.sanitizeDiagnosticText(`PASSWORD=${quote}first secret tail`)).toBe(
       'PASSWORD=<redacted>',

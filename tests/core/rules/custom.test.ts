@@ -179,6 +179,14 @@ function expectIds(
 }
 
 describe('checkPolicyRuleMatch', () => {
+  test('an unknown global option value cannot hide a protected subcommand', () => {
+    expect(
+      checkPolicyRuleMatch(['docker', '--future-option', 'local', 'system', 'prune'], V1_RULES)?.id,
+    ).toBe('custom.docker-prune');
+    expect(
+      checkPolicyRuleMatch(['docker', '--', '--future-option', 'system', 'prune'], V1_RULES),
+    ).toBeNull();
+  });
   test('a v1 rule matches its command, subcommand and blocked argument', () => {
     const rows: readonly { readonly tokens: readonly string[]; readonly id: string | null }[] = [
       { tokens: ['docker', 'system', 'prune'], id: 'custom.docker-prune' },

@@ -93,6 +93,22 @@ describe('the raw-text matcher', () => {
 });
 
 describe('the linear scanners', () => {
+  test.each([
+    String.raw`\x0a`,
+    String.raw`\u000a`,
+    String.raw`\012`,
+  ])('an encoded newline %s separates recursive and force flags', (newline) => {
+    expect(hasLinearInterpreterDanger(`rm --recursive${newline} --force`, 'rm')).toBe(false);
+    expect(hasLinearInterpreterDanger('rm --recursive --force', 'rm')).toBe(true);
+  });
+
+  test('Git global options consume values without combining separate commands', () => {
+    expect(hasLinearDangerousText('git --no-pager -- reset --hard', 'reset-hard')).toBe(true);
+    expect(hasLinearDangerousText('git --namespace team reset --hard', 'reset-hard')).toBe(true);
+    expect(hasLinearDangerousText('git -C ; reset --hard', 'reset-hard')).toBe(false);
+    expect(hasLinearDangerousText('git -C', 'reset-hard')).toBe(false);
+  });
+
   test('each kind answers for the options its command spells, on one command', () => {
     const rows: readonly {
       readonly text: string;

@@ -94,6 +94,35 @@ function verifyBothWays(spec: TreeSpec) {
 }
 
 describe('rule verify', () => {
+  test('valid repository rulebooks run their fixtures and are listed', () => {
+    const outcome = verifyBothWays({
+      'project/.cc-safety-net/rules/team-rules/rulebook.json': RULEBOOK(
+        'team-rules',
+        PASSING_FIXTURE,
+      ),
+    });
+    expect(outcome.code).toBe(0);
+    expect(outcome.report).toContain('✓ GitHub source rules:');
+    expect(outcome.report).toContain('    1. team-rules');
+    expect(outcome.report).toContain('All configs valid.');
+  });
+
+  test.each([
+    ['bad name', null, 'rulebook directory names must match'],
+    ['missing', null, 'missing/rulebook.json is required'],
+    ['broken', '{', 'broken/rulebook.json: invalid JSON'],
+    ['invalid', '{}', 'invalid/rulebook.json:'],
+  ])('repository rulebook %s reports its validation problem', (name, content, diagnostic) => {
+    const outcome = verifyBothWays(
+      content === null
+        ? { [`project/.cc-safety-net/rules/${name}`]: null }
+        : { [`project/.cc-safety-net/rules/${name}/rulebook.json`]: content },
+    );
+    expect(outcome.code).toBe(1);
+    expect(outcome.report).toContain(diagnostic);
+    expect(outcome.report).toContain('Config validation failed.');
+  });
+
   test('no config anywhere reports the built-in rules alone', () => {
     const outcome = verifyBothWays({});
     expect(outcome.code).toBe(0);

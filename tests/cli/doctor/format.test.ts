@@ -3,9 +3,11 @@ import { getActivitySummary } from '@/cli/doctor/activity';
 import { getEnvironmentInfo } from '@/cli/doctor/environment';
 import {
   formatActivitySection,
+  formatEngineSelfTestSection,
   formatEnvironmentSection,
   formatFindingsSection,
   formatHooksSection,
+  formatSystemInfoSection,
   formatUpdateSection,
 } from '@/cli/doctor/format';
 import {
@@ -16,6 +18,43 @@ import {
 } from '../../helpers/temp-home';
 
 afterEach(removeTempRoots);
+
+test('engine failures show the mismatched verdict and failing command', () => {
+  const text = formatEngineSelfTestSection({
+    passed: 0,
+    failed: 1,
+    total: 1,
+    results: [
+      {
+        command: 'git reset --hard',
+        description: 'hard reset',
+        expected: 'blocked',
+        actual: 'allowed',
+        passed: false,
+      },
+    ],
+  });
+  expect(text).toContain('0/1 FAIL');
+  expect(text).toContain('hard reset');
+  expect(text).toContain('expected blocked, got allowed');
+});
+
+test('system info distinguishes available versions from missing programs', () => {
+  const text = formatSystemInfoSection({
+    version: '2.3.4',
+    versions: { cursor: '1.2.3' },
+    codexPluginListOutput: null,
+    ampPluginListOutput: null,
+    nodeVersion: '22.0.0',
+    npmVersion: null,
+    bunVersion: '1.4.2',
+    platform: 'linux x64',
+  });
+  expect(text).toMatch(/Cursor\s+│ 1\.2\.3/);
+  expect(text).toMatch(/Node\.js\s+│ 22\.0\.0/);
+  expect(text).toMatch(/npm\s+│ not found/);
+  expect(text).toContain('linux x64');
+});
 
 test('finding text renders terminal control characters literally', () => {
   const text = formatFindingsSection([

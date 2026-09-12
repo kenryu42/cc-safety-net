@@ -595,12 +595,16 @@ function recursionLimitAnalysis(
 function analyzeCommandView(
   commandView: CommandView,
   depth: number,
-  options: InternalOptions,
+  inheritedOptions: InternalOptions,
   originalCwd: string | undefined,
   state: AnalysisState,
   hasPipelineInput: boolean,
   literalShellInput: string | undefined,
 ): AnalyzeResult | null {
+  const options = {
+    ...inheritedOptions,
+    environment: { ...inheritedOptions.environment, env: state.shellGitContextState.env },
+  };
   const heredocReason = getHeredocReason(commandView);
   if (heredocReason && options.strict) {
     options.trace?.recordSegment({ type: 'error', message: heredocReason });
@@ -1176,6 +1180,7 @@ function deduplicateAnalysisStates(states: readonly AnalysisState[]): AnalysisSt
 function analysisStatesEqual(left: AnalysisState, right: AnalysisState): boolean {
   return (
     left.effectiveCwd === right.effectiveCwd &&
+    optionalMapsEqual(left.shellGitContextState.env, right.shellGitContextState.env) &&
     optionalMapsEqual(left.literalHeredocFiles, right.literalHeredocFiles) &&
     optionalMapsEqual(left.functionDefinitions, right.functionDefinitions) &&
     optionalMapsEqual(

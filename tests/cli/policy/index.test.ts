@@ -39,6 +39,15 @@ async function runPolicy(args: readonly string[], files: Record<string, string> 
 }
 
 describe('policy check', () => {
+  test('an unchanged proposal reports no changes and leaves the policy unwritten', async () => {
+    const outcome = await runPolicy(['check', 'prop.json'], {
+      [PROPOSAL_FILE]: STANDARD_PROPOSAL,
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toContain('No changes.\n');
+    expect(outcome.stderr).toBe('');
+    expect(outcome.tree.some((entry) => entry.path === PROJECT_POLICY)).toBe(false);
+  });
   test('a project proposal is reported against the merged effective policy', async () => {
     const outcome = await runPolicy(['check', 'prop.json'], { [PROPOSAL_FILE]: STRICT_PROPOSAL });
     expect(outcome.exitCode).toBe(0);

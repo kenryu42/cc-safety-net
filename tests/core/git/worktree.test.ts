@@ -18,7 +18,7 @@ import {
   resolveDotGitFileTargets,
   resolveWorktreeFacts,
 } from '@/core/git/worktree';
-import { createLinkedWorktreeFixture } from '../../helpers';
+import { createLinkedWorktreeFixture, withLinkedWorktreeFixture } from '../../helpers';
 
 const fixture = createLinkedWorktreeFixture();
 let scratch = '';
@@ -61,6 +61,17 @@ afterAll(() => {
 });
 
 describe('linked worktree facts', () => {
+  test('a linked worktree with a mismatched backlink cannot receive discard relaxation', async () => {
+    await withLinkedWorktreeFixture((temporary) => {
+      const targets = resolveDotGitFileTargets(join(temporary.linkedWorktree, '.git'));
+      if (!targets) throw new Error('the real Git worktree has no metadata target');
+      expect(isLinkedWorktree(temporary.linkedWorktree)).toBe(true);
+      writeFileSync(join(targets.gitDir, 'gitdir'), join(temporary.mainWorktree, '.git'));
+      expect(isLinkedWorktree(temporary.linkedWorktree)).toBe(false);
+      expect(resolveWorktreeFacts(temporary.linkedWorktree)).toBeNull();
+    });
+  });
+
   test('a directory is a linked worktree only inside the checkout that is one', () => {
     const rows = () =>
       [
