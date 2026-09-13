@@ -102,7 +102,9 @@ something else is kept as a path candidate and resolved against the cwd, so
 `cat README.md` blocks on `README.md`. What survives is the narrow set whose
 tokens are not kept as path candidates: operand-less commands, `echo` and
 `printf`, and shapes such as a pattern-only `grep` or interpreter inline code
-with no path-like literal.
+with no path-like literal. In standard mode an interpreter string literal that
+no access call, locally defined function, or shell-exec call uses is inert data
+and is not kept as a candidate; strict mode keeps every literal.
 
 The failure is loud, not silent. Each denial carries `Rule: secret.deny-path`
 in the hook message (`formatBlockedMessage` in `src/integrations/format.ts`), and

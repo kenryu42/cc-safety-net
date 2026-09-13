@@ -34,6 +34,8 @@ type GuardRedirection = Readonly<{
   role: 'file-read' | 'file-write' | 'here-data';
   targetOrder: 'immediate' | 'legacy-segment';
   target: string;
+  body?: string;
+  consumer?: readonly string[];
 }>;
 
 export const ADOPT_AS_OPERAND: unique symbol = Symbol('adopt-as-operand');
@@ -68,8 +70,12 @@ type GuardEvent =
       readonly role: 'file-read' | 'file-write' | 'here-data';
       readonly targetOrder: 'immediate' | 'legacy-segment';
       readonly target?: string;
+      readonly body?: string;
+      readonly consumer?: readonly string[];
     }
   | { readonly kind: 'scope'; readonly edge: 'enter' | 'exit' };
+
+const HEREDOC_CONSUMER_WRAPPERS = new Set(['env', 'sudo', 'command', 'builtin']);
 
 const LEGACY_BOUNDARIES = new Set(['&&', '||', '|&', '|', '&', ';']);
 const LEGACY_SEGMENT_REDIRECTS = new Set(['<<', '<<<', '>|']);
@@ -81,6 +87,27 @@ const EMPTY_EVENTS = Object.freeze([]) as readonly GuardEvent[];
 const SCOPE_ENTER: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'enter' });
 const SCOPE_EXIT: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'exit' });
 const EMPTY_STRINGS = Object.freeze([]) as readonly string[];
+
+const CODE_INTERPRETERS = new Set([
+  'python',
+  'python2',
+  'python3',
+  'node',
+  'deno',
+  'bun',
+  'ruby',
+  'perl',
+  'php',
+  'rscript',
+  'osascript',
+  'bash',
+  'sh',
+  'zsh',
+  'dash',
+  'ksh',
+]);
+
+export const SHELL_STDIN_INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh']);
 
 const MAX_FUNCTION_EXPANSIONS = 256;
 
@@ -191,6 +218,7 @@ export function walkGuardSyntax(
           role: event.role,
           targetOrder: event.targetOrder,
           target: event.target,
+          ...(event.body === undefined ? {} : { body: event.body, consumer: event.consumer }),
         },
         state,
       );
@@ -420,6 +448,9 @@ function readRedirection(
         ? ('legacy-segment' as const)
         : ('immediate' as const),
       ...(target === undefined ? {} : { target }),
+      ...(redirection.heredoc && context.suppressed.has(redirection.heredoc.bodySpan)
+        ? { body: redirection.heredoc.body, consumer: heredocConsumerWords(view) }
+        : {}),
     }),
     ...(target === undefined ? targetEvents : targetEvents.slice(1)),
   ];
@@ -549,6 +580,9 @@ function readWord(
       continue;
     }
 
+    const nested = view.nested.find(
+      (program) => program.span.start >= part.span.start && program.span.end <= part.span.end,
+    );
     if (state.double) {
       const quotedText = context.source.slice(part.span.start, part.span.end);
       pending += scanWordText(
@@ -559,11 +593,16 @@ function readWord(
       )
         .map((run) => (typeof run === 'string' ? run : run.text))
         .join('');
+      // The substitution stays word text, but a heredoc body its command hands over is masked
+      // out of that text, so the handover events still have to reach the consumer.
+      const handovers = nested
+        ? readProgram(nested, context).filter(
+            (event) => event.kind === 'redirection' && event.body !== undefined,
+          )
+        : [];
+      if (handovers.length > 0) events.push(SCOPE_ENTER, ...handovers, SCOPE_EXIT);
       continue;
     }
-    const nested = view.nested.find(
-      (program) => program.span.start >= part.span.start && program.span.end <= part.span.end,
-    );
     const inner = nested ? readProgram(nested, context) : [];
     if (part.raw.startsWith('`')) {
       pending += '${}';
@@ -771,6 +810,73 @@ function getRedirectionRole(operator: string) {
   return 'file-write' as const;
 }
 
+export function isCodeInterpreter(command: string): boolean {
+  return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
+}
+
+// Each wrapper's value-taking options, so `sudo -u root` and `env --unset X` do not name the
+// command while `command -p` keeps its next word.
+const WRAPPER_VALUE_OPTIONS = new Map([
+  [
+    'sudo',
+    new Set([
+      '-u',
+      '-g',
+      '-h',
+      '-p',
+      '-C',
+      '-D',
+      '-r',
+      '-t',
+      '-T',
+      '-U',
+      '--user',
+      '--group',
+      '--host',
+      '--prompt',
+      '--chdir',
+      '--role',
+      '--type',
+      '--other-user',
+    ]),
+  ],
+  ['env', new Set(['-u', '-C', '-P', '-S', '--unset', '--chdir', '--split-string'])],
+]);
+
+function skipWrapperOptions(wrapper: string, words: readonly string[]): readonly string[] {
+  const word = words[0];
+  if (word === undefined || !word.startsWith('-')) return words;
+  const takesValue = WRAPPER_VALUE_OPTIONS.get(wrapper)?.has(word) ?? false;
+  return skipWrapperOptions(wrapper, words.slice(takesValue ? 2 : 1));
+}
+
+// Drops leading wrappers (`env`, `sudo`, `command`, `builtin`) with their options and option
+// values, and `NAME=value` assignments, so the first remaining word is the command.
+export function stripConsumerWrappers(words: readonly string[]): string[] {
+  const word = words[0];
+  if (word === undefined) return [];
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) return stripConsumerWrappers(words.slice(1));
+  if (!HEREDOC_CONSUMER_WRAPPERS.has(word)) return [...words];
+  return stripConsumerWrappers(skipWrapperOptions(word, words.slice(1)));
+}
+
+// The words of the command that owns a heredoc, from the consumer on: `time`/`-p`/`--`/`!`
+// come off through getCalledCommandName, wrappers through stripConsumerWrappers.
+function heredocConsumerWords(view: CommandView): string[] {
+  const name = getCalledCommandName(view);
+  const called = view.words.findIndex(
+    (word) => word.provenance === 'literal' && word.text === name,
+  );
+  return stripConsumerWrappers(called < 0 ? [] : view.words.slice(called).map((word) => word.text));
+}
+
+function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {
+  const name = heredocConsumerWords(view)[0];
+  if (name === undefined) return false;
+  const command = getBasename(name).toLowerCase();
+  return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);
+}
+
 function collectDataSinkHeredocSpans(program: CommandProgram): CommandSpan[] {
   return program.nodes.flatMap((node, index): CommandSpan[] => {
     if (node.kind === 'group' || node.kind === 'function') {
@@ -778,15 +884,15 @@ function collectDataSinkHeredocSpans(program: CommandProgram): CommandSpan[] {
     }
     if (node.kind !== 'command') return [];
     const nestedSpans = node.nested.flatMap((nested) => collectDataSinkHeredocSpans(nested));
+    const quotedBodies = node.redirections.flatMap((redirection) =>
+      redirection.heredoc?.quotedDelimiter ? [redirection.heredoc.bodySpan] : [],
+    );
+    // An interpreter reads its heredoc as code, so shell-reading the body invents shell words.
+    if (isCodeInterpreterHeredocConsumer(node)) return [...nestedSpans, ...quotedBodies];
     const next = program.nodes[index + 1];
     const piped = next?.kind === 'connector' && (next.operator === '|' || next.operator === '|&');
     if (piped || !isDataSinkHeredocConsumer(node)) return nestedSpans;
-    return [
-      ...nestedSpans,
-      ...node.redirections.flatMap((redirection) =>
-        redirection.heredoc?.quotedDelimiter ? [redirection.heredoc.bodySpan] : [],
-      ),
-    ];
+    return [...nestedSpans, ...quotedBodies];
   });
 }
 

@@ -23,7 +23,10 @@ import type { CommandSyntaxFacts, SemanticFactStore, SemanticFacts } from '@/gat
 import {
   ADOPT_AS_OPERAND,
   type GuardSyntax,
+  isCodeInterpreter,
   readGuardTokens,
+  SHELL_STDIN_INTERPRETERS,
+  stripConsumerWrappers,
   walkGuardSyntax,
 } from '@/gate/guards/guard-walk';
 import { safetyNetSubcommandIndex } from '@/gate/guards/safety-net-invocation';
@@ -73,26 +76,6 @@ const CURL_UPLOAD_FLAGS = new Set([
   '--form',
 ]);
 
-const CODE_INTERPRETERS = new Set([
-  'python',
-  'python2',
-  'python3',
-  'node',
-  'deno',
-  'bun',
-  'ruby',
-  'perl',
-  'php',
-  'rscript',
-  'osascript',
-  'bash',
-  'sh',
-  'zsh',
-  'dash',
-  'ksh',
-]);
-
-const JAVASCRIPT_INLINE_INTERPRETERS = new Set(['node', 'bun']);
 const INLINE_ACCESS_NAMESPACES = new Set([
   'bun',
   'child_process',
@@ -125,8 +108,10 @@ const INLINE_ACCESS_IDENTIFIER_PARTS = new Set([
   'move',
   'mv',
   'open',
+  'fopen',
   'popen',
   'read',
+  'readfile',
   'remove',
   'rename',
   'require',
@@ -172,7 +157,24 @@ const PATTERN_ARG_LONG = new Set([
 ]);
 
 const PIPE_INPUT_PATH_MARKER = '__CC_SAFETY_NET_PIPE_INPUT__';
-const SHELL_STDIN_INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh']);
+const BARE_PATH_PATTERN = /[\w./~@+-]*[./~][\w./~@+-]*/g;
+const PYTHON_STRING_PREFIX = /(?:^|[^\w])([rRbBuUfF]{1,2})$/;
+// Ruby/Perl/PHP forms whose bodies may hold unbalanced quotes, so masking cannot be trusted.
+const UNMASKABLE_SIMPLE_CODE = /^(?:`|%[qQwWiIxX]?[([{<|!/]|<<<?[~-]?['"]?[A-Za-z_])/;
+const SIMPLE_INTERPOLATION = /#\{|\$\{|\{\$|[$@][A-Za-z_]/;
+const SHELL_EXEC_CALL =
+  /\b(?:subprocess\s*\.\s*(?:run|call|Popen|check_output)|(?:[\w$]+\s*\.\s*)*(?:execSync|exec|spawnSync|spawn|system|popen|shell_exec|passthru|child_process|eval))\s*\(/g;
+const LANGUAGE_EVAL_CALL = /\b(?:eval|exec)\s*\(/g;
+const LANGUAGE_EVAL_PREFIX = /\b(?:eval|exec)\s*$/;
+const IDENTIFIER_PATTERN = /[A-Za-z_$][\w$]*/g;
+const DEFINED_FUNCTION_PATTERNS = [
+  /\bdef\s+(\w+)/g,
+  /\bfunction\s+(\w+)/g,
+  /\b(\w+)\s*=\s*lambda\b/g,
+  /\b(?:const|let|var)\s+(\w+)\s*=\s*(?:\(|async\b|function\b|[\w(),\s]*=>)/g,
+];
+const ASSIGNMENT_STATEMENT =
+  /^\s*(?:(?:const|let|var|my)\s+)?(\$?[A-Za-z_][\w$]*)\s*(?::\s*[\w.[\], |]+?)?\s*\+?=(?!=)\s*([\s\S]*)$/;
 const VALUE_CONSUMING_INTERPRETER_FLAGS = new Map([
   ['bash', new Set(['-O'])],
   ['sh', new Set(['-O'])],
@@ -203,8 +205,16 @@ type SecretInspectionOptions = {
   readonly strict?: boolean;
 };
 
+type LiteralFamily = 'python' | 'javascript' | 'simple' | 'opaque';
+
+type CodeLiteral = { readonly start: number; readonly text: string };
+
+type MaskedCode = { readonly masked: string; readonly literals: readonly CodeLiteral[] };
+
+type CodeStatement = { readonly start: number; readonly end: number; readonly text: string };
+
 type PathExtractionOptions = {
-  readonly refineJavaScriptInlineData?: boolean;
+  readonly refineInlineData?: boolean;
   // Inside `$( )` an echo/printf operand is captured output, not display text.
   readonly capturedOutput?: boolean;
 };
@@ -324,7 +334,7 @@ export function findSensitiveTargetInSemanticFacts(
   );
   const refined =
     target?.ruleId !== 'secret.deny-path' && options.strict === false
-      ? extractToolPathTargets(facts, environment, budget, { refineJavaScriptInlineData: true })
+      ? extractToolPathTargets(facts, environment, budget, { refineInlineData: true })
       : candidates;
   const refinedTarget =
     refined.length === candidates.length
@@ -481,6 +491,19 @@ function extractCommandPathTargets(
       return null;
     },
     redirection: (redirection, state) => {
+      if (redirection.body !== undefined && redirection.consumer !== undefined) {
+        targets.push(
+          ...extractStdinScriptPathTargets(
+            redirection.consumer,
+            [redirection.body],
+            store,
+            options,
+            environment,
+            state.cwd,
+            budget,
+          ),
+        );
+      }
       if (redirection.targetOrder === 'legacy-segment') return ADOPT_AS_OPERAND;
       targets.push({ target: map(redirection.target), cwd: state.cwd });
       return null;
@@ -488,6 +511,21 @@ function extractCommandPathTargets(
   });
 
   return targets;
+}
+
+function walkShellText(
+  text: string,
+  store: SemanticFactStore,
+  options: PathExtractionOptions,
+  environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] | null {
+  const syntax = store.getShellSyntax(text);
+  if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
+  return syntax.status === 'complete'
+    ? extractCommandPathTargets(syntax, store, options, environment, cwd, budget)
+    : null;
 }
 
 function extractSegmentPathTargets(
@@ -531,12 +569,10 @@ function extractSegmentPathTargets(
   }
 
   if (command === 'eval') {
-    const syntax = store.getShellSyntax(post.join(' '));
-    if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
-    if (syntax.status !== 'complete') return [...assignmentValues, ...post.map(here)];
     return [
       ...assignmentValues,
-      ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
+      ...(walkShellText(post.join(' '), store, options, environment, cwd, budget) ??
+        post.map(here)),
     ];
   }
 
@@ -604,7 +640,7 @@ function extractSegmentPathTargets(
     }
     return [
       ...assignmentValues,
-      ...extractInterpreterPathTargets(command, post, options).map(here),
+      ...extractInterpreterPathTargets(command, post, store, options, environment, cwd, budget),
     ];
   }
   return [
@@ -650,13 +686,31 @@ function extractPipeCarrierPathTargets(
     return extractDisplayCommandOperands(producer).map((target) => ({ target, cwd }));
   }
 
-  const stdinInterpreter = getStdinScriptInterpreter(consumer);
-  if (stdinInterpreter === null) {
-    return [];
-  }
+  return extractStdinScriptPathTargets(
+    consumer,
+    extractDisplayCommandBodies(producer),
+    store,
+    options,
+    environment,
+    cwd,
+    budget,
+  );
+}
 
-  return extractDisplayCommandBodies(producer).flatMap((body) =>
-    SHELL_STDIN_INTERPRETERS.has(stdinInterpreter)
+function extractStdinScriptPathTargets(
+  consumer: readonly string[],
+  bodies: readonly string[],
+  store: SemanticFactStore,
+  options: PathExtractionOptions,
+  environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
+  const interpreter = getStdinScriptInterpreter(consumer);
+  if (interpreter === null) return [];
+
+  return bodies.flatMap((body) =>
+    SHELL_STDIN_INTERPRETERS.has(interpreter)
       ? extractCommandPathTargets(
           store.getShellSyntax(body),
           store,
@@ -665,7 +719,7 @@ function extractPipeCarrierPathTargets(
           cwd,
           budget,
         )
-      : extractPathLiteralsFromCode(body).map((target) => ({ target, cwd })),
+      : extractInlineCodePathTargets(interpreter, body, store, options, environment, cwd, budget),
   );
 }
 
@@ -1005,16 +1059,16 @@ function extractFindCommandTargets(
   return targets;
 }
 
-function isCodeInterpreter(command: string): boolean {
-  return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
-}
-
 function extractInterpreterPathTargets(
   command: string,
   tokens: readonly string[],
+  store: SemanticFactStore,
   options: PathExtractionOptions,
-): string[] {
-  const candidates: string[] = [];
+  environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
+  const candidates: SecretCandidate[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token === undefined) break;
@@ -1022,7 +1076,9 @@ function extractInterpreterPathTargets(
     if (CODE_EVAL_FLAGS.has(token) || isClusteredCodeEvalFlag(command, token)) {
       const code = tokens[i + 1];
       if (code !== undefined) {
-        candidates.push(...extractInlineCodePathTargets(command, code, options));
+        candidates.push(
+          ...extractInlineCodePathTargets(command, code, store, options, environment, cwd, budget),
+        );
         i++;
       }
       continue;
@@ -1030,12 +1086,22 @@ function extractInterpreterPathTargets(
 
     const inlineEval = /^--(?:eval|exec)=(.*)$/.exec(token);
     if (inlineEval !== null && inlineEval[1] !== undefined) {
-      candidates.push(...extractInlineCodePathTargets(command, inlineEval[1], options));
+      candidates.push(
+        ...extractInlineCodePathTargets(
+          command,
+          inlineEval[1],
+          store,
+          options,
+          environment,
+          cwd,
+          budget,
+        ),
+      );
       continue;
     }
 
     if (!token.startsWith('-')) {
-      candidates.push(token);
+      candidates.push({ target: token, cwd });
     }
   }
   return candidates;
@@ -1081,11 +1147,12 @@ function extractAwkGetlineRedirectTargets(code: string): string[] {
     .filter((value): value is string => value !== undefined && value !== '');
 }
 
+// Fallback for code no masker can read: every quoted and bare path-like token stays a candidate.
 function extractPathLiteralsFromCode(code: string): string[] {
   const quoted = Array.from(code.matchAll(/(['"`])((?:\\.|(?!\1).)*)\1/g))
     .map((match) => match[2])
     .filter((value): value is string => value !== undefined && value !== '');
-  const bare = (code.match(/[\w./~@+-]*[./~][\w./~@+-]*/g) ?? []).filter(
+  const bare = (code.match(BARE_PATH_PATTERN) ?? []).filter(
     (candidate) =>
       candidate !== 'process.versions.sqlite' ||
       quoted.some((literal) => literal.includes(candidate)),
@@ -1096,50 +1163,246 @@ function extractPathLiteralsFromCode(code: string): string[] {
 function extractInlineCodePathTargets(
   command: string,
   code: string,
+  store: SemanticFactStore,
   options: PathExtractionOptions,
-): string[] {
-  const targets = extractPathLiteralsFromCode(code);
-  if (
-    !options.refineJavaScriptInlineData ||
-    !JAVASCRIPT_INLINE_INTERPRETERS.has(command) ||
-    targets.length === 0
-  ) {
-    return targets;
-  }
+  environment: EnvironmentContext,
+  cwd: string,
+  budget: Budget,
+): SecretCandidate[] {
+  const here = (target: string) => ({ target, cwd });
+  const masked = maskStringLiterals(code, literalFamily(command));
+  if (masked === null) return extractPathLiteralsFromCode(code).map(here);
 
-  const executableCode = maskJavaScriptDataLiterals(code);
-  return executableCode !== null && !containsRecognizableInlineAccess(executableCode)
-    ? []
-    : targets;
+  const statements = splitCodeStatements(masked.masked);
+  const refine = options.refineInlineData === true && !SHELL_STDIN_INTERPRETERS.has(command);
+  return [
+    ...(refine ? usedLiterals(masked, statements) : masked.literals)
+      .map((literal) => literal.text)
+      .filter((text) => text !== '')
+      .map(here),
+    ...masked.literals.flatMap((literal) => decodeBase64PathCandidate(literal.text)).map(here),
+    ...callArgumentLiterals(masked, statements, SHELL_EXEC_CALL).flatMap(
+      (literal) =>
+        walkShellText(literal.text, store, options, environment, cwd, budget) ?? [
+          here(literal.text),
+        ],
+    ),
+    // A language-level eval/exec argument is more code in the same interpreter; the literal is
+    // strictly shorter than the code holding it, so the recursion bottoms out.
+    ...[
+      ...new Set([
+        ...callArgumentLiterals(masked, statements, LANGUAGE_EVAL_CALL),
+        // Ruby and Perl also take the argument without parentheses: `eval 'code'`.
+        ...masked.literals.filter((literal) =>
+          LANGUAGE_EVAL_PREFIX.test(masked.masked.slice(0, literal.start)),
+        ),
+      ]),
+    ].flatMap((literal) =>
+      extractInlineCodePathTargets(
+        command,
+        literal.text.replace(/\\(.)/g, (_, escaped: string) => (escaped === 'n' ? '\n' : escaped)),
+        store,
+        options,
+        environment,
+        cwd,
+        budget,
+      ),
+    ),
+    ...(masked.masked.match(BARE_PATH_PATTERN) ?? [])
+      .filter((candidate) => candidate !== 'process.versions.sqlite')
+      .map(here),
+  ];
 }
 
-function maskJavaScriptDataLiterals(code: string): string | null {
+// Standard mode: a literal is data unless its own statement reads something, calls a function the
+// code defines, or hands the literal to a name a reading statement uses.
+function usedLiterals(masked: MaskedCode, statements: readonly CodeStatement[]): CodeLiteral[] {
+  const defined = definedFunctionNames(masked.masked);
+  const callsDefined =
+    defined.size === 0 ? null : new RegExp(`\\b(?:${[...defined].join('|')})\\s*\\(`);
+  const kept = statements.filter(
+    (statement) =>
+      containsRecognizableInlineAccess(statement.text) ||
+      (callsDefined !== null && callsDefined.test(statement.text)),
+  );
+  const live = propagateAssignedNames(
+    kept.flatMap((statement) => codeIdentifiers(statement.text)),
+    statements,
+  );
+  return masked.literals.filter(
+    (literal) =>
+      kept.some((statement) => statement.start <= literal.start && literal.start < statement.end) ||
+      live.has(literalAssignee(literal, statements) ?? ''),
+  );
+}
+
+function definedFunctionNames(masked: string): Set<string> {
+  return new Set(
+    DEFINED_FUNCTION_PATTERNS.flatMap((pattern) =>
+      Array.from(masked.matchAll(pattern)).flatMap((match) => match[1] ?? []),
+    ),
+  );
+}
+
+function literalFamily(command: string): LiteralFamily {
+  const normalized = normalizeInterpreterName(command);
+  if (normalized === 'python') return 'python';
+  // AppleScript strings are not modelled, so osascript code keeps the full literal scan.
+  if (normalized === 'osascript') return 'opaque';
+  return normalized === 'node' || normalized === 'bun' || normalized === 'deno'
+    ? 'javascript'
+    : 'simple';
+}
+
+// Blanks every string literal so the bare-path regex reads code, not data. Null means the code
+// holds a form this masker cannot delimit, and the caller keeps every candidate.
+function maskStringLiterals(code: string, family: LiteralFamily): MaskedCode | null {
+  if (family === 'opaque') return null;
   const masked = code.split('');
+  const literals: CodeLiteral[] = [];
   for (let index = 0; index < code.length; index++) {
-    const quote = code[index];
-    if (quote !== "'" && quote !== '"' && quote !== '`') continue;
+    const char = code[index] ?? '';
+    if (family === 'simple' && (char === '`' || char === '%' || char === '<')) {
+      if (UNMASKABLE_SIMPLE_CODE.test(code.slice(index))) return null;
+    }
+    const quote =
+      char === "'" || char === '"' || (family === 'javascript' && char === '`') ? char : null;
+    if (quote === null) continue;
     if (quote === '`' && isTaggedTemplate(code, index)) return null;
 
-    masked[index] = ' ';
-    let closed = false;
-    for (let cursor = index + 1; cursor < code.length; cursor++) {
-      const char = code[cursor];
-      masked[cursor] = ' ';
-      if (char === '\\') {
-        cursor++;
-        if (cursor < code.length) masked[cursor] = ' ';
-        continue;
-      }
-      if (quote === '`' && char === '$' && code[cursor + 1] === '{') return null;
-      if (quote !== '`' && (char === '\n' || char === '\r')) return null;
-      if (char !== quote) continue;
-      index = cursor;
-      closed = true;
-      break;
-    }
-    if (!closed) return null;
+    const prefix = family === 'python' ? pythonStringPrefix(code, index) : '';
+    const delimiter =
+      family === 'python' && code.startsWith(quote.repeat(3), index) ? quote.repeat(3) : quote;
+    const start = index + delimiter.length;
+    const end = findLiteralEnd(code, start, delimiter, family);
+    if (end === null) return null;
+
+    const text = code.slice(start, end);
+    if (/[fF]/.test(prefix) && text.includes('{')) return null;
+    // Ruby `#{}`, Perl `$x`/`@x`, and PHP `$x`/`{$x}` run code inside double quotes.
+    if (family === 'simple' && quote === '"' && SIMPLE_INTERPOLATION.test(text)) return null;
+    literals.push({ start, text });
+    for (let cursor = index; cursor < end + delimiter.length; cursor++) masked[cursor] = ' ';
+    index = end + delimiter.length - 1;
   }
-  return masked.join('');
+  return { masked: masked.join(''), literals };
+}
+
+function pythonStringPrefix(code: string, index: number): string {
+  return PYTHON_STRING_PREFIX.exec(code.slice(Math.max(0, index - 3), index))?.[1] ?? '';
+}
+
+function findLiteralEnd(
+  code: string,
+  start: number,
+  delimiter: string,
+  family: LiteralFamily,
+): number | null {
+  const interpolated = delimiter === '`';
+  const multiline = interpolated || delimiter.length === 3 || family === 'simple';
+  for (let cursor = start; cursor < code.length; cursor++) {
+    const char = code[cursor];
+    if (char === '\\') {
+      cursor++;
+      continue;
+    }
+    if (interpolated && char === '$' && code[cursor + 1] === '{') return null;
+    if (!multiline && (char === '\n' || char === '\r')) return null;
+    if (code.startsWith(delimiter, cursor)) return cursor;
+  }
+  return null;
+}
+
+// The literals handed to a matching call, directly or through a name assigned one.
+function callArgumentLiterals(
+  masked: MaskedCode,
+  statements: readonly CodeStatement[],
+  call: RegExp,
+): CodeLiteral[] {
+  return [
+    ...new Set(
+      Array.from(masked.masked.matchAll(call)).flatMap((match) => {
+        const open = match.index + match[0].length - 1;
+        const close = findClosingParenthesis(masked.masked, open);
+        if (close === null) return [];
+        const live = propagateAssignedNames(
+          codeIdentifiers(masked.masked.slice(open + 1, close)),
+          statements,
+        );
+        return masked.literals.filter(
+          (literal) =>
+            (literal.start > open && literal.start < close) ||
+            live.has(literalAssignee(literal, statements) ?? ''),
+        );
+      }),
+    ),
+  ];
+}
+
+function findClosingParenthesis(masked: string, open: number): number | null {
+  let depth = 0;
+  for (let cursor = open; cursor < masked.length; cursor++) {
+    const char = masked[cursor] ?? '';
+    if ('([{'.includes(char)) depth++;
+    if (')]}'.includes(char)) {
+      depth--;
+      if (depth === 0) return cursor;
+    }
+  }
+  return null;
+}
+
+function splitCodeStatements(masked: string): CodeStatement[] {
+  const boundaries: number[] = [];
+  let depth = 0;
+  for (let index = 0; index < masked.length; index++) {
+    const char = masked[index] ?? '';
+    if ('([{'.includes(char)) depth++;
+    if (')]}'.includes(char)) depth = Math.max(0, depth - 1);
+    if (depth === 0 && (char === '\n' || char === ';')) boundaries.push(index);
+  }
+  return [...boundaries, masked.length].flatMap((end, order) => {
+    const start = order === 0 ? 0 : (boundaries[order - 1] ?? -1) + 1;
+    const text = masked.slice(start, end);
+    return text.trim() === '' ? [] : [{ start, end, text }];
+  });
+}
+
+function codeIdentifiers(text: string): string[] {
+  return text.match(IDENTIFIER_PATTERN) ?? [];
+}
+
+function propagateAssignedNames(
+  seed: readonly string[],
+  statements: readonly CodeStatement[],
+): Set<string> {
+  const live = new Set(seed);
+  const assignments = statements.flatMap((statement) => {
+    const assignment = ASSIGNMENT_STATEMENT.exec(statement.text);
+    return assignment === null
+      ? []
+      : [{ name: assignment[1] ?? '', sources: codeIdentifiers(assignment[2] ?? '') }];
+  });
+  // Each pass adds at least one name or the chain is complete, so this ends within n passes.
+  for (let previous = -1; previous !== live.size; ) {
+    previous = live.size;
+    for (const assignment of assignments) {
+      if (!live.has(assignment.name)) continue;
+      for (const name of assignment.sources) live.add(name);
+    }
+  }
+  return live;
+}
+
+function literalAssignee(
+  literal: CodeLiteral,
+  statements: readonly CodeStatement[],
+): string | undefined {
+  const statement = statements.find(
+    (item) => item.start <= literal.start && literal.start < item.end,
+  );
+  if (statement === undefined) return undefined;
+  return ASSIGNMENT_STATEMENT.exec(statement.text)?.[1];
 }
 
 function isTaggedTemplate(code: string, index: number): boolean {
@@ -1440,10 +1703,7 @@ function extractPatternCommandTargets(tokens: readonly string[]): string[] {
 }
 
 function stripLeadingWrappersAndEnvAssignments(tokens: readonly string[]): string[] {
-  const firstCommandIndex = tokens.findIndex(
-    (token) => !isWrapperToken(token) && !/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token),
-  );
-  return firstCommandIndex === -1 ? [] : [...tokens.slice(firstCommandIndex)];
+  return stripConsumerWrappers(tokens);
 }
 
 function isWrapperToken(token: string): boolean {
