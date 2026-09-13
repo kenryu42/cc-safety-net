@@ -814,35 +814,40 @@ export function isCodeInterpreter(command: string): boolean {
   return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
 }
 
-// A wrapper's value-taking options, so `sudo -u root` and `env --unset X` do not name the command.
-const WRAPPER_VALUE_OPTIONS = new Set([
-  '-u',
-  '-g',
-  '-h',
-  '-p',
-  '-C',
-  '-D',
-  '-r',
-  '-t',
-  '-T',
-  '-U',
-  '-S',
-  '--user',
-  '--group',
-  '--host',
-  '--prompt',
-  '--chdir',
-  '--role',
-  '--type',
-  '--other-user',
-  '--unset',
-  '--split-string',
+// Each wrapper's value-taking options, so `sudo -u root` and `env --unset X` do not name the
+// command while `command -p` keeps its next word.
+const WRAPPER_VALUE_OPTIONS = new Map([
+  [
+    'sudo',
+    new Set([
+      '-u',
+      '-g',
+      '-h',
+      '-p',
+      '-C',
+      '-D',
+      '-r',
+      '-t',
+      '-T',
+      '-U',
+      '--user',
+      '--group',
+      '--host',
+      '--prompt',
+      '--chdir',
+      '--role',
+      '--type',
+      '--other-user',
+    ]),
+  ],
+  ['env', new Set(['-u', '-C', '-P', '-S', '--unset', '--chdir', '--split-string'])],
 ]);
 
-function skipWrapperOptions(words: readonly string[]): readonly string[] {
+function skipWrapperOptions(wrapper: string, words: readonly string[]): readonly string[] {
   const word = words[0];
   if (word === undefined || !word.startsWith('-')) return words;
-  return skipWrapperOptions(words.slice(WRAPPER_VALUE_OPTIONS.has(word) ? 2 : 1));
+  const takesValue = WRAPPER_VALUE_OPTIONS.get(wrapper)?.has(word) ?? false;
+  return skipWrapperOptions(wrapper, words.slice(takesValue ? 2 : 1));
 }
 
 // Drops leading wrappers (`env`, `sudo`, `command`, `builtin`) with their options and option
@@ -852,7 +857,7 @@ export function stripConsumerWrappers(words: readonly string[]): string[] {
   if (word === undefined) return [];
   if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) return stripConsumerWrappers(words.slice(1));
   if (!HEREDOC_CONSUMER_WRAPPERS.has(word)) return [...words];
-  return stripConsumerWrappers(skipWrapperOptions(words.slice(1)));
+  return stripConsumerWrappers(skipWrapperOptions(word, words.slice(1)));
 }
 
 // The words of the command that owns a heredoc, from the consumer on: `time`/`-p`/`--`/`!`

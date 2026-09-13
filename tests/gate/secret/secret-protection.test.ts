@@ -514,6 +514,11 @@ describe('the carriers a candidate path can arrive through', () => {
         expected: env('.env'),
       },
       {
+        name: 'a valueless wrapper flag does not swallow the interpreter',
+        command: 'printf \'open(".env")\' | command -p python3 -',
+        expected: env('.env'),
+      },
+      {
         name: 'an explicit stdin operand executes the piped Python source',
         command: 'printf \'open(".env")\' | python3 -',
         expected: env('.env'),

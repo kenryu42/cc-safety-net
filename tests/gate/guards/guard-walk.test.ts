@@ -228,6 +228,12 @@ describe('gate/guards/guard-walk', () => {
     expect(consumers("sudo -u root python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual([
       ['python3', '-'],
     ]);
+    expect(consumers("env -P /usr/bin python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual([
+      ['python3', '-'],
+    ]);
+    expect(consumers("command -p python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual([
+      ['python3', '-'],
+    ]);
     expect(consumers('echo "$(python3 - <<\'EOF\'\ncat .env\nEOF\n)"')).toStrictEqual([
       ['python3', '-'],
     ]);
