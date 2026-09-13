@@ -1,6 +1,6 @@
-import { commandSignature, formatRelativeTime } from '@/engine/browser-facade';
-import { integrationDisplayNames } from '@/integrations/catalog';
-import { SAFETY_LEVEL_CAPABILITIES, type SafetyLevelCapability } from '@/ir/safety-level';
+import { commandSignature, formatRelativeTime } from '@/audit/display';
+import { SAFETY_LEVEL_CAPABILITIES, type SafetyLevelCapability } from '@/core/policy/safety-level';
+import { integrationDisplayNames } from '@/hosts/catalog';
 
 type SafetyLevel = 'standard' | 'strict' | 'paranoid';
 type Capability = SafetyLevelCapability;
@@ -141,9 +141,7 @@ type ConfirmOptions = {
   confirmClass?: string;
   rowsHtml?: string;
 };
-// A project policy carries only the fields it sets - the same presence-aware
-// shape the server projects an existing project file into, so one type covers
-// both the loaded projection and the proposal the draft collects.
+
 type ProjectProposal = {
   version?: number;
   safety?: { level?: SafetyLevel; overrides?: Record<string, boolean> };
@@ -166,14 +164,10 @@ type ProjectDraftState = {
   revision: number;
   canPickDirectory: boolean;
   baseline: Policy;
-  // The proposal the draft entered with, so "dirty" can compare field presence
-  // and not only values.
+
   snapshot: string;
 };
 
-// The one value the server injects per request, carried in a JSON data tag.
-// page.html always ships the tag with its payload, so it is read as present —
-// the same call the qs() helper below makes for every other element.
 const token = (
   JSON.parse((document.getElementById('ccsn-data') as HTMLElement).textContent as string) as {
     token: string;
@@ -219,10 +213,7 @@ const pathListIcons = {
 };
 let state: PolicyState | undefined;
 let draftPolicy: Policy;
-// Project draft mode: null in user mode. `draftPolicy` keeps holding the values
-// on screen - the baseline with the marked fields laid over it - and these two
-// carry what only the project scope knows: where it writes, and which fields it
-// claims.
+
 let projectDraft: ProjectDraftState | null = null;
 let markedFields = new Set<string>();
 let preview: Preview | null;
@@ -258,8 +249,7 @@ let rulesData: RulesData | null = null;
 let rulesRequested = false;
 let rulesScope = 'project';
 let pendingRuleFocus: string | null = null;
-// Set once a dialog that detection said was available failed to open, so a
-// later refresh cannot re-lock the field behind a button that does not work.
+
 let directoryPickerFailed = false;
 const api = (path: string, init: RequestInit = {}) =>
   fetch(`${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`, {
@@ -270,9 +260,7 @@ const api = (path: string, init: RequestInit = {}) =>
       ...(init.headers || {}),
     },
   });
-// Both outcomes carry both fields so a caller can read either without proving
-// which one it got; `data` is whatever the endpoint returned, unverified until a
-// reader's own guard proves its shape.
+
 const requestJson = async (path: string, init?: RequestInit) => {
   try {
     const response = await api(path, init);
@@ -302,8 +290,7 @@ const errorText = (result: RequestResult) =>
   `Request failed (status ${result.status}).`;
 const isWriteSuccess = (result: RequestResult) =>
   result.ok && !(Array.isArray(result.data?.errors) && result.data.errors.length > 0);
-// Every id this reads is in page.html, so the element is asserted rather than
-// null-checked at each of the call sites.
+
 const qs = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const setDetailStatus = (text: string, kind = '') => {
   qs('status').textContent = text;
@@ -337,7 +324,7 @@ const runExclusive = async (pendingText: string, fn: () => Promise<void>) => {
   }
 };
 const checkbox = (checked: boolean) => (checked ? 'checked' : '');
-// Retention goes down to 1, so every window label has to survive the singular.
+
 const dayCount = (days: number) => `${days} day${days === 1 ? '' : 's'}`;
 const syncMasterBadges = () => {
   document.querySelectorAll<HTMLInputElement>('label.row.master input').forEach((input) => {
@@ -364,8 +351,7 @@ const pathLines = (value: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 const formatPolicy = (policy: unknown) => `${JSON.stringify(policy, null, 2)}\n`;
-// A rule the draft cleared has no value to write, so a marked field with nothing
-// behind it collapses to absence rather than an entry the server would reject.
+
 const markedOverrides = (
   marked: Set<string>,
   section: string,
@@ -378,10 +364,7 @@ const markedOverrides = (
   );
 const withOverrides = (overrides: Record<string, unknown>) =>
   Object.keys(overrides).length > 0 ? { overrides } : {};
-// Only the marked fields reach the project file: an unmarked field inherits from
-// each member's user policy at load time, and writing it out would pin one
-// member's value - a materialized "standard" level over a stricter user policy -
-// on the whole project.
+
 const collectProjectProposal = (marked: Set<string>, policy: Policy) => {
   const sections: Record<string, Record<string, unknown>> = {
     safety: {
@@ -428,8 +411,7 @@ const collectProjectProposal = (marked: Set<string>, policy: Policy) => {
     ),
   };
 };
-// An existing project file arrives pre-marked, field by field: the draft must
-// never silently drop a field the project already sets.
+
 const projectMarkedFields = (projection: ProjectProposal) => {
   const destructive = projection.destructive_command_protection ?? {};
   const secret = projection.secret_protection ?? {};
@@ -450,10 +432,7 @@ const projectMarkedFields = (projection: ProjectProposal) => {
     ...(secret.allow_paths === undefined ? [] : ['secret_protection.allow_paths']),
   ];
 };
-// The values the controls show in project mode: the inherited baseline with the
-// project's own fields laid over it. Path lists replace rather than union - the
-// list under a marked field is the project's own, and the loader still unions it
-// with each member's paths.
+
 const overlayProjectProposal = (baseline: Policy, proposal: ProjectProposal) => {
   const displayed = clonePolicy(baseline);
   const destructive = proposal.destructive_command_protection ?? {};
@@ -473,10 +452,7 @@ const overlayProjectProposal = (baseline: Policy, proposal: ProjectProposal) => 
   if (secret.allow_paths) displayed.secret_protection.allow_paths = secret.allow_paths;
   return displayed;
 };
-// The only path from a project-state response to draft state, so the refusal
-// below covers entry, the directory-change reseed, and the stale-revision
-// refetch alike: a user policy the runtime cannot read degrades to protective
-// defaults, and seeding from those would show them as the inherited baseline.
+
 const seedProjectDraft = (data: {
   baseline?: Policy;
   projection?: ProjectProposal;
@@ -514,10 +490,7 @@ const collectFormPolicy = () => ({
   },
   audit: draftPolicy.audit,
 });
-// A marked path list displays only the project's own contribution, but the
-// runtime unions it with each member's user paths at load - so the policy the
-// preview and command tester evaluate has to be that union, or they misreport
-// inherited paths as unprotected.
+
 const effectivePreviewPolicy = (
   policy: ReturnType<typeof collectFormPolicy>,
   baseline: Policy | null,
@@ -549,20 +522,18 @@ const requestPolicyPreview = (policy = collectFormPolicy()) =>
     body: JSON.stringify(policy),
   });
 const policyScopeMode = () => (projectDraft ? 'project' : 'user');
-// Every control in project mode says whose value it is showing: a chip that
-// un-marks the field on click, or the muted hint that it still inherits.
+
 const projectFieldChip = (field: string, compact = false) => {
   if (policyScopeMode() !== 'project') return '';
   if (!markedFields.has(field)) return '<span class="project-chip inherited">Inherited</span>';
   return `<button type="button" class="project-chip" data-unmark-field="${escapeHtml(field)}" title="Set by project - click to inherit again" aria-label="Set by project: ${escapeHtml(field)}. Activate to inherit again.">${compact ? 'Project' : 'Set by project'}</button>`;
 };
-// A field whose control is a group of rows carries its chip on a line of its own.
+
 const projectFieldLine = (field: string) => {
   const chip = projectFieldChip(field);
   return chip ? `<div class="project-field-line">${chip}</div>` : '';
 };
-// The chips whose controls are built once by render() rather than by a section
-// renderer, so they are refreshed in place instead of rebuilt.
+
 const projectChipSlots: [string, string][] = [
   ['destructive-enabled-chip', 'destructive_command_protection.enabled'],
   ['secret-enabled-chip', 'secret_protection.enabled'],
@@ -575,18 +546,14 @@ const syncProjectChips = () => {
     qs(id).innerHTML = projectFieldChip(field);
   });
 };
-// Marking is what puts a field in the file, and the control that marked it does
-// not always re-render itself, so the affordances are refreshed here.
+
 const markProjectField = (field: string) => {
   if (!projectDraft || markedFields.has(field)) return;
   markedFields.add(field);
   renderSafety();
   syncProjectChips();
 };
-// Un-marking drops a field from the file, so its control goes back to showing the
-// inherited value: the display is rebuilt from the baseline with the fields the
-// draft still claims laid over it. Deleting the value without this rebuild would
-// leave the control showing the project's dropped value as if it were inherited.
+
 const rebuildProjectDisplay = () => {
   if (!projectDraft) return;
   draftPolicy = overlayProjectProposal(
@@ -620,8 +587,7 @@ const applyView = () => {
   document.body.dataset.view = view;
   const hasSearch = view === 'activity' || view === 'policy';
   qs('topbar-title').textContent = viewTitles[view];
-  // Search takes the bar's space on these views, but the heading is the only
-  // thing naming the current view, so it stays in the accessibility tree.
+
   qs('topbar-title').classList.toggle('sr-only', hasSearch);
   document.querySelectorAll<HTMLElement>('.topbar-search').forEach((el) => {
     el.hidden = el.dataset.searchView !== view;
@@ -645,8 +611,7 @@ const applyView = () => {
     rulesRequested = true;
     void loadRules();
   }
-  // The section is unhidden above, so this is the earliest point a jumped-to
-  // rule can be scrolled into view.
+
   if (view === 'rules' && rulesData && pendingRuleFocus) renderRules();
 };
 const agentLabels: Record<string, string> = integrationDisplayNames;
@@ -675,8 +640,7 @@ const feedItemHtml = (entry: FeedEntry, index: number) => {
     ${entry.reason && entry.reason !== 'allowed' ? `<p class="feed-reason muted">${escapeHtml(entry.reason)}</p>` : ''}
   </article>`;
 };
-// Every measurement runs before the first write: interleaving them invalidates
-// layout on each entry, which costs ~570ms over a full 500-entry feed.
+
 const applyFeedClamps = (root: HTMLElement) => {
   const overflowing = [...root.querySelectorAll('.feed-command')].filter(
     (command) =>
@@ -700,13 +664,10 @@ const renderOverviewActivity = () => {
   if (!overview) return;
   const tile = (value: number, label: string, extra: string) =>
     `<div class="tile"><strong>${escapeHtml(value.toLocaleString('en-US'))}</strong><span>${escapeHtml(label)}</span>${extra}</div>`;
-  // Buckets run oldest-first, so the last one is today. Each column carries its
-  // own count: the tooltip is a pointer affordance and cannot be the only way
-  // to read the series.
+
   const dayAgoLabel = (daysAgo: number) =>
     daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo} days ago`;
-  // Each series scales to its own maximum, so bar heights read as shape over
-  // time within one tile and never as a comparison between the two.
+
   const sparkline = (byDay: number[], noun: string) => {
     const max = Math.max(...byDay, 1);
     return `<div class="tile-spark" role="group" aria-label="Commands ${noun} per day, most recent ${dayCount(byDay.length)}">${byDay
@@ -723,7 +684,7 @@ const renderOverviewActivity = () => {
   ].join('');
 };
 const retentionDays = () => state?.policy?.audit?.retention_days ?? DEFAULT_RETENTION_DAYS;
-// A retention set below the Overview's fixed window would make its request a 400.
+
 const overviewDays = () => Math.min(OVERVIEW_DAYS, retentionDays());
 const renderRetention = (loaded: PolicyState) => {
   qs<HTMLInputElement>('retention-days').value = String(loaded.policy.audit.retention_days);
@@ -731,16 +692,13 @@ const renderRetention = (loaded: PolicyState) => {
   qs('retention-note').textContent =
     'Saved on change. Lowering this deletes anything already older than the new window; the Activity tab can only look back as far as it.';
 };
-// Windows the Activity tab offers. Anything wider than retention would promise
-// history the sweep has already deleted, and the retention value itself is
-// always offered so the whole log stays reachable.
+
 const activityWindowOptions = () => {
   const retained = retentionDays();
   const windows = [7, 30, 90, 180, 365].filter((days) => days < retained);
   return [...windows, retained];
 };
-// The snapshot reason already names the failing source, what is not active, that
-// the rejected candidate is not active, and the repair.
+
 const configStateNotice = () => {
   const configState = state?.configState;
   if (!configState || configState.state === 'ready') return null;
@@ -752,8 +710,6 @@ const setProtectionBanner = (notices: (string | null)[]) => {
   qs('protection-banner').hidden = text === '';
 };
 const renderProtectionCard = () => {
-  // Saved state only: state.policy/state.preview are server-confirmed; draftPolicy is not,
-  // so unsaved toggles do not flip the posture card.
   const configNotice = configStateNotice();
   if (!state?.preview) {
     qs('protection-card').hidden = true;
@@ -791,7 +747,7 @@ const renderProtectionCard = () => {
     `<p${commandsOn ? '' : ' class="state-disabled"'}>${commandsOn ? `${state.preview.counts.enabled} rules active` : 'Destructive command protection is OFF'}</p>` +
     `<p${secretsOn ? '' : ' class="state-disabled"'}>${secretsOn ? 'Secret protection on' : 'Secret protection is OFF'}</p>`;
 };
-// Renders a top-5 ranked list as label + count rows.
+
 const renderTopList = (
   containerId: string,
   counts: Record<string, number>,
@@ -816,10 +772,7 @@ const renderTopLists = () => {
   renderTopList('top-commands', overview.counts.commands, 'top-command', 'data-command');
   renderTopList('top-rules', overview.counts.rules, 'top-rule', 'data-rule-id');
 };
-// Blocks that look like false positives rather than catches: a fail-closed
-// denial reports that analysis failed, not that the command was dangerous, and
-// a signature one session was blocked on twice is a workload that kept wanting
-// the command. Computed from the loaded entries, so it follows the entry cap.
+
 const findSuspects = (entries: FeedEntry[]) => {
   const signatureKey = (entry: FeedEntry) =>
     `${entry.sessionId}\n${commandSignature(entry.segment || entry.command)}`;
@@ -837,8 +790,7 @@ const findSuspects = (entries: FeedEntry[]) => {
     ),
   );
 };
-// Returns true when an exact command filter was actually cleared, so callers
-// can skip re-rendering the controls when nothing changed.
+
 const clearCommandFilter = () => {
   if (!activityFilters.command) return false;
   activityFilters.command = '';
@@ -863,8 +815,7 @@ const renderGuardErrors = () => {
 };
 const renderActivityControls = () => {
   if (!activity) return;
-  // Read once: the map callback below is a closure, where the module-level feed
-  // is no longer known to be loaded.
+
   const agentCounts = activity.counts.agents;
   const chipHtml = (kind: 'decision' | 'agent', value: string, label: string, count?: number) =>
     `<button type="button" class="chip" data-activity-chip="${kind}" data-chip-value="${escapeHtml(value)}" aria-pressed="${activityFilters[kind] === value}">${escapeHtml(label)}${count === undefined ? '' : ` <span class="chip-count">${count.toLocaleString('en-US')}</span>`}</button>`;
@@ -964,8 +915,7 @@ const loadActivity = async () => {
     qs('activity-count').textContent = '';
     return;
   }
-  // `data` is unverified JSON, so it is named at its type once here; every read
-  // below is through the narrowed module-level feed.
+
   const feed: ActivityFeed = result.data;
   activity = feed;
   suspects = findSuspects(activity.entries);
@@ -986,9 +936,7 @@ const runRefresh = async (buttonId: string, reload: () => Promise<unknown>) => {
   if (button.disabled) return;
   button.disabled = true;
   button.classList.add('spinning');
-  // Spin for a minimum duration so a fast local refresh still reads as an action.
-  // `finally` (no catch) so a failed reload restores the button instead of
-  // leaving it disabled and spinning; the rejection still propagates.
+
   try {
     await Promise.all([reload(), new Promise((resolve) => setTimeout(resolve, 600))]);
   } finally {
@@ -1078,20 +1026,16 @@ const refreshIntegrations = () =>
 const renderRules = () => {
   const loaded = rulesData;
   if (!loaded) return;
-  // Prefill only while untouched, so a refresh cannot discard a path already
-  // chosen for a project other than the launch directory.
+
   if (!qs<HTMLInputElement>('rules-project-path').value)
     qs<HTMLInputElement>('rules-project-path').value = loaded.projectPath;
-  // Typing an absolute path by hand is the error-prone half of this field, so
-  // it stays read-only wherever a real dialog can replace it.
+
   const canPick = loaded.canPickDirectory && !directoryPickerFailed;
   qs<HTMLInputElement>('rules-project-path').readOnly = canPick;
   qs<HTMLButtonElement>('rules-choose-directory').hidden = !canPick;
   qs('rules-list').innerHTML =
     loaded.rulebooks.length === 0
-      ? // A dropped source is the failure users are least likely to notice, so
-        // it owns the empty state instead of the first-run copy below it.
-        loaded.errors.length > 0
+      ? loaded.errors.length > 0
         ? '<p class="empty">Every configured rulebook was dropped, so no custom rule is enforced. See Diagnostics below.</p>'
         : '<p class="empty">No custom rulebooks. Run <code>npx -y cc-safety-net rule init</code> to create one, or see the <a href="https://ccsafetynet.com/docs" target="_blank" rel="noopener">documentation</a>.</p>'
       : loaded.rulebooks
@@ -1106,8 +1050,6 @@ const renderRules = () => {
     </div>
     ${rulebook.rules
       .map(
-        // block_args is an OR set, not a command line: any one of these tokens
-        // anywhere in the command matches, so they cannot be joined onto it.
         (
           rule,
         ) => `<div class="rulebook-rule${pendingRuleFocus === rule.name ? ' rules-focus' : ''}">
@@ -1130,8 +1072,7 @@ const renderRules = () => {
   if (!pendingRuleFocus) return;
   const focused = qs('rules-list').querySelector('.rules-focus');
   if (focused) focused.scrollIntoView({ block: 'center' });
-  // Top blocked rules names rules from audit history that a rulebook may no
-  // longer contain, and landing on an unchanged tab reads as a dead link.
+
   if (!focused) setAppStatus(`custom.${pendingRuleFocus} is not in any rulebook`, 'error');
   pendingRuleFocus = null;
 };
@@ -1140,8 +1081,7 @@ const loadRules = async () => {
   if (!result.ok || !Array.isArray(result.data?.rulebooks)) {
     qs('rules-list').innerHTML =
       `<p class="empty">Could not load rules: ${escapeHtml(errorText(result))}</p>`;
-    // Dropping the previous payload keeps a stale rulebook list from being
-    // repainted over this message by a later render.
+
     rulesData = null;
     qs('rules-diagnostics-panel').hidden = true;
     rulesRequested = false;
@@ -1171,9 +1111,6 @@ const setRulesScope = (scope: string) => {
   qs('rules-project-path-field').hidden = scope !== 'project';
 };
 const rulePromptText = () => {
-  // Rulebook names are claimed globally across both scopes: a project rulebook
-  // reusing a user-scope name is dropped whole and enforces nothing, so the
-  // agent has to see every existing name, not just this scope's.
   const names = rulesData?.rulebooks.map((rulebook) => rulebook.name) ?? [];
   return [
     'Use the cc-safety-net skill for this request.',
@@ -1198,8 +1135,7 @@ const chooseProjectDirectory = async () => {
     return;
   }
   if (result.ok && result.data.cancelled) return;
-  // Detection cannot prove the dialog will actually open, so a failure has to
-  // hand the field back rather than leave a read-only box and a dead button.
+
   directoryPickerFailed = true;
   qs<HTMLInputElement>('rules-project-path').readOnly = false;
   button.hidden = true;
@@ -1217,8 +1153,7 @@ const copyRulePrompt = async () => {
     setAppStatus('Describe what you want first', 'error');
     return;
   }
-  // An empty path would hand the agent "Scope: this project - " and let it pick
-  // a directory itself, which is the guess this field exists to remove.
+
   if (rulesScope === 'project' && !qs<HTMLInputElement>('rules-project-path').value.trim()) {
     setAppStatus('Enter the project path the rule belongs to', 'error');
     return;
@@ -1280,8 +1215,7 @@ const confirmDialog = (() => {
       qs('confirm-dialog-detail').textContent = options.detail ?? '';
       const detailRow = qs('confirm-dialog-detail').parentElement;
       if (detailRow) detailRow.hidden = !options.detail;
-      // Markup rather than text for the one caller that shows a table: the diff
-      // rows are built here from server-computed values, each one escaped.
+
       qs('confirm-dialog-rows').innerHTML = options.rowsHtml ?? '';
       qs('confirm-dialog-rows').hidden = !options.rowsHtml;
       confirm.textContent = options.confirmLabel;
@@ -1341,14 +1275,9 @@ const resetFeedCopy = () => {
 };
 const reportIssueUrl =
   'https://github.com/kenryu42/cc-safety-net/issues/new?template=false_positive.yml';
-// GitHub rejects issue links past roughly 8k characters.
+
 const reportUrlLimit = 8000;
-// Audit entries have secrets redacted at write time but not paths, and the issue
-// tracker is public. The entry's own cwd goes first so the most specific prefix
-// wins when the project sits inside the home directory. A prefix only counts when
-// the match ends at a path boundary, so a sibling directory (`<cwd>-backup`) or an
-// unrelated path that merely starts with it (`/app` inside `/var/lib/appdata`) is
-// left intact instead of being mangled mid-segment.
+
 const endsAtPathBoundary = (following: string) => following === '' || /^[/\\\s'"]/.test(following);
 const scrubReportPaths = (text: string, cwd?: string | null, home?: string | null) =>
   [
@@ -1372,9 +1301,7 @@ const buildReportUrl = (fields: Record<string, string>) => {
     });
   return url.toString();
 };
-// GitHub rejects the entire link past the cap, so the largest field is dropped
-// until the rest fits. Dropping one is not always enough: `entry` embeds the
-// command, so a long command still overflows once the entry is gone.
+
 const buildReportRequest = (
   fields: Record<string, string>,
   dropped: string[] = [],
@@ -1392,9 +1319,7 @@ const openReportDialog = (button: HTMLElement) => {
   if (!entry) return;
   const scrub = (text: string) => scrubReportPaths(text, entry.cwd, activity?.homeDir);
   qs<HTMLTextAreaElement>('report-command').value = scrub(entry.command || entry.segment || '');
-  // Scrub each string value before serialising, not the serialised text: on
-  // Windows JSON.stringify doubles every backslash, so a cwd of C:\Users\... would
-  // never match its own needle and the entry would ship unscrubbed.
+
   qs<HTMLTextAreaElement>('report-entry').value = JSON.stringify(
     entry,
     (_key, value) => (typeof value === 'string' ? scrub(value) : value),
@@ -1409,8 +1334,7 @@ const openFalsePositiveForm = async () => {
     entry: qs<HTMLTextAreaElement>('report-entry').value,
   };
   const request = buildReportRequest(fields);
-  // Start the copy before the new tab takes focus, and open in the same task so
-  // the click that submitted the dialog still counts as user activation.
+
   const copying = request.dropped.length
     ? navigator.clipboard.writeText(
         request.dropped.map((field) => `### ${field}\n${fields[field]}`).join('\n\n'),
@@ -1543,8 +1467,7 @@ const loadStarContext = async () => {
 };
 const syncRawFromForm = () => {
   if (state?.errors.length) return;
-  // In project mode the panel previews the sparse proposal itself - the exact
-  // JSON the apply writes - rather than the merged policy on screen.
+
   qs<HTMLTextAreaElement>('raw').value = formatPolicy(
     projectDraft ? collectProjectProposal(markedFields, draftPolicy) : collectFormPolicy(),
   );
@@ -1552,10 +1475,7 @@ const syncRawFromForm = () => {
 };
 const updateDirtyStatus = () => {
   if (!state || state.errors.length) return;
-  // The saved user policy says nothing about which fields the project sets, so
-  // comparing against it would read a pre-marked field as dirty on entry and an
-  // un-marked one as clean while it is being dropped from the file. The entry
-  // snapshot compares field presence as well as values.
+
   if (projectDraft) {
     dirty =
       JSON.stringify(collectProjectProposal(markedFields, draftPolicy)) !== projectDraft.snapshot;
@@ -1600,10 +1520,7 @@ const createPathList = (prefix: string, config: PathListConfig) => {
             )
             .join('');
   };
-  // A path list joins the project draft empty: the entries it was showing are
-  // the member's own, and carrying them into the project file would publish one
-  // person's exceptions to everyone who loads it. The loader still unions the
-  // two lists, so nothing the member had stops applying.
+
   const claimForProject = () => {
     if (!projectDraft || markedFields.has(config.field)) return;
     markedFields.add(config.field);
@@ -1625,14 +1542,11 @@ const createPathList = (prefix: string, config: PathListConfig) => {
       adding = true;
       try {
         const error = await config.validateAdditions([...config.getPaths(), ...additions]);
-        // The draft this call claimed into was exited or reseeded while the
-        // validation was in flight; its state was rebuilt wholesale, so both
-        // the commit and the rollback would mutate a different scope.
+
         if (projectDraft !== scope) return;
         if (error) {
           setHint(`Not added: ${additions.join(', ')} — ${error}`);
-          // A rejected addition must leave the draft byte-identical: undo the
-          // claim this call made, or the list reads as project-owned and empty.
+
           if (claimed) {
             markedFields.delete(config.field);
             config.setPaths(previousPaths);
@@ -1644,8 +1558,7 @@ const createPathList = (prefix: string, config: PathListConfig) => {
         adding = false;
       }
     }
-    // Recommit only the initially absent additions against current state, so
-    // entries removed during validation stay removed.
+
     const current = config.getPaths();
     const duplicates = entries.filter((entry) => current.includes(entry));
     config.setPaths([...current, ...additions.filter((entry) => !current.includes(entry))]);
@@ -1667,8 +1580,7 @@ const createPathList = (prefix: string, config: PathListConfig) => {
   };
   return { render, add, remove };
 };
-// Every path list validates the same way: preview the draft policy with the
-// candidate paths patched into it, and report the preview's own error text.
+
 const validatePathAdditions = async (
   patch: (candidate: ReturnType<typeof collectFormPolicy>) => void,
 ) => {
@@ -1722,19 +1634,15 @@ const pathLists = {
       }),
   }),
 };
-// The two lists are addressed by name from a data attribute, so a lookup has to
-// prove the attribute names one of them.
+
 const pathListFor = (name: string | undefined) =>
   name === 'deny-paths' || name === 'allow-paths' || name === 'secret-allow-paths'
     ? pathLists[name]
     : null;
-// A default-off rule needs an explicit 'on' override to become active, so the switch state
-// cannot be read from the presence of an override alone.
+
 const secretRuleIsActive = (rule: SecretRule, overrides: RuleOverrides) =>
   overrides[rule.id] ? overrides[rule.id] === 'on' : !rule.defaultOff;
-// A marked rule is one this project sets for everyone. Only the explicit unmark
-// affordances drop the mark again, so a value edit never silently removes a rule
-// from the proposal.
+
 const markProjectOverride = (section: string, ruleId: string) => {
   if (!projectDraft) return;
   markedFields.add(`${section}.overrides.${ruleId}`);
@@ -1744,10 +1652,7 @@ const clearProjectOverrideMarks = (section: string) => {
     [...markedFields].filter((field) => !field.startsWith(`${section}.overrides.`)),
   );
 };
-// A rule that already matches its default keeps no override, so the saved file stays small
-// and a later default change still reaches the user. In project mode the same edit is a
-// decision to pin the rule for everyone, so it is always written out and marked: dropping
-// it would leave each member's own override winning while the control claims otherwise.
+
 const setSecretOverride = (rule: SecretRule, active: boolean) => {
   if (!projectDraft && active === !rule.defaultOff) {
     delete draftPolicy.secret_protection.overrides[rule.id];
@@ -1756,8 +1661,7 @@ const setSecretOverride = (rule: SecretRule, active: boolean) => {
   draftPolicy.secret_protection.overrides[rule.id] = active ? 'on' : 'off';
   markProjectOverride('secret_protection', rule.id);
 };
-// The destructive counterpart, comparing against the inherited state the preview
-// reports rather than a built-in default; same project-mode rule.
+
 const setDestructiveOverride = (ruleId: string, active: boolean, inheritedEnabled?: boolean) => {
   if (!projectDraft && active === inheritedEnabled) {
     delete draftPolicy.destructive_command_protection.overrides[ruleId];
@@ -1781,8 +1685,7 @@ const groupRules = <T extends { category: string }>(rules: T[]) =>
   );
 const renderSecretPatterns = () => {
   if (!state) return;
-  // The group callback below is a closure, where the module-level policy state
-  // is no longer known to be loaded.
+
   const loaded = state;
   const query = qs<HTMLInputElement>('policy-search').value.trim().toLowerCase();
   const rules = state.secretPatterns.filter((rule) =>
@@ -1924,8 +1827,6 @@ const ruleStateText = (
   effective: RuleState,
   capabilities: Preview['capabilities'],
 ) => {
-  // Only a rule that names an activation capability reaches the two branches
-  // below: both sources describe how that capability was decided.
   const capability = rule.activationCapability;
   if (effective.source === 'master_disabled')
     return 'Off — destructive-command protection disabled';
@@ -1979,8 +1880,7 @@ const openSecretPaths = (button: HTMLElement) => {
 };
 const renderDestructiveCommands = () => {
   if (!state || !preview) return;
-  // The tier and rule callbacks below are closures, where the module-level
-  // policy and preview are no longer known to be loaded.
+
   const loaded = state;
   const effectiveState = preview;
   const query = qs<HTMLInputElement>('policy-search').value.trim().toLowerCase();
@@ -2137,8 +2037,7 @@ const runCommandTest = async () => {
   }
   if (result.data.result === 'allowed') {
     el.className = 'status ok';
-    // Carries the command that was actually evaluated: the input is editable
-    // after the result renders, so reading it back would prefill a different one.
+
     el.innerHTML = `Allowed — no rule blocks this command under the current draft policy. <button type="button" class="feed-toggle" data-create-rule="${escapeHtml(command)}">Create a rule for this</button>`;
     return;
   }
@@ -2164,8 +2063,7 @@ function render() {
   qs('policy-savebar').hidden = true;
   qs('dirty-chip').hidden = true;
   qs('policy-path').textContent = state.path + (state.exists ? '' : ' (not created yet)');
-  // The project policy is merged on top of the file this editor writes, so it is
-  // named here and what it relaxes is stated; neither is editable from the GUI.
+
   const projectPolicy = state.projectPolicy;
   qs('project-policy-row').hidden = !projectPolicy;
   qs('project-policy-path').textContent = projectPolicy?.path ?? '';
@@ -2258,11 +2156,7 @@ const restoreDraft = () => {
       return null;
     }
   })();
-  // The render path below dereferences every field checked here, so a draft
-  // saved by an older build - or damaged in storage - must fail validation and
-  // be discarded rather than crash rendering after a successful policy load.
-  // 'audit' is checked so a draft stored before the field existed is discarded
-  // rather than restored and saved back over the configured retention.
+
   const isRecordField = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
   const isOptionalPathList = (value: unknown) =>
@@ -2287,10 +2181,9 @@ const restoreDraft = () => {
     sessionStorage.removeItem('cc-safety-net-draft');
     return;
   }
-  // Validated above: every field the render path reads has its checked shape.
+
   const draft = parsed as Policy;
-  // Path lists added after a draft was stored restore as empty rather than
-  // discarding the rest of the draft.
+
   draft.destructive_command_protection.allow_paths ??= [];
   draft.secret_protection.deny_paths ??= [];
   draft.secret_protection.allow_paths ??= [];
@@ -2299,11 +2192,8 @@ const restoreDraft = () => {
   void refreshPolicyPreview();
   setAppStatus('Restored unsaved draft', 'ok');
 };
-// Redraws every control from `draftPolicy` without the full render(), which
-// reseeds the draft from the saved policy and would discard it.
+
 function renderPolicySections() {
-  // render() builds the two master-toggle checkboxes from state.policy and the
-  // sub-renders below do not rebuild them, so sync them from the draft.
   const masterToggle = document.querySelector<HTMLInputElement>(
     '[data-destructive-command-enabled]',
   );
@@ -2332,9 +2222,7 @@ async function load() {
   restoreDraft();
   return true;
 }
-// The delegated handlers below read the event target, which the DOM types as a
-// bare EventTarget; each one narrows it once here to the element kind its
-// branches actually use.
+
 const targetInput = (event: Event) =>
   event.target instanceof HTMLInputElement ? event.target : null;
 const targetElement = (event: Event) => (event.target instanceof Element ? event.target : null);
@@ -2350,8 +2238,7 @@ document.addEventListener('input', (event) => {
   if (input.id === 'activity-search' && activity) {
     if (clearCommandFilter()) renderActivityControls();
     activityFilters.query = input.value.trim().toLowerCase();
-    // Rebuilding a windowed feed costs ~250ms, so coalesce a burst of typing
-    // into one render rather than blocking the keystroke that triggered it.
+
     clearTimeout(activityQueryTimer);
     activityQueryTimer = setTimeout(renderActivityFeed, 120);
   }
@@ -2379,8 +2266,7 @@ document.addEventListener('paste', (event) => {
   event.preventDefault();
   void list.add(`${input.value}\n${text}`);
 });
-// Posts a policy write and reports a failed one, so every caller shares the one
-// success test rather than repeating the error plumbing.
+
 const writePolicy = async (path: string, body: string, failureStatus: string) => {
   const result = await requestJson(path, { method: 'POST', body });
   if (isWriteSuccess(result)) return result;
@@ -2388,8 +2274,7 @@ const writePolicy = async (path: string, body: string, failureStatus: string) =>
   setDetailStatus(`Error: ${errorText(result)}`, 'error');
   return null;
 };
-// A completed write makes the stored draft stale: discarding it before the
-// reload is what keeps restoreDraft from resurrecting the pre-write policy.
+
 const reloadAfterWrite = async () => {
   sessionStorage.removeItem('cc-safety-net-draft');
   if (!(await load())) return false;
@@ -2413,19 +2298,12 @@ const exitProjectDraft = () => {
   projectDraft = null;
   markedFields = new Set();
   setProjectDraftDiagnostics([]);
-  // The reload the callers run afterwards is asynchronous and can fail; until
-  // it lands the controls must describe the saved user policy, not the project
-  // draft - a Save on the lingering values would write them into the user scope.
+
   if (state) draftPolicy = clonePolicy(state.policy);
   renderProjectDraftBar();
   renderPolicySections();
 };
-// The one path from a project-state response into draft state, so its refusal
-// covers entry, the directory-change reseed, and the stale-revision refetch
-// alike. The rendered recovery banner is only a fast-path pre-check: the user
-// policy can go unreadable after the page last loaded - while the native picker
-// is open, say - and seeding through it would show the protective defaults it
-// degrades to as the values this project inherits.
+
 const ingestProjectState = async (okStatus: string) => {
   const result = await requestJson('/api/policy/project');
   if (!result.ok || !result.data) {
@@ -2436,8 +2314,7 @@ const ingestProjectState = async (okStatus: string) => {
   const seeded = seedProjectDraft(result.data);
   if (!seeded) {
     exitProjectDraft();
-    // Reloads the user policy so the recovery banner describes the file as it
-    // is now rather than as it was at the last load.
+
     await load();
     setAppStatus('Repair required', 'error');
     setDetailStatus(
@@ -2461,8 +2338,7 @@ const ingestProjectState = async (okStatus: string) => {
   };
   markedFields = seeded.marked;
   draftPolicy = seeded.policy;
-  // A project file that could not be read starts the draft empty and says so,
-  // rather than pretending the fields it sets loaded.
+
   setProjectDraftDiagnostics(
     Array.isArray(result.data.projectionDiagnostics) ? result.data.projectionDiagnostics : [],
   );
@@ -2478,15 +2354,13 @@ const enterProjectDraft = async () => {
     setDetailStatus('Error: Policy is not loaded yet. Reload the page.', 'error');
     return;
   }
-  // The rendered banner is the fast path; ingesting the project state below
-  // asks the server, which is the check that cannot be stale.
+
   if (state.errors.length) {
     setAppStatus('Repair required', 'error');
     setDetailStatus('Error: repair your user policy before drafting a project policy.', 'error');
     return;
   }
-  // The draft inherits from the saved user policy, so unsaved edits to it would
-  // make every inherited value on screen a value nobody has.
+
   if (dirty) {
     if (
       !(await confirmDialog({
@@ -2522,7 +2396,7 @@ const changeProjectDirectory = async () => {
     setAppStatus(result.data.error, 'error');
     return;
   }
-  // A cancelled pick leaves the session directory, and this draft, alone.
+
   if (result.data.cancelled) return;
   await ingestProjectState('Drafting a project policy.');
 };
@@ -2532,9 +2406,7 @@ const leaveProjectDraft = async () => {
   exitProjectDraft();
   if (await load()) setAppStatus('Left the project draft.', 'ok');
 };
-// Restores the proposal the draft entered with - which fields it marks as well
-// as their values - instead of the user-mode discard, which reloads saved user
-// state and would leave the display describing a different proposal.
+
 const discardProjectDraft = async () => {
   const draft = projectDraft;
   if (!draft) return;
@@ -2569,8 +2441,6 @@ const projectDiffHtml = (data: {
 }) => {
   const rows = Array.isArray(data.rows) ? data.rows : [];
   const warnings = [
-    // The CLI replaces an unreadable project file after the same confirmation;
-    // here the replacement is stated instead of silent.
     ...(data.existingFileDiagnostics?.length
       ? ['The existing project policy file is invalid and will be replaced.']
       : []),
@@ -2587,8 +2457,7 @@ const projectDiffHtml = (data: {
           .join('')}</tbody></table>`;
   return table + warnings.map((text) => `<p class="diff-warning">${escapeHtml(text)}</p>`).join('');
 };
-// The rows come from the server on the same code path as CLI `policy check`,
-// and the apply revalidates independently: what the dialog shows is display.
+
 const reviewProjectDraft = async () => {
   const draft = projectDraft;
   if (!draft) return;
@@ -2596,10 +2465,7 @@ const reviewProjectDraft = async () => {
   const serialized = JSON.stringify(proposal);
   const body = JSON.stringify({ revision: draft.revision, proposal });
   const diff = await requestJson('/api/policy/project/diff', { method: 'POST', body });
-  // The draft was exited or reseeded while the diff was in flight. Checked
-  // before the 409 branch: its refetch would otherwise re-enter draft mode the
-  // user just left, and an exit does not bump the server revision, so a stale
-  // continuation could still open the dialog and apply.
+
   if (projectDraft !== draft) return;
   if (diff.status === 409) {
     await handleStaleProjectDraft();
@@ -2610,9 +2476,7 @@ const reviewProjectDraft = async () => {
     setDetailStatus(`Error: ${errorText(diff)}`, 'error');
     return;
   }
-  // The form stays live while the diff request is in flight; the modal keeps it
-  // inert from here on. An edit that landed in that window must force another
-  // review - applying `body` would silently discard it.
+
   if (JSON.stringify(collectProjectProposal(markedFields, draftPolicy)) !== serialized) {
     setAppStatus('Review again', 'error');
     setDetailStatus(
@@ -2648,10 +2512,7 @@ const reviewProjectDraft = async () => {
     if (await load()) setAppStatus(`Applied ${path}.`, 'ok');
   });
 };
-// Saves on its own rather than through the policy savebar, which lives in the
-// Policy view and cannot be reached from Settings. It writes the saved policy
-// with only this field changed, so unsaved Policy edits are not committed by
-// touching a Settings control.
+
 const saveRetentionDays = async (days: number) => {
   const saved = state;
   if (!saved) return;
@@ -2666,16 +2527,14 @@ const saveRetentionDays = async (days: number) => {
     return;
   }
   if (days === current) return;
-  // Audit is user scope only, so this write rewrites the very baseline an active
-  // project draft inherits from, and its reload would discard the draft.
+
   if (projectDraft) {
     qs<HTMLInputElement>('retention-days').value = String(current);
     setAppStatus('Retention unchanged', 'error');
     setDetailStatus('Error: exit or apply your project draft first.', 'error');
     return;
   }
-  // Saving reloads the policy, and the reload restores the stored draft — whose
-  // retention is the old value, so the next Policy save would undo this one.
+
   if (dirty) {
     qs<HTMLInputElement>('retention-days').value = String(current);
     setAppStatus('Retention unchanged', 'error');
@@ -2702,11 +2561,9 @@ const saveRetentionDays = async (days: number) => {
       qs<HTMLInputElement>('retention-days').value = String(current);
       return;
     }
-    // Reloads through load() rather than reloadAfterWrite(): the write carried
-    // none of the Policy edits, so the stored draft is still live and must be
-    // restored instead of discarded.
+
     if (!(await load())) return;
-    // A narrower window may no longer offer the selected one.
+
     activityFilters.days = Math.min(activityFilters.days, days);
     await Promise.all([loadOverview(), loadActivity()]);
     setAppStatus(`Retention set to ${dayCount(days)}.`, 'ok');
@@ -2735,17 +2592,13 @@ document.addEventListener('change', (event) => {
     return;
   }
   if (control.dataset?.safetyOverride) {
-    // Same project-mode rule as the rule overrides: in project scope draftPolicy is the
-    // baseline overlaid with the marked fields, so deleting here would strip an inherited
-    // user value from the display. Unmarking below rebuilds it from the baseline instead.
     if (control.value === 'inherit' && !projectDraft)
       delete draftPolicy.safety.overrides[control.dataset.safetyOverride as Capability];
     if (control.value === 'true')
       draftPolicy.safety.overrides[control.dataset.safetyOverride as Capability] = true;
     if (control.value === 'false')
       draftPolicy.safety.overrides[control.dataset.safetyOverride as Capability] = false;
-    // "Inherit" is the absence of the field, which in project scope is exactly
-    // what leaving it unmarked means.
+
     if (control.value === 'inherit')
       unmarkProjectField(`safety.overrides.${control.dataset.safetyOverride}`);
     if (control.value !== 'inherit')
@@ -2755,7 +2608,7 @@ document.addEventListener('change', (event) => {
     void refreshPolicyPreview();
     return;
   }
-  // Every branch below is driven by a checkbox, so the target has to be one.
+
   const input = control instanceof HTMLInputElement ? control : null;
   if (!input) return;
   if ('workflowWorktree' in input.dataset) {
@@ -2789,8 +2642,6 @@ document.addEventListener('change', (event) => {
     return;
   }
   if (input.dataset?.destructiveTierActive) {
-    // A bulk write over the same per-rule overrides the individual switches
-    // use, so a rule that already matches what it inherits keeps no override.
     const effectiveState = preview;
     if (!effectiveState) return;
     state?.destructiveCommandRules
@@ -2818,8 +2669,6 @@ document.addEventListener('change', (event) => {
     return;
   }
   if (input.dataset?.secretGroupActive) {
-    // A bulk write over the same per-rule overrides the individual switches
-    // use, not a stored group setting.
     state?.secretPatterns
       .filter((rule) => rule.category === input.dataset.secretGroupActive)
       .forEach((rule) => {
@@ -2913,8 +2762,7 @@ document.addEventListener('click', (event) => {
   const blockFuture = target.closest<HTMLElement>('[data-block-future]');
   if (blockFuture) {
     const entry = renderedFeedEntries[Number(blockFuture.dataset.blockFuture)];
-    // With no recorded command there is nothing to prefill, and opening anyway
-    // would clear whatever the user had already typed into the composer.
+
     if (entry?.segment || entry?.command) openRuleComposer(entry.segment || entry.command || '');
     return;
   }
@@ -2945,9 +2793,6 @@ document.addEventListener('click', (event) => {
   }
   const topCommand = target.closest<HTMLElement>('.top-command');
   if (topCommand) {
-    // Exact, blocked-only match on the signature so the feed count reconciles
-    // with the Top blocked commands tally; shown as a removable pill, not search
-    // text, since a substring query would over-match.
     activityFilters.command = topCommand.dataset.command ?? '';
     activityFilters.decision = 'deny';
     activityFilters.query = '';
@@ -3049,8 +2894,7 @@ document.addEventListener('click', (event) => {
     renderSecretPatterns();
     return;
   }
-  // The group switches sit inside .rule-tier-head, which is no longer the
-  // collapse control there; togglePanel would read an aria-controls it lacks.
+
   if (target.closest<HTMLElement>('[data-secret-group-active], [data-destructive-tier-active]'))
     return;
   const button = target.closest<HTMLElement>('.panel-toggle, .rule-tier-head');
@@ -3175,8 +3019,7 @@ qs('save').onclick = () => {
     setDetailStatus('Error: Repair policy before saving changes.', 'error');
     return;
   }
-  // In project mode this button reviews the proposal instead of writing the
-  // user policy: the write happens only after the diff is confirmed.
+
   if (projectDraft) {
     void reviewProjectDraft();
     return;
@@ -3227,8 +3070,7 @@ qs('reset').onclick = async () => {
     setDetailStatus('Error: Policy is not loaded yet. Reload the page.', 'error');
     return;
   }
-  // Rewrites the user policy the active draft inherits from, and its reload
-  // would discard the draft along with it.
+
   if (projectDraft) {
     setAppStatus('Reset unavailable', 'error');
     setDetailStatus('Error: exit or apply your project draft first.', 'error');

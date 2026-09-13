@@ -1,12 +1,12 @@
-import { resolveAuditScope } from '@/engine/facade';
-import { getIntegrationDisplayName } from '@/integrations/catalog';
+import { resolveAuditScope } from '@/core/policy/env';
+import { getIntegrationDisplayName } from '@/hosts/catalog';
 import type {
   DoctorFinding,
   DoctorFindingSeverity,
   DoctorReport,
   ProtectedDirectoryIssue,
   ProtectedDirectoryKind,
-} from '@/integrations/doctor-types';
+} from '@/hosts/doctor-types';
 
 type DoctorFacts = Omit<DoctorReport, 'findings'>;
 
@@ -97,8 +97,6 @@ const findingRules: FindingRule[] = [
         : [],
   },
   {
-    // The snapshot reason already names the failing source, what is not active,
-    // that the rejected candidate is not active, and the repair.
     derive: (report) =>
       report.configState.state === 'degraded'
         ? [
@@ -131,8 +129,7 @@ const findingRules: FindingRule[] = [
   {
     derive: (report) => {
       const scope = report.environment.find((item) => item.name === 'CC_SAFETY_NET_AUDIT_SCOPE');
-      // The raw value is deliberately not echoed: findings are rendered without
-      // terminal-safe escaping.
+
       return resolveAuditScope(scope?.value) === 'invalid'
         ? [
             {

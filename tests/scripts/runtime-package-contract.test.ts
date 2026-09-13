@@ -31,7 +31,7 @@ describe('published runtime contract', () => {
   test('pins the supported build and runtime dependency contract', () => {
     expect(pkg.packageManager).toMatch(/^bun@\d+\.\d+\.\d+$/);
     expect(pkg.engines).toEqual({ node: '>=18' });
-    expect(pkg.dependencies).toEqual({ zod: '4.3.5' });
+    expect(pkg.dependencies).toBeUndefined();
     expect(pkg.devDependencies).toMatchObject({
       '@ampcode/plugin': '0.0.0-20260724002649-ga3413e7',
       '@opencode-ai/plugin': '^1.18.3',

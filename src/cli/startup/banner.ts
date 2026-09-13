@@ -24,7 +24,6 @@ function wait(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
-/** Resolves `ready`, rendering the loading spinner on a TTY while it stays pending. */
 export async function awaitWithSpinner<T>(
   ready: Promise<T>,
   options: StartupBannerOptions = {},

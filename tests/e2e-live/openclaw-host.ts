@@ -1,28 +1,12 @@
-/**
- * Drivers for the real `openclaw` binary.
- *
- * State isolation: OpenClaw resolves its state root from `OPENCLAW_STATE_DIR` before falling back
- * to `OPENCLAW_CONFIG_PATH` and only then to `$HOME/.openclaw` (`src/utils.ts` `resolveConfigDir`
- * in the OpenClaw source). All three are pinned at the temporary home so a developer who exports
- * either variable cannot redirect a test at their real installation.
- *
- * Enforcement is driven by a gateway agent turn rather than a tool-invoke RPC: OpenClaw's
- * `POST /tools/invoke` surface never exposes `exec` (it is on `DEFAULT_GATEWAY_HTTP_TOOL_DENY`,
- * and the HTTP tool catalog does not build a shell tool at all), and the loopback MCP surface
- * only mediates `exec` for grants minted for Gateway-launched CLI backends. A turn against a
- * loopback stub model is the only model-free path that reaches a real `before_tool_call`.
- */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const HEALTH_POLL_MS = 250;
 
-/** Where OpenClaw keeps config, the state database, and installed plugins. */
 function getOpenClawStateDir(home: string): string {
   return join(home, '.openclaw');
 }
 
-/** Env keys that pin every OpenClaw process at the temporary home. */
 export function openClawEnv(home: string): Record<string, string> {
   const stateDir = getOpenClawStateDir(home);
   return {
@@ -70,11 +54,6 @@ function boundPort(server: { port: number | undefined }): number {
   return server.port;
 }
 
-/**
- * A loopback OpenAI-compatible endpoint that asks for one `exec` tool call and then stops. It
- * replaces the model, not the agent: OpenClaw's own runtime still builds the tool, dispatches
- * `before_tool_call`, and executes the result.
- */
 export function startStubModelServer() {
   let command = '';
   let toolCallIssued = true;
@@ -92,7 +71,6 @@ export function startStubModelServer() {
   });
   return {
     port: boundPort(server),
-    /** Arm the next turn to request `exec` with this command exactly once. */
     armExec(next: string) {
       command = next;
       toolCallIssued = false;
@@ -103,7 +81,6 @@ export function startStubModelServer() {
   };
 }
 
-/** Claim a free loopback port by binding one and releasing it. */
 export function reserveLoopbackPort(): number {
   const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') });
   const port = boundPort(probe);
@@ -111,11 +88,6 @@ export function reserveLoopbackPort(): number {
   return port;
 }
 
-/**
- * Write the whole config in one write. OpenClaw validates the file as a unit and rejects a
- * custom model provider that does not declare both `baseUrl` and `models`, so building it up
- * with `openclaw config set` calls fails on the first key.
- */
 export function writeOpenClawConfig(
   home: string,
   options: { modelPort: number; gatewayPort: number; token: string; workspace: string },
@@ -126,7 +98,6 @@ export function writeOpenClawConfig(
     join(stateDir, 'openclaw.json'),
     JSON.stringify(
       {
-        // Bonjour advertises the gateway over mDNS; a test gateway must stay off the network.
         plugins: { entries: { bonjour: { enabled: false } } },
         gateway: { port: options.gatewayPort, auth: { mode: 'token', token: options.token } },
         agents: {
@@ -151,10 +122,6 @@ export function writeOpenClawConfig(
   );
 }
 
-/**
- * Spawn an OpenClaw process under the isolated home, killed at `timeoutMs` so a wedged gateway
- * or agent turn cannot outlive the suite.
- */
 export async function runOpenClaw(
   args: readonly string[],
   options: { cwd: string; env: Record<string, string>; timeoutMs: number },
@@ -176,10 +143,6 @@ export async function runOpenClaw(
   return { stdout, stderr, exitCode };
 }
 
-/**
- * Run the gateway in the foreground until `stop()`. The gateway owns the agent worker it spawns,
- * so killing it reaps the whole turn; `stop` awaits the exit rather than leaving a zombie.
- */
 export async function startOpenClawGateway(options: {
   cwd: string;
   env: Record<string, string>;

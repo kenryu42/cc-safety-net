@@ -8,26 +8,22 @@ import { runRulesMigrate } from '@/cli/rule/migrate';
 import { runRuleSyncMigration } from '@/cli/rule/sync-migrate';
 import { getUpdateNotice } from '@/cli/rule/update-notice';
 import { runRulesVerify } from '@/cli/rule/verify';
-import { COMMAND_PATTERN, isReservedTransparentWrapper } from '@/engine/facade';
-import {
-  addRulebookSource,
-  getRulesConfigRuntimeErrorsForConfig,
-  loadRulesPolicy,
-  readRulesConfig,
-  removeRulebookSource,
-  syncRulesConfig,
-  writeDefaultRulesConfig,
-  writeStarterRulebook,
-} from '@/rules/policy';
-import { writeJsonAtomic } from '@/rules/policy/config-file';
+import type { Environment } from '@/core/environment';
 import {
   getPolicyFilesystemTargetForPath,
   PolicyFilesystemError,
   type PolicyFilesystemTarget,
   readPolicyFile,
-} from '@/rules/policy/filesystem';
-import { getScopePaths } from '@/rules/policy/paths';
-import { isGitHubRef, isGitHubRepositorySource, NAME_PATTERN } from '@/rules/policy/source-syntax';
+} from '@/core/io/safe-read';
+import { writeJsonAtomic } from '@/core/policy/config-file';
+import { readRulesConfig } from '@/core/policy/rules-config';
+import { getRulesConfigRuntimeErrorsForConfig, loadRulesPolicy } from '@/core/policy/scope-policy';
+import { isGitHubRef, isGitHubRepositorySource, NAME_PATTERN } from '@/core/policy/source-syntax';
+import { isReservedTransparentWrapper } from '@/core/policy/transparent-wrappers';
+import { COMMAND_PATTERN } from '@/core/rules/constants';
+import { writeDefaultRulesConfig, writeStarterRulebook } from '@/rules-manager/config-file';
+import { getScopePaths } from '@/rules-manager/paths';
+import { addRulebookSource, removeRulebookSource, syncRulesConfig } from '@/rules-manager/sync';
 
 interface RuleFlags {
   global: boolean;
@@ -57,9 +53,12 @@ const RULE_SUBCOMMANDS = new Set([
 const RULE_WRAPPER_ACTIONS = new Set(['add', 'remove', 'list']);
 const OFFICIAL_RULEBOOKS_SOURCE = 'cc-safety-net/rulebooks';
 
-export async function runRuleCommand(args: readonly string[]): Promise<number> {
+export async function runRuleCommand(
+  environment: Environment,
+  args: readonly string[],
+): Promise<number> {
   try {
-    return await runRuleCommandInternal(args);
+    return await runRuleCommandInternal(environment, args);
   } catch (error) {
     if (error instanceof PolicyFilesystemError) {
       console.error(error.message);
@@ -69,11 +68,12 @@ export async function runRuleCommand(args: readonly string[]): Promise<number> {
   }
 }
 
-async function runRuleCommandInternal(args: readonly string[]): Promise<number> {
+async function runRuleCommandInternal(
+  environment: Environment,
+  args: readonly string[],
+): Promise<number> {
   const flags = parseRuleFlags(args);
-  // An incomplete invocation such as `rule wrapper --help` is a help request, not the
-  // mistake the parser reports. A name that resolves to nothing — `rule bogus --help` —
-  // is still a typo, so it falls through to the error below.
+
   const helpCommand = flags.help ? getRuleHelpCommand(flags.positionals) : null;
   if (helpCommand) {
     printCommandHelp(helpCommand);
@@ -93,13 +93,13 @@ async function runRuleCommandInternal(args: readonly string[]): Promise<number> 
   const options = { global: flags.global };
 
   if (subcommand === 'init') {
-    const scope = getScopePaths(options);
+    const scope = getScopePaths(environment, options);
     ensureRulesConfig(scope.configTarget);
     const rulebookPath = join(scope.configDir, 'example-rules', 'rulebook.json');
     const rulebookTarget = getPolicyFilesystemTargetForPath(scope.filesystemScope, rulebookPath);
     if (flags.example && readPolicyFile(rulebookTarget) === null)
       writeStarterRulebook(rulebookTarget, 'example-rules');
-    // Nothing to synchronize: the scope is validated the way the guard loads it.
+
     const errors = getRulesConfigRuntimeErrorsForConfig(scope.configPath, scope.filesystemScope);
     for (const error of errors) console.error(error);
     if (errors.length > 0) return 1;
@@ -115,8 +115,8 @@ async function runRuleCommandInternal(args: readonly string[]): Promise<number> 
       );
       return 1;
     }
-    const scope = getScopePaths(options);
-    const result = await addRulebookSource(source, {
+    const scope = getScopePaths(environment, options);
+    const result = await addRulebookSource(environment, source, {
       ...options,
       ref: flags.ref,
       rulebooks: flags.only.length > 0 ? flags.only : undefined,
@@ -134,7 +134,7 @@ async function runRuleCommandInternal(args: readonly string[]): Promise<number> 
       console.error('rule remove requires a source');
       return 1;
     }
-    const result = await removeRulebookSource(value, {
+    const result = await removeRulebookSource(environment, value, {
       ...options,
       deleteSource: flags.deleteSource,
     });
@@ -143,54 +143,50 @@ async function runRuleCommandInternal(args: readonly string[]): Promise<number> 
   }
 
   if (subcommand === 'update') {
-    const result = await syncRulesConfig({ ...options, only: value, refresh: true });
+    const result = await syncRulesConfig(environment, { ...options, only: value, refresh: true });
     printRuleChangeResult(result, 'Rule config updated.');
     return result.ok ? 0 : 1;
   }
 
   if (subcommand === 'sync') {
-    return runRuleSyncMigration({ global: flags.global });
+    return runRuleSyncMigration(environment, { global: flags.global });
   }
 
   if (subcommand === 'list') {
-    const policy = loadRulesPolicy();
+    const policy = loadRulesPolicy(environment, { cwd: process.cwd() });
     printRulesListReport(policy);
     return policy.errors.length > 0 ? 1 : 0;
   }
 
   if (subcommand === 'wrapper') {
-    return runRuleWrapperCommand(flags);
+    return runRuleWrapperCommand(environment, flags);
   }
 
   if (subcommand === 'migrate') {
-    return runRulesMigrate({ cleanup: flags.cleanup, cwd: process.cwd() });
+    return runRulesMigrate(environment, { cleanup: flags.cleanup, cwd: process.cwd() });
   }
 
   if (subcommand === 'doc') {
     console.log(RULE_DOC);
-    const notice = await getUpdateNotice();
+    const notice = await getUpdateNotice(environment);
     if (notice) console.error(notice);
     return 0;
   }
 
   if (subcommand === 'verify') {
-    return runRulesVerify();
+    return runRulesVerify(environment);
   }
 
   return 1;
 }
 
-/**
- * Reuses the existing per-leaf entries so `rule <leaf> --help` describes that leaf, not the
- * tree. Returns null when the positionals name nothing the help can answer for.
- */
 function getRuleHelpCommand(positionals: string[]) {
   if (positionals.length === 0) return ruleCommand;
   const leaves = ruleCommand.subcommands.filter(
     (leaf) => leaf.usage.split(' ')[0] === positionals[0],
   );
   if (leaves.length === 0) return null;
-  // `rule wrapper` covers three actions; showing one of them would hide the other two.
+
   if (positionals.length === 1 && leaves.length > 1) {
     return {
       name: `rule ${positionals[0]}`,
@@ -256,10 +252,7 @@ function validateRuleFlags(flags: RuleFlags): void {
       flags.errors.push("--delete-source is only valid with 'rule remove'");
     }
   }
-  // No subcommand carries --check honestly any more: sync migrates leftovers, and an
-  // add or update dry-run would have to fetch and validate the candidate to mean
-  // anything, so accepting the flag reports success for content nothing checked.
-  // `rule verify` is the offline validation command.
+
   if (flags.check && subcommand) {
     flags.errors.push(unknownRuleOption(subcommand, '--check'));
   }
@@ -291,11 +284,6 @@ function validateRuleFlags(flags: RuleFlags): void {
   }
 }
 
-/**
- * A selection alone names the official repository: `--ref`/`--only` only mean anything for an
- * owner/repo source, so omitting it there is the shorthand, not a mistake. A bare `rule add`
- * keeps erroring, so taking the whole official catalog stays an explicit act.
- */
 function resolveRuleAddSource(flags: RuleFlags): string | undefined {
   if (flags.positionals[1]) return flags.positionals[1];
   if (flags.ref || flags.only.length > 0) return OFFICIAL_RULEBOOKS_SOURCE;
@@ -370,10 +358,10 @@ function ensureRulesConfig(configPath: PolicyFilesystemTarget): void {
   });
 }
 
-async function runRuleWrapperCommand(flags: RuleFlags): Promise<number> {
+async function runRuleWrapperCommand(environment: Environment, flags: RuleFlags): Promise<number> {
   const action = flags.positionals[1];
   const command = flags.positionals[2];
-  const configPath = getScopePaths({ global: flags.global }).configTarget;
+  const configPath = getScopePaths(environment, { global: flags.global }).configTarget;
 
   if (action === 'list') {
     const loaded = readRulesConfig(configPath);

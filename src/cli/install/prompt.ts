@@ -1,17 +1,12 @@
-/**
- * The interactive install target picker: a small raw-mode readline loop that owns
- * keypress mapping, cursor movement, selection state, and frame redraws.
- */
-
 import * as readline from 'node:readline';
 import { colors } from '@/cli/utils/colors';
-import type { InstallTargetChoice } from '@/integrations/install/choices';
-import type { InstallAction, InstallTarget } from '@/integrations/install/targets';
+import type { InstallTargetChoice } from '@/hosts/install/choices';
+import type { InstallAction, InstallTarget } from '@/hosts/install/targets';
 
 type InstallPromptOptions = {
   input?: NodeJS.ReadStream;
   output?: NodeJS.WriteStream;
-  /** Test seam for Ctrl-C, which otherwise raises SIGINT on this process. */
+
   onInterrupt?: () => void;
 };
 
@@ -199,7 +194,6 @@ type PromptFrameControls<T> = {
   draw: () => void;
 };
 
-/** Runs a raw-mode keypress prompt that owns frame redraws and terminal state restoration. */
 function promptFramedSelection<T>(config: {
   input: NodeJS.ReadStream;
   output: NodeJS.WriteStream;
@@ -248,7 +242,6 @@ function promptFramedSelection<T>(config: {
   });
 }
 
-/** Asks which Kimi Code install method to use; resolves null when the user cancels. */
 export function promptKimiInstallMethod(
   options: InstallPromptOptions & { globalHookInstalled?: boolean } = {},
 ): Promise<KimiInstallMethod | null> {
@@ -260,7 +253,6 @@ export function promptKimiInstallMethod(
     render: () => renderKimiMethodSelection(cursor, options.globalHookInstalled === true),
     onKey: (inputValue, key, controls) => {
       if (key.ctrl && key.name === 'c') {
-        // Ctrl-C keeps the signal convention, matching the target picker: restore first, then raise.
         controls.finish(null);
         (options.onInterrupt ?? (() => process.kill(process.pid, 'SIGINT')))();
         return;
@@ -270,7 +262,6 @@ export function promptKimiInstallMethod(
         return controls.finish(KIMI_METHODS[cursor] as KimiInstallMethod);
       }
       if (key.name === 'up' || key.name === 'down' || inputValue === 'k' || inputValue === 'j') {
-        // With two rows, any move flips the cursor, so up from the top wraps to the bottom.
         cursor = (cursor + 1) % KIMI_METHODS.length;
         controls.draw();
       }
@@ -305,7 +296,6 @@ export function promptInstallTargets(
       state = next.state;
 
       if (next.done === 'interrupt') {
-        // Ctrl-C keeps the signal convention, matching the startup banner: restore first, then raise.
         controls.finish(null);
         (options.onInterrupt ?? (() => process.kill(process.pid, 'SIGINT')))();
         return;

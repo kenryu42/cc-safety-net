@@ -1,7 +1,3 @@
-/**
- * Main entry point for the doctor command.
- */
-
 import { getActivitySummary } from '@/cli/doctor/activity';
 import { getConfigInfo } from '@/cli/doctor/config';
 import { getEnvironmentInfo } from '@/cli/doctor/environment';
@@ -23,24 +19,25 @@ import { checkForUpdates } from '@/cli/doctor/updates';
 import { printInstallBanner } from '@/cli/install/banner';
 import { findRuleV2Leftovers } from '@/cli/rule/sync-migrate';
 import { resolveAfterOptionalBanner } from '@/cli/startup/banner';
-import {
-  describeConfigState,
-  getCCSafetyNetEnvModes,
-  loadPolicySnapshot,
-  resolveEffectiveDestructiveCommandRules,
-} from '@/engine/facade';
-import { detectAllHooks } from '@/integrations/detect';
-import type { DoctorOptions, DoctorReport } from '@/integrations/doctor-types';
-import { runIntegrationSelfTest } from '@/integrations/self-test';
-import { getPackageVersion, getSystemInfo } from '@/integrations/system-info';
+import type { Environment } from '@/core/environment';
+import { resolveEffectiveDestructiveCommandRules } from '@/core/policy/effective-rules';
+import { getCCSafetyNetEnvModes } from '@/core/policy/env';
+import { describeConfigState, loadPolicySnapshot } from '@/core/policy/snapshot';
+import { detectAllHooks } from '@/hosts/detect/index';
+import type { DoctorOptions, DoctorReport } from '@/hosts/doctor-types';
+import { runIntegrationSelfTest } from '@/hosts/self-test';
+import { getPackageVersion, getSystemInfo } from '@/hosts/system-info';
 
 export { parseDoctorFlags } from '@/cli/doctor/flags';
 
-export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
+export async function runDoctor(
+  environment: Environment,
+  options: DoctorOptions = {},
+): Promise<number> {
   const report = await resolveAfterOptionalBanner(
     !options.json,
     () => {
-      const reportPromise = collectDoctorReport(options);
+      const reportPromise = collectDoctorReport(environment, options);
       return {
         ready: reportPromise,
         finish: () => reportPromise,
@@ -56,31 +53,32 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<number> {
     printReport(report);
   }
 
-  // Findings own the failure contract so a rendered error can never exit 0;
-  // the self-test stays a fact check because it has no finding rule.
   return report.engineSelfTest.failed > 0 ||
     report.findings.some((finding) => finding.severity === 'error')
     ? 1
     : 0;
 }
 
-async function collectDoctorReport(options: DoctorOptions): Promise<DoctorReport> {
+async function collectDoctorReport(
+  environment: Environment,
+  options: DoctorOptions,
+): Promise<DoctorReport> {
   const cwd = options.cwd ?? process.cwd();
 
   const system = await getSystemInfo();
-  const hooks = detectAllHooks(cwd, {
+  const hooks = detectAllHooks(environment, cwd, {
     ampPluginListOutput: system.ampPluginListOutput,
     codexPluginListOutput: system.codexPluginListOutput,
     copilotCliVersion: system.versions['copilot-cli'],
   });
-  const configInfo = getConfigInfo(cwd);
-  const environment = getEnvironmentInfo();
-  const snapshot = loadPolicySnapshot({ cwd });
+  const configInfo = getConfigInfo(environment, cwd);
+  const environmentInfo = getEnvironmentInfo(environment);
+  const snapshot = loadPolicySnapshot(environment, { cwd });
   const policy = snapshot.policy;
-  const modes = getCCSafetyNetEnvModes(policy);
+  const modes = getCCSafetyNetEnvModes(policy, environment.env);
   const ruleStates = resolveEffectiveDestructiveCommandRules(policy, modes.capabilities);
-  const activity = getActivitySummary(7);
-  const v2Leftovers = findRuleV2Leftovers(cwd);
+  const activity = getActivitySummary(environment, 7);
+  const v2Leftovers = findRuleV2Leftovers(environment, cwd);
   const update = options.skipUpdateCheck
     ? {
         currentVersion: getPackageVersion(),
@@ -91,13 +89,13 @@ async function collectDoctorReport(options: DoctorOptions): Promise<DoctorReport
 
   const report: Omit<DoctorReport, 'findings'> = {
     hooks,
-    engineSelfTest: runIntegrationSelfTest(),
+    engineSelfTest: runIntegrationSelfTest(environment),
     userConfig: configInfo.userConfig,
     projectConfig: configInfo.projectConfig,
     configState: describeConfigState(snapshot),
     effectiveRules: configInfo.effectiveRules,
     shadowedRules: configInfo.shadowedRules,
-    environment,
+    environment: environmentInfo,
     effectiveSafety: {
       selectedPreset: policy.safety.level ?? 'standard',
       level: modes.effectiveLevel,
@@ -119,7 +117,7 @@ async function collectDoctorReport(options: DoctorOptions): Promise<DoctorReport
       ...(snapshot.policyScopes ? { policyScopes: snapshot.policyScopes } : {}),
     },
     ...(v2Leftovers.length > 0 ? { v2Leftovers } : {}),
-    posture: getDoctorPosture(configInfo.userConfig.path),
+    posture: getDoctorPosture(environment, configInfo.userConfig.path),
     activity,
     update,
     system,
@@ -128,42 +126,32 @@ async function collectDoctorReport(options: DoctorOptions): Promise<DoctorReport
 }
 
 function printReport(report: DoctorReport): void {
-  // 1. Hook integration
   console.log();
   console.log(formatHooksSection(report.hooks));
   console.log();
 
-  // 2. Shared guard engine verification
   console.log(formatEngineSelfTestSection(report.engineSelfTest));
   console.log();
 
-  // 3. Configuration with Rules Table
   console.log(formatConfigSection(report));
   console.log();
 
-  // 4. Environment
   console.log(formatEnvironmentSection(report.environment));
   console.log();
 
-  // 5. Effective safety
   console.log(formatEffectiveSafetySection(report));
   console.log();
 
-  // 6. Findings
   console.log(formatFindingsSection(report.findings));
   console.log();
 
-  // 7. Activity
   console.log(formatActivitySection(report.activity));
   console.log();
 
-  // 8. System Info
   console.log(formatSystemInfoSection(report.system));
   console.log();
 
-  // 9. Update Check
   console.log(formatUpdateSection(report.update));
 
-  // Summary
   console.log(formatSummary(report));
 }

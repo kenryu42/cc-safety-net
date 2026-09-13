@@ -1,9 +1,5 @@
-/**
- * CLI flag parsing for the doctor command.
- */
-
 import { parseCommandArgs, reportCommandArgErrors } from '@/cli/args';
-import type { DoctorOptions } from '@/integrations/doctor-types';
+import type { DoctorOptions } from '@/hosts/doctor-types';
 
 export function parseDoctorFlags(args: string[]): DoctorOptions | null {
   const parsed = parseCommandArgs(

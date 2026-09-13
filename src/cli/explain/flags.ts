@@ -1,7 +1,3 @@
-/**
- * CLI flag parsing for the explain command.
- */
-
 import { existsSync } from 'node:fs';
 import { parseCommandArgs, reportCommandArgErrors } from '@/cli/args';
 
@@ -34,9 +30,6 @@ export function parseExplainFlags(args: string[]): ExplainFlags | null {
     return null;
   }
 
-  // When the user passes a full command as a single argument (e.g., explain "git status | rm -rf /"),
-  // use it directly to preserve shell operators. Otherwise, single-quote every argument that is
-  // not already inert so multiple arguments survive the reparse as themselves.
   const command =
     parsed.positionals.length === 1
       ? parsed.positionals[0]

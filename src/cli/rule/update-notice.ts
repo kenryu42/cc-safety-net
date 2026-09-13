@@ -1,8 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { getAuditLogHomeDir } from '@/audit/writer';
 import { checkForUpdates, isNewerVersion } from '@/cli/doctor/updates';
-import { getAuditLogHomeDir } from '@/engine/facade';
-import { getPackageVersion } from '@/integrations/system-info';
+import type { Environment } from '@/core/environment';
+import { getPackageVersion } from '@/hosts/system-info';
 
 type UpdateCache = {
   lastCheck?: number;
@@ -14,10 +15,13 @@ type UpdateCache = {
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const RENOTIFY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function getUpdateNotice(now = Date.now()): Promise<string | null> {
-  if (process.env.CC_SAFETY_NET_NO_UPDATE_CHECK) return null;
+export async function getUpdateNotice(
+  environment: Environment,
+  now = Date.now(),
+): Promise<string | null> {
+  if (environment.env.get('CC_SAFETY_NET_NO_UPDATE_CHECK')) return null;
 
-  const home = getAuditLogHomeDir();
+  const home = getAuditLogHomeDir(environment);
   if (!home) return null;
 
   const cachePath = join(home, '.cc-safety-net', 'update-check.json');
@@ -49,10 +53,6 @@ export async function getUpdateNotice(now = Date.now()): Promise<string | null> 
   return `UPDATE_AVAILABLE: cc-safety-net v${latest} is available (running v${current}). Ask the user once whether to run \`npx -y cc-safety-net@latest update\`; continue the current task either way and do not raise this again.`;
 }
 
-// Any unreadable or malformed cache counts as empty so the check self-heals on
-// the next successful write instead of going silent forever. That includes
-// non-finite or future timestamps (JSON's 1e999 parses to Infinity), which
-// would otherwise suppress the poll or the notice indefinitely.
 async function readUpdateCache(path: string, now: number): Promise<UpdateCache> {
   const value = await readFile(path, 'utf8')
     .then((json) => JSON.parse(json) as unknown)

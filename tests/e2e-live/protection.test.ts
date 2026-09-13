@@ -11,12 +11,10 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listAuditLogFiles } from '@/engine/audit-scan';
-import type { AuditLogEntry } from '@/ir/audit';
+import { listAuditLogFiles } from '@/audit/reader';
+import type { AuditLogEntry } from '@/core/audit';
 import { buildRuntimeBundles } from '../../scripts/build-runtime';
 
-// Live tests drive real agent binaries and spend real usage, so they are
-// opt-in: `bun run test:e2e:live` with each agent's auth present.
 const liveEnabled = process.env.CC_SAFETY_NET_E2E_LIVE === '1';
 const claudeBinary = Bun.which('claude');
 const codexBinary = Bun.which('codex');
@@ -160,8 +158,6 @@ for (const live of liveAgents) {
           cwd,
           home,
         );
-        // The prompt demands the content back, so a leak past the hook
-        // would surface the canary in the agent's reply.
         expect(transcript).not.toContain('live-canary-1f2e3d');
         const entries = readAuditEntries(home);
         const denied = entries.some(
@@ -180,11 +176,6 @@ for (const live of liveAgents) {
   });
 }
 
-// A real, harmless, observable canary: `touch` would create the marker file in the
-// workspace if it ever ran, so the deny is proven twice over — by the deny audit entry
-// and by the marker's absence afterwards. Never point the canary at a real destructive
-// command. Custom rules match on arguments, so the rule keys on the marker name, which
-// no legitimate command uses.
 const CANARY_BINARY = 'touch';
 const CANARY_MARKER = 'ccsn-canary-marker-7f3a2b';
 const CANARY_COMMAND = `${CANARY_BINARY} ${CANARY_MARKER}`;
@@ -192,20 +183,12 @@ const CANARY_RULEBOOK = 'live-canary';
 const CANARY_RULE = 'block-canary-marker';
 const CANARY_RULE_ID = `custom.${CANARY_RULEBOOK}/${CANARY_RULE}`;
 
-// `-p` takes the same permission modes as an interactive session, so every mode the
-// deny claim covers is scriptable from this harness.
 const claudePermissionModes = [
   { mode: 'default', argv: [] },
   { mode: 'auto', argv: ['--permission-mode', 'auto'] },
   { mode: 'bypassPermissions', argv: ['--dangerously-skip-permissions'] },
 ] as const;
 
-/**
- * Verified 2026-09-01 against Claude Code 2.1.251: the PreToolUse deny held in default,
- * auto, and bypassPermissions mode, and the canary marker was never created. The
- * invariant is per host version — re-run `bun run test:e2e:live` whenever the host CLI is
- * upgraded, and qualify any published claim with the version it was verified against.
- */
 describe.skipIf(claudeLive.skip)('live claude-code deny holds in every permission mode', () => {
   test('the canary rule denies the marker command before any live run', async () => {
     await withLiveWorkspace(setupCanaryHome, async ({ cwd, home }) => {
@@ -240,7 +223,6 @@ describe.skipIf(claudeLive.skip)('live claude-code deny holds in every permissio
             `No deny audit entry for the canary in ${permission.mode} mode with ${claudeVersion()}.\ntranscript:\n${transcript}\naudit:\n${JSON.stringify(entries, null, 2)}`,
           );
         }
-        // A host that ran the hook but ignored its deny would leave the marker behind.
         expect(existsSync(join(cwd, CANARY_MARKER))).toBe(false);
         expect(
           entries.filter(
@@ -341,8 +323,6 @@ async function runAgent(
 
 function liveEnv(home: string) {
   return {
-    // Drop API keys so the spawned agents authenticate with subscription
-    // credentials instead of pay-per-token billing.
     ...Object.fromEntries(
       Object.entries(process.env).filter(
         (entry): entry is [string, string] =>

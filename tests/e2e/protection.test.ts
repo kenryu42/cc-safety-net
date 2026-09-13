@@ -99,8 +99,6 @@ const adapters = [
       tool_name: 'Shell',
       tool_input: { command },
     }),
-    // Cursor and Grok Build emit a decision on allow too, so silence cannot stand
-    // in for permission the way it does for the others.
     isAllowOutput: (output: Record<string, unknown>) => output.permission === 'allow',
     denyReason: (output: Record<string, unknown>) => {
       expect(output.permission).toBe('deny');
@@ -205,7 +203,7 @@ describe('built CLI protection contract', () => {
     ['secret metadata', 'test -f "$HOME/.ssh/id_rsa"'],
     [
       'self-explain output',
-      `bun src/cli/cc-safety-net.ts explain --json --cwd /tmp/ccsn-scout 'cat /tmp/ccsn-scout/fixture/.env' | jq -c '{result}'`,
+      `bun src/entries/bin.ts explain --json --cwd /tmp/ccsn-scout 'cat /tmp/ccsn-scout/fixture/.env' | jq -c '{result}'`,
     ],
   ] as const)('Coding CLI allows log-derived %s in standard mode', async (name, command) => {
     await withWorkspace(async ({ cwd, home }) => {
@@ -262,10 +260,6 @@ describe('built CLI protection contract', () => {
     });
   });
 
-  // Dotfile and password managers routinely make ~/.ssh a symlink. Canonicalizing
-  // the candidate rewrites it to the link target, which no longer starts with
-  // `~/.ssh`, so the rule that names the directory used to stop matching. Guarded
-  // at the packaged-artifact level because that binary is what ships.
   test('Coding CLI blocks credentials under a symlinked ~/.ssh', async () => {
     await withWorkspace(async ({ cwd, home }) => {
       mkdirSync(join(home, 'vault', 'ssh'), { recursive: true });
@@ -288,8 +282,6 @@ describe('built CLI protection contract', () => {
     });
   });
 
-  // This fixture proves POSIX quoting preserves a regex backslash, which is not a Windows-shell
-  // capability. PowerShell quoting is covered by its own parser and integration tests.
   test.skipIf(process.platform === 'win32')(
     'Coding CLI allows a regex operand of an unmodelled search tool and records only the allow decision',
     async () => {

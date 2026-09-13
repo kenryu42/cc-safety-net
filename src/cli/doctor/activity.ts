@@ -1,21 +1,16 @@
-/**
- * Audit log activity summary for the doctor command.
- */
-
 import { basename } from 'node:path';
-import {
-  formatRelativeTime,
-  getAuditLogsDir,
-  listAuditLogFiles,
-  pruneExpiredAuditLogs,
-  readAuditLogEntries,
-} from '@/engine/facade';
-import type { ActivitySummary } from '@/integrations/doctor-types';
-import type { AuditLogEntry } from '@/ir/audit';
+import { formatRelativeTime } from '@/audit/display';
+import { listAuditLogFiles, readAuditLogEntries } from '@/audit/reader';
+import { pruneExpiredAuditLogs } from '@/audit/retention';
+import { getAuditLogsDir } from '@/audit/writer';
+import type { AuditLogEntry } from '@/core/audit';
+import type { Environment } from '@/core/environment';
+import type { ActivitySummary } from '@/hosts/doctor-types';
 
 export function getActivitySummary(
+  environment: Environment,
   days: number = 7,
-  logsDir: string | null = getAuditLogsDir(),
+  logsDir: string | null = getAuditLogsDir(environment),
 ): ActivitySummary {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const recentEntries: AuditLogEntry[] = [];
@@ -25,15 +20,12 @@ export function getActivitySummary(
   let oldestEntryTs: number | undefined;
   let newestEntry: string | undefined;
   let newestEntryTs: number | undefined;
-  if (logsDir) pruneExpiredAuditLogs(logsDir);
-  // Counted so the report can say the summary is partial; silence here reads as
-  // "nothing was ever blocked" when the truth is "the trail could not be read".
+  if (logsDir) pruneExpiredAuditLogs(environment, logsDir);
+
   const skips = { count: 0 };
   const files = logsDir ? listAuditLogFiles(logsDir, skips) : [];
 
   for (const file of files) {
-    // The shared reader validates each record's shape, so every field used
-    // below - and by the formatter downstream - is a string when present.
     for (const entry of readAuditLogEntries(file, skips)) {
       if (entry.decision === 'allow') {
         continue;

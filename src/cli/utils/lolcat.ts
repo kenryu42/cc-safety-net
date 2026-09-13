@@ -1,33 +1,3 @@
-/*
- * Rainbow rendering and animation behavior originally ported from lolcat:
- * https://github.com/busyloop/lolcat
- *
- * Copyright (c) 2016, moe@busyloop.net
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of the lolcat nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 export type LolcatOutput = {
   readonly isTTY?: boolean;
   write(chunk: string): unknown;
@@ -78,20 +48,12 @@ const RESTORE_CURSOR = '\x1b8';
 const SAVE_CURSOR = '\x1b7';
 const SHOW_CURSOR = '\x1b[?25h';
 
-// Synchronized output (DEC private mode 2026): terminals that support it (kitty, WezTerm,
-// foot, Ghostty, iTerm2, Alacritty) buffer each frame and swap it atomically, eliminating
-// tearing. ECMA-48 requires unsupported terminals to ignore unknown private modes.
 const SYNC_BEGIN = '\x1b[?2026h';
 const SYNC_END = '\x1b[?2026l';
 
-// OKLCH rainbow: constant lightness and chroma keep luminance perceptually flat while the
-// hue rotates, avoiding the loud yellow/cyan spikes of phased-sine rainbows.
 const RAINBOW_CHROMA = 0.15;
 const RAINBOW_LIGHTNESS = 0.72;
 
-// Wavefront choreography: the front sweeps left to right on a smootherstep curve. Cells in a
-// window around it flicker through scramble glyphs before settling, and a Gaussian glow with
-// a bold peak rides the front like an energy beam.
 const GLOW_AMPLITUDE = 0.8;
 const GLOW_BOLD_THRESHOLD = 0.3;
 const GLOW_SIGMA = 2.5;
@@ -171,7 +133,6 @@ function rainbow(frequency: number, offset: number): Rgb {
   return oklchToSrgb(RAINBOW_LIGHTNESS, RAINBOW_CHROMA, hueDegrees);
 }
 
-/** Truecolor escape for the rainbow at a given offset, for spinner accents. */
 export function rainbowColorEscape(offset: number, frequency = DEFAULT_FREQUENCY) {
   const color = rainbow(frequency, offset);
   return `\x1b[38;2;${color.red};${color.green};${color.blue}m`;
@@ -185,7 +146,6 @@ function mixTowardWhite(color: Rgb, amount: number): Rgb {
   };
 }
 
-/** Deterministic per-cell noise so the animation is reproducible without Math.random. */
 function hash01(a: number, b: number, c: number) {
   const mixed =
     Math.imul(a + 0x9e3779b9, 0x85ebca6b) ^
@@ -204,13 +164,11 @@ function scrambleGlyph(lineIndex: number, columnIndex: number, frame: number) {
   return SCRAMBLE_POOL[index] ?? '░';
 }
 
-/** Ken Perlin's smootherstep: C2-continuous, zero velocity and acceleration at both ends. */
 function smootherstep(progress: number) {
   const t = clamp01(progress);
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
-/** Emits SGR only when color or weight changes, instead of resetting every character. */
 function buildLine(cells: readonly FrameCell[]) {
   if (cells.length === 0) return '';
 
@@ -270,7 +228,7 @@ function wavefrontLineCells(
 
   return line.slice(0, cutoff).map((character, columnIndex) => {
     const base = rainbow(frequency, seed + lineIndex + columnIndex / spread + seedOffset);
-    // Per-cell jitter gives the wavefront an organic, non-straight edge.
+
     const position = columnIndex + hash01(lineIndex, columnIndex, 7919) * 2 - 1;
     if (position > front + SCRAMBLE_LEAD) {
       return { ...base, bold: false, character: ' ' };

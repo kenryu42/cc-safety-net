@@ -4,6 +4,18 @@
 - Keep implementation modular; put tests in `tests/` mirroring `src/`, not colocated in `src/`.
 - Files in `docs/` use lowercase kebab-case names.
 
+## Testing
+
+- A behavior change lands as a failing expectation first — a contract corpus row or a stated
+  assertion — then the fix. Re-recording a snapshot or editing the verdict table is never the
+  first step.
+- State what a test expects; do not record it. Snapshots (`toMatchSnapshot`) are permitted only for
+  the two output surfaces whose bytes are the contract: `explain` (`tests/cli/explain`) and
+  `doctor --json` (`tests/cli/doctor`).
+- `tests/fixtures/gate/harvested-verdicts.jsonl` is the readable verdict table, edited by hand. A
+  change that re-records a snapshot or flips a table row must name in its commit message which
+  entries changed and why, alongside the contract row that explains the flip.
+
 ## Scope Discipline
 
 Over-engineering is this project's dominant failure mode. The evidence rule that governs analyzer

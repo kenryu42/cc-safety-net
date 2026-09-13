@@ -1,10 +1,7 @@
-/**
- * Output formatting utilities for the doctor command.
- */
-
 import { colors } from '@/cli/utils/colors';
 import { renderTerminalText } from '@/cli/utils/terminal';
-import { doctorIntegrationOrder, getIntegrationDisplayName } from '@/integrations/catalog';
+import { describePolicyScope } from '@/core/policy/types';
+import { doctorIntegrationOrder, getIntegrationDisplayName } from '@/hosts/catalog';
 import type {
   ActivitySummary,
   ConfigSourceInfo,
@@ -15,24 +12,21 @@ import type {
   HookStatus,
   SystemInfo,
   UpdateInfo,
-} from '@/integrations/doctor-types';
-import type { SelfTestSummary } from '@/integrations/self-test';
-import { describePolicyScope } from '@/ir/policy';
+} from '@/hosts/doctor-types';
+import type { SelfTestSummary } from '@/hosts/self-test';
 
 interface TableOptions {
   headers?: string[];
   rows: string[][];
 }
 
-// Colour codes occupy no columns, so every width is measured on the stripped cell.
-// The escape byte lives in a constant because a regex literal may not contain one.
 const ANSI_STYLE = new RegExp(`${'\x1b'}\\[[0-9;]*m`, 'g');
 const visibleWidth = (cell: string) => cell.replace(ANSI_STYLE, '').length;
 
 function formatAsciiTable(options: TableOptions): string {
   const colWidths = (options.headers ?? options.rows[0] ?? []).map((h, i) => {
     const maxDataWidth = Math.max(...options.rows.map((r) => visibleWidth(r[i] ?? '')));
-    // A headerless table measures its first data row here, which may be coloured.
+
     return Math.max(visibleWidth(h), maxDataWidth);
   });
   const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - visibleWidth(s)));
@@ -53,9 +47,6 @@ function formatAsciiTable(options: TableOptions): string {
   ].join('\n');
 }
 
-/**
- * Format integration discovery and configuration inspection.
- */
 export function formatHooksSection(hooks: HookStatus[]): string {
   const lines: string[] = [];
 
@@ -79,12 +70,10 @@ export function formatHooksSection(hooks: HookStatus[]): string {
     }
   }
 
-  // Show warnings
   for (const w of warnings) {
     lines.push(`   Warning (${w.platform}): ${w.message}`);
   }
 
-  // Show errors
   for (const e of errors) {
     lines.push(colors.red(`   Error (${e.platform}): ${e.message}`));
   }
@@ -92,9 +81,6 @@ export function formatHooksSection(hooks: HookStatus[]): string {
   return lines.join('\n');
 }
 
-/**
- * Format hooks as an ASCII table with colored status.
- */
 function formatHooksTable(hooks: HookStatus[]): string {
   const headers = ['Platform', 'Discovery', 'Configuration', 'Inspection'];
 
@@ -128,7 +114,6 @@ function formatHooksTable(hooks: HookStatus[]): string {
   return formatAsciiTable({ headers, rows: rowData });
 }
 
-/** Format the shared guard-engine synthetic self-test. */
 export function formatEngineSelfTestSection(selfTest: SelfTestSummary): string {
   const status =
     selfTest.failed > 0
@@ -169,9 +154,6 @@ export function formatRulesTable(rules: EffectiveRule[]): string {
   return formatAsciiTable({ headers, rows });
 }
 
-/**
- * Format the config section with tables.
- */
 export function formatConfigSection(report: DoctorReport): string {
   const lines: string[] = [];
 
@@ -180,7 +162,6 @@ export function formatConfigSection(report: DoctorReport): string {
 
   lines.push('');
 
-  // Effective rules table
   if (report.effectiveRules.length > 0) {
     lines.push(`   Effective rules (${report.effectiveRules.length} total):`);
     lines.push(formatRulesTable(report.effectiveRules));
@@ -188,7 +169,6 @@ export function formatConfigSection(report: DoctorReport): string {
     lines.push('   Effective rules: (none - using built-in rules only)');
   }
 
-  // Shadow warnings
   for (const shadow of report.shadowedRules) {
     lines.push('');
     lines.push(`   Note: Project rule "${shadow.name}" shadows user rule with same name`);
@@ -197,9 +177,6 @@ export function formatConfigSection(report: DoctorReport): string {
   return lines.join('\n');
 }
 
-/**
- * Format config sources as an ASCII table with colored status.
- */
 function formatConfigTable(userConfig: ConfigSourceInfo, projectConfig: ConfigSourceInfo): string {
   const headers = ['Scope', 'Status'];
 
@@ -217,9 +194,6 @@ function formatConfigTable(userConfig: ConfigSourceInfo, projectConfig: ConfigSo
   return formatAsciiTable({ headers, rows });
 }
 
-/**
- * Format the environment section as a table with status icons.
- */
 export function formatEnvironmentSection(envVars: EnvVarInfo[]): string {
   const lines: string[] = [];
   lines.push('Environment');
@@ -248,8 +222,6 @@ export function formatEffectiveSafetySection(report: DoctorReport): string {
     lines.push(`   ${label}: ${state} via ${capability.source}${sources}`);
   }
 
-  // Display, not a gate: the project scope is honored as written, so these lines
-  // report the merge result instead of becoming findings.
   if (scopes && scopes.weakenings.length > 0) {
     lines.push('   Project policy deltas:');
     for (const weakening of scopes.weakenings) lines.push(`      ${weakening}`);
@@ -288,9 +260,6 @@ export function formatFindingsSection(findings: DoctorFinding[]): string {
   return lines.join('\n');
 }
 
-/**
- * Format environment variables as an ASCII table with ✓/✗ icons.
- */
 function formatEnvironmentTable(envVars: EnvVarInfo[]): string {
   const headers = ['Variable', 'Status', 'Legacy'];
   const rows = envVars.map((v) => {
@@ -303,13 +272,9 @@ function formatEnvironmentTable(envVars: EnvVarInfo[]): string {
   return formatAsciiTable({ headers, rows });
 }
 
-/**
- * Format the activity section as a table.
- */
 export function formatActivitySection(activity: ActivitySummary): string {
   const lines: string[] = [];
 
-  // Header with summary
   if (activity.totalBlocked === 0) {
     lines.push('Recent Activity');
     lines.push('   No blocked commands in the last 7 days');
@@ -330,13 +295,9 @@ export function formatActivitySection(activity: ActivitySummary): string {
   return lines.join('\n');
 }
 
-/**
- * Format recent activity entries as an ASCII table.
- */
 function formatActivityTable(entries: Array<{ relativeTime: string; command: string }>): string {
   const headers = ['Time', 'Command'];
 
-  // Build rows - truncate long commands
   const rows = entries.map((e) => {
     const command = renderTerminalText(e.command.replace(/\r\n|\r|\n/g, ' ↵ ').replace(/\t/g, ' '));
     const cmd = command.length > 40 ? `${command.slice(0, 37)}...` : command;
@@ -346,14 +307,10 @@ function formatActivityTable(entries: Array<{ relativeTime: string; command: str
   return formatAsciiTable({ headers, rows });
 }
 
-/**
- * Format the update section as a table.
- */
 export function formatUpdateSection(update: UpdateInfo): string {
   const lines: string[] = [];
   lines.push('Update Check');
 
-  // Check if update check was skipped (latestVersion is null and no error)
   if (update.latestVersion === null && !update.error) {
     lines.push(
       formatUpdateTable([
@@ -364,7 +321,6 @@ export function formatUpdateSection(update: UpdateInfo): string {
     return lines.join('\n');
   }
 
-  // Check if there was an error
   if (update.error) {
     lines.push(
       formatUpdateTable([
@@ -376,7 +332,6 @@ export function formatUpdateSection(update: UpdateInfo): string {
     return lines.join('\n');
   }
 
-  // Check if update is available
   if (update.updateAvailable) {
     lines.push(
       formatUpdateTable([
@@ -391,7 +346,6 @@ export function formatUpdateSection(update: UpdateInfo): string {
     return lines.join('\n');
   }
 
-  // Up to date
   lines.push(
     formatUpdateTable([
       ['Status', `${colors.green('\u2713')} Up to date`],
@@ -401,16 +355,10 @@ export function formatUpdateSection(update: UpdateInfo): string {
   return lines.join('\n');
 }
 
-/**
- * Format update info as an ASCII table.
- */
 function formatUpdateTable(rows: string[][]): string {
   return formatAsciiTable({ rows });
 }
 
-/**
- * Format the system info section as a table.
- */
 export function formatSystemInfoSection(system: SystemInfo): string {
   const lines: string[] = [];
   lines.push('System Info');
@@ -419,9 +367,6 @@ export function formatSystemInfoSection(system: SystemInfo): string {
   return lines.join('\n');
 }
 
-/**
- * Format system info as an ASCII table.
- */
 function formatSystemInfoTable(system: SystemInfo): string {
   const headers = ['Component', 'Version'];
 
@@ -447,9 +392,6 @@ function formatSystemInfoTable(system: SystemInfo): string {
   return formatAsciiTable({ headers, rows });
 }
 
-/**
- * Format the summary line.
- */
 export function formatSummary(report: DoctorReport): string {
   if (report.findings.length === 0) {
     return colors.green('\nNo findings from inspected doctor facts.');

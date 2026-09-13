@@ -1,0 +1,147 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
+import { buildAmpArtifactHeader } from '@/hosts/amp/artifact';
+import { buildOpenClawArtifactHeader } from '@/hosts/openclaw/artifact';
+import pkg from '../../package.json';
+import {
+  buildAmpBundle,
+  buildOpenClawBundle,
+  buildRuntimeBundles,
+} from '../../scripts/build-runtime';
+import { verifyBuildArtifacts } from '../../scripts/verify-build';
+
+const STATIC_SPECIFIER = /\b(?:from|import|require\s*\()\s*["']([^"']+)["']/g;
+const DYNAMIC_SPECIFIER = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+
+function readSpecifiers(source: string, pattern: RegExp): string[] {
+  return [...source.matchAll(pattern)]
+    .map((match) => match[1])
+    .filter((specifier): specifier is string => specifier !== undefined);
+}
+
+function readStaticClosure(start: string): string[] {
+  const visited = new Set<string>();
+  const pending = [start];
+  while (pending.length > 0) {
+    const path = pending.shift();
+    if (path === undefined || visited.has(path)) continue;
+    visited.add(path);
+    pending.push(
+      ...readSpecifiers(readFileSync(path, 'utf8'), STATIC_SPECIFIER)
+        .filter((specifier) => specifier.startsWith('.'))
+        .map((specifier) => resolve(dirname(path), specifier)),
+    );
+  }
+  return [...visited].map((path) => readFileSync(path, 'utf8'));
+}
+
+describe('the build', () => {
+  const root = join(
+    process.env.CC_SAFETY_NET_TEST_TMPDIR ?? tmpdir(),
+    `build-closure-${process.pid}`,
+  );
+  const outdir = join(root, 'dist');
+  const bin = join(outdir, 'bin', 'cc-safety-net.js');
+  const hook = join(outdir, 'bin', 'hook.js');
+  const originalCwd = process.cwd();
+  const listOutputs = (pattern: string) =>
+    [...new Bun.Glob(pattern).scanSync({ cwd: outdir, onlyFiles: true })]
+      .map((path) => path.replaceAll(sep, '/'))
+      .sort();
+
+  beforeAll(async () => {
+    mkdirSync(outdir, { recursive: true });
+    for (const build of [buildRuntimeBundles, buildAmpBundle, buildOpenClawBundle]) {
+      expect((await build(outdir)).success).toBeTrue();
+    }
+    for (const declaration of ['index.d.ts', 'api.d.ts']) {
+      writeFileSync(join(outdir, declaration), 'export {};\n');
+    }
+    chmodSync(bin, 0o755);
+  }, 60_000);
+
+  afterAll(() => {
+    process.chdir(originalCwd);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test('emits exactly the pinned published paths', () => {
+    expect(listOutputs('**/*').filter((path) => !path.startsWith('chunks/'))).toEqual([
+      'amp/cc-safety-net/index.ts',
+      'api.d.ts',
+      'api.js',
+      'bin/cc-safety-net.js',
+      'bin/hook.js',
+      'bin/package.json',
+      'cli.js',
+      'index.d.ts',
+      'index.js',
+      'openclaw/cc-safety-net/index.js',
+      'openclaw/cc-safety-net/openclaw.plugin.json',
+      'openclaw/cc-safety-net/package.json',
+      'pi/index.js',
+    ]);
+    expect(listOutputs('chunks/*.js').length).toBeGreaterThan(0);
+  });
+
+  test('starts the bin with the Node shebang', () => {
+    expect(readFileSync(bin, 'utf8').startsWith('#!/usr/bin/env node\n')).toBeTrue();
+  });
+
+  test('ships the bin as CommonJS: a loader over the hook bundle, marked by its own package.json', () => {
+    expect(JSON.parse(readFileSync(join(outdir, 'bin', 'package.json'), 'utf8'))).toEqual({
+      type: 'commonjs',
+    });
+    expect(readSpecifiers(readFileSync(bin, 'utf8'), STATIC_SPECIFIER)).toEqual([
+      'node:module',
+      'node:path',
+      'node:os',
+      './hook.js',
+    ]);
+    expect(readSpecifiers(readFileSync(hook, 'utf8'), STATIC_SPECIFIER)).not.toContain(
+      expect.stringMatching(/^\./),
+    );
+  });
+
+  test('imports the CLI entry through exactly one dynamic import', () => {
+    expect(readSpecifiers(readFileSync(bin, 'utf8'), DYNAMIC_SPECIFIER)).toEqual([]);
+    expect(readSpecifiers(readFileSync(hook, 'utf8'), DYNAMIC_SPECIFIER)).toEqual(['../cli.js']);
+  });
+
+  test('replaces the version define and keeps the internal sync field out', () => {
+    const sources = listOutputs('**/*.{js,ts}').map(
+      (path) => [path, readFileSync(join(outdir, path), 'utf8')] as const,
+    );
+
+    expect(
+      sources.filter(([, source]) => source.includes('__PKG_VERSION__')).map(([path]) => path),
+    ).toEqual([]);
+    expect(
+      sources.filter(([, source]) => source.includes('_operation')).map(([path]) => path),
+    ).toEqual([]);
+    expect(
+      readStaticClosure(bin).some((source) => source.includes(JSON.stringify(pkg.version))),
+    ).toBeTrue();
+  });
+
+  test('stamps both plugin artifacts with their managed header', () => {
+    expect(
+      readFileSync(join(outdir, 'amp', 'cc-safety-net', 'index.ts'), 'utf8').startsWith(
+        buildAmpArtifactHeader(pkg.version),
+      ),
+    ).toBeTrue();
+    expect(
+      readFileSync(join(outdir, 'openclaw', 'cc-safety-net', 'index.js'), 'utf8').startsWith(
+        buildOpenClawArtifactHeader(pkg.version),
+      ),
+    ).toBeTrue();
+  });
+
+  test('passes build verification', async () => {
+    process.chdir(root);
+
+    expect(await verifyBuildArtifacts()).toContain('dist/bin/cc-safety-net.js');
+  });
+});

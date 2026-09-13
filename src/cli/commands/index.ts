@@ -12,10 +12,6 @@ import type { Command } from './types';
 
 export type { Command } from './types';
 
-/**
- * All registered commands.
- * Order determines display order in main help.
- */
 export const commands = [
   statusCommand,
   doctorCommand,
@@ -38,10 +34,6 @@ function getCommandAliases(command: Command): readonly string[] {
   return command.aliases ?? [];
 }
 
-/**
- * Lookup a command by name or alias.
- * Returns undefined if not found.
- */
 export function findCommand(nameOrAlias: string): RegisteredCommand | undefined {
   const normalized = nameOrAlias.toLowerCase();
   return commands.find(
