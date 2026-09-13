@@ -172,7 +172,7 @@ const DEFINED_FUNCTION_PATTERNS = [
   /\b(?:const|let|var)\s+(\w+)\s*=\s*(?:\(|async\b|function\b|[\w(),\s]*=>)/g,
 ];
 const ASSIGNMENT_STATEMENT =
-  /^\s*(?:(?:const|let|var|my)\s+)?(\$?[A-Za-z_][\w$]*)\s*\+?=(?!=)\s*([\s\S]*)$/;
+  /^\s*(?:(?:const|let|var|my)\s+)?(\$?[A-Za-z_][\w$]*)\s*(?::\s*[\w.[\], |]+?)?\s*\+?=(?!=)\s*([\s\S]*)$/;
 const VALUE_CONSUMING_INTERPRETER_FLAGS = new Map([
   ['bash', new Set(['-O'])],
   ['sh', new Set(['-O'])],

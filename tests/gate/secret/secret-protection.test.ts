@@ -617,6 +617,12 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         relaxedInStandard: true,
       },
       {
+        name: 'sudo options before the interpreter are skipped',
+        command: "sudo -u root python3 - <<'EOF'\nexpected = env('.env')\nEOF",
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
         name: 'a python heredoc that opens the literal',
         command: "python3 - <<'EOF'\nopen('.env')\nEOF",
         expected: env('.env'),
@@ -914,6 +920,11 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       {
         name: 'a python literal appended to a name that is then opened',
         command: "python3 -c \"p = ''\np += '.env'\nopen(p)\"",
+        expected: env('.env'),
+      },
+      {
+        name: 'a python annotated assignment still links the literal to its name',
+        command: 'python3 -c "p: str = \'.env\'\nopen(p)"',
         expected: env('.env'),
       },
       {

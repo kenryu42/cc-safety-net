@@ -814,18 +814,27 @@ export function isCodeInterpreter(command: string): boolean {
   return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
 }
 
-// The words of the command that owns a heredoc, from the called name on. `time`, `-p`, `--`
-// and `!` are dropped here; `env`/`sudo` and assignments stay for the consumer to strip.
+// The words of the command that owns a heredoc, from the consumer on: `time`/`-p`/`--`/`!`,
+// wrappers with their options and option values (`sudo -u root`), and assignments are dropped.
 function heredocConsumerWords(view: CommandView): string[] {
   const name = getCalledCommandName(view);
-  const start = view.words.findIndex((word) => word.provenance === 'literal' && word.text === name);
-  return start < 0 ? [] : view.words.slice(start).map((word) => word.text);
+  const called = view.words.findIndex(
+    (word) => word.provenance === 'literal' && word.text === name,
+  );
+  const words = called < 0 ? [] : view.words.slice(called).map((word) => word.text);
+  const start = words.findIndex(
+    (word, index) =>
+      !HEREDOC_CONSUMER_WRAPPERS.has(word) &&
+      !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) &&
+      !word.startsWith('-') &&
+      words[index - 1] !== '-u' &&
+      words[index - 1] !== '-g',
+  );
+  return start < 0 ? [] : words.slice(start);
 }
 
 function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {
-  const name = heredocConsumerWords(view).find(
-    (word) => !HEREDOC_CONSUMER_WRAPPERS.has(word) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word),
-  );
+  const name = heredocConsumerWords(view)[0];
   if (name === undefined) return false;
   const command = getBasename(name).toLowerCase();
   return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);
