@@ -34,6 +34,7 @@ type GuardRedirection = Readonly<{
   role: 'file-read' | 'file-write' | 'here-data';
   targetOrder: 'immediate' | 'legacy-segment';
   target: string;
+  body?: string;
 }>;
 
 export const ADOPT_AS_OPERAND: unique symbol = Symbol('adopt-as-operand');
@@ -68,6 +69,7 @@ type GuardEvent =
       readonly role: 'file-read' | 'file-write' | 'here-data';
       readonly targetOrder: 'immediate' | 'legacy-segment';
       readonly target?: string;
+      readonly body?: string;
     }
   | { readonly kind: 'scope'; readonly edge: 'enter' | 'exit' };
 
@@ -81,6 +83,27 @@ const EMPTY_EVENTS = Object.freeze([]) as readonly GuardEvent[];
 const SCOPE_ENTER: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'enter' });
 const SCOPE_EXIT: GuardEvent = Object.freeze({ kind: 'scope' as const, edge: 'exit' });
 const EMPTY_STRINGS = Object.freeze([]) as readonly string[];
+
+const CODE_INTERPRETERS = new Set([
+  'python',
+  'python2',
+  'python3',
+  'node',
+  'deno',
+  'bun',
+  'ruby',
+  'perl',
+  'php',
+  'rscript',
+  'osascript',
+  'bash',
+  'sh',
+  'zsh',
+  'dash',
+  'ksh',
+]);
+
+export const SHELL_STDIN_INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh']);
 
 const MAX_FUNCTION_EXPANSIONS = 256;
 
@@ -191,6 +214,7 @@ export function walkGuardSyntax(
           role: event.role,
           targetOrder: event.targetOrder,
           target: event.target,
+          ...(event.body === undefined ? {} : { body: event.body }),
         },
         state,
       );
@@ -420,6 +444,9 @@ function readRedirection(
         ? ('legacy-segment' as const)
         : ('immediate' as const),
       ...(target === undefined ? {} : { target }),
+      ...(redirection.heredoc && context.suppressed.has(redirection.heredoc.bodySpan)
+        ? { body: redirection.heredoc.body }
+        : {}),
     }),
     ...(target === undefined ? targetEvents : targetEvents.slice(1)),
   ];
@@ -771,6 +798,17 @@ function getRedirectionRole(operator: string) {
   return 'file-write' as const;
 }
 
+export function isCodeInterpreter(command: string): boolean {
+  return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
+}
+
+function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {
+  const name = getCalledCommandName(view);
+  if (name === undefined) return false;
+  const command = getBasename(name).toLowerCase();
+  return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);
+}
+
 function collectDataSinkHeredocSpans(program: CommandProgram): CommandSpan[] {
   return program.nodes.flatMap((node, index): CommandSpan[] => {
     if (node.kind === 'group' || node.kind === 'function') {
@@ -778,15 +816,15 @@ function collectDataSinkHeredocSpans(program: CommandProgram): CommandSpan[] {
     }
     if (node.kind !== 'command') return [];
     const nestedSpans = node.nested.flatMap((nested) => collectDataSinkHeredocSpans(nested));
+    const quotedBodies = node.redirections.flatMap((redirection) =>
+      redirection.heredoc?.quotedDelimiter ? [redirection.heredoc.bodySpan] : [],
+    );
+    // An interpreter reads its heredoc as code, so shell-reading the body invents shell words.
+    if (isCodeInterpreterHeredocConsumer(node)) return [...nestedSpans, ...quotedBodies];
     const next = program.nodes[index + 1];
     const piped = next?.kind === 'connector' && (next.operator === '|' || next.operator === '|&');
     if (piped || !isDataSinkHeredocConsumer(node)) return nestedSpans;
-    return [
-      ...nestedSpans,
-      ...node.redirections.flatMap((redirection) =>
-        redirection.heredoc?.quotedDelimiter ? [redirection.heredoc.bodySpan] : [],
-      ),
-    ];
+    return [...nestedSpans, ...quotedBodies];
   });
 }
 

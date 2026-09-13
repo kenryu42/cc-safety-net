@@ -194,6 +194,25 @@ describe('gate/guards/guard-walk', () => {
     expect(read("cat '${X:=proof-target}'").assignmentFallbacks).toStrictEqual([]);
   });
 
+  test('a quoted heredoc to a code interpreter is handed over instead of read as shell', () => {
+    expect(words("python3 - <<'EOF'\ncat .env\nEOF")).not.toContain('.env');
+    expect(read("python3 - <<'EOF'\ncat .env\nEOF").source).not.toContain('.env');
+    expect(words('python3 - <<EOF\ncat .env\nEOF')).toContain('.env');
+
+    const bodies = (source: string) => {
+      const seen: (string | undefined)[] = [];
+      observe(source, {
+        redirection: (redirection) => {
+          seen.push(redirection.body);
+          return null;
+        },
+      });
+      return seen;
+    };
+    expect(bodies("python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual(['cat .env\n']);
+    expect(bodies("bash <<'EOF'\ncat .env\nEOF")).toStrictEqual([undefined]);
+  });
+
   test('reports the status a read could reach', () => {
     const rows: readonly { readonly source: string; readonly status: GuardSyntax['status'] }[] = [
       { source: 'echo ok', status: 'complete' },
