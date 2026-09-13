@@ -26,6 +26,7 @@ import {
   isCodeInterpreter,
   readGuardTokens,
   SHELL_STDIN_INTERPRETERS,
+  stripConsumerWrappers,
   walkGuardSyntax,
 } from '@/gate/guards/guard-walk';
 import { safetyNetSubcommandIndex } from '@/gate/guards/safety-net-invocation';
@@ -1693,10 +1694,7 @@ function extractPatternCommandTargets(tokens: readonly string[]): string[] {
 }
 
 function stripLeadingWrappersAndEnvAssignments(tokens: readonly string[]): string[] {
-  const firstCommandIndex = tokens.findIndex(
-    (token) => !isWrapperToken(token) && !/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token),
-  );
-  return firstCommandIndex === -1 ? [] : [...tokens.slice(firstCommandIndex)];
+  return stripConsumerWrappers(tokens);
 }
 
 function isWrapperToken(token: string): boolean {

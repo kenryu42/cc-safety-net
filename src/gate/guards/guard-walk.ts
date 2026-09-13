@@ -814,23 +814,55 @@ export function isCodeInterpreter(command: string): boolean {
   return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
 }
 
-// The words of the command that owns a heredoc, from the consumer on: `time`/`-p`/`--`/`!`,
-// wrappers with their options and option values (`sudo -u root`), and assignments are dropped.
+// A wrapper's value-taking options, so `sudo -u root` and `env --unset X` do not name the command.
+const WRAPPER_VALUE_OPTIONS = new Set([
+  '-u',
+  '-g',
+  '-h',
+  '-p',
+  '-C',
+  '-D',
+  '-r',
+  '-t',
+  '-T',
+  '-U',
+  '-S',
+  '--user',
+  '--group',
+  '--host',
+  '--prompt',
+  '--chdir',
+  '--role',
+  '--type',
+  '--other-user',
+  '--unset',
+  '--split-string',
+]);
+
+function skipWrapperOptions(words: readonly string[]): readonly string[] {
+  const word = words[0];
+  if (word === undefined || !word.startsWith('-')) return words;
+  return skipWrapperOptions(words.slice(WRAPPER_VALUE_OPTIONS.has(word) ? 2 : 1));
+}
+
+// Drops leading wrappers (`env`, `sudo`, `command`, `builtin`) with their options and option
+// values, and `NAME=value` assignments, so the first remaining word is the command.
+export function stripConsumerWrappers(words: readonly string[]): string[] {
+  const word = words[0];
+  if (word === undefined) return [];
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) return stripConsumerWrappers(words.slice(1));
+  if (!HEREDOC_CONSUMER_WRAPPERS.has(word)) return [...words];
+  return stripConsumerWrappers(skipWrapperOptions(words.slice(1)));
+}
+
+// The words of the command that owns a heredoc, from the consumer on: `time`/`-p`/`--`/`!`
+// come off through getCalledCommandName, wrappers through stripConsumerWrappers.
 function heredocConsumerWords(view: CommandView): string[] {
   const name = getCalledCommandName(view);
   const called = view.words.findIndex(
     (word) => word.provenance === 'literal' && word.text === name,
   );
-  const words = called < 0 ? [] : view.words.slice(called).map((word) => word.text);
-  const start = words.findIndex(
-    (word, index) =>
-      !HEREDOC_CONSUMER_WRAPPERS.has(word) &&
-      !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) &&
-      !word.startsWith('-') &&
-      words[index - 1] !== '-u' &&
-      words[index - 1] !== '-g',
-  );
-  return start < 0 ? [] : words.slice(start);
+  return stripConsumerWrappers(called < 0 ? [] : view.words.slice(called).map((word) => word.text));
 }
 
 function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {

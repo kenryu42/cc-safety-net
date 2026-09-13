@@ -509,6 +509,11 @@ describe('the carriers a candidate path can arrive through', () => {
         expected: null,
       },
       {
+        name: 'a wrapper with an option value still reads the piped Python source',
+        command: 'printf \'open(".env")\' | sudo -u root python3 -',
+        expected: env('.env'),
+      },
+      {
         name: 'an explicit stdin operand executes the piped Python source',
         command: 'printf \'open(".env")\' | python3 -',
         expected: env('.env'),
@@ -619,6 +624,12 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       {
         name: 'sudo options before the interpreter are skipped',
         command: "sudo -u root python3 - <<'EOF'\nexpected = env('.env')\nEOF",
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a long-form sudo option value is not the interpreter',
+        command: "sudo --user root python3 - <<'EOF'\nexpected = env('.env')\nEOF",
         expected: env('.env'),
         relaxedInStandard: true,
       },
