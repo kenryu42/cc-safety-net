@@ -595,6 +595,28 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: null,
       },
       {
+        name: 'time before the interpreter keeps the heredoc body as code',
+        command: "time python3 - <<'EOF'\nopen('.env')\nEOF",
+        expected: env('.env'),
+      },
+      {
+        name: 'a heredoc interpreter inside a command substitution keeps its body',
+        command: "echo \"$(python3 - <<'EOF'\nopen('.env')\nEOF\n)\"",
+        expected: env('.env'),
+      },
+      {
+        name: 'env before the interpreter hands the body over as code',
+        command: "env python3 - <<'EOF'\nexpected = env('.env')\nEOF",
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'sudo before the interpreter hands the body over as code',
+        command: "sudo python3 - <<'EOF'\nexpected = env('.env')\nEOF",
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
         name: 'a python heredoc that opens the literal',
         command: "python3 - <<'EOF'\nopen('.env')\nEOF",
         expected: env('.env'),
@@ -716,6 +738,26 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       {
         name: 'a php literal handed to shell_exec is walked as shell',
         command: 'php -r "shell_exec(\'cat .env\');"',
+        expected: env('.env'),
+      },
+      {
+        name: 'a ruby interpolated string runs code, so it is not inert data',
+        command: 'ruby -e "puts \\"#{File.read(\'.env\')}\\""',
+        expected: env('.env'),
+      },
+      {
+        name: 'an osascript shell string keeps the full literal scan',
+        command: 'osascript -e \'do shell script "cat .env"\'',
+        expected: env('.env'),
+      },
+      {
+        name: 'php readfile is a read',
+        command: 'php -r \'readfile(".env");\'',
+        expected: env('.env'),
+      },
+      {
+        name: 'php fopen is a read',
+        command: 'php -r \'fopen(".env", "r");\'',
         expected: env('.env'),
       },
       {

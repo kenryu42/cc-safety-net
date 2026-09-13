@@ -35,6 +35,7 @@ type GuardRedirection = Readonly<{
   targetOrder: 'immediate' | 'legacy-segment';
   target: string;
   body?: string;
+  consumer?: readonly string[];
 }>;
 
 export const ADOPT_AS_OPERAND: unique symbol = Symbol('adopt-as-operand');
@@ -70,8 +71,11 @@ type GuardEvent =
       readonly targetOrder: 'immediate' | 'legacy-segment';
       readonly target?: string;
       readonly body?: string;
+      readonly consumer?: readonly string[];
     }
   | { readonly kind: 'scope'; readonly edge: 'enter' | 'exit' };
+
+const HEREDOC_CONSUMER_WRAPPERS = new Set(['env', 'sudo', 'command', 'builtin']);
 
 const LEGACY_BOUNDARIES = new Set(['&&', '||', '|&', '|', '&', ';']);
 const LEGACY_SEGMENT_REDIRECTS = new Set(['<<', '<<<', '>|']);
@@ -214,7 +218,7 @@ export function walkGuardSyntax(
           role: event.role,
           targetOrder: event.targetOrder,
           target: event.target,
-          ...(event.body === undefined ? {} : { body: event.body }),
+          ...(event.body === undefined ? {} : { body: event.body, consumer: event.consumer }),
         },
         state,
       );
@@ -445,7 +449,7 @@ function readRedirection(
         : ('immediate' as const),
       ...(target === undefined ? {} : { target }),
       ...(redirection.heredoc && context.suppressed.has(redirection.heredoc.bodySpan)
-        ? { body: redirection.heredoc.body }
+        ? { body: redirection.heredoc.body, consumer: heredocConsumerWords(view) }
         : {}),
     }),
     ...(target === undefined ? targetEvents : targetEvents.slice(1)),
@@ -576,6 +580,9 @@ function readWord(
       continue;
     }
 
+    const nested = view.nested.find(
+      (program) => program.span.start >= part.span.start && program.span.end <= part.span.end,
+    );
     if (state.double) {
       const quotedText = context.source.slice(part.span.start, part.span.end);
       pending += scanWordText(
@@ -586,11 +593,16 @@ function readWord(
       )
         .map((run) => (typeof run === 'string' ? run : run.text))
         .join('');
+      // The substitution stays word text, but a heredoc body its command hands over is masked
+      // out of that text, so the handover events still have to reach the consumer.
+      const handovers = nested
+        ? readProgram(nested, context).filter(
+            (event) => event.kind === 'redirection' && event.body !== undefined,
+          )
+        : [];
+      if (handovers.length > 0) events.push(SCOPE_ENTER, ...handovers, SCOPE_EXIT);
       continue;
     }
-    const nested = view.nested.find(
-      (program) => program.span.start >= part.span.start && program.span.end <= part.span.end,
-    );
     const inner = nested ? readProgram(nested, context) : [];
     if (part.raw.startsWith('`')) {
       pending += '${}';
@@ -802,8 +814,18 @@ export function isCodeInterpreter(command: string): boolean {
   return CODE_INTERPRETERS.has(command) || /^python\d/.test(command);
 }
 
-function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {
+// The words of the command that owns a heredoc, from the called name on. `time`, `-p`, `--`
+// and `!` are dropped here; `env`/`sudo` and assignments stay for the consumer to strip.
+function heredocConsumerWords(view: CommandView): string[] {
   const name = getCalledCommandName(view);
+  const start = view.words.findIndex((word) => word.provenance === 'literal' && word.text === name);
+  return start < 0 ? [] : view.words.slice(start).map((word) => word.text);
+}
+
+function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {
+  const name = heredocConsumerWords(view).find(
+    (word) => !HEREDOC_CONSUMER_WRAPPERS.has(word) && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word),
+  );
   if (name === undefined) return false;
   const command = getBasename(name).toLowerCase();
   return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);

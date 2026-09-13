@@ -211,6 +211,25 @@ describe('gate/guards/guard-walk', () => {
     };
     expect(bodies("python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual(['cat .env\n']);
     expect(bodies("bash <<'EOF'\ncat .env\nEOF")).toStrictEqual([undefined]);
+
+    // The body travels with the words of the command that owns it, wrappers included.
+    const consumers = (source: string) => {
+      const seen: (readonly string[] | undefined)[] = [];
+      observe(source, {
+        redirection: (redirection) => {
+          seen.push(redirection.consumer);
+          return null;
+        },
+      });
+      return seen;
+    };
+    expect(consumers("time python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual([['python3', '-']]);
+    expect(consumers("env python3 - <<'EOF'\ncat .env\nEOF")).toStrictEqual([
+      ['env', 'python3', '-'],
+    ]);
+    expect(consumers('echo "$(python3 - <<\'EOF\'\ncat .env\nEOF\n)"')).toStrictEqual([
+      ['python3', '-'],
+    ]);
   });
 
   test('reports the status a read could reach', () => {

@@ -107,8 +107,10 @@ const INLINE_ACCESS_IDENTIFIER_PARTS = new Set([
   'move',
   'mv',
   'open',
+  'fopen',
   'popen',
   'read',
+  'readfile',
   'remove',
   'rename',
   'require',
@@ -158,6 +160,7 @@ const BARE_PATH_PATTERN = /[\w./~@+-]*[./~][\w./~@+-]*/g;
 const PYTHON_STRING_PREFIX = /(?:^|[^\w])([rRbBuUfF]{1,2})$/;
 // Ruby/Perl/PHP forms whose bodies may hold unbalanced quotes, so masking cannot be trusted.
 const UNMASKABLE_SIMPLE_CODE = /^(?:`|%[qQwWiIxX]?[([{<|!/]|<<<?[~-]?['"]?[A-Za-z_])/;
+const SIMPLE_INTERPOLATION = /#\{|\$\{|\{\$|[$@][A-Za-z_]/;
 const SHELL_EXEC_CALL =
   /\b(?:subprocess\s*\.\s*(?:run|call|Popen|check_output)|(?:[\w$]+\s*\.\s*)*(?:execSync|exec|spawnSync|spawn|system|popen|shell_exec|passthru|child_process|eval))\s*\(/g;
 const LANGUAGE_EVAL_CALL = /\b(?:eval|exec)\s*\(/g;
@@ -200,7 +203,7 @@ type SecretInspectionOptions = {
   readonly strict?: boolean;
 };
 
-type LiteralFamily = 'python' | 'javascript' | 'simple';
+type LiteralFamily = 'python' | 'javascript' | 'simple' | 'opaque';
 
 type CodeLiteral = { readonly start: number; readonly text: string };
 
@@ -453,7 +456,6 @@ function extractCommandPathTargets(
     ),
   ];
 
-  const heredocBodies: string[] = [];
   const map = (text: string) =>
     projectSensitiveShellText(rewritePowerShellHomePrefix(text, powershell), environment);
   walkGuardSyntax(syntax, cwd, environment, budget, {
@@ -484,11 +486,14 @@ function extractCommandPathTargets(
           ),
         );
       }
-      if (heredocBodies.length > 0) {
+      return null;
+    },
+    redirection: (redirection, state) => {
+      if (redirection.body !== undefined && redirection.consumer !== undefined) {
         targets.push(
           ...extractStdinScriptPathTargets(
-            tokens.filter((_, index) => !shellWords.has(index)),
-            heredocBodies.splice(0),
+            redirection.consumer,
+            [redirection.body],
             store,
             options,
             environment,
@@ -497,10 +502,6 @@ function extractCommandPathTargets(
           ),
         );
       }
-      return null;
-    },
-    redirection: (redirection, state) => {
-      if (redirection.body !== undefined) heredocBodies.push(redirection.body);
       if (redirection.targetOrder === 'legacy-segment') return ADOPT_AS_OPERAND;
       targets.push({ target: map(redirection.target), cwd: state.cwd });
       return null;
@@ -1207,10 +1208,12 @@ function extractInlineCodePathTargets(
 // code defines, or hands the literal to a name a reading statement uses.
 function usedLiterals(masked: MaskedCode, statements: readonly CodeStatement[]): CodeLiteral[] {
   const defined = definedFunctionNames(masked.masked);
+  const callsDefined =
+    defined.size === 0 ? null : new RegExp(`\\b(?:${[...defined].join('|')})\\s*\\(`);
   const kept = statements.filter(
     (statement) =>
       containsRecognizableInlineAccess(statement.text) ||
-      [...defined].some((name) => new RegExp(`\\b${name}\\s*\\(`).test(statement.text)),
+      (callsDefined !== null && callsDefined.test(statement.text)),
   );
   const live = propagateAssignedNames(
     kept.flatMap((statement) => codeIdentifiers(statement.text)),
@@ -1234,6 +1237,8 @@ function definedFunctionNames(masked: string): Set<string> {
 function literalFamily(command: string): LiteralFamily {
   const normalized = normalizeInterpreterName(command);
   if (normalized === 'python') return 'python';
+  // AppleScript strings are not modelled, so osascript code keeps the full literal scan.
+  if (normalized === 'osascript') return 'opaque';
   return normalized === 'node' || normalized === 'bun' || normalized === 'deno'
     ? 'javascript'
     : 'simple';
@@ -1242,6 +1247,7 @@ function literalFamily(command: string): LiteralFamily {
 // Blanks every string literal so the bare-path regex reads code, not data. Null means the code
 // holds a form this masker cannot delimit, and the caller keeps every candidate.
 function maskStringLiterals(code: string, family: LiteralFamily): MaskedCode | null {
+  if (family === 'opaque') return null;
   const masked = code.split('');
   const literals: CodeLiteral[] = [];
   for (let index = 0; index < code.length; index++) {
@@ -1263,6 +1269,8 @@ function maskStringLiterals(code: string, family: LiteralFamily): MaskedCode | n
 
     const text = code.slice(start, end);
     if (/[fF]/.test(prefix) && text.includes('{')) return null;
+    // Ruby `#{}`, Perl `$x`/`@x`, and PHP `$x`/`{$x}` run code inside double quotes.
+    if (family === 'simple' && quote === '"' && SIMPLE_INTERPOLATION.test(text)) return null;
     literals.push({ start, text });
     for (let cursor = index; cursor < end + delimiter.length; cursor++) masked[cursor] = ' ';
     index = end + delimiter.length - 1;
@@ -1359,13 +1367,20 @@ function propagateAssignedNames(
   statements: readonly CodeStatement[],
 ): Set<string> {
   const live = new Set(seed);
-  statements.forEach(() => {
-    for (const statement of statements) {
-      const assignment = ASSIGNMENT_STATEMENT.exec(statement.text);
-      if (assignment === null || !live.has(assignment[1] ?? '')) continue;
-      for (const name of codeIdentifiers(assignment[2] ?? '')) live.add(name);
-    }
+  const assignments = statements.flatMap((statement) => {
+    const assignment = ASSIGNMENT_STATEMENT.exec(statement.text);
+    return assignment === null
+      ? []
+      : [{ name: assignment[1] ?? '', sources: codeIdentifiers(assignment[2] ?? '') }];
   });
+  // Each pass adds at least one name or the chain is complete, so this ends within n passes.
+  for (let previous = -1; previous !== live.size; ) {
+    previous = live.size;
+    for (const assignment of assignments) {
+      if (!live.has(assignment.name)) continue;
+      for (const name of assignment.sources) live.add(name);
+    }
+  }
   return live;
 }
 
