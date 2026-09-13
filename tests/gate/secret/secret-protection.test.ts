@@ -724,6 +724,26 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: env('.env'),
       },
       {
+        name: 'a python literal handed to eval is scanned as python code',
+        command: 'python3 -c \'eval("open(\\".env\\").read()")\'',
+        expected: env('.env'),
+      },
+      {
+        name: 'a python literal handed to exec is scanned as python code',
+        command: 'python3 -c \'exec("open(\\".env\\")")\'',
+        expected: env('.env'),
+      },
+      {
+        name: 'a JS literal handed to eval is scanned as JS code',
+        command: 'node -e \'eval("require(\\"fs\\").readFileSync(\\".env\\")")\'',
+        expected: env('.env'),
+      },
+      {
+        name: 'an eval literal nested inside another eval literal',
+        command: 'python3 -c \'eval("eval(\\"open(\\\\\\".env\\\\\\")\\")")\'',
+        expected: env('.env'),
+      },
+      {
         name: 'a base64 literal decoded inside python code',
         command: 'python3 -c \'import base64; base64.b64decode("LmVudg==")\'',
         expected: env('.env'),

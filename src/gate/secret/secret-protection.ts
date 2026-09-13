@@ -160,6 +160,7 @@ const PYTHON_STRING_PREFIX = /(?:^|[^\w])([rRbBuUfF]{1,2})$/;
 const UNMASKABLE_SIMPLE_CODE = /^(?:`|%[qQwWiIxX]?[([{<|!/]|<<<?[~-]?['"]?[A-Za-z_])/;
 const SHELL_EXEC_CALL =
   /\b(?:subprocess\s*\.\s*(?:run|call|Popen|check_output)|(?:[\w$]+\s*\.\s*)*(?:execSync|exec|spawnSync|spawn|system|popen|shell_exec|passthru|child_process|eval))\s*\(/g;
+const LANGUAGE_EVAL_CALL = /\b(?:eval|exec)\s*\(/g;
 const IDENTIFIER_PATTERN = /[A-Za-z_$][\w$]*/g;
 const DEFINED_FUNCTION_PATTERNS = [
   /\bdef\s+(\w+)/g,
@@ -1177,11 +1178,24 @@ function extractInlineCodePathTargets(
       .filter((text) => text !== '')
       .map(here),
     ...masked.literals.flatMap((literal) => decodeBase64PathCandidate(literal.text)).map(here),
-    ...shellExecLiterals(masked, statements).flatMap(
+    ...callArgumentLiterals(masked, statements, SHELL_EXEC_CALL).flatMap(
       (literal) =>
         walkShellText(literal.text, store, options, environment, cwd, budget) ?? [
           here(literal.text),
         ],
+    ),
+    // A language-level eval/exec argument is more code in the same interpreter; the literal is
+    // strictly shorter than the code holding it, so the recursion bottoms out.
+    ...callArgumentLiterals(masked, statements, LANGUAGE_EVAL_CALL).flatMap((literal) =>
+      extractInlineCodePathTargets(
+        command,
+        literal.text.replace(/\\(.)/g, (_, escaped: string) => (escaped === 'n' ? '\n' : escaped)),
+        store,
+        options,
+        environment,
+        cwd,
+        budget,
+      ),
     ),
     ...(masked.masked.match(BARE_PATH_PATTERN) ?? [])
       .filter((candidate) => candidate !== 'process.versions.sqlite')
@@ -1281,14 +1295,15 @@ function findLiteralEnd(
   return null;
 }
 
-// A literal handed to a shell-exec call is a command line, so it is walked as shell text.
-function shellExecLiterals(
+// The literals handed to a matching call, directly or through a name assigned one.
+function callArgumentLiterals(
   masked: MaskedCode,
   statements: readonly CodeStatement[],
+  call: RegExp,
 ): CodeLiteral[] {
   return [
     ...new Set(
-      Array.from(masked.masked.matchAll(SHELL_EXEC_CALL)).flatMap((match) => {
+      Array.from(masked.masked.matchAll(call)).flatMap((match) => {
         const open = match.index + match[0].length - 1;
         const close = findClosingParenthesis(masked.masked, open);
         if (close === null) return [];
