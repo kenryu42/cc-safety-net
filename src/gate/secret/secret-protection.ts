@@ -165,6 +165,7 @@ const SIMPLE_INTERPOLATION = /#\{|\$\{|\{\$|[$@][A-Za-z_]/;
 const SHELL_EXEC_CALL =
   /\b(?:subprocess\s*\.\s*(?:run|call|Popen|check_output)|(?:[\w$]+\s*\.\s*)*(?:execSync|exec|spawnSync|spawn|system|popen|shell_exec|passthru|child_process|eval))\s*\(/g;
 const LANGUAGE_EVAL_CALL = /\b(?:eval|exec)\s*\(/g;
+const LANGUAGE_EVAL_PREFIX = /\b(?:eval|exec)\s*$/;
 const IDENTIFIER_PATTERN = /[A-Za-z_$][\w$]*/g;
 const DEFINED_FUNCTION_PATTERNS = [
   /\bdef\s+(\w+)/g,
@@ -1188,7 +1189,15 @@ function extractInlineCodePathTargets(
     ),
     // A language-level eval/exec argument is more code in the same interpreter; the literal is
     // strictly shorter than the code holding it, so the recursion bottoms out.
-    ...callArgumentLiterals(masked, statements, LANGUAGE_EVAL_CALL).flatMap((literal) =>
+    ...[
+      ...new Set([
+        ...callArgumentLiterals(masked, statements, LANGUAGE_EVAL_CALL),
+        // Ruby and Perl also take the argument without parentheses: `eval 'code'`.
+        ...masked.literals.filter((literal) =>
+          LANGUAGE_EVAL_PREFIX.test(masked.masked.slice(0, literal.start)),
+        ),
+      ]),
+    ].flatMap((literal) =>
       extractInlineCodePathTargets(
         command,
         literal.text.replace(/\\(.)/g, (_, escaped: string) => (escaped === 'n' ? '\n' : escaped)),

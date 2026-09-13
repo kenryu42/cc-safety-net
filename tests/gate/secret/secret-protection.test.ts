@@ -808,6 +808,16 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: env('.env'),
       },
       {
+        name: 'a ruby eval without parentheses is scanned as ruby code',
+        command: 'ruby -e "eval \'File.read(\\".env\\")\'"',
+        expected: env('.env'),
+      },
+      {
+        name: 'a perl eval without parentheses is scanned as perl code',
+        command: 'perl -e \'eval "open(F, \\".env\\")"\'',
+        expected: env('.env'),
+      },
+      {
         name: 'a base64 literal decoded inside python code',
         command: 'python3 -c \'import base64; base64.b64decode("LmVudg==")\'',
         expected: env('.env'),
