@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Why cc-safety-net's growth stalled after January 2026, and the seven-pillar plan to restart it. Researched 2026-09-14 against v2.4.1.">
+<meta name="color-scheme" content="light dark">
+<style>
+  /* minimal reset — the hosted artifact gets this from its platform shell */
+  :root { color-scheme: light; }
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Safety Net Growth Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+/* ============ tokens: light is the base ============ */
+:root {
+  color-scheme: light;
+  --ground: #f3f6f4;
+  --surface: #ffffff;
+  --surface-2: #e9efeb;
+  --ink: #0f1f1a;
+  --ink-2: #33443d;
+  --muted: #57685f;
+  --hairline: #dde5e0;
+  --rule: #c3d0c9;
+  --accent: #005f46;
+  --accent-soft: #dff0e8;
+  --mark: #007454;
+  --mark-dim: #b9c6c0;
+  --deny: #a32117;
+  --deny-soft: #fbe7e4;
+  --warn: #7a5300;
+  --warn-soft: #f9eed6;
+  --good: #0f6b3f;
+  --good-soft: #dff0e4;
+  --code-bg: #eef2ef;
+  --lift: 0 1px 2px rgba(15,31,26,.05), 0 10px 28px -18px rgba(15,31,26,.35);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #0b110f;
+    --surface: #121a17;
+    --surface-2: #1b2521;
+    --ink: #e9efeb;
+    --ink-2: #c2cec8;
+    --muted: #8fa29a;
+    --hairline: #22302a;
+    --rule: #37473f;
+    --accent: #4cc59a;
+    --accent-soft: #102a21;
+    --mark: #35b489;
+    --mark-dim: #37473f;
+    --deny: #ff8d7d;
+    --deny-soft: #2c1714;
+    --warn: #e3b355;
+    --warn-soft: #2b2110;
+    --good: #5fcd93;
+    --good-soft: #10271b;
+    --code-bg: #0c1311;
+    --lift: 0 1px 2px rgba(0,0,0,.5), 0 10px 28px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #0b110f;
+  --surface: #121a17;
+  --surface-2: #1b2521;
+  --ink: #e9efeb;
+  --ink-2: #c2cec8;
+  --muted: #8fa29a;
+  --hairline: #22302a;
+  --rule: #37473f;
+  --accent: #4cc59a;
+  --accent-soft: #102a21;
+  --mark: #35b489;
+  --mark-dim: #37473f;
+  --deny: #ff8d7d;
+  --deny-soft: #2c1714;
+  --warn: #e3b355;
+  --warn-soft: #2b2110;
+  --good: #5fcd93;
+  --good-soft: #10271b;
+  --code-bg: #0c1311;
+  --lift: 0 1px 2px rgba(0,0,0,.5), 0 10px 28px -18px rgba(0,0,0,.9);
+}
+
+/* ============ base ============ */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  padding-inline: 16px;
+  padding-block: 0 72px;
+}
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+h1, h2, h3, h4 { font-family: var(--display); margin: 0; line-height: 1.12; letter-spacing: -.015em; text-wrap: balance; }
+h1 { font-size: clamp(2.1rem, 6vw, 3.6rem); font-weight: 800; }
+h2 { font-size: clamp(1.45rem, 3.4vw, 2.05rem); font-weight: 700; }
+h3 { font-size: 1.16rem; font-weight: 700; letter-spacing: -.005em; }
+h4 { font-size: .98rem; font-weight: 600; }
+p { margin: 0 0 1.05em; }
+p:last-child { margin-bottom: 0; }
+ul, ol { margin: 0 0 1.05em; padding-left: 1.25em; }
+li { margin-bottom: .4em; }
+li::marker { color: var(--muted); }
+strong { font-weight: 600; }
+code, kbd { font-family: var(--mono); font-size: .86em; background: var(--code-bg); padding: .12em .38em; border-radius: 4px; }
+hr { border: 0; border-top: 1px solid var(--hairline); margin: 40px 0; }
+.eyebrow { font-family: var(--mono); font-size: .69rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.measure { max-width: 66ch; }
+.small { font-size: .9rem; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+table { border-collapse: collapse; width: 100%; font-family: var(--display); font-size: .88rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--hairline); }
+tbody tr:last-child td { border-bottom: 0; }
+th { font-family: var(--mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 500; white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.tw { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.tw table { min-width: 540px; }
+
+/* ============ layout ============ */
+.page { max-width: 1180px; margin: 0 auto; }
+.topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 16px; border-bottom: 1px solid var(--hairline); }
+.brand { display: flex; align-items: center; gap: 9px; font-family: var(--display); font-weight: 700; font-size: .95rem; letter-spacing: -.01em; }
+.shield { width: 15px; height: 17px; flex: none; }
+.theme { display: inline-flex; gap: 2px; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; background: var(--surface); }
+.theme button { appearance: none; border: 0; background: transparent; color: var(--muted); font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; padding: 4px 11px; border-radius: 999px; cursor: pointer; }
+.theme button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+
+.hero { padding-block: 52px 36px; display: grid; gap: 20px; }
+.hero .kicker { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.hero .lede { font-size: clamp(1.1rem, 2.3vw, 1.32rem); color: var(--ink-2); max-width: 60ch; }
+.hero .lede b { color: var(--ink); font-weight: 600; }
+
+.layout { display: grid; grid-template-columns: 1fr; gap: 36px; }
+.layout > * { min-width: 0; }
+@media (min-width: 1040px) {
+  .layout { grid-template-columns: 210px minmax(0, 1fr); gap: 56px; }
+  .toc { position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; padding-bottom: 12px; }
+}
+.toc { font-family: var(--display); font-size: .84rem; }
+.toc ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 1px; counter-reset: toc; }
+.toc li { margin: 0; }
+.toc a { display: flex; gap: 8px; color: var(--muted); text-decoration: none; padding: 5px 10px; border-left: 2px solid transparent; border-radius: 0 6px 6px 0; }
+.toc a::before { counter-increment: toc; content: counter(toc, decimal-leading-zero); font-family: var(--mono); font-size: .68rem; padding-top: .15em; opacity: .65; }
+.toc a:hover { background: var(--surface-2); color: var(--ink-2); }
+.toc a.on { border-left-color: var(--accent); color: var(--ink); background: var(--surface-2); }
+
+section.blk { padding-block: 10px 46px; scroll-margin-top: 14px; }
+section.blk > header { display: grid; gap: 10px; margin-bottom: 22px; }
+section.blk > header .sub { color: var(--ink-2); max-width: 62ch; margin: 0; }
+
+/* ============ stat row ============ */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
+.stat { background: var(--surface); padding: 14px 16px; display: grid; gap: 3px; align-content: start; }
+.stat .k { font-family: var(--mono); font-size: .65rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.stat .v { font-family: var(--display); font-weight: 700; font-size: 1.75rem; line-height: 1.05; letter-spacing: -.02em; }
+.stat .n { font-family: var(--display); font-size: .8rem; color: var(--muted); }
+.stat .v.dn { color: var(--deny); }
+
+/* ============ charts ============ */
+.charts { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 780px) { .charts { grid-template-columns: 1fr 1fr; } }
+figure.ch { margin: 0; background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 16px 16px 10px; }
+figure.ch figcaption { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+figure.ch .t { font-family: var(--display); font-weight: 600; font-size: .95rem; }
+figure.ch .s { font-family: var(--display); font-size: .8rem; color: var(--muted); }
+.viz { position: relative; }
+.viz svg { display: block; width: 100%; height: auto; }
+.viz .grid line { stroke: var(--hairline); }
+.viz .base line { stroke: var(--rule); }
+.viz text { font-family: var(--mono); font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.viz text.dl { fill: var(--ink-2); font-weight: 500; font-size: 10.5px; }
+.viz .bar { fill: var(--mark); }
+.viz .bar.dim { fill: var(--mark-dim); }
+.viz .hit { fill: transparent; }
+.viz .hit:hover ~ .bar, .viz .hit:focus-visible ~ .bar { opacity: .74; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--ground); font-family: var(--display); font-size: .78rem; padding: 6px 10px; border-radius: 7px; white-space: nowrap; transform: translate(-50%, calc(-100% - 9px)); opacity: 0; transition: opacity .12s; z-index: 3; }
+.tip b { font-weight: 700; font-size: .95rem; }
+.tip.on { opacity: 1; }
+.tbtn { appearance: none; font-family: var(--mono); font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 3px 9px; cursor: pointer; }
+.tbtn[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }
+.vtab { margin-top: 10px; }
+.vtab table { min-width: 0; font-size: .8rem; }
+
+/* ============ verdict blocks (the product's own idiom) ============ */
+.verdicts { display: grid; gap: 14px; }
+.vd { background: var(--surface); border: 1px solid var(--hairline); border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; padding: 15px 18px; display: grid; gap: 8px; }
+.vd.bad { border-left-color: var(--deny); }
+.vd.warnb { border-left-color: var(--warn); }
+.vd .vh { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.vd .rid { font-family: var(--mono); font-size: .66rem; letter-spacing: .05em; color: var(--muted); }
+.vd h3 { font-size: 1.02rem; }
+.vd p { font-size: .95rem; margin-bottom: 0; color: var(--ink-2); }
+.vd p + p { margin-top: .55em; }
+.vd .ev { font-family: var(--mono); font-size: .78rem; background: var(--code-bg); border-radius: 7px; padding: 9px 11px; color: var(--ink-2); overflow-x: auto; line-height: 1.55; }
+
+/* the block-message pastiche in the hero */
+.blockmsg { font-family: var(--mono); font-size: .8rem; line-height: 1.7; background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 16px 18px; overflow-x: auto; box-shadow: var(--lift); }
+.blockmsg .hdr { color: var(--deny); font-weight: 700; letter-spacing: .02em; }
+.blockmsg .lbl { color: var(--muted); }
+.blockmsg .val { color: var(--ink); }
+.blockmsg .cur { color: var(--accent); }
+
+/* ============ chips ============ */
+.chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: .62rem; letter-spacing: .07em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
+.chip.e-low { border-color: var(--good); color: var(--good); }
+.chip.e-medium { border-color: var(--warn); color: var(--warn); }
+.chip.e-high { border-color: var(--deny); color: var(--deny); }
+.chip.i-high { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip.when { border-style: dashed; }
+
+/* ============ moves ============ */
+.moves { display: grid; grid-template-columns: 1fr; gap: 14px; counter-reset: mv; }
+@media (min-width: 900px) { .moves { grid-template-columns: repeat(3, 1fr); } }
+.move { background: var(--surface); border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px 20px; display: grid; gap: 9px; align-content: start; box-shadow: var(--lift); }
+.move .num { counter-increment: mv; font-family: var(--mono); font-size: .72rem; color: var(--accent); letter-spacing: .1em; }
+.move .num::before { content: "MOVE " counter(mv); }
+.move h3 { font-size: 1.08rem; }
+.move p { font-size: .93rem; color: var(--ink-2); margin: 0; }
+.move .why { font-family: var(--display); font-size: .82rem; color: var(--muted); border-top: 1px solid var(--hairline); padding-top: 9px; margin-top: 2px; }
+
+/* ============ pillars ============ */
+.pillar { margin-bottom: 30px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.pillar > .ph { padding: 16px 20px 14px; border-bottom: 1px solid var(--hairline); display: grid; gap: 6px; }
+.pillar > .ph .pn { font-family: var(--mono); font-size: .68rem; letter-spacing: .12em; color: var(--accent); text-transform: uppercase; }
+.pillar > .ph h3 { font-size: 1.22rem; }
+.pillar > .ph .th { font-family: var(--display); font-size: .89rem; color: var(--muted); max-width: 64ch; }
+.bets { display: grid; }
+.bet { padding: 13px 20px; border-bottom: 1px solid var(--hairline); display: grid; gap: 7px; }
+.bet:last-child { border-bottom: 0; }
+.bet .bh { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; justify-content: space-between; }
+.bet .bt { font-family: var(--display); font-weight: 600; font-size: .98rem; }
+.bet .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.bet p { font-size: .91rem; color: var(--ink-2); margin: 0; }
+.bet .step { font-family: var(--mono); font-size: .76rem; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 10px; line-height: 1.6; }
+.bet .step b { color: var(--ink-2); font-weight: 500; }
+
+/* ============ timeline ============ */
+.tl { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 920px) { .tl { grid-template-columns: repeat(4, 1fr); } }
+.ph2 { background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 15px 17px; display: grid; gap: 9px; align-content: start; }
+.ph2 .w { font-family: var(--mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.ph2 h4 { font-size: 1rem; }
+.ph2 ul { padding-left: 1.05em; margin: 0; font-family: var(--display); font-size: .86rem; color: var(--ink-2); }
+.ph2 li { margin-bottom: .4em; }
+
+/* ============ dont list ============ */
+.dont { display: grid; gap: 10px; }
+.dont .d { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 15px; }
+.dont .x { font-family: var(--mono); font-weight: 700; color: var(--deny); line-height: 1.5; }
+.dont .d p { margin: 0; font-size: .93rem; }
+.dont .d p b { font-family: var(--display); }
+
+.note { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; padding: 14px 18px; font-size: .95rem; }
+.note.risk { background: var(--warn-soft); border-left-color: var(--warn); }
+
+footer.end { border-top: 1px solid var(--hairline); padding-top: 22px; margin-top: 12px; font-size: .88rem; color: var(--muted); font-family: var(--display); display: grid; gap: 8px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media print { .theme, .toc, .tbtn { display: none; } body { padding-inline: 0; } .move, .blockmsg { box-shadow: none; } }
+</style>
+
+</head>
+<body>
+<div class="page">
+
+  <div class="topbar">
+    <div class="brand">
+      <svg class="shield" viewBox="0 0 15 17" aria-hidden="true" focusable="false">
+        <path d="M7.5 1 13.5 3.2v5.4c0 3.6-2.5 6.3-6 7.4-3.5-1.1-6-3.8-6-7.4V3.2L7.5 1Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M4.8 8.4 6.8 10.4 10.4 6.4" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>cc-safety-net</span>
+    </div>
+    <div class="theme" role="group" aria-label="Colour theme">
+      <button type="button" data-mode="system" aria-pressed="true">Auto</button>
+      <button type="button" data-mode="light" aria-pressed="false">Light</button>
+      <button type="button" data-mode="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+
+  <header class="hero">
+    <div class="kicker">
+      <span class="eyebrow">Growth review</span>
+      <span class="eyebrow">14 September 2026</span>
+      <span class="eyebrow">Baseline v2.4.1</span>
+    </div>
+    <h1>Shipping hard,<br>growing flat.</h1>
+    <p class="lede">Twenty-three releases in five weeks moved the star count by <b>eighty-six</b>. The
+      product is not the problem. The project stopped explaining why it exists, is stale in every
+      registry its host CLIs point to, and appears in <b>zero</b> search results for the problem it solves.</p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <p class="eyebrow" style="padding:0 10px 8px;">Contents</p>
+      <ol>
+        <li><a href="#diagnosis">The decoupling</a></li>
+        <li><a href="#moves">Three moves</a></li>
+        <li><a href="#findings">What research found</a></li>
+        <li><a href="#field">The field</a></li>
+        <li><a href="#plan">The plan</a></li>
+        <li><a href="#sequence">Sequencing</a></li>
+        <li><a href="#measure">Measurement</a></li>
+        <li><a href="#avoid">What not to do</a></li>
+        <li><a href="#risks">Risks</a></li>
+        <li><a href="#method">Method</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- 1 ============================================= -->
+      <section class="blk" id="diagnosis">
+        <header>
+          <span class="eyebrow">01 — Diagnosis</span>
+          <h2>Effort and attention came apart in February</h2>
+          <p class="sub">Sixty percent of all stars arrived in the first six weeks, on a wave nobody
+            has identified and nobody has repeated. Since then the release count and the star count
+            have moved independently. Release days add between zero and six stars.</p>
+        </header>
+
+        <div class="charts">
+          <figure class="ch">
+            <figcaption>
+              <span class="t">New stars per month</span>
+              <button class="tbtn" type="button" aria-pressed="false" aria-controls="tab-stars">Table</button>
+            </figcaption>
+            <div class="viz" id="viz-stars"><div class="tip" role="status" aria-live="polite"></div></div>
+            <div class="vtab tw" id="tab-stars" hidden></div>
+          </figure>
+          <figure class="ch">
+            <figcaption>
+              <span class="t">Releases published per month</span>
+              <button class="tbtn" type="button" aria-pressed="false" aria-controls="tab-rel">Table</button>
+            </figcaption>
+            <div class="viz" id="viz-rel"><div class="tip" role="status" aria-live="polite"></div></div>
+            <div class="vtab tw" id="tab-rel" hidden></div>
+          </figure>
+        </div>
+
+        <p class="small" style="margin-top:10px;">Both charts share a monthly axis and a single scale each.
+          September is partial, to the 14th, and is drawn in the muted tone with its value labelled.
+          Source: 1,539 stargazer timestamps and 47 releases from the GitHub API.</p>
+
+        <h3 style="margin-top:30px;">What actually caused the launch wave</h3>
+        <p class="measure" style="margin-top:8px;">The ten best days all fall between 26 December 2025 and
+          8 January 2026. Two of the five peaks now have an identified cause, and both are instructive.</p>
+        <div class="tw" style="margin-top:12px;">
+          <table>
+            <caption class="sr-only">Launch-period peak days and their identified causes</caption>
+            <thead><tr><th>Day</th><th class="n">Stars</th><th>Cause</th></tr></thead>
+            <tbody>
+              <tr><td>27 Dec 2025</td><td class="n">68</td><td>A feature on Korben.info, a high-traffic French tech blog, published the day before</td></tr>
+              <tr><td>30 Dec 2025</td><td class="n">104</td><td><b>Unidentified</b></td></tr>
+              <tr><td>1 Jan 2026</td><td class="n">68</td><td>A Show HN, posted on New Year's Day</td></tr>
+              <tr><td>6 Jan 2026</td><td class="n">110</td><td><b>Unidentified</b></td></tr>
+              <tr><td>7 Jan 2026</td><td class="n">73</td><td>Tail of the 6 January event</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note" style="margin-top:20px;">
+          <p>Three things follow. The largest identified driver was <strong>one blog post by one writer,
+          never contacted since</strong> — a warm contact, not a cold pitch. The one Hacker News attempt
+          landed on the lowest-traffic day of the year and returned 68 stars, so that channel has
+          effectively never been tested. And the two biggest days are still unexplained: GitHub Trending
+          was ruled out against a dated archive, and the 110-then-73 decay looks like a newsletter
+          placement. GitHub's traffic referrers for that week would probably name it.</p>
+          <p style="margin-top:.7em;">The detail that matters most: the README of that era carried an
+          origin story — Claude Code had silently wiped out hours of work, and soft rules cannot replace
+          hard technical constraints. That is the framing Korben quoted. It is not in the README today.</p>
+        </div>
+      </section>
+
+      <!-- 2 ============================================= -->
+      <section class="blk" id="moves">
+        <header>
+          <span class="eyebrow">02 — Priorities</span>
+          <h2>Three moves, in this order</h2>
+          <p class="sub">Ordered by expected value per hour of maintainer time. Everything in the full
+            plan is downstream of these.</p>
+        </header>
+        <div class="moves">
+          <article class="move">
+            <span class="num"></span>
+            <h3>Put the argument back above the fold</h3>
+            <p>A sourced “Why this exists” section was written on 31 August and deleted on 1 September.
+              It carried the two claims no competitor can make. <code>git show 6e0d788</code> recovers it.</p>
+            <p class="why">Every other channel links back to this paragraph, so it cannot go second.</p>
+          </article>
+          <article class="move">
+            <span class="num"></span>
+            <h3>Run the registry sweep</h3>
+            <p>Anthropic's community marketplace ships a build pinned to June: <b>v1.0.6</b>, two majors
+              old, under the former repository name. Copilot CLI pre-registers two marketplaces and this
+              is in neither. Three awesome-lists worth ~66,000 stars still carry the old name.</p>
+            <p class="why">Mostly ten-minute fixes whose reach is a host's entire user base.</p>
+          </article>
+          <article class="move">
+            <span class="num"></span>
+            <h3>Occupy the problem in search</h3>
+            <p>For “claude code deleted my files” and five sibling queries, the results are GitHub issues
+              written by people it happened to. No product appears anywhere in roughly forty-five URLs.</p>
+            <p class="why">The people typing these queries have the problem at that moment.</p>
+          </article>
+        </div>
+
+        <div class="blockmsg" style="margin-top:26px;" role="img" aria-label="Terminal transcript: cc-safety-net explain git reset --hard, showing the command blocked by rule git.reset-hard">
+          <div><span class="cur">$</span> <span class="val">npx cc-safety-net explain "git reset --hard"</span></div>
+          <div>&nbsp;</div>
+          <div class="hdr">BLOCKED by CC Safety Net</div>
+          <div><span class="lbl">Reason:&nbsp;</span><span class="val">git reset --hard destroys all uncommitted changes permanently. Use 'git stash' first.</span></div>
+          <div><span class="lbl">Rule:&nbsp;&nbsp;&nbsp;</span><span class="val">git.reset-hard</span></div>
+          <div>&nbsp;</div>
+          <div class="lbl">— the most persuasive artifact this project owns, and it appears nowhere in the README.</div>
+        </div>
+      </section>
+
+      <!-- 3 ============================================= -->
+      <section class="blk" id="findings">
+        <header>
+          <span class="eyebrow">03 — Findings</span>
+          <h2>Nine things the research established</h2>
+          <p class="sub">Drawn from roughly 250 sourced findings across fifteen research dimensions. Each one
+            below was re-checked by hand.</p>
+        </header>
+        <div class="verdicts" id="verdicts"></div>
+      </section>
+
+      <!-- 4 ============================================= -->
+      <section class="blk" id="field">
+        <header>
+          <span class="eyebrow">04 — The field</span>
+          <h2>Category leader with a distribution problem</h2>
+          <p class="sub">At 1,539 stars this is the largest single-purpose guard in open source, roughly
+            five times the next one. The threat is not another guard. It is the host shipping its own.</p>
+        </header>
+
+        <div class="tw">
+          <table>
+            <caption class="sr-only">Competitive landscape by category</caption>
+            <thead><tr><th>Category</th><th>Who</th><th class="n">Traction</th><th>What they do not do</th></tr></thead>
+            <tbody>
+              <tr><td>Platform-native</td><td>Claude Code auto mode, deny rules, sandbox</td><td class="n">Default on Pro/Max/Team</td><td>Deterministic guarantee; wrapped commands in deny rules; native Windows; a default credential denylist</td></tr>
+              <tr><td>Platform-native</td><td>Codex sandbox and execpolicy</td><td class="n">All Codex users</td><td>Still preview; exact first-token prefixes; no documented wrapper handling</td></tr>
+              <tr><td>Platform-native</td><td>Gemini CLI policy engine</td><td class="n">All Gemini users</td><td>Regex, not semantic; no destructive-git defaults</td></tr>
+              <tr><td>Open source</td><td>failproofai</td><td class="n">3,275 ★</td><td>Semantic shell parsing</td></tr>
+              <tr><td>Open source</td><td>Cupcake (EQTY Lab)</td><td class="n">292 ★</td><td>Blocking defaults; Windows; Nix-only install</td></tr>
+              <tr><td>Open source</td><td>agentjail</td><td class="n">93 ★</td><td><code>git reset --hard</code> by default; only three hosts</td></tr>
+              <tr><td>Isolation</td><td>vibekit, sandbox-runtime, OpenSandbox</td><td class="n">1.8k–7k ★</td><td>In-workspace destructive git</td></tr>
+              <tr><td>Recovery</td><td>revertly, checkpoint hooks, <code>/rewind</code></td><td class="n">Small</td><td>Prevention of the irreversible</td></tr>
+              <tr><td>Commercial</td><td>Snyk Evo Agent Guard, Backslash, Noma</td><td class="n">Vendor-backed</td><td>Open source, local-only, thirteen hosts</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="charts" style="margin-top:20px;">
+          <div class="note">
+            <p><strong>Three differentiators worth defending.</strong> Deterministic semantic parsing that
+            Anthropic's own docs admit their deny rules lack. Thirteen hosts, including native Windows and
+            PowerShell, where the built-in sandbox is not supported. A published residual-risk registry
+            no rival offers.</p>
+          </div>
+          <div class="note risk">
+            <p><strong>Narrative beat breadth.</strong> A rival hook guard created on 11 August reached
+            roughly 1,980 stars in five weeks on a memorable name, a second-person README and Chinese-first
+            docs. In the same window this project gained 86 stars while shipping 23 releases.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5 ============================================= -->
+      <section class="blk" id="plan">
+        <header>
+          <span class="eyebrow">05 — The plan</span>
+          <h2 id="plan-h">Six pillars</h2>
+          <p class="sub">Effort and impact are estimates. “Now” means this week or next. The budget
+            assumed throughout is ten hours a week, on top of engineering.</p>
+        </header>
+        <div id="pillars"></div>
+      </section>
+
+      <!-- 6 ============================================= -->
+      <section class="blk" id="sequence">
+        <header>
+          <span class="eyebrow">06 — Sequencing</span>
+          <h2>Ninety days, ten hours a week</h2>
+          <p class="sub">Ordered by dependency and expected value. What is deferred is named, so that
+            deferring it stays a decision rather than a drift.</p>
+        </header>
+        <div class="tl">
+          <div class="ph2">
+            <span class="w">Week 1</span>
+            <h4>The free wins</h4>
+            <ul>
+              <li>Restore the deleted “Why”</li>
+              <li>Unpin the v1.0.6 build in Anthropic's directory</li>
+              <li>Rename the repo's own marketplace manifest</li>
+              <li>Add the <code>gemini-cli-extension</code> topic</li>
+              <li>Fix the npm funding field and keywords</li>
+              <li>Stand up the daily metrics snapshot</li>
+              <li>Turn on docs analytics</li>
+            </ul>
+          </div>
+          <div class="ph2">
+            <span class="w">Days 1–30</span>
+            <h4>Story and plumbing</h4>
+            <ul>
+              <li>Refresh the bypass research, then re-launch on Hacker News</li>
+              <li>Email the one writer who already covered it</li>
+              <li>Demo GIF replaces the dashboard screenshot</li>
+              <li>Comparison page and first two incident pages</li>
+              <li>OpenCode ecosystem PR; three awesome-list corrections</li>
+              <li>Kimi Code proposal; Grok Build PR; Copilot CLI review</li>
+              <li>Install ends in proof; block message gains a URL</li>
+              <li>Pull-request contract, Discussions, reporter credit</li>
+              <li>Cut the Hermes release so its two-week pin clock starts</li>
+            </ul>
+          </div>
+          <div class="ph2">
+            <span class="w">Days 31–60</span>
+            <h4>Friction and reach</h4>
+            <ul>
+              <li>Incident ledger; open the bypass challenge</li>
+              <li>Reddit debut, with a real audit log behind it</li>
+              <li>Ask mode for Claude Code and Copilot CLI</li>
+              <li>Thirteen per-host landing pages</li>
+              <li>Hermes catalog entry; ClawHub publish</li>
+              <li>Community rulebook index</li>
+              <li>False-positive ledger and Windows matrix</li>
+              <li>Apply to Anthropic's curated directory</li>
+              <li>List in the large cross-agent skills lists</li>
+            </ul>
+          </div>
+          <div class="ph2">
+            <span class="w">Days 61–90</span>
+            <h4>Credibility assets</h4>
+            <ul>
+              <li>Guard benchmark; “do hooks actually fire?” research</li>
+              <li>Browser playground for <code>explain</code></li>
+              <li><code>policy apply --with-hook</code></li>
+              <li>Japanese and Chinese posts, timed to a host release</li>
+            </ul>
+          </div>
+        </div>
+        <div class="note risk" style="margin-top:18px;">
+          <p><strong>Explicitly deferred.</strong> A hosted central-policy service, until three or more
+          organisations commit <code>.cc-safety-net/</code> and ask for it. The academic preprint.
+          Conference talks, which depend on the benchmark existing first. Adapters for new hosts, which
+          should wait until the existing thirteen convert better.</p>
+        </div>
+      </section>
+
+      <!-- 7 ============================================= -->
+      <section class="blk" id="measure">
+        <header>
+          <span class="eyebrow">07 — Measurement</span>
+          <h2>Nothing here can be judged today</h2>
+          <p class="sub">There is no telemetry by design, no analytics on the docs site, and no snapshot
+            of GitHub traffic, which expires every fourteen days. A daily snapshot Action is a one-hour
+            job and it gates the credibility of everything above.</p>
+        </header>
+
+        <div class="stats" style="margin-bottom:18px;">
+          <div class="stat">
+            <span class="k">North star</span>
+            <span class="v">25.9k</span>
+            <span class="n">npm downloads per month, today</span>
+          </div>
+          <div class="stat">
+            <span class="k">90-day target</span>
+            <span class="v">40k</span>
+            <span class="n">a target, not a forecast</span>
+          </div>
+          <div class="stat">
+            <span class="k">Stars per week</span>
+            <span class="v">13 → 25</span>
+            <span class="n">corroborating signal</span>
+          </div>
+          <div class="stat">
+            <span class="k">Detectable lift</span>
+            <span class="v">~40%</span>
+            <span class="n">floor for a two-week window</span>
+          </div>
+        </div>
+
+        <div class="tw">
+          <table>
+            <caption class="sr-only">Guardrail metrics</caption>
+            <thead><tr><th>Guardrail</th><th>Why it is watched</th><th>How to collect</th></tr></thead>
+            <tbody>
+              <tr><td>Weekly new stars against the 13/week median</td><td>Awareness corroboration; alarm below 8 for two weeks</td><td>Stargazer timestamps, daily snapshot</td></tr>
+              <tr><td>False-positive issues per month</td><td>The top churn driver; growth must not outrun quality</td><td>Issue title prefix, labelled consistently</td></tr>
+              <tr><td>Median time to fix a false positive</td><td>Currently one to two days and a genuine strength</td><td>Issues API</td></tr>
+              <tr><td>Per-version download share, 7 days post-release</td><td>Adoption lag without telemetry</td><td>npm per-version endpoint, weekly</td></tr>
+              <tr><td>Public footprint counts</td><td>Real embedded usage rather than vanity</td><td>GitHub code search, monthly</td></tr>
+              <tr><td>Open-issue age</td><td>Solo-maintainer overload signal</td><td>Issues API</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="measure" style="margin-top:16px;">Weekly stars have a mean of 12.5 and a standard
+          deviation of 3.8, so a two-week window cannot resolve anything smaller than roughly a forty
+          percent lift. Write the hypothesis and the expected lift down before the experiment runs, or
+          the result is unreadable afterwards.</p>
+      </section>
+
+      <!-- 8 ============================================= -->
+      <section class="blk" id="avoid">
+        <header>
+          <span class="eyebrow">08 — Restraint</span>
+          <h2>What not to do</h2>
+          <p class="sub">The repository's own scope rule — machinery exists to stop a demonstrated
+            failure, not an imagined one — applies to growth machinery too.</p>
+        </header>
+        <div class="dont" id="dont"></div>
+      </section>
+
+      <!-- 9 ============================================= -->
+      <section class="blk" id="risks">
+        <header>
+          <span class="eyebrow">09 — Risks</span>
+          <h2>What could stall this</h2>
+        </header>
+        <div class="tw">
+          <table>
+            <caption class="sr-only">Risk register</caption>
+            <thead><tr><th>Risk</th><th class="n">Likelihood</th><th class="n">Impact</th><th>Mitigation</th></tr></thead>
+            <tbody>
+              <tr><td>Hosts ship native equivalents and commoditise the pitch</td><td class="n">High, underway</td><td class="n">High</td><td>Reposition now as the cross-host policy and audit layer; publish the comparison page before it is reactive</td></tr>
+              <tr><td>False-positive fatigue drives churn</td><td class="n">High</td><td class="n">High</td><td>Ask mode, a public ledger, consistent labelling, the time-to-fix guardrail</td></tr>
+              <tr><td>Enterprise lockdown silently disables the hook</td><td class="n">Medium</td><td class="n">High</td><td>Ship and document a managed-settings install path</td></tr>
+              <tr><td>Bus factor of one</td><td class="n">Certain</td><td class="n">High</td><td>Release runbook, one triage collaborator, a written contribution contract</td></tr>
+              <tr><td>Release churn reads as instability</td><td class="n">Medium</td><td class="n">Medium</td><td>Declare a cadence; publish a <code>stable</code> tag that lags <code>latest</code></td></tr>
+              <tr><td>Unpinned <code>npx</code> in the hook path on nine hosts</td><td class="n">Medium</td><td class="n">High</td><td>Pin to an installed path, as the Claude Code plugin already does</td></tr>
+              <tr><td>Brand dilution and a squatter repository</td><td class="n">Medium</td><td class="n">Medium</td><td>A “formerly” line, an abuse report, pointer READMEs</td></tr>
+              <tr><td>A new pinned-SHA listing goes stale like the last one</td><td class="n">High, if unautomated</td><td class="n">Medium</td><td>Automate the SHA bump in the release workflow for every catalog that pins</td></tr>
+              <tr><td>Growth work crowds out maintenance</td><td class="n">Medium</td><td class="n">Medium</td><td>Ten hours a week is the cap; honour the deferred list</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 10 ============================================= -->
+      <section class="blk" id="method">
+        <header>
+          <span class="eyebrow">10 — Method</span>
+          <h2>How this was researched, and where it is thin</h2>
+        </header>
+        <p class="measure">Fifteen dimensions were researched in parallel: positioning, onboarding,
+          competitors, marketplaces, content, search, product loops, partnerships, monetisation,
+          community, narrative, international, metrics, user voice and risk. All fifteen returned findings, roughly 250 in total, each with evidence and at least one source. Sources were the GitHub API,
+          the npm registry, host CLI documentation and changelogs, the repository and its history, and
+          the public web.</p>
+        <div class="note risk">
+          <p><strong>Known limits.</strong> The adversarial verification pass designed to fact-check every
+          finding did not complete, so findings carry their researcher's confidence rating rather than an
+          independent second read; the highest-stakes numbers here were re-checked by hand. The
+          documentation site and the npm downloads API were unreachable from the research environment, so
+          docs facts come from the public source repository and downloads from the registry search
+          endpoint. GitHub traffic insights need push access and were not readable. Every route to Hacker News was blocked, so the score and comments on the project's one Show HN
+          are unread and its dates were reconstructed indirectly; two of the five launch-peak days remain
+          unexplained.</p>
+        </div>
+      </section>
+
+      <footer class="end">
+        <p>Growth review for <a href="https://github.com/kenryu42/cc-safety-net">kenryu42/cc-safety-net</a>,
+          compiled 14 September 2026 against v2.4.1. Figures from the GitHub API, the npm registry and the
+          repository itself. The full written report lives at <code>docs/growth-strategy.md</code>.</p>
+      </footer>
+
+    </main>
+  </div>
+</div>
+
+<script type="application/json" id="data-months">
+[{"m":"2025-12","label":"Dec 2025","short":"Dec","stars":329,"releases":2,"issues":3,"cum":329},
+ {"m":"2026-01","label":"Jan 2026","short":"Jan","stars":595,"releases":11,"issues":9,"cum":924},
+ {"m":"2026-02","label":"Feb 2026","short":"Feb","stars":146,"releases":0,"issues":0,"cum":1070},
+ {"m":"2026-03","label":"Mar 2026","short":"Mar","stars":124,"releases":3,"issues":3,"cum":1194},
+ {"m":"2026-04","label":"Apr 2026","short":"Apr","stars":77,"releases":0,"issues":2,"cum":1271},
+ {"m":"2026-05","label":"May 2026","short":"May","stars":75,"releases":1,"issues":3,"cum":1346},
+ {"m":"2026-06","label":"Jun 2026","short":"Jun","stars":58,"releases":7,"issues":4,"cum":1404},
+ {"m":"2026-07","label":"Jul 2026","short":"Jul","stars":49,"releases":0,"issues":1,"cum":1453},
+ {"m":"2026-08","label":"Aug 2026","short":"Aug","stars":61,"releases":17,"issues":7,"cum":1514},
+ {"m":"2026-09","label":"Sep 2026","short":"Sep","stars":25,"releases":6,"issues":4,"cum":1539,"partial":true}]
+</script>
+
+<script type="application/json" id="data-stats">
+[{"k":"GitHub stars","v":"1,539","n":"76 forks · 10 watchers"},
+ {"k":"Stars per week","v":"13","n":"trailing 12-week median","down":true},
+ {"k":"npm per month","v":"25.9k","n":"4,192 in the last week"},
+ {"k":"Releases since 10 Aug","v":"23","n":"and 86 new stars"},
+ {"k":"Registries listing it","v":"1 / 8","n":"and that one ships v1.0.6","down":true},
+ {"k":"External PRs merged","v":"2 / 21","n":"from 1 of 13 authors","down":true}]
+</script>
+
+<script type="application/json" id="data-findings">
+[{"rule":"readme.why-deleted","tone":"bad","h":"The strongest version of the pitch was written, then deleted a day later",
+  "p":["Commit <code>6e0d788</code> on 31 August added a sourced “Why this exists”: no major coding CLI deterministically blocks destructive git commands inside the workspace you handed it, quoting Codex's own security docs and CVE-2026-25725. Commit <code>0521197</code> the next day, titled “chore: simplify readme”, removed it along with the sandbox comparison and the capability table.",
+       "An independent evaluator had singled out those tables as “unusually candid”. The README now contains no reason to care."]},
+ {"rule":"readme.above-the-fold","tone":"warnb","h":"The README sells the wrong thing first",
+  "p":["The order today is logo, four engineering badges, a screenshot of the policy dashboard, then a 27-line table of thirteen CLI logos. The install command sits roughly forty percent down. There is no demo, no GIF, no social proof and no comparison."]},
+ {"rule":"category.commoditised","tone":"bad","h":"The ground moved under the old pitch",
+  "p":["Claude Code's auto mode is now the default on Pro, Max and Team plans, and blocks <code>git reset --hard</code>, <code>git clean -fd</code>, force pushes and <code>rm</code> on critical paths by default.",
+       "Anthropic's own docs supply the counter-argument too: Bash deny rules are string matches that miss <code>/bin/rm</code> and <code>bash -c</code> and are “not a security boundary”; the sandbox has “no built-in credential deny list”; and “native Windows is not supported”."]},
+ {"rule":"search.invisible","tone":"bad","h":"Invisible for its own problem",
+  "p":["Six problem-intent queries were run on 14 September. The project appeared in zero results across roughly forty-five URLs. The results are incident issues in <code>anthropics/claude-code</code>, Anthropic's hooks docs, and tutorials teaching a ten-line regex hook.",
+       "A six-star competitor ranks second for the git-reset query with a recovery gist that funnels to its own product."]},
+ {"rule":"registry.pinned-stale","tone":"bad","h":"One listing is actively shipping a build from June",
+  "p":["Anthropic's community marketplace — the store behind Claude Code's own <code>/plugin</code> discovery — lists it as <code>safety-net</code>, pointing at the former repository name and pinned to SHA <code>9fa3c5bd</code> from 30 June. That commit is <b>v1.0.6</b>: two majors old, before rulebooks, before the policy GUI, before six of the thirteen CLIs. Its <code>src/hosts/</code> directory does not exist.",
+       "Around it the pattern repeats. The curated directory has 296 plugins and 18 tagged security, every one a vendor scanner and not one a pre-execution guard. Copilot CLI pre-registers two marketplaces and this is in neither. xAI's catalog has 27 plugins and no guardrail at all. Three awesome-lists worth roughly 66,000 stars still carry the old name — one of them, read only by OpenCode users, calls it “A Claude Code plugin”.",
+       "Even the self-owned surface is off: <code>.claude-plugin/marketplace.json</code>, which Claude Code, Copilot CLI and Antigravity all read, is named <code>cc-safety-net-dev</code> and calls itself a “Development marketplace”. The README mentions no marketplace path at all."]},
+ {"rule":"churn.false-positives","tone":"warnb","h":"False positives are the churn driver, and the relief was declined",
+  "p":["Eleven of thirty-six issues report a safe command being blocked. Users describe it as breaking autonomy, not as a nuisance: “defeats the purpose of autonomous agents”, “the agent gives up”.",
+       "A pull request implementing ask-instead-of-deny arrived with manual test evidence, sat eighty-two days, and was closed with no maintainer comment. Claude Code has since changed its semantics so a hook <code>ask</code> floors at a prompt, which removes the original objection."]},
+ {"rule":"community.closed-funnel","tone":"warnb","h":"The contributor funnel is closed, and one closure became a competitor",
+  "p":["Two of roughly twenty-one external pull requests merged, both from the same author. Several were closed with no human message. Two contributors were told “you're banned” inside the thread with no stated reason; one now ships a competing tool and writes critical content that ranks in search.",
+       "Issue handling, by contrast, is excellent: thirty-six of thirty-six closed, false positives fixed and released inside one or two days. Keep the bar. Change the social layer around it."]},
+ {"rule":"content.silence","tone":"bad","h":"The project publishes nothing, anywhere",
+  "p":["No Reddit footprint under either name. Exactly one human-written third-party article in nine months — the Korben feature that caused its best early day. No Japanese or Chinese post despite shipping docs in both languages, while the Japanese ecosystem publishes steadily on this exact problem and hand-rolls a Python script every time.",
+       "Everything else that mentions the project anywhere is a scraped directory listing. Meanwhile a rival reached 2,000 stars in five weeks using one Chinese developer forum and nothing else."]},
+ {"rule":"narrative.unpublished","tone":"warnb","h":"Rare credibility material, none of it published",
+  "p":["The repository holds a fifteen-family residual-risk registry with a dated adjudication process, a SECURITY.md that draws an explicit “a bypass is a public bug, not a vulnerability” line that gitleaks, semgrep and trivy do not draw, and a hand-edited 6,964-row verdict corpus.",
+       "None of it appears on the docs site. Competitors publish unrefereed comparison tables about this project with incorrect claims, and no shared corpus exists for anyone to check them against."]}]
+</script>
+
+<script type="application/json" id="data-pillars">
+[{"n":"Pillar 1","h":"Put the argument back","th":"Nothing else works until a visitor understands the problem in ten seconds.","bets":[
+  {"t":"Restore the deleted “Why this exists”","e":"low","i":"high","w":"now","p":"Keep the opening paragraph and three bullets, trimmed to about 120 words, anchored on the two claims rivals cannot make.","s":"<b>First step:</b> git show 6e0d788 -- README.md, trim, insert above the CLI table."},
+  {"t":"Swap the dashboard screenshot for a block demo","e":"low","i":"high","w":"now","p":"A ten-second GIF of an agent running git reset --hard and hitting the block. One caveat: rm -rf \"$HOME\" currently reports the policy-protection rule, which reads wrong on camera — demo the git case, or fix the precedence first.","s":"<b>First step:</b> record with vhs or asciinema against an isolated home."},
+  {"t":"Adopt one tagline, use it verbatim everywhere","e":"low","i":"high","w":"now","p":"The GitHub About, npm description and three plugin manifests each say something different today, and none names the reader's situation.","s":"<b>First step:</b> write the sentence once; change package.json, three manifests and the repo description in one commit."},
+  {"t":"Publish “what your CLI already does, and what this adds”","e":"low","i":"high","w":"now","p":"One row per host, quoting the host's own documentation for what it blocks, then the delta: one policy, shared through git, identical across thirteen hosts, deterministic, on Windows.","s":"<b>First step:</b> seed it from the six quoted changelog lines already collected."},
+  {"t":"Move Quick start above the thirteen-logo grid","e":"low","i":"medium","w":"now","p":"Collapse the logo table behind a details element and move the legacy-upgrade section behind a link; it addresses users on 2.2 and earlier, not newcomers.","s":"<b>First step:</b> cut the table block, paste it after Quick start."},
+  {"t":"Surface the social proof that already exists","e":"low","i":"medium","w":"now","p":"Downloads and stars badges, plus a “used by” line naming the starter kit that installs it by default and the guides that recommend it.","s":"<b>First step:</b> add two shields badges to the existing badge row."}]},
+
+ {"n":"Pillar 2","h":"Fix the distribution plumbing","th":"The highest reach per hour of maintainer time in this entire plan. Eight first-party registries were checked; one lists the project, and that one is stale.","bets":[
+  {"t":"Unpin the v1.0.6 build in the Anthropic directory","e":"low","i":"high","w":"now","p":"The only place where a broken listing is actively distributing an obsolete build, on the highest-intent discovery surface the project touches. Keep the published slug — Anthropic's guidance is that a published name must not change, and the separate marketplace repo already carries the rename mapping.","s":"<b>First step:</b> run claude plugin validate, then submit through the directory form; direct PRs to the mirror are auto-closed."},
+  {"t":"Rename the repository's own marketplace manifest","e":"low","i":"medium","w":"now","p":"Claude Code, Copilot CLI and Antigravity all read .claude-plugin/marketplace.json, and this one announces itself as “cc-safety-net-dev — Development marketplace”. The README documents no marketplace path at all. This surface needs nobody's approval.","s":"<b>First step:</b> rename it, assert the name in the existing verify script, add one README line."},
+  {"t":"Correct three awesome-list entries worth ~66,000 stars","e":"low","i":"medium","w":"now","p":"All three say “Claude Code Safety Net”, link the old repository, and describe seven CLIs with no mention of secret blocking. The largest takes a web issue form rather than a PR; the other two take ordinary PRs.","s":"<b>First step:</b> file the issue-form submission, then one PR each for the other two."},
+  {"t":"Add the gemini-cli-extension topic","e":"low","i":"medium","w":"now","p":"The extension repository carries its manifest but not the topic the gallery crawls daily, so it is structurally invisible while smaller competitors are listed.","s":"<b>First step:</b> add the topic today, check the gallery after the next crawl."},
+  {"t":"Pull request OpenCode's ecosystem page","e":"low","i":"medium","w":"now","p":"The official page explicitly invites pull requests and lists no command guard at all.","s":"<b>First step:</b> open the one-row table PR against the dev branch."},
+  {"t":"Propose a curated Kimi Code marketplace entry","e":"low","i":"high","w":"now","p":"A Chinese-first host with 7.4k stars whose marketplace has six entries and no guard, whose README advertises hooks that “gate risky tool calls”, and for which a plugin manifest already ships here.","s":"<b>First step:</b> open the issue with a thirty-second GIF of a block inside Kimi Code."},
+  {"t":"Fix the npm surface: funding, keywords, badge","e":"low","i":"medium","w":"now","p":"npm is the actual install channel and it ranks on keywords, yet only five of thirteen hosts are named and there is no funding field, so the configured sponsors link is invisible on the package page.","s":"<b>First step:</b> add the funding field and eight missing host keywords in one commit."},
+  {"t":"Get into the marketplace Copilot CLI registers by default","e":"medium","i":"high","w":"30d","p":"Copilot CLI pre-registers two marketplaces and the project is in neither, despite Copilot support having been contributed by a user who wanted to recommend it for an organisational rollout. The larger has roughly 39,000 stars.","s":"<b>First step:</b> follow the documented external-plugin review workflow; direct PRs adding one are rejected."},
+  {"t":"Claim the empty security slot in xAI's marketplace","e":"medium","i":"medium","w":"30d","p":"Twenty-seven plugins, all commercial vendor integrations, and not one guardrail. It takes an ordinary pull request with a pinned SHA — so automate the bump, or it becomes the same stale-pin bug in a new place.","s":"<b>First step:</b> fork, add the entry with the current SHA, run their validator, open the PR."},
+  {"t":"Apply to Anthropic's curated directory","e":"medium","i":"high","w":"30d","p":"296 plugins, 18 tagged security, every one a vendor scanner and not one a pre-execution guard. An uncontested category slot rather than a crowded one.","s":"<b>First step:</b> submit through the same directory form, marked as a curated-directory request."},
+  {"t":"Hermes catalog entry and ClawHub package","e":"medium","i":"medium","w":"30d","p":"Hermes is owner-submit-only and needs a standalone repository with a SHA pinned at least two weeks old. ClawHub needs two compatibility keys in package.json that are simply absent; the OpenClaw integration itself already ships.","s":"<b>First step:</b> cut the Hermes tagged release now so the two-week clock starts."},
+  {"t":"List in the large cross-agent skills lists","e":"low","i":"medium","w":"30d","p":"Three lists between 6k and 46k stars carry no mention of the project, and the largest explicitly prefers proven, community-adopted skills over new ones — a bar 1,539 stars and nine months clears comfortably.","s":"<b>First step:</b> write the ten-word description their format demands and open the PR."},
+  {"t":"Ship copy-paste recipes for CI and cloud runners","e":"medium","i":"medium","w":"30d","p":"The GitHub Action accepts a settings input that includes hooks, and cloud sessions load plugins from checked-in settings. Both are reachable today with no code change.","s":"<b>First step:</b> test the inline-hooks path on a throwaway repo and record the exact YAML."}]},
+
+ {"n":"Pillar 3","h":"Occupy the problem in search","th":"The queries are unoccupied. The people typing them have the problem right now.","bets":[
+  {"t":"Incident-explainer pages, one per recurring failure","e":"low","i":"high","w":"now","p":"“Claude Code ran git reset --hard: recover your work and block it next time” — that query already ranks a competitor's recovery gist at position two.","s":"<b>First step:</b> write that one page, citing four real incident issues."},
+  {"t":"Comparison pages using the names people search","e":"low","i":"medium","w":"now","p":"Retitle the sandbox guide to include the product names, and add a corrected table answering a competitor's incorrect claims.","s":"<b>First step:</b> retitle the existing page; file the correction PR the same day."},
+  {"t":"Split the install page into thirteen per-host pages","e":"medium","i":"high","w":"30d","p":"3,400 words and thirteen headings on one URL cannot rank for “codex hook block rm -rf”. It also gives each README logo a real destination instead of an anchor.","s":"<b>First step:</b> create the Claude Code and Codex pages first, with redirects from the anchors."},
+  {"t":"An FAQ page whose headings are literal questions","e":"low","i":"medium","w":"30d","p":"“How do I stop Claude Code from running rm -rf?” answered in one paragraph with the install command first. This is also what AI search engines quote.","s":"<b>First step:</b> write three questions and add the page to the Get started group."},
+  {"t":"Align README, About, topics and npm keywords","e":"low","i":"medium","w":"now","p":"The README never uses the word PreToolUse, its H1 is an image, and npm keywords omit most supported hosts.","s":"<b>First step:</b> one commit for keywords, description, About and topics."},
+  {"t":"Resolve the duplicate documentation host","e":"low","i":"medium","w":"now","p":"A preview host is indexed separately from the canonical domain, splitting the brand SERP.","s":"<b>First step:</b> check for a redirect or canonical; set it in the dashboard if absent."}]},
+
+ {"n":"Pillar 4","h":"Publish what nobody else can","th":"Zero organic content footprint: no Reddit hits under either name, one human-written article in nine months, nothing in Japanese or Chinese despite shipping docs in both.","bets":[
+  {"t":"Refresh the bypass research before publishing it","e":"low","i":"high","w":"now","p":"The bypass document says a base64-encoded filename “currently works”. Run against the shipped CLI it does not — that shape is blocked, while character-code reconstruction still passes. Publishing a stale bypass claim would do more damage than publishing nothing.","s":"<b>First step:</b> re-run every case through explain --json at standard and strict; stamp the doc with the version it was verified against."},
+  {"t":"Re-launch on Hacker News, on a weekday","e":"low","i":"high","w":"30d","p":"Since the New Year's Day post the project renamed, went from v0.1.0 to v2.4.1, and gained a semantic analyser, twelve hosts, rulebooks and a GUI. That is a new Show HN, not a repost. Lead with the bypass disclosure, not the feature list, and say what the tool does not stop. Four other Show HNs in this niche reached the front page between January and June.","s":"<b>First step:</b> draft the title and the 150-word first comment; record an asciinema of a real block."},
+  {"t":"Publish an incident ledger with an honest verdict column","e":"medium","i":"high","w":"30d","p":"Every public agent data-loss incident with its date, host, exact command, what was lost, a source link, and the verdict this tool gives. The supply refreshes itself — six issues joined the Claude Code data-loss label in four days. The honest column is what makes it citable: some incidents it would not have caught, and those rows link to the residual-risk registry.","s":"<b>First step:</b> seed it with the verified incidents and run each command through explain to fill the verdict column."},
+  {"t":"Open a standing public bypass challenge","e":"low","i":"medium","w":"30d","p":"Publish the known bypasses, invite new ones, credit every finder by name in the registry, and feed accepted findings into the contract corpus as failing expectations — which is what the project's own testing rule already demands. It converts the contributor funnel from pull requests the owner rewrites into findings the owner wants.","s":"<b>First step:</b> enable Discussions with a Bypasses category and seed it with the worked example."},
+  {"t":"Reddit debut with experience reports, never the tool","e":"medium","i":"high","w":"30d","p":"These subreddits punish launches and reward war stories. The audit log can produce primary data nobody else has: every destructive command an agent actually tried during a week of real work. Mention the tool once, in a comment, only if asked.","s":"<b>First step:</b> run a week of normal work against an isolated home, export the audit log, write the post from the real denial list."},
+  {"t":"Follow up with the writer who already covered it","e":"low","i":"medium","w":"now","p":"One French blog post produced the clearest identifiable spike in the project's history and nobody ever followed up. That is a warm contact. Then pitch the research, not the tool, to the developer-tool newsletters.","s":"<b>First step:</b> send the “what changed since December” note with the bypass disclosure attached."},
+  {"t":"Japanese article aimed at the do-it-yourself recipes","e":"medium","i":"medium","w":"60d","p":"The Japanese ecosystem has published repeatedly on blocking destructive commands with hooks, and every recipe hand-rolls a Python script. The honest post is where a regex hook fails: bash -c, flag reordering, interpreter one-liners. The translated docs already exist.","s":"<b>First step:</b> write it against the specific bypasses the published recipes miss, with runnable before and after."},
+  {"t":"Chinese post on the forum a rival used to reach 2,000 stars","e":"medium","i":"high","w":"60d","p":"The rival that reached 2,000 stars in five weeks did it with a Chinese story-first README and one developer forum as its only named channel — no Hacker News, no Reddit, no X. The translated docs already exist and the only Chinese footprint today is an unclaimed scrape.","s":"<b>First step:</b> draft the opening scene around a real incident where an agent routed around a safety block."},
+  {"t":"Cross-host research: do hooks actually fire?","e":"high","i":"high","w":"60d","p":"A Codex issue filed on 13 September reports the PreToolUse hook is silently skipped when the session working directory no longer exists, and the tool call proceeds. That is the mechanism this product depends on, failing open. Check this project's own exposure first: it may be a defect to fix rather than a story to tell.","s":"<b>First step:</b> reproduce it locally, then test the equivalent path on the other twelve hosts."}]},
+
+ {"n":"Pillar 5","h":"Make the first five minutes prove it","th":"A guard that works is invisible. Doctor says so in as many words: “No blocked commands in the last 7 days.”","bets":[
+  {"t":"End install with proof, not a status line","e":"low","i":"high","w":"now","p":"Today a Claude Code install prints “Installed Claude Code integration” and stops, without mentioning that a shell-installed plugin does not load until restart or /reload-plugins. Run the existing three-case self-test and one explain instead.","s":"<b>First step:</b> call the self-test runner after the install message; add the activation note."},
+  {"t":"Add a “verify it works” block and a real GIF to Quick start","e":"low","i":"high","w":"now","p":"Show the explain output verbatim under the install command, then doctor. Twenty seconds from installed to convinced.","s":"<b>First step:</b> record the GIF against an isolated home and paste the trace."},
+  {"t":"Teach the human inside the denial","e":"low","i":"medium","w":"now","p":"The block message is written for the agent and carries no docs link and no “wrong block? run explain” hint.","s":"<b>First step:</b> add a contract test, then extend the message formatter."},
+  {"t":"Ship an opt-in ask decision where the protocol supports it","e":"medium","i":"high","w":"30d","p":"The most repeated unmet request and the direct relief for the top churn driver. Claude Code now floors a hook ask at a prompt, which removes the original objection. Opt-in, two hosts, never in strict or paranoid.","s":"<b>First step:</b> open the tracking issue the contributing process requires; credit the original PR."},
+  {"t":"Publish a false-positive ledger","e":"low","i":"medium","w":"30d","p":"Every reported false positive with its command, rule, fix version and corpus row. Turns the top complaint into visible evidence of responsiveness.","s":"<b>First step:</b> build it from the eleven existing issues and their fix versions."},
+  {"t":"Publish a truthful Windows matrix","e":"medium","i":"medium","w":"30d","p":"Six of thirty-six issues are Windows-specific, while the README still says support is “best effort and has not been tested”. The built-in sandbox does not support native Windows at all, so this is a niche worth owning rather than hedging.","s":"<b>First step:</b> enumerate the actual Windows CI jobs and write the matrix from them."},
+  {"t":"Browser playground for explain","e":"high","i":"high","w":"60d","p":"Zero runtime dependencies, and the analyzer touches Node only through node:path with filesystem access confined to three modules. A paste-a-command widget with permalinks turns every “why was this blocked?” argument into a link.","s":"<b>First step:</b> spike a browser bundle and list the failing imports."}]},
+
+ {"n":"Pillar 6","h":"Build the loops","th":"Every block, every committed config, every rulebook should recruit the next user.","bets":[
+  {"t":"Stamp the block message with a rule URL","e":"low","i":"medium","w":"now","p":"The most-seen surface the project owns carries no link. One appended line makes every block in a shared session, a PR transcript, a CI log or a screenshot a clickable path back.","s":"<b>First step:</b> add the line behind a failing test in the denial module."},
+  {"t":"Publish the canonical committed-hook block","e":"low","i":"high","w":"now","p":"Zero public repositories carry a committed policy file and exactly one commits the hook, behind a hand-written guard. One copied snippet in the wild is already wrong and silently protects nothing.","s":"<b>First step:</b> paste the canonical JSON into the README team section and the team guide."},
+  {"t":"Make policy apply write the committed hook","e":"medium","i":"high","w":"30d","p":"Turns a repository into something that carries its own protection, instead of thirteen teammates each installing per machine.","s":"<b>First step:</b> open the feature issue citing the two real-world snippets as the shape."},
+  {"t":"Community rulebook index","e":"low","i":"medium","w":"30d","p":"Users can already distribute a rulebook from their own repository — the resolver handles it — so this needs a page, not machinery. Community rulebooks already exist in the wild, invisible.","s":"<b>First step:</b> add the table and a submission paragraph; invite the two known authors."},
+  {"t":"Credit reporters and researchers in release notes","e":"low","i":"high","w":"now","p":"The generator currently forbids a contributor section. One exception — “reported by @handle” on each fixed bullet — converts thirty-two reporters into named advocates.","s":"<b>First step:</b> amend the release-notes skill and use it on the next patch."},
+  {"t":"Publish a “what happens to your pull request” contract","e":"low","i":"high","w":"now","p":"A guaranteed human reply, co-author credit on re-implementation, and scope rejections that cite the threat model. Then retro-thank the pull requests closed in silence, including the two authors told “you're banned”.","s":"<b>First step:</b> write the contributing section, then post the retro comments in one sitting."},
+  {"t":"Enable Discussions with three categories","e":"low","i":"medium","w":"now","p":"Questions, show-and-tell, rulebooks. Not a chat server: a solo maintainer cannot staff synchronous chat, and Discussions are indexed by search engines while chat is not.","s":"<b>First step:</b> enable it and route the issue-template contact link there."},
+  {"t":"Seed eight to ten genuine starter tasks","e":"low","i":"medium","w":"now","p":"Both labels exist and neither is applied to a single issue. Use them for work that does not touch the analyzer: per-host install docs, Windows field reports, corpus rows, rulebooks.","s":"<b>First step:</b> open three this week and pin one."}]},
+
+ {"n":"Pillar 7","h":"Instrument, then experiment","th":"Nothing in this plan can be judged today, and GitHub throws the evidence away every fourteen days.","bets":[
+  {"t":"Daily metrics snapshot in a separate repository","e":"low","i":"high","w":"now","p":"One JSON line a day: stars, forks, npm point and range downloads, per-version share, traffic, referrers, popular paths. The only way to tell whether a listing or a post did anything.","s":"<b>First step:</b> create the repo, add the cron workflow, run it once by hand."},
+  {"t":"Turn on privacy-friendly docs analytics","e":"low","i":"high","w":"now","p":"A four-line configuration block enables a cookieless provider, consistent with the project's privacy stance. Track per-host page views and install-command copies.","s":"<b>First step:</b> create the site and add the integrations block."},
+  {"t":"Write down the north star and guardrails with baselines","e":"low","i":"high","w":"now","p":"Trailing four-week npm downloads, read with per-version share so release churn is not mistaken for growth, plus six guardrails including the false-positive rate.","s":"<b>First step:</b> commit the definitions with today's values, verbatim."},
+  {"t":"Two-week pre-registered experiment log","e":"low","i":"high","w":"now","p":"Hypothesis, channel, artifact, window, primary metric, expected lift, noise floor — written before the experiment runs.","s":"<b>First step:</b> create the log with the noise-floor numbers and register the first experiment."},
+  {"t":"Weekly generated dashboard","e":"low","i":"medium","w":"30d","p":"Last week against the trailing eight-week median, with the guardrails alongside, so a bad week is visible without anyone remembering to look.","s":"<b>First step:</b> hand-write the first week's file so the format exists before automating it."},
+  {"t":"Release-aware download view","e":"medium","i":"high","w":"30d","p":"Each release triggers a re-download wave from the existing base. Overlay release dates on daily downloads, or growth and churn stay indistinguishable.","s":"<b>First step:</b> backfill the full daily range once and overlay the forty-seven release dates."}]}]
+</script>
+
+<script type="application/json" id="data-dont">
+[{"h":"Do not rename again.","p":"369 files already reference the old name and every awesome-list entry points at it. Expand the acronym in place instead."},
+ {"h":"Do not add a star prompt to the CLI.","p":"The dashboard already asks once, tied to a real blocked count, which is the tasteful limit. A terminal nudge on every install reads as begging."},
+ {"h":"Do not open a Discord.","p":"A solo maintainer cannot staff synchronous chat, and Discussions are indexed by search engines while chat is not."},
+ {"h":"Do not over-claim security.","p":"CONTRIBUTING says this is not a security hardening tool and SECURITY.md says it is not a sandbox or a privilege boundary, while the sponsors page calls it “a security tool”. Pick the honest sentence. A security-literate audience checks."},
+ {"h":"Do not answer paid-listing solicitations.","p":"One arrived offering a “dofollow backlink” and was correctly marked spam."},
+ {"h":"Do not fight comparison tables with comparison tables.","p":"A competitor publishes incorrect claims about this project. Publish the reproducible corpus instead and let anyone check."},
+ {"h":"Do not publish the bypass research as it stands.","p":"It claims a base64 bypass “currently works”; the shipped CLI blocks that shape today. Re-verify every case and stamp the version before it goes near Hacker News."},
+ {"h":"Do not publish weaponised payloads.","p":"The existing SECURITY.md line — report the command shape, not a ready-to-paste payload — is the right boundary for the bypass content in this plan."},
+ {"h":"Do not build machinery ahead of its first real entry.","p":"The repository's own scope rule applies to growth machinery too: it exists to stop a demonstrated failure, not an imagined one."},
+ {"h":"Do not localise beyond Chinese and Japanese.","p":"Korean, Portuguese and European mentions are currently zero. Revisit if a non-English issue arrives from those regions."}]
+</script>
+
+<script>
+(function () {
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var read = function (id) { return JSON.parse(document.getElementById(id).textContent); };
+  var el = function (tag, cls, txt) { var n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+
+  /* ---------- theme ---------- */
+  var root = document.documentElement;
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.theme button'));
+  function setTheme(mode) {
+    if (mode === 'light' || mode === 'dark') root.setAttribute('data-theme', mode);
+    else root.removeAttribute('data-theme');
+    btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === mode)); });
+    try { localStorage.setItem('ccsn-growth-theme', mode); } catch (e) {}
+  }
+  var saved = 'system';
+  try { saved = localStorage.getItem('ccsn-growth-theme') || 'system'; } catch (e) {}
+  setTheme(saved);
+  btns.forEach(function (b) { b.addEventListener('click', function () { setTheme(b.getAttribute('data-mode')); }); });
+
+  /* ---------- stat row ---------- */
+  var statsHost = $('#stats');
+  read('data-stats').forEach(function (s) {
+    var c = el('div', 'stat');
+    c.appendChild(el('span', 'k', s.k));
+    c.appendChild(el('span', 'v' + (s.down ? ' dn' : ''), s.v));
+    c.appendChild(el('span', 'n', s.n));
+    statsHost.appendChild(c);
+  });
+
+  /* ---------- charts ---------- */
+  var MONTHS = read('data-months');
+  var NS = 'http://www.w3.org/2000/svg';
+  function mk(t, a) { var n = document.createElementNS(NS, t); for (var k in a) n.setAttribute(k, a[k]); return n; }
+  function niceCeil(v) {
+    if (v <= 0) return 1;
+    var p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+    var s = m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 4 ? 4 : m <= 5 ? 5 : m <= 6 ? 6 : m <= 8 ? 8 : 10;
+    return s * p;
+  }
+  function fmt(v) { return v >= 1000 ? (v % 1000 ? (v / 1000).toFixed(1) : v / 1000) + 'k' : String(Math.round(v)); }
+  function topPath(x, y, w, h, r) {
+    if (h <= 0.5) return 'M' + x + ',' + (y + h) + ' h' + w;
+    r = Math.min(r, w / 2, h);
+    return 'M' + x + ',' + (y + h) + ' V' + (y + r) + ' Q' + x + ',' + y + ' ' + (x + r) + ',' + y +
+           ' H' + (x + w - r) + ' Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + ' V' + (y + h) + ' Z';
+  }
+
+  function drawColumns(hostId, key, unit) {
+    var host = $('#' + hostId), tip = $('.tip', host);
+    var W = 520, H = 210, pL = 36, pR = 10, pT = 22, pB = 28;
+    var iW = W - pL - pR, iH = H - pT - pB;
+    var max = MONTHS.reduce(function (a, d) { return Math.max(a, d[key]); }, 0);
+    var top = niceCeil(max);
+    var band = iW / MONTHS.length, bw = Math.min(24, band * 0.58);
+
+    var svg = mk('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img' });
+    svg.setAttribute('aria-label', unit + ' per month, December 2025 to September 2026');
+
+    var g = mk('g', { 'class': 'grid' });
+    for (var i = 0; i <= 4; i++) {
+      var val = top * i / 4, y = pT + iH - (val / top) * iH;
+      g.appendChild(mk('line', { x1: pL, x2: W - pR, y1: y, y2: y }));
+      var t = mk('text', { x: pL - 7, y: y + 3.5, 'text-anchor': 'end' });
+      t.textContent = fmt(val); g.appendChild(t);
+    }
+    svg.appendChild(g);
+    var b = mk('g', { 'class': 'base' });
+    b.appendChild(mk('line', { x1: pL, x2: W - pR, y1: pT + iH, y2: pT + iH }));
+    svg.appendChild(b);
+
+    var maxIdx = MONTHS.reduce(function (a, d, i) { return d[key] > MONTHS[a][key] ? i : a; }, 0);
+
+    MONTHS.forEach(function (d, i) {
+      var v = d[key];
+      var x = pL + band * i + (band - bw) / 2;
+      var h = (v / top) * iH, y = pT + iH - h;
+      var grp = mk('g', {});
+      var hit = mk('rect', { 'class': 'hit', x: pL + band * i, y: pT, width: band, height: iH, tabindex: '0', role: 'img' });
+      hit.setAttribute('aria-label', d.label + ': ' + v + ' ' + unit.toLowerCase() + (d.partial ? ', partial month to the 14th' : ''));
+      var bar = mk('path', { 'class': 'bar' + (d.partial ? ' dim' : ''), d: topPath(x, y, bw, h, 4) });
+      grp.appendChild(hit); grp.appendChild(bar);
+      svg.appendChild(grp);
+
+      function show() {
+        tip.textContent = '';
+        var st = el('b', null, String(v));
+        tip.appendChild(st);
+        tip.appendChild(document.createTextNode(' ' + unit.toLowerCase() + ' · ' + d.label + (d.partial ? ' (to the 14th)' : '')));
+        tip.style.left = ((x + bw / 2) / W * 100) + '%';
+        tip.style.top = (y / H * 100) + '%';
+        tip.classList.add('on');
+      }
+      function hide() { tip.classList.remove('on'); }
+      hit.addEventListener('pointerenter', show);
+      hit.addEventListener('pointerleave', hide);
+      hit.addEventListener('focus', show);
+      hit.addEventListener('blur', hide);
+
+      if (i === maxIdx || d.partial) {
+        var lab = mk('text', { 'class': 'dl', x: x + bw / 2, y: y - 6, 'text-anchor': 'middle' });
+        lab.textContent = String(v); svg.appendChild(lab);
+      }
+      var xl = mk('text', { x: x + bw / 2, y: pT + iH + 15, 'text-anchor': 'middle' });
+      xl.textContent = d.short; svg.appendChild(xl);
+    });
+    host.insertBefore(svg, tip);
+  }
+
+  drawColumns('viz-stars', 'stars', 'New stars');
+  drawColumns('viz-rel', 'releases', 'Releases');
+
+  /* ---------- table twins ---------- */
+  function buildTable(hostId, key, head) {
+    var host = document.getElementById(hostId);
+    var tbl = el('table');
+    var cap = el('caption', 'sr-only', head + ' by month'); tbl.appendChild(cap);
+    var thead = el('thead'), hr = el('tr');
+    ['Month', head].forEach(function (h, i) { var th = el('th', i ? 'n' : null, h); hr.appendChild(th); });
+    thead.appendChild(hr); tbl.appendChild(thead);
+    var tb = el('tbody');
+    MONTHS.forEach(function (d) {
+      var tr = el('tr');
+      tr.appendChild(el('td', null, d.label + (d.partial ? ' (to 14th)' : '')));
+      tr.appendChild(el('td', 'n', String(d[key])));
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); host.appendChild(tbl);
+  }
+  buildTable('tab-stars', 'stars', 'New stars');
+  buildTable('tab-rel', 'releases', 'Releases');
+
+  Array.prototype.slice.call(document.querySelectorAll('.tbtn')).forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var t = document.getElementById(btn.getAttribute('aria-controls'));
+      var open = btn.getAttribute('aria-pressed') !== 'true';
+      btn.setAttribute('aria-pressed', String(open));
+      t.hidden = !open;
+    });
+  });
+
+  /* ---------- findings ---------- */
+  var vhost = $('#verdicts');
+  read('data-findings').forEach(function (f) {
+    var c = el('article', 'vd' + (f.tone === 'bad' ? ' bad' : f.tone === 'warnb' ? ' warnb' : ''));
+    var head = el('div', 'vh');
+    head.appendChild(el('h3', null, f.h));
+    head.appendChild(el('span', 'rid', f.rule));
+    c.appendChild(head);
+    f.p.forEach(function (para) { var p = el('p'); p.innerHTML = para; c.appendChild(p); });
+    vhost.appendChild(c);
+  });
+
+  /* ---------- pillars ---------- */
+  var phost = $('#pillars');
+  read('data-pillars').forEach(function (pl) {
+    var sec = el('section', 'pillar');
+    var hd = el('div', 'ph');
+    hd.appendChild(el('span', 'pn', pl.n));
+    hd.appendChild(el('h3', null, pl.h));
+    hd.appendChild(el('p', 'th', pl.th));
+    sec.appendChild(hd);
+    var bets = el('div', 'bets');
+    pl.bets.forEach(function (b) {
+      var row = el('div', 'bet');
+      var bh = el('div', 'bh');
+      bh.appendChild(el('span', 'bt', b.t));
+      var chips = el('div', 'chips');
+      chips.appendChild(el('span', 'chip e-' + b.e, b.e + ' effort'));
+      chips.appendChild(el('span', 'chip i-' + b.i, b.i + ' impact'));
+      chips.appendChild(el('span', 'chip when', b.w));
+      bh.appendChild(chips);
+      row.appendChild(bh);
+      row.appendChild(el('p', null, b.p));
+      var st = el('div', 'step'); st.innerHTML = b.s; row.appendChild(st);
+      bets.appendChild(row);
+    });
+    sec.appendChild(bets);
+    phost.appendChild(sec);
+  });
+  (function () {
+    var words = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+    var n = document.querySelectorAll('.bet').length;
+    var pillars = document.querySelectorAll('.pillar').length;
+    var h = document.getElementById('plan-h');
+    if (!h) return;
+    var w = String(words[pillars] || pillars);
+    h.textContent = w.charAt(0).toUpperCase() + w.slice(1) + ' pillars, ' + n + ' bets';
+  })();
+
+  /* ---------- do-not list ---------- */
+  var dhost = $('#dont');
+  read('data-dont').forEach(function (d) {
+    var row = el('div', 'd');
+    row.appendChild(el('span', 'x', '✕'));
+    var p = el('p');
+    var b = el('b', null, d.h);
+    p.appendChild(b);
+    p.appendChild(document.createTextNode(' ' + d.p));
+    row.appendChild(p);
+    dhost.appendChild(row);
+  });
+
+  /* ---------- toc ---------- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); }).filter(Boolean);
+  if ('IntersectionObserver' in window && secs.length) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          links.forEach(function (a) { a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id); });
+        }
+      });
+    }, { rootMargin: '-8% 0px -78% 0px', threshold: 0 });
+    secs.forEach(function (s) { io.observe(s); });
+  }
+})();
+</script>
+
+</body>
+</html>

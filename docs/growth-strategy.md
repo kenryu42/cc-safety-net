@@ -1,6 +1,7 @@
 # Growth strategy
 
 Research date: 2026-09-14. Baseline version: v2.4.1.
+A formatted version of this report, with the charts, is at [`growth-strategy.html`](./growth-strategy.html).
 
 This report answers one question: why did growth stall after January 2026, and what should a
 solo maintainer with roughly ten hours a week do about it.
@@ -17,8 +18,9 @@ machine it is marked unverified.
 shipped 23 releases, the highest velocity in its life, and gained 86 stars. Release days move the
 star count by 0 to 6. Growth stalled because the project stopped explaining why it exists, is
 absent or stale in every registry the host CLIs point users to, and does not appear in search for
-any of the problems it solves. Sixty percent of all stars arrived in the first six weeks, on a
-wave nobody has identified and nobody has repeated.
+any of the problems it solves. Sixty percent of all stars arrived in the first six weeks, on a wave
+driven by one French blog post and a Show HN posted on New Year's Day, neither of which was ever
+followed up.
 
 **Three highest-value moves, in order.**
 
@@ -79,12 +81,36 @@ CLIs, on Windows too. Say that before a host release forces the conversation.
 
 The ten best days in the project's history all fall between 2025-12-26 and 2026-01-08. The peak is
 2026-01-06 at 110 stars. Nothing since has come close: the best organic seven-day window after
-February was 35 stars in March 2026, with no release in that window, from a cause that remains
-unidentified. Effort and attention have been decoupled since February.
+February was 35 stars in March 2026, with no release in that window. Effort and attention have been
+decoupled since February.
+
+### What actually caused the launch wave
+
+Two of the five peak days now have an identified cause, and they are both instructive.
+
+| Day | Stars | Cause |
+|---|---:|---|
+| 2025-12-27 | 68 | A feature on Korben.info, a high-traffic French tech blog, published 2025-12-26 |
+| 2025-12-30 | 104 | **Unidentified** |
+| 2026-01-01 | 68 | A Show HN, posted on New Year's Day |
+| 2026-01-06 | 110 | **Unidentified** |
+| 2026-01-07 | 73 | Tail of the 01-06 event |
+
+Three things follow. First, the single largest identified driver was one blog post by one writer,
+who has never been contacted since; that is a warm contact, not a cold pitch. Second, the project's
+one Hacker News attempt was posted on New Year's Day, the lowest-traffic day of the year, and
+returned 68 stars, so the channel has effectively never been tested. Third, the two biggest days
+remain unexplained; the two-day decay shape of 110 then 73 looks like a newsletter or aggregator
+placement, and GitHub Trending was ruled out against a dated archive. The maintainer can probably
+settle this in one minute from GitHub's traffic referrers for that week, if any record survives.
+
+The detail that matters most: the README of that era carried an origin story, that Claude Code had
+silently wiped out hours of work and that soft rules cannot replace hard technical constraints.
+That is the framing Korben quoted. It is not in the README today.
 
 ---
 
-## 3. The eight findings that matter most
+## 3. The nine findings that matter most
 
 **1. The strongest version of the pitch was written and then deleted.**
 Commit `6e0d788` (2026-08-31) added a "Why this exists" section arguing that no major coding CLI
@@ -152,7 +178,15 @@ with no stated reason; one of them now ships a competing tool and writes critica
 ranks in search. Meanwhile issue handling is genuinely excellent: 36 of 36 closed, with false
 positives fixed and released inside one or two days.
 
-**8. The project has rare credibility material and publishes none of it.**
+**8. The project publishes nothing, anywhere.**
+There is no Reddit footprint under either name. There is exactly one human-written third-party
+article about the project in nine months, the Korben feature that caused its best early day. There
+is no Japanese or Chinese post despite shipping documentation in both languages, while the Japanese
+ecosystem publishes steadily on this exact problem and hand-rolls a Python script every time.
+Everything else that mentions the project anywhere is a scraped directory listing. Meanwhile a
+rival reached 2,000 stars in five weeks using one Chinese developer forum and nothing else.
+
+**9. The project has rare credibility material and publishes none of it.**
 The repository holds a 15-family residual-risk registry with a dated adjudication process, a
 SECURITY.md that draws an explicit "a bypass is a public bug, not a vulnerability" line that
 gitleaks, semgrep and trivy do not draw, and a hand-edited 6,964-row verdict corpus. None of it
@@ -215,7 +249,7 @@ cc-safety-net gained 86 stars while shipping 23 releases. Narrative beat breadth
 
 ## 6. The plan
 
-Six pillars. Each bet names what to do, why, the first step, and how it is measured.
+Seven pillars. Each bet names what to do, why, the first step, and how it is measured.
 Effort and impact are the author's estimates; `now` means this week or next.
 
 ### Pillar 1 — Put the argument back
@@ -331,7 +365,60 @@ each of the thirteen README logos a real destination instead of an anchor into a
 One piece of hygiene: a preview host at `ccsafetynet.mintlify.app` is indexed separately from the
 canonical domain. Confirm it redirects or canonicalizes.
 
-### Pillar 4 — Make the first five minutes prove it
+### Pillar 4 — Publish what nobody else can
+
+*The project has a zero organic content footprint: no Reddit hits under either name, one
+human-written third-party article in nine months, and no Japanese or Chinese post despite shipping
+docs in both. Everything else that mentions it is a scraped directory listing.*
+
+| Bet | Effort | Impact | When |
+|---|---|---|---|
+| Refresh the bypass research so it matches shipped behaviour | low | high | now |
+| Re-launch on Hacker News, on a weekday, led by the bypass disclosure | low | high | 30d |
+| Publish an incident ledger with an honest "would it have blocked this" column | medium | high | 30d |
+| Enable a standing public bypass challenge with named credit | low | medium | 30d |
+| Reddit debut with experience reports, never with the tool | medium | high | 30d |
+| Follow up with the one writer who already covered it | low | medium | now |
+| Japanese article aimed at the do-it-yourself hook recipes | medium | medium | 60d |
+| Chinese post on the forum a rival used to reach 2,000 stars | medium | high | 60d |
+| Cross-host research: do hooks actually fire? | high | high | 60d |
+
+**Correct the research before publishing it.** `docs/secret-protection-bypass-findings.md` says a
+base64-encoded filename bypass "currently works". Run against the shipped CLI it does not: that
+shape is now blocked, while character-code reconstruction still passes at standard and strict.
+Publishing a stale bypass claim would do more damage than publishing nothing. Re-run every case,
+stamp the document with the version it was verified against, then it becomes the best asset here.
+
+**Then re-launch on Hacker News.** Since the New Year's Day post the project renamed, went from
+v0.1.0 to v2.4.1, gained a semantic analyzer, twelve more hosts, rulebooks and a GUI. That is a new
+Show HN, not a repost. Lead with the bypass disclosure and the residual-risk registry rather than
+the feature list, and say plainly what the tool does not stop. Four other Show HN posts in this
+exact niche reached the front page between January and June 2026, so the category is not the
+problem; New Year's Day was.
+
+**The incident ledger is the evergreen asset.** One page listing every public agent data-loss
+incident with its date, host, exact command, what was lost, a source link, and the verdict this
+tool gives. The supply refreshes itself: six issues were added to the Claude Code `data-loss` label
+in the four days to 2026-09-14. The column that makes it citable rather than promotional is the
+honest one. Some incidents it would not have caught, including a September case where the deletion
+happened inside a Kotlin library call rather than a shell command, and those rows should link to
+the residual-risk registry.
+
+**One research post is worth more than the rest combined.** A Codex issue filed on 2026-09-13
+reports that the PreToolUse hook is silently skipped when the session working directory no longer
+exists, and the tool call proceeds. That is the mechanism this entire product depends on, failing
+open. Check whether cc-safety-net has an equivalent exposure on any of its thirteen hosts before
+writing a word: it may be a defect to fix rather than a story to tell. If the matrix holds up, a
+cross-host "do hooks actually fire?" benchmark is a genuine contribution nobody else has published.
+
+**Non-English channels are proven and unserved.** The Japanese ecosystem has published multiple
+substantial articles on blocking destructive commands with hooks, and every one hand-rolls a Python
+script; the honest post is where a regex recipe fails, on `bash -c`, on flag reordering, on
+interpreter one-liners. The Chinese channel has a live proof: the rival that reached 2,000 stars in
+five weeks did it with a Chinese story-first README and a single developer forum as its only named
+channel, with no Hacker News, Reddit or X presence at all.
+
+### Pillar 5 — Make the first five minutes prove it
 
 *A guard that works is invisible. `doctor` says so in as many words: "No blocked commands in the
 last 7 days. Tip: This is normal for new installations."*
@@ -363,7 +450,7 @@ and the analyzer touches Node only through `node:path`, with filesystem access c
 modules. A "paste a command, see the trace" widget with shareable permalinks turns every "why was
 this blocked?" argument into a link.
 
-### Pillar 5 — Build the loops
+### Pillar 6 — Build the loops
 
 *Every block, every committed config, every rulebook should recruit the next user.*
 
@@ -396,7 +483,7 @@ re-implementation. Retro-thank the pull requests closed in silence, including th
 "you're banned" — one of whom now competes. Keep the strict quality bar; it is an asset. Change the
 social layer around it, not the standard.
 
-### Pillar 6 — Instrument, then experiment
+### Pillar 7 — Instrument, then experiment
 
 *Nothing in this plan can be judged today.*
 
@@ -446,21 +533,26 @@ v1.0.6 build stops shipping. Rename the repository's own marketplace manifest. A
 topic. Fix the npm funding field and keywords. Stand up the metrics snapshot and write down the
 baselines. Turn on docs analytics. Most of these are under an hour each.
 
-**Days 1–30.** Record and ship the demo GIF. Publish the comparison page and the first two incident
+**Days 1–30.** Refresh the bypass research so it matches shipped behaviour, then re-launch on
+Hacker News on a weekday, led by that disclosure. Email the one writer who already covered the
+project. Record and ship the demo GIF. Publish the comparison page and the first two incident
 pages. Pull request OpenCode's ecosystem page and correct the three stale awesome-list entries.
 Open the Kimi Code proposal and the Grok Build pull request. Start the Copilot CLI marketplace
 review. Make install end in proof. Stamp the block message with a URL. Publish the pull-request
 contract, enable Discussions, and add reporter credit to release notes. Cut the standalone Hermes
 plugin release so its two-week pin clock starts.
 
-**Days 31–60.** Ask mode for Claude Code and Copilot CLI, through the issue-first process. Split
+**Days 31–60.** Publish the incident ledger and open the standing bypass challenge. Make the
+Reddit debut with a real audit log behind it. Ask mode for Claude Code and Copilot CLI, through the
+issue-first process. Split
 the install page into per-host pages. Submit the Hermes catalog entry and publish to ClawHub. Ship
 the community rulebook index. Publish the false-positive ledger and the Windows matrix. Apply to
 Anthropic's curated directory. List in the large cross-agent skills lists.
 
-**Days 61–90.** The incident ledger and the guard benchmark, which is the credibility asset with
-the longest shelf life. The browser playground. `policy apply --with-hook`. The Japanese article
-and the Chinese submissions, timed to a host release rather than to the calendar.
+**Days 61–90.** The guard benchmark and the cross-host "do hooks actually fire?" research, which
+are the credibility assets with the longest shelf life. The browser playground.
+`policy apply --with-hook`. The Japanese and Chinese posts, timed to a host release rather than to
+the calendar.
 
 **Explicitly deferred.** A hosted central-policy service, until three or more organizations commit
 `.cc-safety-net/` and ask for it. The academic preprint. Conference talks, which depend on the
@@ -485,6 +577,9 @@ thirteen convert better.
   correctly marked spam.
 - **Do not fight comparison tables with comparison tables.** A competitor publishes incorrect
   claims about this project. Publish the reproducible corpus instead and let anyone check.
+- **Do not publish the bypass research as it stands.** It claims a base64 bypass "currently works";
+  the shipped CLI blocks that shape today. Re-verify every case and stamp the document with the
+  version it was checked against before it goes anywhere near Hacker News.
 - **Do not publish weaponized payloads.** The existing SECURITY.md line, "report the command shape,
   not a ready-to-paste weaponized prompt-injection payload", is the right boundary for the bypass
   content in this plan.
@@ -515,7 +610,7 @@ thirteen convert better.
 
 Fifteen dimensions were researched in parallel: positioning, onboarding, competitors, marketplaces,
 content, search, product loops, partnerships, monetization, community, narrative, international,
-metrics, user voice, and risk. Thirteen produced verified findings, 215 in total, each with
+metrics, user voice, and risk. All fifteen returned findings, roughly 250 in total, each with
 evidence and at least one source. Sources were the GitHub API, the npm registry, host CLI
 documentation and changelogs, the repository and its history, and the public web.
 
@@ -525,6 +620,8 @@ rating rather than an independent second read; the highest-stakes numbers in thi
 re-checked by hand. The documentation site and the npm downloads API were unreachable from the
 research environment, so docs-site facts come from the public source repository and downloads come
 from the registry search endpoint. GitHub traffic insights require push access and were not
-readable. Reddit, Hacker News and X could not be searched directly, which is why the cause of the
-December 2025 launch spike remains unidentified. That question is worth answering: it is the only
-time this project has reached a large audience, and nobody knows how.
+readable. Every route to Hacker News was blocked, so the score and comments on the project's one Show HN are
+unread and its dates were reconstructed indirectly. Two of the five launch-peak days remain
+unexplained. That gap is worth one minute of the maintainer's time: GitHub's traffic referrers for
+that week, or any analytics from the docs site, would probably name the channel that produced the
+single best day this project has ever had.
