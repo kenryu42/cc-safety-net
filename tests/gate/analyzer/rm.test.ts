@@ -126,6 +126,10 @@ function optionCases(): readonly OptionCase[] {
       options: { cwd: home, originalCwd: home },
     },
     {
+      label: 'tracked cd into a temp directory',
+      options: { cwd: join(root, 'scratch'), originalCwd: workspace },
+    },
+    {
       label: 'no cwd at all',
       options: {},
     },
@@ -307,6 +311,18 @@ describe('rm rule set', () => {
     ];
     for (const row of rows)
       expect(ruleIdFor(row.source, row.label), `${row.label}: ${row.source}`).toBe(row.id);
+  });
+
+  test('a relative target is trusted when a tracked cd moved into a temp directory', () => {
+    const rows: readonly { readonly source: string; readonly id: string | null }[] = [
+      { source: 'rm -rf build', id: null },
+      { source: 'rm -rf ./build/cache', id: null },
+      { source: 'rm -rf ..', id: 'rm.recursive-force-outside-cwd' },
+      { source: 'rm -rf ../work', id: 'rm.recursive-force-cwd-self' },
+      { source: 'rm -rf ~/keep', id: 'rm.recursive-force-outside-cwd' },
+    ];
+    for (const row of rows)
+      expect(ruleIdFor(row.source, 'tracked cd into a temp directory'), row.source).toBe(row.id);
   });
 
   test('an unverifiable target is reported in strict mode only', () => {

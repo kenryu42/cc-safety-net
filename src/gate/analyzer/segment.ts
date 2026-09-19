@@ -1,4 +1,3 @@
-import { normalize } from 'node:path';
 import { AnalysisLimit, LIMITS } from '@/core/budget';
 import { resolveChdirTarget } from '@/core/paths/chdir';
 import { isTmpdirOverriddenToNonTemp } from '@/core/paths/tmpdir';
@@ -1014,7 +1013,8 @@ export function resolveCwdAfterCommandView(
   }
 
   const segment = commandView.words.map(analysisWordText);
-  if (!posixSegmentChangesCwd(segment, environment)) return undefined;
+  const assignsCdpath = segment.some((token) => /^CDPATH\+?=/.test(token));
+  if (!posixSegmentChangesCwd(segment, environment)) return assignsCdpath ? null : undefined;
   if (!cwd) return null;
 
   const unwrapped = getCwdChangeTokens(segment, environment, cwd);
@@ -1023,7 +1023,23 @@ export function resolveCwdAfterCommandView(
     return null;
   }
 
-  return resolveKnownCwdTarget(unwrapped[cdIndex + 1], cwd, environment.paths);
+  const operands = unwrapped.slice(cdIndex + 1);
+  const optionEnd = operands.findIndex(
+    (token) => token.length <= 1 || !token.startsWith('-') || token === '--',
+  );
+  const options = optionEnd === -1 ? operands : operands.slice(0, optionEnd);
+  if (options.some((token) => !/^-[LP]+$/.test(token))) return null;
+  const rest = optionEnd === -1 ? [] : operands.slice(optionEnd);
+  const targets = rest[0] === '--' ? rest.slice(1) : rest;
+  const target = targets[0];
+  if (targets.length !== 1 || target === undefined) return null;
+  if (
+    !/^(?:[./]|[A-Za-z]:[\\/])/.test(target) &&
+    (assignsCdpath || environment.env.has('CDPATH'))
+  ) {
+    return null;
+  }
+  return resolveKnownCwdTarget(target, cwd, environment.paths);
 }
 
 function resolveKnownCwdTarget(
@@ -1036,7 +1052,7 @@ function resolveKnownCwdTarget(
   }
 
   try {
-    return samePath(resolveChdirTarget(cwd, target, paths), cwd, paths) ? cwd : null;
+    return resolveChdirTarget(cwd, target, paths);
   } catch {
     return null;
   }
@@ -1117,13 +1133,6 @@ function getCwdChangeTokens(
 ): string[] {
   const stripped = stripLeadingGrouping(segment);
   return stripWrappers([...stripped], environment, cwd);
-}
-
-function samePath(a: string, b: string, paths: PathResolver): boolean {
-  const resolvedA = paths.realpath(a);
-  const resolvedB = paths.realpath(b);
-  if (resolvedA === null || resolvedB === null) return normalize(a) === normalize(b);
-  return normalize(resolvedA) === normalize(resolvedB);
 }
 
 function stripLeadingGrouping(tokens: readonly string[]): readonly string[] {

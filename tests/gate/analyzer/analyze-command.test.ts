@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir as systemTempRoot } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { REASON_DERIVED_COMMAND_WORK_LIMIT } from '@/core/budget';
 import { createTestEnvironment, processPathResolver as portedPaths } from '@/core/environment';
 import { resolveProtectedGitMetadata } from '@/core/git/metadata';
@@ -15,7 +15,14 @@ const workspace = mkdtempSync(join(systemTempRoot(), 'analyze-command-'));
 const agentHome = join(workspace, 'agent-home');
 const scratch = join(workspace, 'scratch');
 const project = join(workspace, 'checkout');
-for (const directory of [agentHome, scratch, project, join(project, '.git')]) {
+const plain = join(workspace, 'plain');
+for (const directory of [
+  agentHome,
+  scratch,
+  project,
+  join(project, '.git'),
+  join(plain, 'helpers'),
+]) {
   mkdirSync(directory, { recursive: true });
 }
 
@@ -534,6 +541,80 @@ describe('analyzeCommand', () => {
     );
     expect(decisionAt(agentHome, 'rm -f file.txt', standard)).toBeNull();
     expect(decisionAt(project, 'rm -rf build', standard)).toBeNull();
+  });
+
+  test('a tracked cd into a temp directory makes a relative rm -rf a temp delete', () => {
+    const scratchPosix = scratch.split(sep).join('/');
+    expect(decision(`cd '${scratchPosix}' && rm -rf build`, standard)).toBeNull();
+    expect(decision(`cd -- '${scratchPosix}' && rm -rf build`, standard)).toBeNull();
+    expect(decision(`cd -P '${scratchPosix}' && rm -rf build`, standard)).toBeNull();
+    expect(decision(`cd -x -- '${scratchPosix}' && rm -rf build`, standard)?.ruleId).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
+    expect(decision(`cd '${scratchPosix}' extra && rm -rf build`, standard)?.ruleId).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
+    expect(decision(`cd '${scratchPosix}' -P && rm -rf build`, standard)?.ruleId).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
+    expect(decision(`cd -P '${scratchPosix}' -L && rm -rf build`, standard)?.ruleId).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
+    expect(decision(`cd '${scratchPosix}' && rm -rf ../checkout`, standard)?.ruleId).toBe(
+      'rm.git-metadata',
+    );
+    expect(decision('cd .. && rm -rf build', standard)?.ruleId).toBe(
+      'rm.recursive-force-outside-cwd',
+    );
+  });
+
+  test('a bare cd operand is not tracked while CDPATH can redirect it', () => {
+    expect(decisionAt(plain, 'cd helpers && rm -rf keep', standard)).toBeNull();
+    expect(decisionAt(plain, 'cd ./helpers && rm -rf keep', standard)).toBeNull();
+    expect(
+      decisionAt(plain, `CDPATH=${workspace} cd helpers && rm -rf keep`, standard)?.ruleId,
+    ).toBe('rm.recursive-force-outside-cwd');
+    expect(
+      decisionAt(plain, `CDPATH=${workspace} cd ./helpers && rm -rf keep`, standard),
+    ).toBeNull();
+    for (const command of [
+      `CDPATH=${workspace}; cd helpers && rm -rf keep`,
+      `export CDPATH=${workspace} && cd helpers && rm -rf keep`,
+      `CDPATH+=${workspace}; cd helpers && rm -rf keep`,
+      `CDPATH+=${workspace} cd helpers && rm -rf keep`,
+      `export CDPATH+=${workspace}; cd helpers && rm -rf keep`,
+    ]) {
+      expect(decisionAt(plain, command, standard)?.ruleId, command).toBe(
+        'rm.recursive-force-outside-cwd',
+      );
+    }
+    const cdpathEnvironment = createTestEnvironment({
+      env: new Map([...processState, ['CDPATH', workspace]]),
+      home: agentHome,
+      tmpdir: scratch,
+      paths: portedPaths,
+    });
+    expect(
+      analyzeCommand('cd helpers && rm -rf keep', {
+        policySnapshot: snapshot,
+        effectiveCapabilities: standard.capabilities,
+        environment: cdpathEnvironment,
+        protectedGitMetadata: gitMetadata,
+        cwd: plain,
+      })?.ruleId,
+    ).toBe('rm.recursive-force-outside-cwd');
+  });
+
+  test('the original cwd stays a self target after a tracked cd', () => {
+    for (const command of [
+      'cd helpers && rm -rf ..',
+      'cd helpers && rm -rf ./..',
+      'cd .. && rm -rf plain',
+    ]) {
+      expect(decisionAt(plain, command, standard)?.ruleId, command).toBe(
+        'rm.recursive-force-cwd-self',
+      );
+    }
   });
 
   test('strict adds the rules for command text it cannot verify', () => {

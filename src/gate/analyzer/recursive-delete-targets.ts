@@ -266,7 +266,15 @@ export function classifyRecursiveDeleteTarget(
 
     if (
       !options.skipCwdSelf &&
-      isCwdSelfTarget(target, ctx.resolvedCwd ?? anchoredCwd, ctx.environment.paths, ctx.budget)
+      [ctx.resolvedCwd ?? anchoredCwd, anchoredCwd].some((self) =>
+        isCwdSelfTarget(
+          target,
+          ctx.resolvedCwd ?? anchoredCwd,
+          ctx.environment.paths,
+          ctx.budget,
+          self,
+        ),
+      )
     ) {
       return { kind: 'cwd_self_target' };
     }
@@ -286,7 +294,28 @@ export function classifyRecursiveDeleteTarget(
     }
   }
 
+  if (isTrustedTempDescendantAfterCd(target, ctx, dynamic)) {
+    return { kind: 'temp_target' };
+  }
+
   return { kind: 'outside_anchored_cwd' };
+}
+
+function isTrustedTempDescendantAfterCd(
+  target: string,
+  ctx: RecursiveDeleteTargetContext,
+  dynamic: boolean,
+): boolean {
+  const normalized = target.trim();
+  if (dynamic || !ctx.resolvedCwd || !ctx.anchoredCwd || !normalized) return false;
+  if (isAbsolute(normalized) || normalized.startsWith('~')) return false;
+  if (hasParentDirectoryComponent(normalized)) return false;
+  if (
+    isWorkspaceWithinTarget(ctx.resolvedCwd, ctx.anchoredCwd, ctx.environment.paths, ctx.budget)
+  ) {
+    return false;
+  }
+  return isTrustedTempPath(resolve(ctx.resolvedCwd, normalized), ctx.environment);
 }
 
 export function isTrustedTempDescendantTarget(
@@ -588,19 +617,20 @@ function isCwdSelfTarget(
   cwd: string,
   paths: PathResolver,
   budget: Budget,
+  self = cwd,
 ): boolean {
-  if (target === '.' || target === './' || target === '.\\') {
+  if (self === cwd && (target === '.' || target === './' || target === '.\\')) {
     return true;
   }
 
   try {
     return (
       normalizePathForComparison(resolveExistingPath(resolve(cwd, target), paths, budget)) ===
-      normalizePathForComparison(resolveExistingPath(cwd, paths, budget))
+      normalizePathForComparison(resolveExistingPath(self, paths, budget))
     );
   } catch {
     try {
-      return normalizePathForComparison(resolve(cwd, target)) === normalizePathForComparison(cwd);
+      return normalizePathForComparison(resolve(cwd, target)) === normalizePathForComparison(self);
     } catch {
       return false;
     }

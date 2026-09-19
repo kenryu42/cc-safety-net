@@ -114,6 +114,7 @@ function decide(input: string, index: number, environment: Environment) {
 
 const WINDOWS_CELLS: Readonly<Record<string, string>> = {
   'find /tmp -depth -delete': 'deny find.delete @command-analysis',
+  'echo $(cd /tmp; rm -rf .)': 'deny rm.recursive-force-outside-cwd @command-analysis',
   'find /tmp -execdir env rm -rf {} +': 'deny find.exec-rm-recursive-force @command-analysis',
   'find /tmp -execdir rm -rf {} +': 'deny find.exec-rm-recursive-force @command-analysis',
   'git grep -n "\\.npmrc"': 'deny secret.basename.npmrc @secret-protection',

@@ -102,7 +102,7 @@ const PINS: Record<string, Facts> = {
     parseInput: 'cd .. && rm -rf build',
     steps: ['parse'],
     segments: [
-      ['fallback-scan', 'custom-rules-check', 'cwd-change'],
+      ['fallback-scan', 'custom-rules-check'],
       ['tmpdir-check', 'rule-check'],
     ],
   },

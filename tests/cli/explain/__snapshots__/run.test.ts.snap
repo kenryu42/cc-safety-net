@@ -750,11 +750,6 @@ exports[`explain renders the same trace from both bins 07-cwd-change: json 1`] =
             "type": "custom-rules-check",
             "rulesChecked": false,
             "matched": false
-          },
-          {
-            "type": "cwd-change",
-            "segment": "cd ..",
-            "effectiveCwdNowUnknown": true
           }
         ]
       },
