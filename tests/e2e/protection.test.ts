@@ -58,6 +58,20 @@ const adapters = [
     denyReason: getClaudeStyleDenyReason,
   },
   {
+    agent: 'droid',
+    flag: '-fd',
+    commandInput: (command: string, cwd: string, home: string, sessionId: string) => ({
+      session_id: sessionId,
+      transcript_path: join(home, '.factory', 'sessions', 'workspace', `${sessionId}.jsonl`),
+      cwd,
+      permission_mode: 'auto-medium',
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Execute',
+      tool_input: { command, summary: 'Run the command', riskLevel: 'medium' },
+    }),
+    denyReason: getClaudeStyleDenyReason,
+  },
+  {
     agent: 'copilot-cli',
     flag: '-cp',
     commandInput: (command: string, cwd: string, _home: string, sessionId: string) => ({

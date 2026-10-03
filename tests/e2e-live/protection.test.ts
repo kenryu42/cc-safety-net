@@ -18,6 +18,7 @@ import { buildRuntimeBundles } from '../../scripts/build-runtime';
 const liveEnabled = process.env.CC_SAFETY_NET_E2E_LIVE === '1';
 const claudeBinary = Bun.which('claude');
 const codexBinary = Bun.which('codex');
+const droidBinary = Bun.which('droid');
 const codexAuthSource = join(homedir(), '.codex', 'auth.json');
 
 let buildRoot = '';
@@ -47,8 +48,7 @@ const claudeLive = {
         ...permissionArgs,
       ],
       cwd,
-      home,
-      { CLAUDE_CONFIG_DIR: join(home, '.claude') },
+      { ...liveEnv(home), CLAUDE_CONFIG_DIR: join(home, '.claude') },
     ),
 };
 
@@ -80,8 +80,46 @@ const liveAgents = [
           prompt,
         ],
         cwd,
-        home,
-        { CODEX_HOME: join(home, '.codex') },
+        { ...liveEnv(home), CODEX_HOME: join(home, '.codex') },
+      ),
+  },
+  {
+    agent: 'droid',
+    skip: !liveEnabled || droidBinary === null,
+    setup: (_home: string, cwd: string) => {
+      mkdirSync(join(cwd, '.factory'));
+      writeFileSync(
+        join(cwd, '.factory', 'hooks.json'),
+        JSON.stringify({
+          PreToolUse: [
+            {
+              hooks: [{ type: 'command', command: `node "${cliPath}" hook --droid`, timeout: 30 }],
+            },
+          ],
+        }),
+      );
+    },
+    run: (prompt: string, cwd: string, home: string) =>
+      runAgent(
+        [
+          droidBinary ?? 'droid',
+          'exec',
+          '--auto',
+          'medium',
+          '--output-format',
+          'json',
+          '-m',
+          'claude-sonnet-5-5',
+          prompt,
+        ],
+        cwd,
+        {
+          ...Object.fromEntries(
+            Object.entries(liveEnv(home)).filter(([name]) => !name.startsWith('CLAUDE')),
+          ),
+          HOME: homedir(),
+          USERPROFILE: homedir(),
+        },
       ),
   },
 ] as const;
@@ -280,7 +318,7 @@ function hookConfig(integrationFlag = '--coding-cli') {
 }
 
 async function withLiveWorkspace<T>(
-  setup: (home: string) => void,
+  setup: (home: string, cwd: string) => void,
   run: (context: { cwd: string; home: string }) => Promise<T>,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'cc-safety-net-live-'));
@@ -288,7 +326,7 @@ async function withLiveWorkspace<T>(
   const home = join(root, 'home');
   mkdirSync(cwd);
   mkdirSync(home);
-  setup(home);
+  setup(home, cwd);
   runGit(['init'], cwd);
   try {
     return await run({ cwd, home });
@@ -297,18 +335,13 @@ async function withLiveWorkspace<T>(
   }
 }
 
-async function runAgent(
-  argv: string[],
-  cwd: string,
-  home: string,
-  extraEnv: Record<string, string>,
-) {
+async function runAgent(argv: string[], cwd: string, env: Record<string, string>) {
   const proc = Bun.spawn(argv, {
     cwd,
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...liveEnv(home), ...extraEnv },
+    env,
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),

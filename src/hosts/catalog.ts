@@ -87,15 +87,15 @@ const catalog = [
   {
     id: 'copilot-cli',
     displayName: 'GitHub Copilot CLI',
-    doctorOrder: 8,
+    doctorOrder: 9,
     runtime: {
-      order: 6,
+      order: 7,
       flags: ['-cp', '--copilot-cli'],
       description: 'Run as GitHub Copilot CLI PreToolUse hook',
       legacyTopLevelFlags: ['-cp', '--copilot-cli'],
     },
     install: {
-      order: 8,
+      order: 9,
       flag: '--copilot-cli',
       artifactKind: 'plugin',
       probeCommand: ['copilot', '--binary-version'],
@@ -104,15 +104,15 @@ const catalog = [
   {
     id: 'gemini-cli',
     displayName: 'Gemini CLI',
-    doctorOrder: 7,
+    doctorOrder: 8,
     runtime: {
-      order: 5,
+      order: 6,
       flags: ['-gc', '--gemini-cli'],
       description: 'Run as Gemini CLI BeforeTool hook',
       legacyTopLevelFlags: ['-gc', '--gemini-cli'],
     },
     install: {
-      order: 7,
+      order: 8,
       flag: '--gemini-cli',
       artifactKind: 'extension',
       probeCommand: ['gemini', '--version'],
@@ -121,15 +121,15 @@ const catalog = [
   {
     id: 'grok-build',
     displayName: 'Grok Build',
-    doctorOrder: 9,
+    doctorOrder: 10,
     runtime: {
-      order: 7,
+      order: 8,
       flags: ['-gb', '--grok-build'],
       description: 'Run as Grok Build PreToolUse hook',
       legacyTopLevelFlags: [],
     },
     install: {
-      order: 9,
+      order: 10,
       flag: '--grok-build',
       artifactKind: 'hook config',
       probeCommand: ['grok', '--version'],
@@ -138,15 +138,15 @@ const catalog = [
   {
     id: 'hermes-agent',
     displayName: 'Hermes Agent',
-    doctorOrder: 10,
+    doctorOrder: 11,
     runtime: {
-      order: 8,
+      order: 9,
       flags: ['-ha', '--hermes-agent'],
       description: 'Run as Hermes Agent pre_tool_call hook',
       legacyTopLevelFlags: [],
     },
     install: {
-      order: 10,
+      order: 11,
       flag: '--hermes-agent',
       artifactKind: 'plugin',
       probeCommand: ['hermes', '--version'],
@@ -155,15 +155,15 @@ const catalog = [
   {
     id: 'kimi-code',
     displayName: 'Kimi Code',
-    doctorOrder: 11,
+    doctorOrder: 12,
     runtime: {
-      order: 9,
+      order: 10,
       flags: ['-kc', '--kimi-code'],
       description: 'Run as Kimi Code PreToolUse hook',
       legacyTopLevelFlags: [],
     },
     install: {
-      order: 11,
+      order: 12,
       flag: '--kimi-code',
       artifactKind: 'hook config',
       probeCommand: ['kimi', '--version'],
@@ -172,9 +172,9 @@ const catalog = [
   {
     id: 'openclaw',
     displayName: 'OpenClaw',
-    doctorOrder: 12,
+    doctorOrder: 13,
     install: {
-      order: 12,
+      order: 13,
       flag: '--openclaw',
       artifactKind: 'plugin',
       probeCommand: ['openclaw', '--version'],
@@ -183,9 +183,9 @@ const catalog = [
   {
     id: 'opencode',
     displayName: 'OpenCode',
-    doctorOrder: 13,
+    doctorOrder: 14,
     install: {
-      order: 13,
+      order: 14,
       flag: '--opencode',
       artifactKind: 'plugin',
       probeCommand: ['opencode', '--version'],
@@ -194,9 +194,9 @@ const catalog = [
   {
     id: 'pi',
     displayName: 'Pi',
-    doctorOrder: 14,
+    doctorOrder: 15,
     install: {
-      order: 14,
+      order: 15,
       flag: '--pi',
       artifactKind: 'package',
       probeCommand: ['pi', '--version'],
@@ -228,6 +228,23 @@ const catalog = [
       flag: '--deepseek-harness',
       artifactKind: 'package',
       probeCommand: DEEPSEEK_HARNESS_NPM_PROBE,
+    },
+  },
+  {
+    id: 'droid',
+    displayName: 'Factory Droid',
+    doctorOrder: 7,
+    runtime: {
+      order: 5,
+      flags: ['-fd', '--droid'],
+      description: 'Run as Factory Droid PreToolUse hook',
+      legacyTopLevelFlags: [],
+    },
+    install: {
+      order: 7,
+      flag: '--droid',
+      artifactKind: 'hook config',
+      probeCommand: ['droid', '--version'],
     },
   },
   {

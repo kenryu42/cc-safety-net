@@ -10,6 +10,7 @@ import { runClaudeCodeHook as portedClaudeCodeHook } from '@/hosts/claude-code/h
 import { runCodexHook as portedCodexHook } from '@/hosts/codex/hook';
 import { runCopilotCliHook as portedCopilotCliHook } from '@/hosts/copilot-cli/hook';
 import { runCursorHook as portedCursorHook } from '@/hosts/cursor/hook';
+import { runDroidHook as portedDroidHook } from '@/hosts/droid/hook';
 import { runGeminiCLIHook as portedGeminiCLIHook } from '@/hosts/gemini-cli/hook';
 import { runGrokBuildHook as portedGrokBuildHook } from '@/hosts/grok-build/hook';
 import { runHermesAgentHook as portedHermesAgentHook } from '@/hosts/hermes-agent/hook';
@@ -127,6 +128,11 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     ruleId: 'secret.home.ssh',
   },
   'a destructive monitor command': { document: 'deny', audit: 'deny', ruleId: 'git.reset-hard' },
+  'a Glob over dotenv files in patterns': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'secret.basename.env',
+  },
   'a transcript under the Codex home': { document: 'none', audit: 'allow' },
   'a transcript under the Copilot home': { document: 'none', audit: 'allow' },
   'a transcript under the Claude config directory': { document: 'none', audit: 'allow' },
@@ -340,6 +346,16 @@ const grokPayload = (fixture: HookFixture, overrides: Record<string, unknown>) =
     toolInput: { command: 'git status' },
     ...overrides,
   });
+
+const droidShaped = (payload: Payload) => ({
+  session_id: SESSION,
+  transcript_path: '/home/agent/.factory/sessions/project/s1.jsonl',
+  cwd: payload.cwd,
+  permission_mode: 'auto-medium',
+  hook_event_name: payload.event ?? 'PreToolUse',
+  tool_name: payload.tool,
+  tool_input: payload.args,
+});
 
 const hermesPayload = (fixture: HookFixture, workdir: string) =>
   JSON.stringify({
@@ -704,6 +720,27 @@ const HOST_SPECS: readonly HostSpec[] = [
       {
         name: 'a cwd outside the workspace root',
         stdin: grokPayload(fixture, { workspaceRoot: fixture.project, cwd: fixture.outside }),
+      },
+    ],
+  },
+  {
+    id: 'droid',
+    flag: '--droid',
+    ported: portedDroidHook,
+    commandTool: 'Execute',
+    commandArgs: (command) => ({ command, summary: 'Run the command', riskLevel: 'low' }),
+    unsupportedEvent: 'PostToolUse',
+    build: droidShaped,
+    extraRows: (fixture) => [
+      {
+        name: 'a Glob over dotenv files in patterns',
+        stdin: JSON.stringify(
+          droidShaped({
+            tool: 'Glob',
+            args: { patterns: '**/.env', folder: fixture.project },
+            cwd: fixture.project,
+          }),
+        ),
       },
     ],
   },

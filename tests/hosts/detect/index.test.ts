@@ -47,6 +47,8 @@ const CONFIGURED: TreeSpec = {
     '{"version":1,"hooks":{"preToolUse":[{"command":"npx -y cc-safety-net hook --cursor","timeout":30,"failClosed":true}]}}',
   '.gemini/config/hooks.json':
     '{"cc-safety-net":{"enabled":true,"PreToolUse":[{"hooks":[{"type":"command","command":"npx -y cc-safety-net hook --agy-cli","timeout":30}]}]}}',
+  '.factory/hooks.json':
+    '{"SessionStart":[],"PreToolUse":[{"hooks":[{"type":"command","command":"npx -y cc-safety-net hook --droid","timeout":30}]}]}',
   '.grok/hooks/cc-safety-net.json':
     '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"npx -y cc-safety-net hook --grok-build","timeout":30}]}]}}',
   '.kimi-code/config.toml':
@@ -120,6 +122,7 @@ const PLATFORMS = [
   'codex',
   'cursor',
   'deepseek-harness',
+  'droid',
   'gemini-cli',
   'copilot-cli',
   'grok-build',
@@ -141,7 +144,7 @@ test('an untouched home reports every host as not applicable, in doctor order', 
   );
 });
 
-test('a home with every host configured reports all fourteen as verified', async () => {
+test('a home with every host configured reports all fifteen as verified', async () => {
   const outcome = await all(CONFIGURED, {
     ampPluginListOutput: AMP_ACTIVE,
     codexPluginListOutput: codexRow('installed, enabled'),
@@ -167,6 +170,7 @@ test('a home where every host that can be switched off is switched off', async (
     'codex detected inactive verified',
     'cursor absent inactive not-applicable',
     'deepseek-harness detected inactive verified',
+    'droid absent inactive not-applicable',
     'gemini-cli detected inactive verified',
     'copilot-cli detected inactive verified',
     'grok-build absent inactive not-applicable',
@@ -188,6 +192,7 @@ test('a home whose state files cannot be read reports uninspected, never absent'
     'codex absent inactive not-applicable',
     'cursor absent inactive not-applicable',
     'deepseek-harness absent inactive not-inspected',
+    'droid absent inactive not-applicable',
     'gemini-cli absent inactive not-inspected',
     'copilot-cli absent inactive not-inspected',
     'grok-build absent inactive not-applicable',

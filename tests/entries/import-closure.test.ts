@@ -81,6 +81,7 @@ describe('the hook entry closure', () => {
         'hosts/codex/hook.ts',
         'hosts/copilot-cli/hook.ts',
         'hosts/cursor/hook.ts',
+        'hosts/droid/hook.ts',
         'hosts/gemini-cli/hook.ts',
         'hosts/grok-build/hook.ts',
         'hosts/hermes-agent/hook.ts',

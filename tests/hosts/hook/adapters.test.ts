@@ -25,6 +25,7 @@ const DENY_DOCUMENTS: Record<string, object> = {
   'claude-code': PRE_TOOL_USE_DENIAL,
   codex: PRE_TOOL_USE_DENIAL,
   'kimi-code': PRE_TOOL_USE_DENIAL,
+  droid: PRE_TOOL_USE_DENIAL,
   'gemini-cli': { decision: 'deny', reason: expect.any(String), systemMessage: expect.any(String) },
   'copilot-cli': { permissionDecision: 'deny', permissionDecisionReason: expect.any(String) },
   cursor: {

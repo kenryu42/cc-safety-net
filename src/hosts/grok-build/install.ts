@@ -2,11 +2,20 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Environment } from '@/core/environment';
 import { atomicWriteFile } from '@/core/io/atomic-write';
+import {
+  canonicalPreToolUseEntry,
+  isInstalledOnceCanonically,
+  withoutManagedHandlers,
+} from '@/hosts/install/pre-tool-use-entries';
 import type { InstallResult } from '@/hosts/install/types';
 import { managedHookCommands } from '@/hosts/managed-command';
 
 export const GROK_BUILD_HOOK_COMMAND = managedHookCommands['grok-build'];
 export const GROK_BUILD_HOOK_TIMEOUT = 30;
+const GROK_BUILD_CANONICAL_ENTRY = canonicalPreToolUseEntry(
+  GROK_BUILD_HOOK_COMMAND,
+  GROK_BUILD_HOOK_TIMEOUT,
+);
 
 export function getGrokBuildHooksPath(environment: Environment): string {
   return join(
@@ -20,27 +29,6 @@ type GrokBuildConfig = { hooks?: unknown; [key: string]: unknown };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function canonicalEntry() {
-  return {
-    hooks: [
-      { type: 'command', command: GROK_BUILD_HOOK_COMMAND, timeout: GROK_BUILD_HOOK_TIMEOUT },
-    ],
-  };
-}
-
-function isManagedHandler(hook: unknown): boolean {
-  return isRecord(hook) && hook.command === GROK_BUILD_HOOK_COMMAND;
-}
-
-function withoutManagedHandlers(entries: readonly unknown[]): unknown[] {
-  return entries.flatMap((entry) => {
-    if (!isRecord(entry) || !Array.isArray(entry.hooks)) return [entry];
-    const foreign = entry.hooks.filter((hook) => !isManagedHandler(hook));
-    if (foreign.length === entry.hooks.length) return [entry];
-    return foreign.length === 0 ? [] : [{ ...entry, hooks: foreign }];
-  });
 }
 
 function parseGrokBuildConfig(raw: string): GrokBuildConfig | null {
@@ -73,26 +61,26 @@ export function installGrokBuild(environment: Environment): InstallResult {
   const configPath = getGrokBuildHooksPath(environment);
   if (!existsSync(configPath)) {
     mkdirSync(dirname(configPath), { recursive: true });
-    writeGrokBuildConfig(configPath, {}, [canonicalEntry()]);
+    writeGrokBuildConfig(configPath, {}, [GROK_BUILD_CANONICAL_ENTRY]);
     return { path: configPath, alreadyInstalled: false };
   }
 
   const config = parseGrokBuildConfig(readFileSync(configPath, 'utf-8'));
 
   if (!config) {
-    writeGrokBuildConfig(configPath, {}, [canonicalEntry()]);
+    writeGrokBuildConfig(configPath, {}, [GROK_BUILD_CANONICAL_ENTRY]);
     return { path: configPath, alreadyInstalled: false };
   }
 
   const existing = getPreToolUse(config);
-  const managed = existing.filter(
-    (entry) => isRecord(entry) && Array.isArray(entry.hooks) && entry.hooks.some(isManagedHandler),
-  );
-  if (managed.length === 1 && JSON.stringify(managed[0]) === JSON.stringify(canonicalEntry())) {
+  if (isInstalledOnceCanonically(existing, GROK_BUILD_HOOK_COMMAND, GROK_BUILD_HOOK_TIMEOUT)) {
     return { path: configPath, alreadyInstalled: true };
   }
 
-  writeGrokBuildConfig(configPath, config, [...withoutManagedHandlers(existing), canonicalEntry()]);
+  writeGrokBuildConfig(configPath, config, [
+    ...withoutManagedHandlers(existing, GROK_BUILD_HOOK_COMMAND),
+    GROK_BUILD_CANONICAL_ENTRY,
+  ]);
   return { path: configPath, alreadyInstalled: false };
 }
 
@@ -105,7 +93,7 @@ export function uninstallGrokBuild(environment: Environment): InstallResult {
   if (!config) return { path: configPath, alreadyInstalled: false };
 
   const existing = getPreToolUse(config);
-  const stripped = withoutManagedHandlers(existing);
+  const stripped = withoutManagedHandlers(existing, GROK_BUILD_HOOK_COMMAND);
   if (JSON.stringify(stripped) === JSON.stringify(existing)) {
     return { path: configPath, alreadyInstalled: false };
   }

@@ -145,6 +145,18 @@ const PAYLOADS = [
     denies: 'secret.basename.env',
   },
   {
+    name: 'Glob names the dotenv file in Droid patterns',
+    toolName: 'Glob',
+    input: { patterns: '**/.env', folder: '.' },
+    denies: 'secret.basename.env',
+  },
+  {
+    name: 'Glob lists a credential folder',
+    toolName: 'Glob',
+    input: { patterns: '*', folder: join(home, '.aws') },
+    denies: 'secret.home.aws',
+  },
+  {
     name: 'Glob searches source',
     toolName: 'Glob',
     input: { pattern: '**/*.ts', path: 'src' },

@@ -52,6 +52,19 @@ describe('atomic write', () => {
     }
   }
 
+  test.skipIf(process.platform === 'win32')(
+    'keeps the permission bits of the destination it replaces',
+    () => {
+      const dir = freshDirectory('private');
+      const dest = join(dir, 'hooks.json');
+      writeFileSync(dest, 'old\n', { mode: 0o600 });
+      atomicWriteFile(dest, 'new\n');
+
+      expect(fs.statSync(dest).mode & 0o777).toBe(0o600);
+      expect(readFileSync(dest, 'utf-8')).toBe('new\n');
+    },
+  );
+
   test('stages the content in a sibling temp file the destination directory holds', () => {
     const dir = freshDirectory('staging');
     const dest = join(dir, 'settings.json');
