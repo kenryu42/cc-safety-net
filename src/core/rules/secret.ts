@@ -370,6 +370,40 @@ export const SECRET_CODING_CLI_RULES = [
       '/etc/grok/requirements.toml',
     ],
   },
+  {
+    id: 'secret.cli.droid',
+    category: 'Coding CLI credential',
+    label: 'Factory Droid credentials',
+    paths: [
+      '~/.factory/auth.encrypted',
+      '~/.factory/auth.v2.file',
+      '~/.factory/auth.v2.key',
+      '~/.factory/auth.v2.loginkeychain',
+    ],
+  },
+  {
+    id: 'secret.cli.droid.config',
+    category: 'Coding CLI config',
+    label: 'Factory Droid config',
+    paths: [
+      '~/.factory/settings.json',
+      '~/.factory/hooks.json',
+      '~/.factory/mcp.json',
+      '<project>/.factory/mcp.json',
+    ],
+  },
+  {
+    id: 'secret.cli.devin',
+    category: 'Coding CLI credential',
+    label: 'Devin CLI credentials',
+    paths: ['~/.local/share/devin/credentials.toml', '~/.local/share/devin/mcp/oauth'],
+  },
+  {
+    id: 'secret.cli.devin.config',
+    category: 'Coding CLI config',
+    label: 'Devin CLI config',
+    paths: ['~/.config/devin/config.json'],
+  },
 ] as const satisfies readonly SecretProtectionCodingCliRule[];
 
 const SECRET_VARIANT_PREFIXES = [

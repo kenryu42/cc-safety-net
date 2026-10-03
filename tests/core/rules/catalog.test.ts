@@ -78,7 +78,7 @@ describe('rule catalogs', () => {
         ...nextSecret.SECRET_CODING_CLI_RULES,
       ].map((rule) => rule.id),
     ).toEqual(secret.map((rule) => rule.id));
-    expect(secret).toHaveLength(134);
+    expect(secret).toHaveLength(138);
     expect(new Set(secret.map((rule) => rule.id)).size).toBe(secret.length);
     expect(nextSecret.SECRET_PROTECTION_RULE_ID_SET).toEqual(
       new Set(secret.map((rule) => rule.id)),
@@ -101,7 +101,7 @@ describe('rule catalogs', () => {
     expect(off).toEqual(
       secret.flatMap((rule) => (rule.category === 'Coding CLI config' ? [rule.id] : [])),
     );
-    expect(off).toHaveLength(11);
+    expect(off).toHaveLength(13);
   });
 
   test('every pattern matcher is anchored at both ends and carries no flags', () => {

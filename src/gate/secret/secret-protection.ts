@@ -2211,6 +2211,51 @@ function matchesCodingCliPath(
             )
           );
         }
+        case 'secret.cli.droid':
+          return matchesFileInRoot(
+            normalized,
+            normalizeCandidatePath('~/.factory', cwd, environment, budget),
+            ['auth.encrypted', 'auth.v2.file', 'auth.v2.key', 'auth.v2.loginkeychain'],
+          );
+        case 'secret.cli.droid.config': {
+          const segments = comparable(normalized).split('/');
+          return (
+            (segments.at(-1) === 'mcp.json' && segments.at(-2) === '.factory') ||
+            matchesFileInRoot(
+              normalized,
+              normalizeCandidatePath('~/.factory', cwd, environment, budget),
+              ['settings.json', 'hooks.json'],
+            )
+          );
+        }
+        case 'secret.cli.devin':
+          return [
+            codingCliRoot(
+              environment.env.get('XDG_DATA_HOME'),
+              '~/.local/share',
+              cwd,
+              environment,
+              budget,
+            ),
+            normalizeCandidatePath('~/.local/share', cwd, environment, budget),
+          ].some(
+            (dataHome) =>
+              matchesFileInRoot(normalized, appendPath(dataHome, 'devin'), ['credentials.toml']) ||
+              matchesDirInRoot(normalized, appendPath(dataHome, 'devin', 'mcp'), ['oauth']),
+          );
+        case 'secret.cli.devin.config':
+          return [
+            codingCliRoot(
+              environment.env.get('XDG_CONFIG_HOME'),
+              '~/.config',
+              cwd,
+              environment,
+              budget,
+            ),
+            normalizeCandidatePath('~/.config', cwd, environment, budget),
+          ].some((configHome) =>
+            matchesFileInRoot(normalized, appendPath(configHome, 'devin'), ['config.json']),
+          );
         default:
           return false;
       }

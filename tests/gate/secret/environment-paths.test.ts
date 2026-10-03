@@ -107,6 +107,20 @@ test('protects Gemini system settings under the configured ProgramData directory
   ).toBeNull();
 });
 
+test.each([
+  ['XDG_DATA_HOME', 'devin/credentials.toml', 'secret.cli.devin'],
+  ['XDG_DATA_HOME', 'devin/mcp/oauth/server.json', 'secret.cli.devin'],
+  ['XDG_CONFIG_HOME', 'devin/config.json', 'secret.cli.devin.config'],
+])('protects the Devin CLI store relocated by %s at %s', (name, file, ruleId) => {
+  const home = createTempRoot('secret-devin-xdg-');
+  const environment = environmentFor(home, isolationEnv(home, { [name]: join(home, 'xdg') }));
+  const target = join(home, 'xdg', file);
+  expect(pathTarget([target], home, environment)).toEqual({ target, ruleId });
+  expect(
+    pathTarget([join(home, 'xdg', 'devin', 'cli', 'logs', 'x')], home, environment),
+  ).toBeNull();
+});
+
 test('a secret allow path cannot exempt a relocated safety-net home', () => {
   const home = createTempRoot('secret-guard-home-');
   writeTree(home, { 'guard/id_rsa': 'fixture', 'fixtures/id_rsa': 'fixture' });

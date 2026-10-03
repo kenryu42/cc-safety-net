@@ -383,6 +383,30 @@ describe('shell operands against the built-in secret catalog', () => {
       },
     ]);
   });
+
+  test.each([
+    ['~/.factory/auth.encrypted', 'secret.cli.droid'],
+    ['~/.factory/auth.v2.file', 'secret.cli.droid'],
+    ['~/.factory/auth.v2.key', 'secret.cli.droid'],
+    ['~/.factory/auth.v2.loginkeychain', 'secret.cli.droid'],
+    ['~/.factory/settings.json', 'secret.cli.droid.config'],
+    ['~/.factory/hooks.json', 'secret.cli.droid.config'],
+    ['~/.factory/mcp.json', 'secret.cli.droid.config'],
+    ['.factory/mcp.json', 'secret.cli.droid.config'],
+    ['../.factory/mcp.json', 'secret.cli.droid.config'],
+    ['~/.local/share/devin/credentials.toml', 'secret.cli.devin'],
+    ['~/.local/share/devin/mcp/oauth', 'secret.cli.devin'],
+    ['~/.local/share/devin/mcp/oauth/server.json', 'secret.cli.devin'],
+    ['~/.config/devin/config.json', 'secret.cli.devin.config'],
+    ['~/.factory/AGENTS.md', null],
+    ['~/.factory/sessions/session.jsonl', null],
+    ['~/.local/share/devin/cli/logs/devin.log', null],
+    ['~/.config/devin/themes.json', null],
+  ])('a shell read and a file tool read of %s decide as %s', (target, ruleId) => {
+    const expected = ruleId === null ? null : { target, ruleId };
+    checkCarriers([{ name: target, command: `cat ${target}`, expected }]);
+    expect(toolSecret({ file_path: target }, { kind: 'path' })).toStrictEqual(expected);
+  });
 });
 
 describe('the carriers a candidate path can arrive through', () => {
