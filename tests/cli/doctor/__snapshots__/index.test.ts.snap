@@ -42,6 +42,13 @@ exports[`doctor --json a fresh home reports no configured integration and exits 
       "inspectionStatus": "not-applicable"
     },
     {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
+    },
+    {
       "platform": "droid",
       "detected": false,
       "configured": false,
@@ -297,6 +304,7 @@ exports[`doctor --json a fresh home reports no configured integration and exits 
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -371,6 +379,13 @@ exports[`doctor --json an installed Cursor hook clears the none-configured findi
       "inspectionStatus": "not-applicable"
     },
     {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
+    },
+    {
       "platform": "droid",
       "detected": false,
       "configured": false,
@@ -626,6 +641,7 @@ exports[`doctor --json an installed Cursor hook clears the none-configured findi
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -689,6 +705,13 @@ exports[`doctor --json both scopes report their own invalid rule config: invalid
       "detected": false,
       "configured": false,
       "inspectionStatus": "not-applicable"
+    },
+    {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
     },
     {
       "platform": "droid",
@@ -953,6 +976,7 @@ exports[`doctor --json both scopes report their own invalid rule config: invalid
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -1047,6 +1071,13 @@ exports[`doctor --json a v2 lock and cache are reported once, naming both scopes
       "detected": false,
       "configured": false,
       "inspectionStatus": "not-applicable"
+    },
+    {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
     },
     {
       "platform": "droid",
@@ -1308,6 +1339,7 @@ exports[`doctor --json a v2 lock and cache are reported once, naming both scopes
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -1386,6 +1418,13 @@ exports[`doctor --json a regular file where the config directory belongs is an u
       "detected": false,
       "configured": false,
       "inspectionStatus": "not-applicable"
+    },
+    {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
     },
     {
       "platform": "droid",
@@ -1649,6 +1688,7 @@ exports[`doctor --json a regular file where the config directory belongs is an u
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -1743,6 +1783,13 @@ exports[`doctor --json a seeded audit tree is summarised over the denials alone:
       "detected": false,
       "configured": false,
       "inspectionStatus": "not-applicable"
+    },
+    {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
     },
     {
       "platform": "droid",
@@ -2021,6 +2068,7 @@ exports[`doctor --json a seeded audit tree is summarised over the denials alone:
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -2092,6 +2140,13 @@ exports[`doctor --json an invalid audit scope and a legacy flag are both reporte
       "detected": false,
       "configured": false,
       "inspectionStatus": "not-applicable"
+    },
+    {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
     },
     {
       "platform": "droid",
@@ -2353,6 +2408,7 @@ exports[`doctor --json an invalid audit scope and a legacy flag are both reporte
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,
@@ -2431,6 +2487,13 @@ exports[`doctor --json legacy inline rule configs are reported once as ignored, 
       "detected": false,
       "configured": false,
       "inspectionStatus": "not-applicable"
+    },
+    {
+      "platform": "devin",
+      "detected": false,
+      "configured": false,
+      "inspectionStatus": "not-applicable",
+      "configPath": "<root>/home/.config/devin/config.json"
     },
     {
       "platform": "droid",
@@ -2692,6 +2755,7 @@ exports[`doctor --json legacy inline rule configs are reported once as ignored, 
       "codex": null,
       "cursor": null,
       "deepseek-harness": null,
+      "devin": null,
       "droid": null,
       "gemini-cli": null,
       "copilot-cli": null,

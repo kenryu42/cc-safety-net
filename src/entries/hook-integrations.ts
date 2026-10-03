@@ -5,6 +5,7 @@ import { runClaudeCodeHook } from '@/hosts/claude-code/hook';
 import { runCodexHook } from '@/hosts/codex/hook';
 import { runCopilotCliHook } from '@/hosts/copilot-cli/hook';
 import { runCursorHook } from '@/hosts/cursor/hook';
+import { runDevinHook } from '@/hosts/devin/hook';
 import { runDroidHook } from '@/hosts/droid/hook';
 import { runGeminiCLIHook } from '@/hosts/gemini-cli/hook';
 import { runGrokBuildHook } from '@/hosts/grok-build/hook';
@@ -27,6 +28,7 @@ const hookRunners = {
   codex: runCodexHook,
   'copilot-cli': runCopilotCliHook,
   cursor: runCursorHook,
+  devin: runDevinHook,
   droid: runDroidHook,
   'gemini-cli': runGeminiCLIHook,
   'grok-build': runGrokBuildHook,

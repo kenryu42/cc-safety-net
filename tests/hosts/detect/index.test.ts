@@ -4,7 +4,7 @@ import { buildHermesAgentPluginFiles } from '@/hosts/hermes-agent/artifact';
 import { buildOpenClawArtifactHeader } from '@/hosts/openclaw/artifact';
 import type { TreeSpec } from '../../helpers/fixture-tree';
 import { differential } from '../../helpers/host-differential';
-import { removeTempRoots } from '../../helpers/temp-home';
+import { DEVIN_CONFIG, removeTempRoots } from '../../helpers/temp-home';
 
 const AMP_ACTIVE = '✓ cc-safety-net (User Plugins) active\n';
 const AMP_STALE = '✓ cc-safety-net (User Plugins) stale\n';
@@ -47,6 +47,8 @@ const CONFIGURED: TreeSpec = {
     '{"version":1,"hooks":{"preToolUse":[{"command":"npx -y cc-safety-net hook --cursor","timeout":30,"failClosed":true}]}}',
   '.gemini/config/hooks.json':
     '{"cc-safety-net":{"enabled":true,"PreToolUse":[{"hooks":[{"type":"command","command":"npx -y cc-safety-net hook --agy-cli","timeout":30}]}]}}',
+  [DEVIN_CONFIG]:
+    '{"version":1,"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"npx -y cc-safety-net hook --devin","timeout":30}]}]}}',
   '.factory/hooks.json':
     '{"SessionStart":[],"PreToolUse":[{"hooks":[{"type":"command","command":"npx -y cc-safety-net hook --droid","timeout":30}]}]}',
   '.grok/hooks/cc-safety-net.json':
@@ -122,6 +124,7 @@ const PLATFORMS = [
   'codex',
   'cursor',
   'deepseek-harness',
+  'devin',
   'droid',
   'gemini-cli',
   'copilot-cli',
@@ -144,7 +147,7 @@ test('an untouched home reports every host as not applicable, in doctor order', 
   );
 });
 
-test('a home with every host configured reports all fifteen as verified', async () => {
+test('a home with every host configured reports all sixteen as verified', async () => {
   const outcome = await all(CONFIGURED, {
     ampPluginListOutput: AMP_ACTIVE,
     codexPluginListOutput: codexRow('installed, enabled'),
@@ -170,6 +173,7 @@ test('a home where every host that can be switched off is switched off', async (
     'codex detected inactive verified',
     'cursor absent inactive not-applicable',
     'deepseek-harness detected inactive verified',
+    'devin absent inactive not-applicable',
     'droid absent inactive not-applicable',
     'gemini-cli detected inactive verified',
     'copilot-cli detected inactive verified',
@@ -192,6 +196,7 @@ test('a home whose state files cannot be read reports uninspected, never absent'
     'codex absent inactive not-applicable',
     'cursor absent inactive not-applicable',
     'deepseek-harness absent inactive not-inspected',
+    'devin absent inactive not-applicable',
     'droid absent inactive not-applicable',
     'gemini-cli absent inactive not-inspected',
     'copilot-cli absent inactive not-inspected',

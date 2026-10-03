@@ -94,6 +94,7 @@ describe('the system report', () => {
       'npx --offline --no-install @deepseek-ai/dsh --version': '1.0.13',
       'amp --version': '1.0.14',
       'droid --version': '0.233.0',
+      'devin --version': 'devin 3000.11.3 (9c803229faa4)',
       'codex plugin list': 'codex plugins',
       'amp plugins list': 'amp plugins',
       'node --version': 'v22.0.0',
@@ -129,6 +130,7 @@ describe('the system report', () => {
       'deepseek-harness': '1.0.13',
       amp: '1.0.14',
       droid: '0.233.0',
+      devin: '3000.11.3',
     });
     expect(info).toMatchObject({
       nodeVersion: '22.0.0',

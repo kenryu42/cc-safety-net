@@ -72,6 +72,22 @@ const adapters = [
     denyReason: getClaudeStyleDenyReason,
   },
   {
+    agent: 'devin',
+    flag: '-dv',
+    commandInput: (command: string, _cwd: string, _home: string, sessionId: string) => ({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'exec',
+      tool_input: { command },
+      tool_use_id: `${sessionId}-tool-use`,
+      session_id: sessionId,
+      prompt_id: `${sessionId}-prompt`,
+    }),
+    denyReason: (output: Record<string, unknown>) => {
+      expect(output.decision).toBe('block');
+      return String(output.reason);
+    },
+  },
+  {
     agent: 'copilot-cli',
     flag: '-cp',
     commandInput: (command: string, cwd: string, _home: string, sessionId: string) => ({

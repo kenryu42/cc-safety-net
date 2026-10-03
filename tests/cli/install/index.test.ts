@@ -8,12 +8,12 @@ import type { InstallTarget } from '@/hosts/install/targets';
 import { type FlowSpec, openCodeV2Script, runSide } from '../../helpers/command-flow';
 import { type TreeSpec, writeTree } from '../../helpers/fixture-tree';
 import { fileAt } from '../../helpers/host-differential';
-import { createTempRoot, removeTempRoots } from '../../helpers/temp-home';
+import { createTempRoot, DEVIN_CONFIG, removeTempRoots } from '../../helpers/temp-home';
 
 const flow = async (spec: FlowSpec) => await runSide(spec);
 
 const TARGET_FLAGS =
-  '--amp, --agy-cli, --claude-code, --codex, --cursor, --deepseek-harness, --droid, --gemini-cli, --copilot-cli, --grok-build, --hermes-agent, --kimi-code, --openclaw, --opencode, --pi';
+  '--amp, --agy-cli, --claude-code, --codex, --cursor, --deepseek-harness, --devin, --droid, --gemini-cli, --copilot-cli, --grok-build, --hermes-agent, --kimi-code, --openclaw, --opencode, --pi';
 
 afterEach(removeTempRoots);
 
@@ -50,6 +50,7 @@ const NPX_ENTRY = '.npm/_npx/dd7a/node_modules/cc-safety-net/package.json';
 const CONFIG_HOSTS = [
   { flag: '--cursor', name: 'Cursor', file: '.cursor/hooks.json' },
   { flag: '--agy-cli', name: 'Antigravity CLI', file: '.gemini/config/hooks.json' },
+  { flag: '--devin', name: 'Devin CLI', file: DEVIN_CONFIG },
   { flag: '--droid', name: 'Factory Droid', file: '.factory/hooks.json' },
   { flag: '--grok-build', name: 'Grok Build', file: '.grok/hooks/cc-safety-net.json' },
   { flag: '--kimi-code', name: 'Kimi Code', file: '.kimi-code/config.toml' },

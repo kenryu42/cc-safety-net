@@ -10,5 +10,6 @@ export function normalizeDoctorJson(document: string): string {
   return document
     .replace(/"(timestamp|relativeTime|oldestEntry|newestEntry)": "[^"]*"/g, '"$1": "<time>"')
     .replace(/"(version|currentVersion)": "[^"]*"/g, '"$1": "<version>"')
-    .replace(/"platform": "[^"]* [^"]*"/g, '"platform": "<platform>"');
+    .replace(/"platform": "[^"]* [^"]*"/g, '"platform": "<platform>"')
+    .replaceAll('/home/AppData/Roaming/devin/', '/home/.config/devin/');
 }

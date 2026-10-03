@@ -9,6 +9,7 @@ describe('the managed hook command', () => {
       codex: 'npx -y cc-safety-net hook --codex',
       'copilot-cli': 'npx -y cc-safety-net hook --copilot-cli',
       cursor: 'npx -y cc-safety-net hook --cursor',
+      devin: 'npx -y cc-safety-net hook --devin',
       droid: 'npx -y cc-safety-net hook --droid',
       'gemini-cli': 'npx -y cc-safety-net hook --gemini-cli',
       'grok-build': 'npx -y cc-safety-net hook --grok-build',

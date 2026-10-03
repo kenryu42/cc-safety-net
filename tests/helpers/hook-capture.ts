@@ -8,6 +8,7 @@ export async function captureHookRun(
   input: string | Uint8Array,
   env: Record<string, string | undefined>,
   run: () => Promise<void>,
+  processCwd = process.cwd(),
 ): Promise<{ stdout: string[]; stderr: string[] }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -18,15 +19,18 @@ export async function captureHookRun(
     stderr.push(parts.map(String).join(' '));
   });
   const stdin = process.stdin;
+  const previousCwd = process.cwd();
   Object.defineProperty(process, 'stdin', {
     value: Readable.from([Buffer.from(input)]),
     configurable: true,
   });
 
   try {
+    process.chdir(processCwd);
     await withEnv(env, run);
     return { stdout, stderr };
   } finally {
+    process.chdir(previousCwd);
     Object.defineProperty(process, 'stdin', { value: stdin, configurable: true });
     log.mockRestore();
     error.mockRestore();

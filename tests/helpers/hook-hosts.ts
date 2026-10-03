@@ -10,6 +10,7 @@ import { runClaudeCodeHook as portedClaudeCodeHook } from '@/hosts/claude-code/h
 import { runCodexHook as portedCodexHook } from '@/hosts/codex/hook';
 import { runCopilotCliHook as portedCopilotCliHook } from '@/hosts/copilot-cli/hook';
 import { runCursorHook as portedCursorHook } from '@/hosts/cursor/hook';
+import { runDevinHook as portedDevinHook } from '@/hosts/devin/hook';
 import { runDroidHook as portedDroidHook } from '@/hosts/droid/hook';
 import { runGeminiCLIHook as portedGeminiCLIHook } from '@/hosts/gemini-cli/hook';
 import { runGrokBuildHook as portedGrokBuildHook } from '@/hosts/grok-build/hook';
@@ -29,6 +30,7 @@ export type HookRow = {
   name: string;
   stdin: string | Uint8Array;
   env?: Record<string, string | undefined>;
+  processCwd?: string;
   expected: HookOutcome;
 };
 
@@ -62,9 +64,16 @@ const REQUESTED_OUTSIDE = {
 } as const;
 
 const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
-  'a denied command': { document: 'deny', audit: 'deny', ruleId: 'git.push-force' },
+  'a denied command': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'git.push-force',
+  },
   'an allowed command': { document: 'none', audit: 'allow' },
-  'an allowed command under the blocked-only audit scope': { document: 'none', audit: 'none' },
+  'an allowed command under the blocked-only audit scope': {
+    document: 'none',
+    audit: 'none',
+  },
   'an event the host does not handle': { document: 'none', audit: 'none' },
   'a payload that is not JSON': { document: 'deny', audit: 'none' },
   'an empty payload': { document: 'deny', audit: 'none' },
@@ -72,7 +81,11 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'a payload past the input byte limit': { document: 'deny', audit: 'none' },
   'a payload without a tool name': { document: 'deny', audit: 'deny' },
   'a read tool over a relative path': { document: 'none', audit: 'none' },
-  'a read tool over a private key': { document: 'deny', audit: 'deny', ruleId: 'secret.home.ssh' },
+  'a read tool over a private key': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'secret.home.ssh',
+  },
   'a payload without a cwd': { document: 'none', audit: 'allow' },
   'a cwd that is a regular file': SESSION_UNUSABLE,
   'a cwd that does not exist': SESSION_UNUSABLE,
@@ -81,8 +94,14 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     audit: 'deny',
     ruleId: 'git.reset-hard',
   },
-  'a command that breaches an analysis limit': { document: 'deny', audit: 'deny' },
-  'a command past the structural shell-syntax limit': { document: 'deny', audit: 'deny' },
+  'a command that breaches an analysis limit': {
+    document: 'deny',
+    audit: 'deny',
+  },
+  'a command past the structural shell-syntax limit': {
+    document: 'deny',
+    audit: 'deny',
+  },
   'a command that breaches an analysis limit with debug output on': {
     document: 'deny',
     audit: 'deny',
@@ -94,7 +113,11 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     ruleId: 'powershell.remove-item-recursive-force-root-or-home',
   },
   'an allowed PowerShell command': { document: 'none', audit: 'allow' },
-  'a destructive Monitor command': { document: 'deny', audit: 'deny', ruleId: 'git.reset-hard' },
+  'a destructive Monitor command': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'git.reset-hard',
+  },
   'a Monitor watch without a command': { document: 'none', audit: 'none' },
   'a PowerShell removal Copilot sends as Bash': {
     document: 'deny',
@@ -106,7 +129,10 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     audit: 'deny',
     ruleId: 'git.reset-hard',
   },
-  'an allowed command in object tool args': { document: 'none', audit: 'allow' },
+  'an allowed command in object tool args': {
+    document: 'none',
+    audit: 'allow',
+  },
   'a raw apply_patch string onto a private key': {
     document: 'deny',
     audit: 'deny',
@@ -127,16 +153,37 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     audit: 'deny',
     ruleId: 'secret.home.ssh',
   },
-  'a destructive monitor command': { document: 'deny', audit: 'deny', ruleId: 'git.reset-hard' },
+  'a destructive monitor command': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'git.reset-hard',
+  },
   'a Glob over dotenv files in patterns': {
     document: 'deny',
     audit: 'deny',
     ruleId: 'secret.basename.env',
   },
+  'a recursive delete from a home process cwd': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'rm.recursive-force-home-cwd',
+  },
+  'a destructive line written to a process': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'git.reset-hard',
+  },
+  'a keypress written to a process': { document: 'none', audit: 'none' },
   'a transcript under the Codex home': { document: 'none', audit: 'allow' },
   'a transcript under the Copilot home': { document: 'none', audit: 'allow' },
-  'a transcript under the Claude config directory': { document: 'none', audit: 'allow' },
-  'no transcript under a Claude Code entrypoint': { document: 'none', audit: 'allow' },
+  'a transcript under the Claude config directory': {
+    document: 'none',
+    audit: 'allow',
+  },
+  'no transcript under a Claude Code entrypoint': {
+    document: 'none',
+    audit: 'allow',
+  },
   'a tool cwd inside the session cwd': { document: 'none', audit: 'allow' },
   'a tool cwd outside the session cwd': REQUESTED_OUTSIDE,
   'a tool cwd that does not exist': REQUESTED_UNUSABLE,
@@ -168,7 +215,10 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     ruleId: 'powershell.remove-item-recursive-force-root-or-home',
   },
   'a blank session id': { document: 'none', audit: 'none' },
-  'a working directory inside the workspace roots': { document: 'allow', audit: 'allow' },
+  'a working directory inside the workspace roots': {
+    document: 'allow',
+    audit: 'allow',
+  },
   'a working directory outside the workspace roots': REQUESTED_OUTSIDE,
   'a working directory that does not exist': REQUESTED_UNUSABLE,
   'a blank working directory': MALFORMED,
@@ -184,7 +234,10 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   },
   'no workspace paths': MALFORMED,
   'a blank Cwd': MALFORMED,
-  'view targets past the path-canonicalization budget': { document: 'deny', audit: 'deny' },
+  'view targets past the path-canonicalization budget': {
+    document: 'deny',
+    audit: 'deny',
+  },
   'tool input the host truncated': { document: 'deny', audit: 'deny' },
   'a cwd inside the workspace root': { document: 'allow', audit: 'allow' },
   'a cwd outside the workspace root': SESSION_OUTSIDE,
@@ -195,7 +248,10 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
 
 const ANSWERED_OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'an allowed command': { document: 'allow', audit: 'allow' },
-  'an allowed command under the blocked-only audit scope': { document: 'allow', audit: 'none' },
+  'an allowed command under the blocked-only audit scope': {
+    document: 'allow',
+    audit: 'none',
+  },
   'a read tool over a relative path': { document: 'allow', audit: 'none' },
   'a payload without a cwd': { document: 'deny', audit: 'deny' },
 };
@@ -284,6 +340,7 @@ type HostSpec = {
   commandTool: string;
   commandArgs?: (command: string) => Record<string, unknown>;
   unsupportedEvent?: string;
+  cwdFromProcess?: true;
   answersEveryCall?: true;
   build: (payload: Payload) => unknown;
   extraRows?: (fixture: HookFixture) => readonly Omit<HookRow, 'expected'>[];
@@ -335,7 +392,10 @@ const antigravityPayload = (fixture: HookFixture, args: Record<string, unknown>)
   JSON.stringify({
     conversationId: SESSION,
     workspacePaths: [fixture.project],
-    toolCall: { name: 'run_command', args: { CommandLine: 'git status', ...args } },
+    toolCall: {
+      name: 'run_command',
+      args: { CommandLine: 'git status', ...args },
+    },
   });
 
 const grokPayload = (fixture: HookFixture, overrides: Record<string, unknown>) =>
@@ -356,6 +416,18 @@ const droidShaped = (payload: Payload) => ({
   tool_name: payload.tool,
   tool_input: payload.args,
 });
+
+const devinShaped = (payload: Payload) => ({
+  hook_event_name: payload.event ?? 'PreToolUse',
+  tool_name: payload.tool,
+  tool_input: payload.args,
+  tool_use_id: 'toolu_01',
+  session_id: 'glow-crane',
+  prompt_id: 'prompt-01',
+});
+
+const devinPayload = (tool: string, args: Record<string, unknown>) =>
+  JSON.stringify(devinShaped({ tool, args }));
 
 const hermesPayload = (fixture: HookFixture, workdir: string) =>
   JSON.stringify({
@@ -411,7 +483,11 @@ const HOST_SPECS: readonly HostSpec[] = [
         name: 'a destructive Monitor command',
         stdin: claudePayload(fixture, {
           tool_name: 'Monitor',
-          tool_input: { description: 'reset', timeout_ms: 1000, command: 'git reset --hard' },
+          tool_input: {
+            description: 'reset',
+            timeout_ms: 1000,
+            command: 'git reset --hard',
+          },
         }),
       },
       {
@@ -491,10 +567,19 @@ const HOST_SPECS: readonly HostSpec[] = [
         name: 'a tool cwd inside the session cwd',
         stdin: kimiPayload(fixture, join(fixture.project, 'sub')),
       },
-      { name: 'a tool cwd outside the session cwd', stdin: kimiPayload(fixture, fixture.outside) },
-      { name: 'a tool cwd that does not exist', stdin: kimiPayload(fixture, fixture.missing) },
+      {
+        name: 'a tool cwd outside the session cwd',
+        stdin: kimiPayload(fixture, fixture.outside),
+      },
+      {
+        name: 'a tool cwd that does not exist',
+        stdin: kimiPayload(fixture, fixture.missing),
+      },
       { name: 'a blank tool cwd', stdin: kimiPayload(fixture, '') },
-      { name: 'a tool cwd that is not a string', stdin: kimiPayload(fixture, 5) },
+      {
+        name: 'a tool cwd that is not a string',
+        stdin: kimiPayload(fixture, 5),
+      },
     ],
   },
   {
@@ -521,7 +606,10 @@ const HOST_SPECS: readonly HostSpec[] = [
         name: 'a dir_path that does not exist',
         stdin: geminiPayload(fixture.project, 'git status', 'missing-dir'),
       },
-      { name: 'an empty dir_path', stdin: geminiPayload(fixture.project, 'git status', '') },
+      {
+        name: 'an empty dir_path',
+        stdin: geminiPayload(fixture.project, 'git status', ''),
+      },
       {
         name: 'a whitespace-only dir_path',
         stdin: geminiPayload(fixture.project, 'git status', '  '),
@@ -545,18 +633,30 @@ const HOST_SPECS: readonly HostSpec[] = [
       toolArgs: payload.args === undefined ? undefined : JSON.stringify(payload.args),
     }),
     extraRows: (fixture) => [
-      { name: 'tool args that are not a string', stdin: copilotPayload(fixture, { toolArgs: 5 }) },
-      { name: 'tool args that are not JSON', stdin: copilotPayload(fixture, { toolArgs: '{' }) },
+      {
+        name: 'tool args that are not a string',
+        stdin: copilotPayload(fixture, { toolArgs: 5 }),
+      },
+      {
+        name: 'tool args that are not JSON',
+        stdin: copilotPayload(fixture, { toolArgs: '{' }),
+      },
       {
         name: 'a denied command in object tool args',
         stdin: copilotPayload(fixture, {
-          toolArgs: { command: 'git reset --hard', description: 'Reset the tree' },
+          toolArgs: {
+            command: 'git reset --hard',
+            description: 'Reset the tree',
+          },
         }),
       },
       {
         name: 'an allowed command in object tool args',
         stdin: copilotPayload(fixture, {
-          toolArgs: { command: 'git status --short', description: 'Show working tree status' },
+          toolArgs: {
+            command: 'git status --short',
+            description: 'Show working tree status',
+          },
         }),
       },
       {
@@ -577,10 +677,15 @@ const HOST_SPECS: readonly HostSpec[] = [
         name: 'a powershell command',
         stdin: copilotPayload(fixture, {
           toolName: 'powershell',
-          toolArgs: JSON.stringify({ command: 'Remove-Item -Recurse -Force C:\\' }),
+          toolArgs: JSON.stringify({
+            command: 'Remove-Item -Recurse -Force C:\\',
+          }),
         }),
       },
-      { name: 'a blank session id', stdin: copilotPayload(fixture, { sessionId: '' }) },
+      {
+        name: 'a blank session id',
+        stdin: copilotPayload(fixture, { sessionId: '' }),
+      },
     ],
   },
   {
@@ -600,19 +705,28 @@ const HOST_SPECS: readonly HostSpec[] = [
       {
         name: 'a working directory inside the workspace roots',
         stdin: cursorPayload(fixture, {
-          tool_input: { command: 'git status', working_directory: join(fixture.project, 'sub') },
+          tool_input: {
+            command: 'git status',
+            working_directory: join(fixture.project, 'sub'),
+          },
         }),
       },
       {
         name: 'a working directory outside the workspace roots',
         stdin: cursorPayload(fixture, {
-          tool_input: { command: 'git status', working_directory: fixture.outside },
+          tool_input: {
+            command: 'git status',
+            working_directory: fixture.outside,
+          },
         }),
       },
       {
         name: 'a working directory that does not exist',
         stdin: cursorPayload(fixture, {
-          tool_input: { command: 'git status', working_directory: fixture.missing },
+          tool_input: {
+            command: 'git status',
+            working_directory: fixture.missing,
+          },
         }),
       },
       {
@@ -621,7 +735,10 @@ const HOST_SPECS: readonly HostSpec[] = [
           tool_input: { command: 'git status', working_directory: '' },
         }),
       },
-      { name: 'no workspace roots', stdin: cursorPayload(fixture, { workspace_roots: [] }) },
+      {
+        name: 'no workspace roots',
+        stdin: cursorPayload(fixture, { workspace_roots: [] }),
+      },
       {
         name: 'workspace roots that do not exist',
         stdin: cursorPayload(fixture, { workspace_roots: [fixture.missing] }),
@@ -646,7 +763,9 @@ const HOST_SPECS: readonly HostSpec[] = [
     extraRows: (fixture) => [
       {
         name: 'a Cwd inside the workspace paths',
-        stdin: antigravityPayload(fixture, { Cwd: join(fixture.project, 'sub') }),
+        stdin: antigravityPayload(fixture, {
+          Cwd: join(fixture.project, 'sub'),
+        }),
       },
       {
         name: 'a Cwd outside the workspace paths',
@@ -654,7 +773,9 @@ const HOST_SPECS: readonly HostSpec[] = [
       },
       {
         name: 'a Cwd whose name starts with two dots inside the workspace paths',
-        stdin: antigravityPayload(fixture, { Cwd: join(fixture.project, DOTTED_DIRECTORY) }),
+        stdin: antigravityPayload(fixture, {
+          Cwd: join(fixture.project, DOTTED_DIRECTORY),
+        }),
       },
       {
         name: 'a Cwd that does not exist',
@@ -666,7 +787,10 @@ const HOST_SPECS: readonly HostSpec[] = [
         stdin: JSON.stringify({
           conversationId: SESSION,
           workspacePaths: [],
-          toolCall: { name: 'run_command', args: { CommandLine: 'git status' } },
+          toolCall: {
+            name: 'run_command',
+            args: { CommandLine: 'git status' },
+          },
         }),
       },
       {
@@ -719,7 +843,10 @@ const HOST_SPECS: readonly HostSpec[] = [
       },
       {
         name: 'a cwd outside the workspace root',
-        stdin: grokPayload(fixture, { workspaceRoot: fixture.project, cwd: fixture.outside }),
+        stdin: grokPayload(fixture, {
+          workspaceRoot: fixture.project,
+          cwd: fixture.outside,
+        }),
       },
     ],
   },
@@ -728,7 +855,11 @@ const HOST_SPECS: readonly HostSpec[] = [
     flag: '--droid',
     ported: portedDroidHook,
     commandTool: 'Execute',
-    commandArgs: (command) => ({ command, summary: 'Run the command', riskLevel: 'low' }),
+    commandArgs: (command) => ({
+      command,
+      summary: 'Run the command',
+      riskLevel: 'low',
+    }),
     unsupportedEvent: 'PostToolUse',
     build: droidShaped,
     extraRows: (fixture) => [
@@ -745,6 +876,36 @@ const HOST_SPECS: readonly HostSpec[] = [
     ],
   },
   {
+    id: 'devin',
+    flag: '--devin',
+    ported: portedDevinHook,
+    commandTool: 'exec',
+    unsupportedEvent: 'PostToolUse',
+    cwdFromProcess: true,
+    build: devinShaped,
+    extraRows: (fixture) => [
+      {
+        name: 'a recursive delete from a home process cwd',
+        stdin: devinPayload('exec', { command: 'rm -rf build' }),
+        processCwd: fixture.home,
+      },
+      {
+        name: 'a destructive line written to a process',
+        stdin: devinPayload('write_to_process', {
+          shell_id: 'a8be43',
+          text_input: 'git reset --hard',
+        }),
+      },
+      {
+        name: 'a keypress written to a process',
+        stdin: devinPayload('write_to_process', {
+          shell_id: 'a8be43',
+          bytes_input: '<CR>',
+        }),
+      },
+    ],
+  },
+  {
     id: 'hermes-agent',
     flag: '--hermes-agent',
     ported: portedHermesAgentHook,
@@ -753,7 +914,10 @@ const HOST_SPECS: readonly HostSpec[] = [
     build: claudeShaped('pre_tool_call'),
     extraRows: (fixture) => [
       { name: 'a workdir that exists', stdin: hermesPayload(fixture, 'sub') },
-      { name: 'a workdir that does not exist', stdin: hermesPayload(fixture, 'missing-dir') },
+      {
+        name: 'a workdir that does not exist',
+        stdin: hermesPayload(fixture, 'missing-dir'),
+      },
       { name: 'a blank workdir', stdin: hermesPayload(fixture, '') },
     ],
   },
@@ -767,7 +931,10 @@ function commonRows(spec: HostSpec, fixture: HookFixture): Omit<HookRow, 'expect
   const inProject = (command: string) => commandPayload(command, fixture.project);
 
   return [
-    { name: 'a denied command', stdin: inProject('git push --force origin main') },
+    {
+      name: 'a denied command',
+      stdin: inProject('git push --force origin main'),
+    },
     { name: 'an allowed command', stdin: inProject('git status') },
     {
       name: 'an allowed command under the blocked-only audit scope',
@@ -797,7 +964,11 @@ function commonRows(spec: HostSpec, fixture: HookFixture): Omit<HookRow, 'expect
     },
     {
       name: 'a read tool over a relative path',
-      stdin: payload({ tool: 'Read', args: { file_path: 'README.md' }, cwd: fixture.project }),
+      stdin: payload({
+        tool: 'Read',
+        args: { file_path: 'README.md' },
+        cwd: fixture.project,
+      }),
     },
     {
       name: 'a read tool over a private key',
@@ -808,14 +979,27 @@ function commonRows(spec: HostSpec, fixture: HookFixture): Omit<HookRow, 'expect
       }),
     },
     { name: 'a payload without a cwd', stdin: commandPayload('git status') },
-    { name: 'a cwd that is a regular file', stdin: commandPayload('git status', fixture.file) },
-    { name: 'a cwd that does not exist', stdin: commandPayload('git status', fixture.missing) },
+    ...(spec.cwdFromProcess
+      ? []
+      : [
+          {
+            name: 'a cwd that is a regular file',
+            stdin: commandPayload('git status', fixture.file),
+          },
+          {
+            name: 'a cwd that does not exist',
+            stdin: commandPayload('git status', fixture.missing),
+          },
+        ]),
     {
       name: 'a denied command under a malformed user policy',
       stdin: inProject('git reset --hard HEAD~1'),
       env: { CC_SAFETY_NET_HOME: join(fixture.root, BAD_CONFIG_DIR) },
     },
-    { name: 'a command that breaches an analysis limit', stdin: inProject(BREACH_COMMAND) },
+    {
+      name: 'a command that breaches an analysis limit',
+      stdin: inProject(BREACH_COMMAND),
+    },
     {
       name: 'a command past the structural shell-syntax limit',
       stdin: inProject(STRUCTURAL_LIMIT_COMMAND),

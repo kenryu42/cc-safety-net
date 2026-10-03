@@ -6,6 +6,9 @@ import { createTestEnvironment, processPathResolver } from '@/core/environment';
 import { createSpawnEnv } from '../helpers';
 import { snapshotTree } from './fixture-tree';
 
+export const DEVIN_CONFIG =
+  process.platform === 'win32' ? 'AppData/Roaming/devin/config.json' : '.config/devin/config.json';
+
 const roots: string[] = [];
 
 export function createTempRoot(prefix: string): string {
@@ -41,6 +44,7 @@ export const HOST_ENV_NAMES = [
   'XDG_CONFIG_HOME',
   'XDG_CACHE_HOME',
   'LOCALAPPDATA',
+  'APPDATA',
 ];
 
 export const BLANKED_ENV_NAMES = [

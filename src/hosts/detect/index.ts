@@ -8,6 +8,7 @@ import { detect as detectCopilotCli } from '@/hosts/copilot-cli/detect';
 import { detect as detectCursor } from '@/hosts/cursor/detect';
 import { detect as detectDeepSeekHarness } from '@/hosts/deepseek-harness/detect';
 import type { DetectContext, HookDetection } from '@/hosts/detect/context';
+import { detect as detectDevin } from '@/hosts/devin/detect';
 import { detect as detectDroid } from '@/hosts/droid/detect';
 import type { HookStatus } from '@/hosts/doctor-types';
 import { detect as detectGeminiCli } from '@/hosts/gemini-cli/detect';
@@ -26,6 +27,7 @@ const detectors = {
   'copilot-cli': detectCopilotCli,
   cursor: detectCursor,
   'deepseek-harness': detectDeepSeekHarness,
+  devin: detectDevin,
   droid: detectDroid,
   'gemini-cli': detectGeminiCli,
   'grok-build': detectGrokBuild,

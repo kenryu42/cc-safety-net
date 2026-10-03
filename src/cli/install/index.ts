@@ -38,6 +38,7 @@ import {
   planDeepSeekHarnessUninstall,
 } from '@/hosts/deepseek-harness/install';
 import { detectAllHooks } from '@/hosts/detect/index';
+import { installDevin, uninstallDevin } from '@/hosts/devin/install';
 import { installDroid, uninstallDroid } from '@/hosts/droid/install';
 import type { UpdateInfo } from '@/hosts/doctor-types';
 import { detectGeminiCLI } from '@/hosts/gemini-cli/detect';
@@ -87,7 +88,7 @@ import { defaultVersionFetcher, type VersionFetcher } from '@/hosts/system-info'
 
 type ConfigInstallTarget = Extract<
   InstallTarget,
-  'antigravity-cli' | 'droid' | 'grok-build' | 'kimi-code' | 'cursor'
+  'antigravity-cli' | 'devin' | 'droid' | 'grok-build' | 'kimi-code' | 'cursor'
 >;
 
 type ManagedArtifactTarget = Extract<InstallTarget, 'amp' | 'hermes-agent'>;
@@ -162,6 +163,7 @@ const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
 const NPX_CACHE_TARGETS = new Set<InstallTarget>([
   'antigravity-cli',
   'cursor',
+  'devin',
   'droid',
   'grok-build',
   'hermes-agent',
@@ -557,6 +559,7 @@ function uninstallOpenCodeTarget(environment: Environment): string {
 const CONFIG_INSTALLS = {
   'antigravity-cli': { install: installAntigravityCli, uninstall: uninstallAntigravityCli },
   cursor: { install: installCursor, uninstall: uninstallCursor },
+  devin: { install: installDevin, uninstall: uninstallDevin },
   droid: { install: installDroid, uninstall: uninstallDroid },
   'grok-build': { install: installGrokBuild, uninstall: uninstallGrokBuild },
   'kimi-code': { install: installKimiCode, uninstall: uninstallKimiCode },

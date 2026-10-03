@@ -222,7 +222,7 @@ bun run build
 - [ ] Code follows project conventions (type hints, naming, etc.)
 - [ ] `bun run check` passes (lint, types, dead code, tests)
 - [ ] Tests added for new rules (minimum 90% coverage required)
-- [ ] Tested locally with Codex, Claude Code, Factory Droid, Gemini CLI, GitHub Copilot CLI, Grok Build, Kimi Code or Pi
+- [ ] Tested locally with Codex, Claude Code, Devin CLI, Factory Droid, Gemini CLI, GitHub Copilot CLI, Grok Build, Kimi Code or Pi
 - [ ] Updated documentation if needed (README, AGENTS.md)
 - [ ] No version changes in `package.json`
 
