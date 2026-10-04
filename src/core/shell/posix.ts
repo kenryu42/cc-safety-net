@@ -399,7 +399,7 @@ function scanSequence(
           attach: (heredoc) => {
             redirection.heredoc = heredoc;
             if (heredoc.quotedDelimiter) return;
-            const body = readHeredocBodySubstitutions(
+            const body = readExpandedTextSubstitutions(
               source,
               heredoc.bodySpan.start,
               heredoc.bodySpan.end,
@@ -594,9 +594,11 @@ function readWord(
     if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
     const substitution =
       char === '$' || char === '<' || char === '>' || char === '`'
-        ? readSubstitution(source, i, end, limits, wordBudget, depth)
+        ? (readSubstitution(source, i, end, limits, wordBudget, depth) ??
+          readParameterExpansion(source, i, end, limits, wordBudget, depth))
         : null;
     if (substitution) {
+      if (substitution.provenance === 'variable') text += source.slice(i, substitution.next);
       const collected = collectSubstitution(substitution, nested, issues);
       limited ||= collected.limited;
       provenance = mergeProvenance(provenance, collected.provenance);
@@ -670,30 +672,14 @@ function readDoubleQuoted(
       i += 2;
       continue;
     }
-    if (source.startsWith('$((', i)) {
-      const close = findSubstitutionEnd(source, i + 3, end, '))');
-      const next = close === -1 ? end : close + 2;
-      text += source.slice(i, next);
-      if (
-        containsFunctionSubstitutionOpener(source, i, next) &&
-        mayRunFunctionSubstitution(
-          readSubstitution(source, i, end, limits, wordBudget, depth)?.program,
-        )
-      ) {
-        issues.push(FUNCTION_SUBSTITUTION_ISSUE);
-      }
-      if (close === -1) {
-        issues.push({
-          code: 'unclosed-arithmetic',
-          message: '$(( substitution is not closed',
-        });
-      }
-      i = next;
-      continue;
-    }
     if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
-    const substitution = readSubstitution(source, i, end, limits, wordBudget, depth);
+    const substitution =
+      readSubstitution(source, i, end, limits, wordBudget, depth) ??
+      readParameterExpansion(source, i, end, limits, wordBudget, depth);
     if (substitution) {
+      if (substitution.provenance !== 'command-substitution') {
+        text += source.slice(i, substitution.next);
+      }
       const collected = collectSubstitution(substitution, nested, issues);
       i = collected.next;
       limited ||= collected.limited;
@@ -809,6 +795,16 @@ function readSubstitution(
           },
         ]
       : [];
+  const escapeIssue =
+    backtick && backtickBodyHidesExpansion(source, start + openLength, innerEnd)
+      ? [
+          {
+            code: 'unsupported-backtick-escape',
+            message:
+              'a backslash before $ or ` inside backticks changes the command the shell runs and cannot be analyzed',
+          },
+        ]
+      : [];
   return {
     program: freezeCommandProgram({
       kind: 'program',
@@ -816,10 +812,10 @@ function readSubstitution(
       source: source.slice(start + openLength, innerEnd),
       span: { start: start + openLength, end: innerEnd },
       status: getParseStatus(
-        [...inner.issues, ...substitutionIssue, ...contextIssue],
+        [...inner.issues, ...substitutionIssue, ...contextIssue, ...escapeIssue],
         inner.limited,
       ),
-      issues: [...inner.issues, ...substitutionIssue, ...contextIssue],
+      issues: [...inner.issues, ...substitutionIssue, ...contextIssue, ...escapeIssue],
       nodes: inner.nodes,
     }),
     next,
@@ -827,7 +823,7 @@ function readSubstitution(
   };
 }
 
-function readHeredocBodySubstitutions(
+function readExpandedTextSubstitutions(
   source: string,
   start: number,
   end: number,
@@ -1069,10 +1065,87 @@ function skipLineContinuations(source: string, start: number): number {
   return index;
 }
 
+const UNCLOSED_PARAMETER_EXPANSION_ISSUE: CommandIssue = Object.freeze({
+  code: 'unclosed-parameter-expansion',
+  message: '${ parameter expansion is not closed',
+});
+
+function readParameterExpansion(
+  source: string,
+  start: number,
+  end: number,
+  limits: CommandParserLimits,
+  wordBudget: WordBudget,
+  depth: number,
+): { program: CommandProgram; next: number; provenance: WordProvenance } | null {
+  if (source[start] !== '$' || source[start + 1] !== '{') return null;
+  const close = findParameterExpansionEnd(source, start + 2, end);
+  const innerEnd = close === -1 ? end : close;
+  const inner = readExpandedTextSubstitutions(
+    source,
+    start + 2,
+    innerEnd,
+    limits,
+    wordBudget,
+    depth + 1,
+  );
+  const issues = [
+    ...inner.programs.flatMap((program) => program.issues),
+    ...inner.issues,
+    ...(close === -1 ? [UNCLOSED_PARAMETER_EXPANSION_ISSUE] : []),
+  ];
+  if (inner.programs.length === 0 && issues.length === 0) return null;
+  return {
+    program: freezeCommandProgram({
+      kind: 'program',
+      dialect: 'posix',
+      source: source.slice(start + 2, innerEnd),
+      span: { start: start + 2, end: innerEnd },
+      status: getParseStatus(
+        issues,
+        inner.programs.some((program) => program.status === 'limited'),
+      ),
+      issues,
+      nodes: inner.programs.flatMap((program) => program.nodes),
+    }),
+    next: close === -1 ? end : close + 1,
+    provenance: 'variable',
+  };
+}
+
+function findParameterExpansionEnd(source: string, start: number, end: number): number {
+  let nesting = 1;
+  for (let i = start; i < end; i++) {
+    const char = source[i];
+    if (char === '\\') {
+      i++;
+      continue;
+    }
+    if (char === '$' && source[i + 1] === '{') {
+      nesting++;
+      i++;
+      continue;
+    }
+    if (char !== '}') continue;
+    nesting--;
+    if (nesting === 0) return i;
+  }
+  return -1;
+}
+
+function backtickBodyHidesExpansion(source: string, start: number, end: number): boolean {
+  for (let i = start; i < end; i++) {
+    if (source[i] !== '\\') continue;
+    if (source[i + 1] === '$' || source[i + 1] === '`') return true;
+    i++;
+  }
+  return false;
+}
+
 function readVariableEnd(source: string, start: number, end: number): number {
   if (source[start + 1] === '{') {
-    const close = source.indexOf('}', start + 2);
-    return close === -1 || close >= end ? end : close + 1;
+    const close = findParameterExpansionEnd(source, start + 2, end);
+    return close === -1 ? end : close + 1;
   }
   if (source[start + 1] === '$') return start + 2;
   let i = start + 1;
@@ -1162,7 +1235,9 @@ function getParseStatus(issues: readonly CommandIssue[], limited = false): Comma
         issue.code === 'ambiguous-heredoc-delimiter' ||
         issue.code === 'unterminated-heredoc' ||
         issue.code === 'unsupported-heredoc-context' ||
-        issue.code === 'unsupported-function-substitution',
+        issue.code === 'unsupported-function-substitution' ||
+        issue.code === 'unsupported-backtick-escape' ||
+        issue.code === 'unclosed-parameter-expansion',
     )
   ) {
     return 'invalid';

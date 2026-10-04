@@ -284,6 +284,57 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'blocks a home removal in a parameter-expansion operand',
+      command: 'echo ${x:-$(rm -rf ~/)}',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'targeting root or home',
+      },
+    },
+    {
+      name: 'blocks a home removal inside double-quoted arithmetic',
+      command: 'echo "$(( $(rm -rf ~/) ))"',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'targeting root or home',
+      },
+    },
+    {
+      name: 'fails closed on a backtick body whose escaped dollar hides a substitution',
+      command: 'echo `echo "\\$(rm -rf ~/)"`',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'analysis.strict-unparseable',
+        intent: 'stop_and_explain',
+        reasonIncludes: 'could not be safely analyzed',
+      },
+    },
+    {
+      name: 'allows a nested parameter expansion',
+      command: 'echo ${x:-${y}}',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows a harmless generator in a default-value operand',
+      command: 'EDITOR=${EDITOR:-$(command -v vim)}; echo $EDITOR',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows harmless double-quoted arithmetic over a substitution',
+      command: 'echo "$(( $(date +%s) - 60 ))"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks find delete',
       command: 'find . -delete',
       options: options({ cwd: paths.cwd }),

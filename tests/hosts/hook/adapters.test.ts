@@ -11,7 +11,7 @@ import {
 } from '../../helpers/hook-hosts';
 
 const BREACHED_WITH_DEBUG = 'a command that breaches an analysis limit with debug output on';
-const DEBUG_STAGE = 'CC Safety Net debug: hook policy protection failed: ';
+const DEBUG_STAGE = 'CC Safety Net debug: hook secret protection failed: ';
 
 const PRE_TOOL_USE_DENIAL = {
   hookSpecificOutput: {

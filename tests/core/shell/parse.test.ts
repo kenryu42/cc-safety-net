@@ -128,12 +128,13 @@ describe('core/shell/parse', () => {
     ': <<EOF\n$(echo ${ rm -rf x; })\nEOF',
     'echo ${\\\n rm -rf x; }',
     'echo $\\\n{ rm -rf x; }',
-    `echo "${'$(( '.repeat(65)}\${ rm -rf x; echo 0; }${' ))'.repeat(65)}"`,
     `: <<EOF\n${'$(( '.repeat(64)}\${ rm -rf x; echo 0; }${' ))'.repeat(64)}\nEOF`,
     `: <<EOF\n${'$(( '.repeat(64)}0${' ))'.repeat(64)}\n\${ rm -rf x; }\nEOF`,
     'echo $x${ rm -rf x; }',
     'echo "$x${ rm -rf x; }"',
     'echo $$${ rm -rf x; }',
+    'echo ${x:-${ rm -rf x; }}',
+    'echo "${x:+${ rm -rf x; }}"',
   ])('rejects a function substitution where the shell expands it: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('invalid');
@@ -165,6 +166,82 @@ describe('core/shell/parse', () => {
       ]);
     },
   );
+
+  test.each([
+    'echo ${x:-$(rm -rf x)}',
+    'echo "${x:-$(rm -rf x)}"',
+    'echo ${x:+`rm -rf x`}',
+    'echo ${x:-${y:-$(rm -rf x)}}',
+    'echo "$(( $(rm -rf x) ))"',
+    'echo "$(( 1 + $(( $(rm -rf x) )) ))"',
+  ])('reads a substitution inside an operand or double-quoted arithmetic: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    const command = program.nodes[0];
+    const nestedCommands =
+      command?.kind === 'command'
+        ? command.nested
+            .flatMap((nested) => nested.nodes)
+            .flatMap((node) =>
+              node.kind === 'command' ? [node.words.map((word) => word.text).join(' ')] : [],
+            )
+        : [];
+    expect(nestedCommands).toContain('rm -rf x');
+  });
+
+  test.each([
+    ['echo ${x:-${y}}', '${x:-${y}}'],
+    ['echo "${A:-${B:-c}}"', '${A:-${B:-c}}'],
+    [': ${FOO:=${BAR}}', '${FOO:=${BAR}}'],
+    ['echo ${arr[${i}]}', '${arr[${i}]}'],
+  ])('reads a nested parameter expansion as one variable part: %s', (source, expansion) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    const command = program.nodes[0];
+    const word = command?.kind === 'command' ? command.words[1] : undefined;
+    expect(word?.provenance).toBe('variable');
+    expect(
+      word?.parts.filter((part) => part.provenance === 'variable').map((part) => part.raw),
+    ).toEqual([expansion]);
+  });
+
+  test.each([
+    `echo "${'$(( '.repeat(65)}\${ rm -rf x; echo 0; }${' ))'.repeat(65)}"`,
+    `echo "${'$(( '.repeat(65)}0${' ))'.repeat(65)}"`,
+    `echo ${'$(( '.repeat(65)}0${' ))'.repeat(65)}`,
+  ])('limits double-quoted arithmetic at the same depth as unquoted arithmetic: %s', (source) => {
+    expect(parseCommand(source, 'posix').status).toBe('limited');
+  });
+
+  test.each(['echo ${x', 'echo ${x:-$(date)', 'echo "${x'])(
+    'rejects an unclosed parameter expansion: %s',
+    (source) => {
+      const program = parseCommand(source, 'posix');
+      expect(program.status).toBe('invalid');
+      expect(program.issues.map((issue) => issue.code)).toContain('unclosed-parameter-expansion');
+    },
+  );
+
+  test.each([
+    'echo `echo "\\$(rm -rf x)"`',
+    'echo `echo \\`rm -rf x\\``',
+    'echo `echo \\${ rm -rf x; }`',
+  ])('rejects a backtick body whose escapes change what the shell runs: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('invalid');
+    expect(program.issues.map((issue) => issue.code)).toContain('unsupported-backtick-escape');
+  });
+
+  test.each([
+    'echo `date`',
+    "echo `printf '%s\\\\n' x`",
+    'echo `echo "$x" \\\\$y`',
+    'echo `echo $(rm -rf x)`',
+  ])('keeps a backtick body whose escapes do not hide an expansion: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    expect(program.issues).toEqual([]);
+  });
 
   test('reads a group, a redirection into a substitution and a function definition as their nodes', () => {
     const program = parseCommand('echo x >$(git reset --hard); (rm -rf /tmp/x)', 'posix');
