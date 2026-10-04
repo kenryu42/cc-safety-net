@@ -1247,8 +1247,18 @@ function skipSingleQuoted(source: string, start: number, end: number): number {
 function backtickBodyHidesExpansion(source: string, start: number, end: number): boolean {
   for (let i = start; i < end; i++) {
     if (source[i] !== '\\') continue;
+    if (source[i + 1] === '\n') {
+      i++;
+      continue;
+    }
     if (source[i + 1] === '$' || source[i + 1] === '`') return true;
-    if (source[i + 1] === '\\' && (source[i + 2] === "'" || source[i + 2] === '"')) return true;
+    if (source[i + 1] === '\\') {
+      let afterPair = i + 2;
+      while (afterPair < end && source[afterPair] === '\\' && source[afterPair + 1] === '\n') {
+        afterPair += 2;
+      }
+      if (source[afterPair] === "'" || source[afterPair] === '"') return true;
+    }
     i++;
   }
   return false;

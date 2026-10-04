@@ -328,6 +328,17 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'fails closed on a backtick body whose doubled backslash reaches a quote across a line continuation',
+      command: "echo `echo \\\\\\\n'$(rm -rf ~/)\\\\\\\n'`",
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'analysis.strict-unparseable',
+        intent: 'stop_and_explain',
+        reasonIncludes: 'could not be safely analyzed',
+      },
+    },
+    {
       name: 'allows a nested parameter expansion',
       command: 'echo ${x:-${y}}',
       options: options({ cwd: paths.cwd }),

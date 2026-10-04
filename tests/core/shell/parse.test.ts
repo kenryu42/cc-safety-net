@@ -314,6 +314,8 @@ describe('core/shell/parse', () => {
     'echo `echo \\${ rm -rf x; }`',
     "echo `echo \\\\'$(rm -rf x)\\\\'`",
     'echo `echo \\\\"$(rm -rf x)\\\\"`',
+    "echo `echo \\\\\\\n'$(rm -rf x)\\\\\\\n'`",
+    "echo `echo \\\n\\\\'$(rm -rf x)\\\n\\\\'`",
   ])('rejects a backtick body whose escapes change what the shell runs: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('invalid');
