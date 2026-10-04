@@ -6,6 +6,17 @@ import { differentialSources, SHELL_DIALECTS } from '../../helpers/shell-inputs'
 
 const STATUSES = ['complete', 'partial', 'invalid', 'limited'];
 
+function nestedCommandTexts(program: ReturnType<typeof parseCommand>): string[] {
+  const command = program.nodes[0];
+  return command?.kind === 'command'
+    ? command.nested
+        .flatMap((nested) => nested.nodes)
+        .flatMap((node) =>
+          node.kind === 'command' ? [node.words.map((word) => word.text).join(' ')] : [],
+        )
+    : [];
+}
+
 describe('core/shell/parse', () => {
   test.each([
     ['E\\$OF', 'E$OF'],
@@ -177,23 +188,37 @@ describe('core/shell/parse', () => {
   ])('reads a substitution inside an operand or double-quoted arithmetic: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');
-    const command = program.nodes[0];
-    const nestedCommands =
-      command?.kind === 'command'
-        ? command.nested
-            .flatMap((nested) => nested.nodes)
-            .flatMap((node) =>
-              node.kind === 'command' ? [node.words.map((word) => word.text).join(' ')] : [],
-            )
-        : [];
-    expect(nestedCommands).toContain('rm -rf x');
+    expect(nestedCommandTexts(program)).toContain('rm -rf x');
   });
+
+  test.each([
+    "example=${example:-'$(rm -rf x)'}",
+    "echo ${x:-'$(rm -rf x)'} ${y:-'`rm -rf x`'}",
+    "echo ${x:-'${ rm -rf x; }'}",
+  ])('leaves a single-quoted operand literal in an unquoted word: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    const command = program.nodes[0];
+    expect(command?.kind === 'command' && command.nested).toEqual([]);
+  });
+
+  test.each(['echo "${x:-\'$(rm -rf x)\'}"', 'echo ${x:-"$(rm -rf x)"}'])(
+    'still reads a substitution the quotes do not protect: %s',
+    (source) => {
+      const program = parseCommand(source, 'posix');
+      expect(program.status).toBe('complete');
+      expect(nestedCommandTexts(program)).toContain('rm -rf x');
+    },
+  );
 
   test.each([
     ['echo ${x:-${y}}', '${x:-${y}}'],
     ['echo "${A:-${B:-c}}"', '${A:-${B:-c}}'],
     [': ${FOO:=${BAR}}', '${FOO:=${BAR}}'],
     ['echo ${arr[${i}]}', '${arr[${i}]}'],
+    ["echo ${prefix:-'${'}", "${prefix:-'${'}"],
+    ["echo ${x:-'}'}", "${x:-'}'}"],
+    ['echo ${x:-"${y}"}', '${x:-"${y}"}'],
   ])('reads a nested parameter expansion as one variable part: %s', (source, expansion) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');

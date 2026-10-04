@@ -595,7 +595,7 @@ function readWord(
     const substitution =
       char === '$' || char === '<' || char === '>' || char === '`'
         ? (readSubstitution(source, i, end, limits, wordBudget, depth) ??
-          readParameterExpansion(source, i, end, limits, wordBudget, depth))
+          readParameterExpansion(source, i, end, limits, wordBudget, depth, true))
         : null;
     if (substitution) {
       if (substitution.provenance === 'variable') text += source.slice(i, substitution.next);
@@ -608,7 +608,7 @@ function readWord(
     }
 
     if (char === '$') {
-      const variable = appendVariable(source, i, end, text, provenance);
+      const variable = appendVariable(source, i, end, text, provenance, true);
       text = variable.text;
       provenance = variable.provenance;
       i = variable.next;
@@ -675,7 +675,7 @@ function readDoubleQuoted(
     if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
     const substitution =
       readSubstitution(source, i, end, limits, wordBudget, depth) ??
-      readParameterExpansion(source, i, end, limits, wordBudget, depth);
+      readParameterExpansion(source, i, end, limits, wordBudget, depth, false);
     if (substitution) {
       if (substitution.provenance !== 'command-substitution') {
         text += source.slice(i, substitution.next);
@@ -688,7 +688,7 @@ function readDoubleQuoted(
       continue;
     }
     if (char === '$') {
-      const variable = appendVariable(source, i, end, text, provenance);
+      const variable = appendVariable(source, i, end, text, provenance, false);
       text = variable.text;
       provenance = variable.provenance;
       i = variable.next;
@@ -830,6 +830,7 @@ function readExpandedTextSubstitutions(
   limits: CommandParserLimits,
   wordBudget: WordBudget,
   depth: number,
+  singleQuotesQuote = false,
 ) {
   const programs: CommandProgram[] = [];
   const issues: CommandIssue[] = [];
@@ -838,6 +839,10 @@ function readExpandedTextSubstitutions(
     const char = source[i];
     if (char === '\\') {
       i += 2;
+      continue;
+    }
+    if (singleQuotesQuote && char === "'") {
+      i = skipSingleQuoted(source, i, end);
       continue;
     }
     const substitution =
@@ -1077,9 +1082,10 @@ function readParameterExpansion(
   limits: CommandParserLimits,
   wordBudget: WordBudget,
   depth: number,
+  singleQuotesQuote: boolean,
 ): { program: CommandProgram; next: number; provenance: WordProvenance } | null {
   if (source[start] !== '$' || source[start + 1] !== '{') return null;
-  const close = findParameterExpansionEnd(source, start + 2, end);
+  const close = findParameterExpansionEnd(source, start + 2, end, singleQuotesQuote);
   const innerEnd = close === -1 ? end : close;
   const inner = readExpandedTextSubstitutions(
     source,
@@ -1088,6 +1094,7 @@ function readParameterExpansion(
     limits,
     wordBudget,
     depth + 1,
+    singleQuotesQuote,
   );
   const issues = [
     ...inner.programs.flatMap((program) => program.issues),
@@ -1113,12 +1120,21 @@ function readParameterExpansion(
   };
 }
 
-function findParameterExpansionEnd(source: string, start: number, end: number): number {
+function findParameterExpansionEnd(
+  source: string,
+  start: number,
+  end: number,
+  singleQuotesQuote: boolean,
+): number {
   let nesting = 1;
   for (let i = start; i < end; i++) {
     const char = source[i];
     if (char === '\\') {
       i++;
+      continue;
+    }
+    if (singleQuotesQuote && char === "'") {
+      i = skipSingleQuoted(source, i, end) - 1;
       continue;
     }
     if (char === '$' && source[i + 1] === '{') {
@@ -1133,6 +1149,11 @@ function findParameterExpansionEnd(source: string, start: number, end: number): 
   return -1;
 }
 
+function skipSingleQuoted(source: string, start: number, end: number): number {
+  const close = source.indexOf("'", start + 1);
+  return close === -1 || close >= end ? end : close + 1;
+}
+
 function backtickBodyHidesExpansion(source: string, start: number, end: number): boolean {
   for (let i = start; i < end; i++) {
     if (source[i] !== '\\') continue;
@@ -1142,9 +1163,14 @@ function backtickBodyHidesExpansion(source: string, start: number, end: number):
   return false;
 }
 
-function readVariableEnd(source: string, start: number, end: number): number {
+function readVariableEnd(
+  source: string,
+  start: number,
+  end: number,
+  singleQuotesQuote: boolean,
+): number {
   if (source[start + 1] === '{') {
-    const close = findParameterExpansionEnd(source, start + 2, end);
+    const close = findParameterExpansionEnd(source, start + 2, end, singleQuotesQuote);
     return close === -1 ? end : close + 1;
   }
   if (source[start + 1] === '$') return start + 2;
@@ -1251,8 +1277,9 @@ function appendVariable(
   end: number,
   text: string,
   provenance: WordProvenance,
+  singleQuotesQuote: boolean,
 ) {
-  const next = readVariableEnd(source, start, end);
+  const next = readVariableEnd(source, start, end, singleQuotesQuote);
   return {
     text: text + source.slice(start, next),
     provenance: mergeProvenance(provenance, 'variable'),
@@ -1304,7 +1331,7 @@ function derivePosixWordParts(source: string, start: number, end: number): Comma
       continue;
     }
     if (char === '$') {
-      const next = readVariableEnd(source, i, end);
+      const next = readVariableEnd(source, i, end, !double);
       if (next > i + 1) {
         collector.push(literalStart, i, 'literal');
         collector.push(i, next, 'variable');

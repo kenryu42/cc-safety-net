@@ -244,6 +244,9 @@ describe('gate/guards/guard-walk', () => {
       { source: 'echo $(foo', status: 'complete' },
       { source: 'echo "x', status: 'unclosed-quote' },
       { source: 'echo ${', status: 'invalid' },
+      { source: 'echo ${x:-${y}}', status: 'complete' },
+      { source: "echo ${prefix:-'${'}", status: 'complete' },
+      { source: 'echo "${prefix:-\'${\'}"', status: 'invalid' },
       { source: 'fan() { fan; fan; }; fan', status: 'structural-limit' },
     ];
     for (const row of rows) {

@@ -323,6 +323,18 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a single-quoted substitution text in a default-value operand',
+      command: "echo ${x:-'$(rm -rf ~/)'}",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows a single-quoted brace in a default-value operand',
+      command: "echo ${prefix:-'${'}",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a harmless generator in a default-value operand',
       command: 'EDITOR=${EDITOR:-$(command -v vim)}; echo $EDITOR',
       options: options({ cwd: paths.cwd }),

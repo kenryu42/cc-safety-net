@@ -739,7 +739,7 @@ function readExpansion(
 ) {
   const char = raw[start + 1];
   if (char === '{') {
-    const close = findExpansionClose(raw, start + 2);
+    const close = findExpansionClose(raw, start + 2, !state.double);
     if (close === -1) {
       flags.invalid = true;
       return { text: '', next: raw.length };
@@ -774,10 +774,15 @@ function collectAssignmentFallback(
   );
 }
 
-function findExpansionClose(raw: string, start: number): number {
+function findExpansionClose(raw: string, start: number, singleQuotesQuote: boolean): number {
   let depth = 1;
   let index = start;
   while (depth > 0 && index < raw.length) {
+    if (singleQuotesQuote && raw[index] === "'") {
+      const close = raw.indexOf("'", index + 1);
+      index = close === -1 ? raw.length : close + 1;
+      continue;
+    }
     if (raw[index] === '{' && raw[index - 1] === '$') depth++;
     if (raw[index] === '}') depth--;
     index++;
