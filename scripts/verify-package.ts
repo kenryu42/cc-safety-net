@@ -713,8 +713,8 @@ export async function buildPackageTarball(options: BuildPackageTarballOptions) {
         '--pack-destination',
         options.outputDirectory,
       ]).stdout.toString(),
-    ) as PackResult[];
-    const result = packed[0];
+    ) as PackResult[] | Record<string, PackResult>;
+    const result = Array.isArray(packed) ? packed[0] : Object.values(packed)[0];
     if (!result) throw new Error('npm pack did not report an artifact');
     const tarball = resolve(options.outputDirectory, result.filename);
     const packedManifest = run(['tar', '-xOf', tarball, 'package/package.json']);
