@@ -387,6 +387,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a single-quoted pattern after a variable array subscript',
+      command: "printf '%s\\n' \"${items[$i]#'$('}\"",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows an ANSI-C string with an escaped quote in a default-value operand',
       command: "message=${message:-$'can\\'t open file'}; echo \"$message\"",
       options: options({ cwd: paths.cwd }),

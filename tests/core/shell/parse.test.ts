@@ -273,6 +273,8 @@ describe('core/shell/parse', () => {
     ['echo "${text#\'$(\'}"', "${text#'$('}"],
     ['echo "${path%\'}\'}"', "${path%'}'}"],
     ['printf "${items[@]#\'$(\'}"', "${items[@]#'$('}"],
+    ['printf "${items[$i]#\'$(\'}"', "${items[$i]#'$('}"],
+    ['echo "${items[${i}]%\'}\'}"', "${items[${i}]%'}'}"],
     ['printf "${text//\'$(\'}"', "${text//'$('}"],
     ['echo "${text/\'}\'/x}"', "${text/'}'/x}"],
     ['echo "${text/#\'$(\'/x}"', "${text/#'$('/x}"],
