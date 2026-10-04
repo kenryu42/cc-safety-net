@@ -54,7 +54,7 @@ If you use PowerShell on Unix, or Git Bash on Windows, set the plugin's expected
 }
 ```
 
-Use `"posix"` for bash, dash, ksh, sh, or zsh; use `"powershell"` for powershell or pwsh.
+Use `"posix"` for a POSIX shell (ash, bash, dash, ksh, mksh, oksh, pdksh, posh, sh, yash, zsh); use `"powershell"` for powershell or pwsh.
 This option does not select OpenCode's executable. It must match the executable OpenCode uses.
 Unsupported shells, including cmd.exe, fish, and nushell, are rejected.
 

@@ -165,36 +165,43 @@ test('PowerShell relative Git metadata moves are blocked without auto-detection'
   expect(result.returned instanceof Tool.Error ? result.returned.message : '').toContain('BLOCKED');
 });
 
+function runShellAdapter(shell: string) {
+  const runtime = host({ shell: 'posix' });
+  let spawned = false;
+  const run = Effect.runPromise(
+    Effect.scoped(
+      runtime.register.pipe(
+        Effect.andThen(() =>
+          Effect.forEach(runtime.shells, (hook) =>
+            hook({ shell, command: 'echo safe', cwd: fixture.project, timeout: 1000, env: {} }),
+          ),
+        ),
+        Effect.andThen(
+          Effect.sync(() => {
+            spawned = true;
+          }),
+        ),
+      ),
+    ),
+  );
+  return { run, spawned: () => spawned };
+}
+
 test.each(['/bin/fish', '/bin/pwsh', 'cmd.exe'])(
   'a POSIX adapter rejects actual shell %s before spawn',
   async (shell) => {
-    const runtime = host({ shell: 'posix' });
-    let spawned = false;
-    await expect(
-      Effect.runPromise(
-        Effect.scoped(
-          runtime.register.pipe(
-            Effect.andThen(() =>
-              Effect.forEach(runtime.shells, (hook) =>
-                hook({
-                  shell,
-                  command: 'echo safe',
-                  cwd: fixture.project,
-                  timeout: 1000,
-                  env: {},
-                }),
-              ),
-            ),
-            Effect.andThen(
-              Effect.sync(() => {
-                spawned = true;
-              }),
-            ),
-          ),
-        ),
-      ),
-    ).rejects.toThrow('shell');
-    expect(spawned).toBe(false);
+    const adapter = runShellAdapter(shell);
+    await expect(adapter.run).rejects.toThrow('shell');
+    expect(adapter.spawned()).toBe(false);
+  },
+);
+
+test.each(['/bin/ash', '/bin/mksh', '/usr/bin/yash'])(
+  'a POSIX adapter accepts actual shell %s before spawn',
+  async (shell) => {
+    const adapter = runShellAdapter(shell);
+    await adapter.run;
+    expect(adapter.spawned()).toBe(true);
   },
 );
 
