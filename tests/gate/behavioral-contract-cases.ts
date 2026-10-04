@@ -359,6 +359,18 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a single-quoted pattern in a double-quoted array prefix removal',
+      command: "printf '%s\\n' \"${items[@]#'$('}\"",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows an ANSI-C string with an escaped quote in a default-value operand',
+      command: "message=${message:-$'can\\'t open file'}; echo \"$message\"",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks a home removal quoted inside a nested double-quoted operand',
       command: 'echo ${x:-"${y:-"\'$(rm -rf ~/)\'"}"}',
       options: options({ cwd: paths.cwd }),

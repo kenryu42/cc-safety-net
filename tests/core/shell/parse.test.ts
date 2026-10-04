@@ -246,6 +246,10 @@ describe('core/shell/parse', () => {
     ['echo ${x:-${y:-"}"}}', '${x:-${y:-"}"}}'],
     ['echo "${text#\'$(\'}"', "${text#'$('}"],
     ['echo "${path%\'}\'}"', "${path%'}'}"],
+    ['printf "${items[@]#\'$(\'}"', "${items[@]#'$('}"],
+    ['echo "${!var#\'$(\'}"', "${!var#'$('}"],
+    ["echo ${x:-$'it\\'s'} tail", "${x:-$'it\\'s'}"],
+    ["echo ${x:-$'a\\'}'} tail", "${x:-$'a\\'}'}"],
     ["echo ${x:-'\"'}", "${x:-'\"'}"],
   ])('reads a nested parameter expansion as one variable part: %s', (source, expansion) => {
     const program = parseCommand(source, 'posix');

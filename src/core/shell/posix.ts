@@ -859,6 +859,10 @@ function readExpandedText(
       i = skipSingleQuoted(source, i, end);
       continue;
     }
+    if (level.quotes && !level.double && char === '$' && source[i + 1] === "'") {
+      i = readAnsiCString(source, i + 2, end).next;
+      continue;
+    }
     if (char === '}' && !level.double) {
       const parent = enclosing.pop();
       if (parent) {
@@ -1176,6 +1180,10 @@ export function findParameterExpansionEnd(
       i = skipSingleQuoted(source, i, end) - 1;
       continue;
     }
+    if (level.quotes && !level.double && char === '$' && source[i + 1] === "'") {
+      i = readAnsiCString(source, i + 2, end).next - 1;
+      continue;
+    }
     if (char === '$' && source[i + 1] === '{') {
       enclosing.push(level);
       level = {
@@ -1194,7 +1202,9 @@ export function findParameterExpansionEnd(
 }
 
 function startsPatternOperand(source: string, start: number): boolean {
-  const name = /^(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*?$!-])/.exec(source.slice(start))?.[0];
+  const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|[0-9]+|[@*?$!-])/.exec(
+    source.slice(start),
+  )?.[0];
   if (!name) return false;
   const operator = source[start + name.length];
   return operator === '#' || operator === '%';
