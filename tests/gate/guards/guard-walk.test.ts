@@ -249,6 +249,7 @@ describe('gate/guards/guard-walk', () => {
       { source: 'echo ${message:-"don\'t panic"}', status: 'complete' },
       { source: 'echo ${x:-"}"}', status: 'complete' },
       { source: 'echo ${x:-${y:-"}"}}', status: 'complete' },
+      { source: "echo ${x:-$(git branch # don't\n)} tail", status: 'complete' },
       { source: 'echo "${prefix:-\'${\'}"', status: 'invalid' },
       { source: 'fan() { fan; fan; }; fan', status: 'structural-limit' },
     ];

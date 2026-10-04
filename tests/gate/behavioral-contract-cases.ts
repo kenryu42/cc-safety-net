@@ -393,6 +393,13 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a comment with an apostrophe inside a substitution in a default-value operand',
+      command:
+        'branch=${branch:-$(git branch --show-current # don\'t override an explicit branch\n)}; echo "$branch"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows an ANSI-C string with an escaped quote in a default-value operand',
       command: "message=${message:-$'can\\'t open file'}; echo \"$message\"",
       options: options({ cwd: paths.cwd }),

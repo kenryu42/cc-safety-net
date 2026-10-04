@@ -1202,6 +1202,12 @@ export function findParameterExpansionEnd(
       i = readAnsiCString(source, i + 2, end).next - 1;
       continue;
     }
+    if (char === '`' || (char === '$' && source[i + 1] === '(')) {
+      const next = findSubstitutionNext(source, i, end);
+      if (next === -1) return -1;
+      i = next - 1;
+      continue;
+    }
     if (level.patternSlash && !level.double && char === '/') {
       level = operandLevel(false, null);
       continue;
@@ -1219,6 +1225,15 @@ export function findParameterExpansionEnd(
     level = parent;
   }
   return -1;
+}
+
+function findSubstitutionNext(source: string, start: number, end: number): number {
+  const arithmetic = source.startsWith('$((', start);
+  const backtick = source[start] === '`';
+  const closing = arithmetic ? '))' : backtick ? '`' : ')';
+  const openLength = arithmetic ? 3 : backtick ? 1 : 2;
+  const close = findSubstitutionEnd(source, start + openLength, end, closing);
+  return close === -1 ? -1 : close + closing.length;
 }
 
 function operandLevel(base: boolean, opening: { operator: string } | null) {

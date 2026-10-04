@@ -276,6 +276,8 @@ describe('core/shell/parse', () => {
     ['echo "${path%\'}\'}"', "${path%'}'}"],
     ['printf "${items[@]#\'$(\'}"', "${items[@]#'$('}"],
     ['printf "${items[$i]#\'$(\'}"', "${items[$i]#'$('}"],
+    ["echo ${x:-$(git branch # don't\n)} tail", "${x:-$(git branch # don't\n)}"],
+    ["echo ${x:-`printf '%s' \"it's\"`} tail", "${x:-`printf '%s' \"it's\"`}"],
     ['echo "${items[${i}]%\'}\'}"', "${items[${i}]%'}'}"],
     ['printf "${text//\'$(\'}"', "${text//'$('}"],
     ['echo "${text/\'}\'/x}"', "${text/'}'/x}"],
