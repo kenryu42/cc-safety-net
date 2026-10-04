@@ -382,6 +382,18 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows an ANSI-C string inside a substitution in a default-value operand',
+      command: "message=${message:-$(printf '%s' $'can\\'t open file')}; echo \"$message\"",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows an ANSI-C string inside a command substitution',
+      command: "echo $(printf '%s' $'can\\'t open file')",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks a home removal quoted inside a nested double-quoted operand',
       command: 'echo ${x:-"${y:-"\'$(rm -rf ~/)\'"}"}',
       options: options({ cwd: paths.cwd }),

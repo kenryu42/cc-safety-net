@@ -1025,6 +1025,9 @@ function scanLexicalQuoteOrComment(
 ): number | null {
   const char = source[index];
   if (char === '\\' && !state.single) return index + 1;
+  if (!state.single && !state.double && char === '$' && source[index + 1] === "'") {
+    return readAnsiCString(source, index + 2, end).next - 1;
+  }
   if (!state.double && char === "'") state.single = !state.single;
   if (!state.single && char === '"') state.double = !state.double;
   if (state.single) return index;

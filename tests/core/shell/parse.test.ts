@@ -166,6 +166,12 @@ describe('core/shell/parse', () => {
     expect(parseCommand(source, 'posix').status).toBe('complete');
   });
 
+  test('reads an ANSI-C string inside a command substitution', () => {
+    const program = parseCommand("echo $(printf '%s' $'can\\'t open file') tail", 'posix');
+    expect(program.status).toBe('complete');
+    expect(nestedCommandTexts(program)).toEqual(["printf %s can't open file"]);
+  });
+
   test.each(['echo $x$(rm -rf x)', 'echo "$x$(rm -rf x)"', 'echo $$$(rm -rf x)'])(
     'reads a command substitution glued to a variable: %s',
     (source) => {
@@ -209,6 +215,11 @@ describe('core/shell/parse', () => {
       'echo "${x:-$(awk \'{print $1}\' data.txt)}" tail',
       "${x:-$(awk '{print $1}' data.txt)}",
       'awk {print $1} data.txt',
+    ],
+    [
+      "echo ${message:-$(printf '%s' $'can\\'t open file')} tail",
+      "${message:-$(printf '%s' $'can\\'t open file')}",
+      "printf %s can't open file",
     ],
   ])('reads a brace inside a substitution as part of the operand: %s', (source, word, nested) => {
     const program = parseCommand(source, 'posix');
