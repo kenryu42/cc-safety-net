@@ -255,6 +255,7 @@ describe('core/shell/parse', () => {
     'echo "${x/a/\'$(rm -rf x)\'}"',
     'echo "${arr[$(rm -rf x)]#x}"',
     'echo "${arr[`rm -rf x`]//x/y}"',
+    'echo "${arr[$(rm -rf x)]#\'$(\'}"',
   ])('still reads a substitution the quotes do not protect: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');
@@ -279,6 +280,9 @@ describe('core/shell/parse', () => {
     ["echo ${x:-$(git branch # don't\n)} tail", "${x:-$(git branch # don't\n)}"],
     ["echo ${x:-`printf '%s' \"it's\"`} tail", "${x:-`printf '%s' \"it's\"`}"],
     ['echo "${items[${i}]%\'}\'}"', "${items[${i}]%'}'}"],
+    ['echo "${items[(i+1)]#\'$(\'}"', "${items[(i+1)]#'$('}"],
+    ['echo "${items[$((i+1))]%\'}\'}"', "${items[$((i+1))]%'}'}"],
+    ['echo "${items[$(idx)]#\'$(\'}"', "${items[$(idx)]#'$('}"],
     ['printf "${text//\'$(\'}"', "${text//'$('}"],
     ['echo "${text/\'}\'/x}"', "${text/'}'/x}"],
     ['echo "${text/#\'$(\'/x}"', "${text/#'$('/x}"],

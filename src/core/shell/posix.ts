@@ -406,7 +406,7 @@ function scanSequence(
               limits,
               wordBudget,
               depth + 1,
-              'heredoc',
+              'bare',
             );
             nested.push(...body.programs);
             issues.push(...body.issues);
@@ -824,7 +824,7 @@ function readSubstitution(
   };
 }
 
-type ExpandedTextKind = 'heredoc' | 'operand' | 'quoted-operand';
+type ExpandedTextKind = 'bare' | 'operand' | 'quoted-operand';
 
 function readExpandedText(
   source: string,
@@ -835,13 +835,13 @@ function readExpandedText(
   depth: number,
   kind: ExpandedTextKind,
 ): { programs: CommandProgram[]; issues: CommandIssue[]; close: number } {
-  const programs: CommandProgram[] = [];
-  const issues: CommandIssue[] = [];
-  const patternQuotes = kind !== 'heredoc';
+  const patternQuotes = kind !== 'bare';
   const opening = patternQuotes ? patternOperatorAt(source, start) : null;
-  if (opening && containsFunctionSubstitutionOpener(source, start, opening.next)) {
-    issues.push(FUNCTION_SUBSTITUTION_ISSUE);
-  }
+  const name = opening
+    ? readExpandedText(source, start, opening.nameEnd, limits, wordBudget, depth, 'bare')
+    : null;
+  const programs = name?.programs ?? [];
+  const issues = name?.issues ?? [];
   let level = operandLevel(kind === 'operand', opening);
   const enclosing: (typeof level)[] = [];
   let i = opening?.next ?? start;
@@ -876,13 +876,23 @@ function readExpandedText(
         i++;
         continue;
       }
-      if (kind !== 'heredoc') return { programs, issues, close: i };
+      if (kind !== 'bare') return { programs, issues, close: i };
     }
     if (char === '$' && source[i + 1] === '{') {
       if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
       const nested = patternQuotes ? patternOperatorAt(source, i + 2) : null;
-      if (nested && containsFunctionSubstitutionOpener(source, i + 2, nested.next)) {
-        issues.push(FUNCTION_SUBSTITUTION_ISSUE);
+      if (nested) {
+        const nestedName = readExpandedText(
+          source,
+          i + 2,
+          nested.nameEnd,
+          limits,
+          wordBudget,
+          depth,
+          'bare',
+        );
+        programs.push(...nestedName.programs);
+        issues.push(...nestedName.issues);
       }
       enclosing.push(level);
       level = operandLevel(level.quotes && !level.double, nested);
@@ -1247,8 +1257,8 @@ function operandLevel(base: boolean, opening: { operator: string } | null) {
 function patternOperatorAt(
   source: string,
   start: number,
-): { operator: string; next: number } | null {
-  const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[(?:[^\]$`(]|\$(?![(]))*\])?|[0-9]+|[@*?$!-])/.exec(
+): { operator: string; nameEnd: number; next: number } | null {
+  const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|[0-9]+|[@*?$!-])/.exec(
     source.slice(start),
   )?.[0];
   if (!name) return null;
@@ -1257,7 +1267,8 @@ function patternOperatorAt(
   const second = source[start + name.length + 1];
   const length =
     second === operator || (operator === '/' && (second === '#' || second === '%')) ? 2 : 1;
-  return { operator, next: start + name.length + length };
+  const nameEnd = start + name.length;
+  return { operator, nameEnd, next: nameEnd + length };
 }
 
 function skipSingleQuoted(source: string, start: number, end: number): number {

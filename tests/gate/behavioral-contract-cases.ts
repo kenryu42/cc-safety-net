@@ -387,6 +387,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a single-quoted pattern after an arithmetic array subscript',
+      command: 'echo "${items[(i+1)]#\'$(\'}"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a single-quoted pattern after a variable array subscript',
       command: "printf '%s\\n' \"${items[$i]#'$('}\"",
       options: options({ cwd: paths.cwd }),
