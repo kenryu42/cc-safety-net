@@ -934,8 +934,8 @@ function findSubstitutionEnd(
     }
     return -1;
   }
-  let depth = 1;
-  const lexicalState = { single: false, double: false };
+  let lexicalState: LexicalScanState = { single: false, double: false };
+  const enclosing: LexicalScanState[] = [];
   const pendingHeredocs: PendingHeredoc[] = [];
   for (let i = start; i < end; i++) {
     const char = source[i];
@@ -980,15 +980,23 @@ function findSubstitutionEnd(
       }
     }
     if (source.startsWith('$(', i) && !source.startsWith('$((', i)) {
-      depth++;
+      enclosing.push(lexicalState);
+      lexicalState = { single: false, double: false };
       i++;
       continue;
     }
-    if (char === '(' && !lexicalState.double) depth++;
-    if (char === ')' && !lexicalState.double) {
-      depth--;
-      if (depth === 0) return closing === '))' && source[i + 1] !== ')' ? -1 : i;
+    if (char === '(' && !lexicalState.double) {
+      enclosing.push(lexicalState);
+      lexicalState = { single: false, double: false };
+      continue;
     }
+    if (char !== ')' || lexicalState.double) continue;
+    const parent = enclosing.pop();
+    if (parent) {
+      lexicalState = parent;
+      continue;
+    }
+    return closing === '))' && source[i + 1] !== ')' ? -1 : i;
   }
   return -1;
 }

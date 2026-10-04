@@ -32,7 +32,7 @@
 {"literal":"$(( foo + bar ))","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"$(( rm -rf /x ))","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"$(git reset --hard)","work/standard":"deny git.reset-hard @command-analysis","work/strict":"deny git.reset-hard @command-analysis","repo/standard":"deny git.reset-hard @command-analysis","repo/strict":"deny git.reset-hard @command-analysis"}
-{"literal":"$(printf '%s' \"$(get-secret)\")","work/standard":"allow","work/strict":"deny analysis.strict-unparseable @command-analysis","repo/standard":"allow","repo/strict":"deny analysis.strict-unparseable @command-analysis"}
+{"literal":"$(printf '%s' \"$(get-secret)\")","work/standard":"allow","work/strict":"deny shell.dynamic-executable @command-analysis","repo/standard":"allow","repo/strict":"deny shell.dynamic-executable @command-analysis"}
 {"literal":"$(printf /)","work/standard":"allow","work/strict":"deny shell.dynamic-executable @command-analysis","repo/standard":"allow","repo/strict":"deny shell.dynamic-executable @command-analysis"}
 {"literal":"$(printf path)","work/standard":"allow","work/strict":"deny shell.dynamic-executable @command-analysis","repo/standard":"allow","repo/strict":"deny shell.dynamic-executable @command-analysis"}
 {"literal":"$(printf r)m","work/standard":"allow","work/strict":"deny shell.dynamic-executable @command-analysis","repo/standard":"allow","repo/strict":"deny shell.dynamic-executable @command-analysis"}
@@ -1043,7 +1043,7 @@
 {"literal":"TMPDIR=/var/tmp-malicious rm -rf $TMPDIR/test-dir","work/standard":"allow","work/strict":"deny rm.recursive-force-dynamic-target @command-analysis","repo/standard":"allow","repo/strict":"deny rm.recursive-force-dynamic-target @command-analysis"}
 {"literal":"TODO","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"TOKEN=\"part\\\" two\" NEXT='three four'","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
-{"literal":"TOKEN=$(printf '%s' \"$(get-secret)\") SAFE=value","work/standard":"allow","work/strict":"deny analysis.strict-unparseable @command-analysis","repo/standard":"allow","repo/strict":"deny analysis.strict-unparseable @command-analysis"}
+{"literal":"TOKEN=$(printf '%s' \"$(get-secret)\") SAFE=value","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"TOKEN=1","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"TOKEN=<redacted>","work/standard":"allow","work/strict":"deny analysis.strict-unparseable @command-analysis","repo/standard":"allow","repo/strict":"deny analysis.strict-unparseable @command-analysis"}
 {"literal":"TOKEN=<redacted> NEXT=<redacted>","work/standard":"allow","work/strict":"deny analysis.strict-unparseable @command-analysis","repo/standard":"allow","repo/strict":"deny analysis.strict-unparseable @command-analysis"}
@@ -2694,8 +2694,8 @@
 {"literal":"echo $(git reset --hard); rm -rf /","work/standard":"deny guard.policy-config @policy-protection","work/strict":"deny guard.policy-config @policy-protection","repo/standard":"deny guard.policy-config @policy-protection","repo/strict":"deny guard.policy-config @policy-protection"}
 {"literal":"echo $(git status )","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"echo $(git status)","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
-{"literal":"echo $(printf \"x'$(git status)'y\")","work/standard":"allow","work/strict":"deny analysis.strict-unparseable @command-analysis","repo/standard":"allow","repo/strict":"deny analysis.strict-unparseable @command-analysis"}
-{"literal":"echo $(printf \"x\\\"$(git status)\\\"y\")","work/standard":"allow","work/strict":"deny analysis.strict-unparseable @command-analysis","repo/standard":"allow","repo/strict":"deny analysis.strict-unparseable @command-analysis"}
+{"literal":"echo $(printf \"x'$(git status)'y\")","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
+{"literal":"echo $(printf \"x\\\"$(git status)\\\"y\")","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"echo $(printf \"x\\$(git status)y\")","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"echo $(printf ok)","work/standard":"allow","work/strict":"allow","repo/standard":"allow","repo/strict":"allow"}
 {"literal":"echo $(rm -f /tmp/a )","work/standard":"allow","work/strict":"allow","work/paranoid_rm":"allow","work/paranoid_interpreters":"allow","repo/standard":"allow","repo/strict":"allow","repo/paranoid_rm":"allow","repo/paranoid_interpreters":"allow"}

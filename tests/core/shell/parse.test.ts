@@ -166,6 +166,18 @@ describe('core/shell/parse', () => {
     expect(parseCommand(source, 'posix').status).toBe('complete');
   });
 
+  test.each([
+    'echo $(dirname "$(command -v node)") tail',
+    'echo "$(dirname "$(command -v node)")" tail',
+    'echo ${NODE_DIR:-$(dirname "$(command -v node)")} tail',
+  ])('reads a double-quoted substitution nested in a substitution: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    const command = program.nodes[0];
+    expect(command?.kind === 'command' && command.words).toHaveLength(3);
+    expect(nestedCommandTexts(program)[0]?.startsWith('dirname')).toBe(true);
+  });
+
   test('reads an ANSI-C string inside a command substitution', () => {
     const program = parseCommand("echo $(printf '%s' $'can\\'t open file') tail", 'posix');
     expect(program.status).toBe('complete');

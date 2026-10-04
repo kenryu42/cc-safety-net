@@ -394,6 +394,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a double-quoted substitution nested in a default-value operand',
+      command: 'NODE_DIR=${NODE_DIR:-$(dirname "$(command -v node)")}; echo "$NODE_DIR"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks a home removal quoted inside a nested double-quoted operand',
       command: 'echo ${x:-"${y:-"\'$(rm -rf ~/)\'"}"}',
       options: options({ cwd: paths.cwd }),

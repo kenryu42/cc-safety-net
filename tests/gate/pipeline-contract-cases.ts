@@ -133,6 +133,13 @@ export function pipelineContractCases(paths: {
       expected: secretBlock('secret.home.ssh'),
     },
     {
+      name: 'allows a double-quoted substitution nested in a substitution at strict safety',
+      ...bash('echo $(dirname "$(command -v node)")'),
+      cwd: 'workspace',
+      level: 'strict',
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'denies a shell redirection into the user policy file',
       ...bash(`echo x > ${paths.userPolicyPath}`),
       cwd: 'workspace',
