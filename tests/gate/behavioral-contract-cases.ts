@@ -406,6 +406,17 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'blocks a home removal in an array subscript before a pattern operator',
+      command: 'echo "${arr[$(rm -rf ~/)]#x}"',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'targeting root or home',
+      },
+    },
+    {
       name: 'blocks a home removal quoted inside a nested double-quoted operand',
       command: 'echo ${x:-"${y:-"\'$(rm -rf ~/)\'"}"}',
       options: options({ cwd: paths.cwd }),

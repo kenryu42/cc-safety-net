@@ -1227,7 +1227,7 @@ function patternOperatorAt(
   source: string,
   start: number,
 ): { operator: string; next: number } | null {
-  const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|[0-9]+|[@*?$!-])/.exec(
+  const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]$`(]*\])?|[0-9]+|[@*?$!-])/.exec(
     source.slice(start),
   )?.[0];
   if (!name) return null;

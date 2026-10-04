@@ -251,6 +251,8 @@ describe('core/shell/parse', () => {
     'echo ${x:-"\'$(rm -rf x)\'"}',
     'echo ${x:-"${y:-"\'$(rm -rf x)\'"}"}',
     'echo "${x/a/\'$(rm -rf x)\'}"',
+    'echo "${arr[$(rm -rf x)]#x}"',
+    'echo "${arr[`rm -rf x`]//x/y}"',
   ])('still reads a substitution the quotes do not protect: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');
