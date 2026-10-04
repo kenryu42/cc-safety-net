@@ -244,6 +244,8 @@ describe('core/shell/parse', () => {
     ['echo ${message:-"don\'t panic"}', '${message:-"don\'t panic"}'],
     ['echo ${x:-"}"}', '${x:-"}"}'],
     ['echo ${x:-${y:-"}"}}', '${x:-${y:-"}"}}'],
+    ['echo "${text#\'$(\'}"', "${text#'$('}"],
+    ['echo "${path%\'}\'}"', "${path%'}'}"],
     ["echo ${x:-'\"'}", "${x:-'\"'}"],
   ])('reads a nested parameter expansion as one variable part: %s', (source, expansion) => {
     const program = parseCommand(source, 'posix');

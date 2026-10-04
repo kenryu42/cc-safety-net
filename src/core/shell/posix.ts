@@ -837,7 +837,11 @@ function readExpandedText(
 ): { programs: CommandProgram[]; issues: CommandIssue[]; close: number } {
   const programs: CommandProgram[] = [];
   const issues: CommandIssue[] = [];
-  let level = { quotes: kind === 'operand', double: false };
+  const patternQuotes = kind !== 'heredoc';
+  let level = {
+    quotes: kind === 'operand' || (patternQuotes && startsPatternOperand(source, start)),
+    double: false,
+  };
   const enclosing: (typeof level)[] = [];
   let i = start;
   while (i < end) {
@@ -867,7 +871,11 @@ function readExpandedText(
     if (char === '$' && source[i + 1] === '{') {
       if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
       enclosing.push(level);
-      level = { quotes: level.quotes && !level.double, double: false };
+      level = {
+        quotes:
+          (level.quotes && !level.double) || (patternQuotes && startsPatternOperand(source, i + 2)),
+        double: false,
+      };
       i += 2;
       continue;
     }
@@ -1152,7 +1160,7 @@ export function findParameterExpansionEnd(
   end: number,
   operandQuotes: boolean,
 ): number {
-  let level = { quotes: operandQuotes, double: false };
+  let level = { quotes: operandQuotes || startsPatternOperand(source, start), double: false };
   const enclosing: (typeof level)[] = [];
   for (let i = start; i < end; i++) {
     const char = source[i];
@@ -1170,7 +1178,10 @@ export function findParameterExpansionEnd(
     }
     if (char === '$' && source[i + 1] === '{') {
       enclosing.push(level);
-      level = { quotes: level.quotes && !level.double, double: false };
+      level = {
+        quotes: (level.quotes && !level.double) || startsPatternOperand(source, i + 2),
+        double: false,
+      };
       i++;
       continue;
     }
@@ -1180,6 +1191,13 @@ export function findParameterExpansionEnd(
     level = parent;
   }
   return -1;
+}
+
+function startsPatternOperand(source: string, start: number): boolean {
+  const name = /^(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*?$!-])/.exec(source.slice(start))?.[0];
+  if (!name) return false;
+  const operator = source[start + name.length];
+  return operator === '#' || operator === '%';
 }
 
 function skipSingleQuoted(source: string, start: number, end: number): number {
