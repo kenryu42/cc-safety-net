@@ -2349,10 +2349,13 @@ function isSkippablePathForBroadSignatures(comparablePath: string): boolean {
   );
 }
 
+const QUERY_PARAMETER_PATTERN = /[?&][^?&/]*=/;
+
 function hasSensitiveExtension(
   comparableName: string,
   config: SecretProtectionPolicy | undefined,
 ): string | null {
+  if (QUERY_PARAMETER_PATTERN.test(comparableName)) return null;
   const index = comparableName.lastIndexOf('.');
   const extension =
     index > 0 && index < comparableName.length - 1 ? comparableName.slice(index + 1) : '';

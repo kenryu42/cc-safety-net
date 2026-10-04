@@ -222,6 +222,11 @@ describe('shell operands against the built-in secret catalog', () => {
         expected: { target: 'secrets.pem', ruleId: 'secret.ext.pem' },
       },
       {
+        name: 'a real .asc file stays blocked',
+        command: 'cat keys/private.asc',
+        expected: { target: 'keys/private.asc', ruleId: 'secret.ext.asc' },
+      },
+      {
         name: 'a .key extension matches the extension-pattern tier',
         command: 'base64 keys/server.key',
         expected: { target: 'keys/server.key', ruleId: 'secret.ext-pattern.key' },
@@ -257,6 +262,16 @@ describe('shell operands against the built-in secret catalog', () => {
       {
         name: 'a .sample variant is a template too',
         command: 'cat .env.sample.local',
+        expected: null,
+      },
+      {
+        name: 'a query-string sort order ending in .asc is not a PGP key file',
+        command: "bash query.sh 'opportunities?select=id&order=updated_at.asc'",
+        expected: null,
+      },
+      {
+        name: 'a single query parameter ending in .asc is not a file either',
+        command: "bash query.sh 'jobs?order=started_at.asc'",
         expected: null,
       },
       {
