@@ -73,8 +73,9 @@ function expandSupportedPathEnvironmentVariablesAtDepth(
       const end = findParameterExpansionEnd(value, index, depth);
       if (end === null) {
         if (SUPPORTED_PATH_ENV_NAMES.has(name)) throw new AnalysisLimit('pathEnvironmentExpansion');
-        expanded += value.slice(index);
-        break;
+        expanded += '${';
+        index += 2;
+        continue;
       }
       const match = value.slice(index, end + 1);
       expanded += expandBracedPathEnvironmentVariable(match, depth, environment);

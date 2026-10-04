@@ -155,6 +155,12 @@ describe('supported path variable expansion', () => {
       expected: '${UNSET_Z:-',
     },
     {
+      name: 'keeps expanding after an unterminated expansion of an unsupported name',
+      target: '${UNSET_Z:-${HOME}',
+      environment,
+      expected: `\${UNSET_Z:-${home}`,
+    },
+    {
       name: 'keeps a lone opening brace literal',
       target: '${',
       environment,
