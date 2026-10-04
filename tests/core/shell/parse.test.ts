@@ -202,14 +202,15 @@ describe('core/shell/parse', () => {
     expect(command?.kind === 'command' && command.nested).toEqual([]);
   });
 
-  test.each(['echo "${x:-\'$(rm -rf x)\'}"', 'echo ${x:-"$(rm -rf x)"}'])(
-    'still reads a substitution the quotes do not protect: %s',
-    (source) => {
-      const program = parseCommand(source, 'posix');
-      expect(program.status).toBe('complete');
-      expect(nestedCommandTexts(program)).toContain('rm -rf x');
-    },
-  );
+  test.each([
+    'echo "${x:-\'$(rm -rf x)\'}"',
+    'echo ${x:-"$(rm -rf x)"}',
+    'echo ${x:-"\'$(rm -rf x)\'"}',
+  ])('still reads a substitution the quotes do not protect: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    expect(nestedCommandTexts(program)).toContain('rm -rf x');
+  });
 
   test.each([
     ['echo ${x:-${y}}', '${x:-${y}}'],
@@ -219,6 +220,10 @@ describe('core/shell/parse', () => {
     ["echo ${prefix:-'${'}", "${prefix:-'${'}"],
     ["echo ${x:-'}'}", "${x:-'}'}"],
     ['echo ${x:-"${y}"}', '${x:-"${y}"}'],
+    ['echo ${message:-"don\'t panic"}', '${message:-"don\'t panic"}'],
+    ['echo ${x:-"}"}', '${x:-"}"}'],
+    ['echo ${x:-${y:-"}"}}', '${x:-${y:-"}"}}'],
+    ["echo ${x:-'\"'}", "${x:-'\"'}"],
   ])('reads a nested parameter expansion as one variable part: %s', (source, expansion) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');

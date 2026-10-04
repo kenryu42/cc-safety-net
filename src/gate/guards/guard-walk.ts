@@ -10,6 +10,7 @@ import {
   getCalledCommandName,
 } from '@/core/shell/model';
 import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse';
+import { findParameterExpansionEnd } from '@/core/shell/posix';
 import { getBasename, hasUnclosedQuotes } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
 import { stripWrappers } from '@/gate/analyzer/wrapper-prelude';
@@ -739,7 +740,12 @@ function readExpansion(
 ) {
   const char = raw[start + 1];
   if (char === '{') {
-    const close = findExpansionClose(raw, start + 2, !state.double);
+    const close = findParameterExpansionEnd(
+      raw,
+      start + 2,
+      raw.length,
+      !powershell && !state.double,
+    );
     if (close === -1) {
       flags.invalid = true;
       return { text: '', next: raw.length };
@@ -772,22 +778,6 @@ function collectAssignmentFallback(
   flags.assignmentFallbacks.push(
     ...runs.flatMap((run) => (typeof run === 'string' || !run.text ? [] : [run.text])),
   );
-}
-
-function findExpansionClose(raw: string, start: number, singleQuotesQuote: boolean): number {
-  let depth = 1;
-  let index = start;
-  while (depth > 0 && index < raw.length) {
-    if (singleQuotesQuote && raw[index] === "'") {
-      const close = raw.indexOf("'", index + 1);
-      index = close === -1 ? raw.length : close + 1;
-      continue;
-    }
-    if (raw[index] === '{' && raw[index - 1] === '$') depth++;
-    if (raw[index] === '}') depth--;
-    index++;
-  }
-  return depth === 0 ? index - 1 : -1;
 }
 
 function normalizeConnector(operator: string): string {

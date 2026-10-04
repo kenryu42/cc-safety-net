@@ -335,6 +335,23 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows an apostrophe inside a double-quoted default-value operand',
+      command: 'echo ${message:-"don\'t panic"}',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'blocks a home removal single-quoted inside a double-quoted operand',
+      command: 'echo ${x:-"\'$(rm -rf ~/)\'"}',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'targeting root or home',
+      },
+    },
+    {
       name: 'allows a harmless generator in a default-value operand',
       command: 'EDITOR=${EDITOR:-$(command -v vim)}; echo $EDITOR',
       options: options({ cwd: paths.cwd }),

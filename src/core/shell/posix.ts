@@ -830,18 +830,24 @@ function readExpandedTextSubstitutions(
   limits: CommandParserLimits,
   wordBudget: WordBudget,
   depth: number,
-  singleQuotesQuote = false,
+  operandQuotes = false,
 ) {
   const programs: CommandProgram[] = [];
   const issues: CommandIssue[] = [];
   let i = start;
+  let double = false;
   while (i < end) {
     const char = source[i];
     if (char === '\\') {
       i += 2;
       continue;
     }
-    if (singleQuotesQuote && char === "'") {
+    if (operandQuotes && char === '"') {
+      double = !double;
+      i++;
+      continue;
+    }
+    if (operandQuotes && !double && char === "'") {
       i = skipSingleQuoted(source, i, end);
       continue;
     }
@@ -1082,10 +1088,10 @@ function readParameterExpansion(
   limits: CommandParserLimits,
   wordBudget: WordBudget,
   depth: number,
-  singleQuotesQuote: boolean,
+  operandQuotes: boolean,
 ): { program: CommandProgram; next: number; provenance: WordProvenance } | null {
   if (source[start] !== '$' || source[start + 1] !== '{') return null;
-  const close = findParameterExpansionEnd(source, start + 2, end, singleQuotesQuote);
+  const close = findParameterExpansionEnd(source, start + 2, end, operandQuotes);
   const innerEnd = close === -1 ? end : close;
   const inner = readExpandedTextSubstitutions(
     source,
@@ -1094,7 +1100,7 @@ function readParameterExpansion(
     limits,
     wordBudget,
     depth + 1,
-    singleQuotesQuote,
+    operandQuotes,
   );
   const issues = [
     ...inner.programs.flatMap((program) => program.issues),
@@ -1120,31 +1126,38 @@ function readParameterExpansion(
   };
 }
 
-function findParameterExpansionEnd(
+export function findParameterExpansionEnd(
   source: string,
   start: number,
   end: number,
-  singleQuotesQuote: boolean,
+  operandQuotes: boolean,
 ): number {
-  let nesting = 1;
+  let level = { quotes: operandQuotes, double: false };
+  const enclosing: (typeof level)[] = [];
   for (let i = start; i < end; i++) {
     const char = source[i];
     if (char === '\\') {
       i++;
       continue;
     }
-    if (singleQuotesQuote && char === "'") {
+    if (level.quotes && char === '"') {
+      level = { quotes: true, double: !level.double };
+      continue;
+    }
+    if (level.quotes && !level.double && char === "'") {
       i = skipSingleQuoted(source, i, end) - 1;
       continue;
     }
     if (char === '$' && source[i + 1] === '{') {
-      nesting++;
+      enclosing.push(level);
+      level = { quotes: level.quotes && !level.double, double: false };
       i++;
       continue;
     }
-    if (char !== '}') continue;
-    nesting--;
-    if (nesting === 0) return i;
+    if (char !== '}' || level.double) continue;
+    const parent = enclosing.pop();
+    if (!parent) return i;
+    level = parent;
   }
   return -1;
 }
@@ -1167,10 +1180,10 @@ function readVariableEnd(
   source: string,
   start: number,
   end: number,
-  singleQuotesQuote: boolean,
+  operandQuotes: boolean,
 ): number {
   if (source[start + 1] === '{') {
-    const close = findParameterExpansionEnd(source, start + 2, end, singleQuotesQuote);
+    const close = findParameterExpansionEnd(source, start + 2, end, operandQuotes);
     return close === -1 ? end : close + 1;
   }
   if (source[start + 1] === '$') return start + 2;
@@ -1277,9 +1290,9 @@ function appendVariable(
   end: number,
   text: string,
   provenance: WordProvenance,
-  singleQuotesQuote: boolean,
+  operandQuotes: boolean,
 ) {
-  const next = readVariableEnd(source, start, end, singleQuotesQuote);
+  const next = readVariableEnd(source, start, end, operandQuotes);
   return {
     text: text + source.slice(start, next),
     provenance: mergeProvenance(provenance, 'variable'),
