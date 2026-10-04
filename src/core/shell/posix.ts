@@ -836,7 +836,7 @@ function readExpandedText(
   kind: ExpandedTextKind,
 ): { programs: CommandProgram[]; issues: CommandIssue[]; close: number } {
   const patternQuotes = kind !== 'bare';
-  const opening = patternQuotes ? patternOperatorAt(source, start) : null;
+  const opening = patternQuotes ? patternOperatorAt(source, start, end) : null;
   const name = opening
     ? readExpandedText(source, start, opening.nameEnd, limits, wordBudget, depth, 'bare')
     : null;
@@ -881,7 +881,7 @@ function readExpandedText(
     }
     if (char === '$' && source[i + 1] === '{') {
       if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
-      const nested = patternQuotes ? patternOperatorAt(source, i + 2) : null;
+      const nested = patternQuotes ? patternOperatorAt(source, i + 2, end) : null;
       if (nested) {
         const nestedName = readExpandedText(
           source,
@@ -1193,7 +1193,7 @@ export function findParameterExpansionEnd(
   end: number,
   operandQuotes: boolean,
 ): number {
-  const opening = patternOperatorAt(source, start);
+  const opening = patternOperatorAt(source, start, end);
   let level = operandLevel(operandQuotes, opening);
   const enclosing: (typeof level)[] = [];
   for (let i = opening?.next ?? start; i < end; i++) {
@@ -1214,7 +1214,7 @@ export function findParameterExpansionEnd(
       i = readAnsiCString(source, i + 2, end).next - 1;
       continue;
     }
-    if (char === '`' || (char === '$' && source[i + 1] === '(')) {
+    if (opensCommandSubstitution(source, i)) {
       const next = findSubstitutionNext(source, i, end);
       if (next === -1) return -1;
       i = next - 1;
@@ -1225,7 +1225,7 @@ export function findParameterExpansionEnd(
       continue;
     }
     if (char === '$' && source[i + 1] === '{') {
-      const nested = patternOperatorAt(source, i + 2);
+      const nested = patternOperatorAt(source, i + 2, end);
       enclosing.push(level);
       level = operandLevel(level.quotes && !level.double, nested);
       i = (nested?.next ?? i + 2) - 1;
@@ -1237,6 +1237,10 @@ export function findParameterExpansionEnd(
     level = parent;
   }
   return -1;
+}
+
+function opensCommandSubstitution(source: string, index: number): boolean {
+  return source[index] === '`' || (source[index] === '$' && source[index + 1] === '(');
 }
 
 function findSubstitutionNext(source: string, start: number, end: number): number {
@@ -1259,13 +1263,14 @@ function operandLevel(base: boolean, opening: { operator: string } | null) {
 function patternOperatorAt(
   source: string,
   start: number,
+  end: number,
 ): { operator: string; nameEnd: number; next: number } | null {
-  const identifier = /^!?[A-Za-z_][A-Za-z0-9_]*/.exec(source.slice(start))?.[0];
-  const name = identifier ?? /^!?(?:[0-9]+|[@*?$!-])/.exec(source.slice(start))?.[0];
+  const identifier = /^!?[A-Za-z_][A-Za-z0-9_]*/.exec(source.slice(start, end))?.[0];
+  const name = identifier ?? /^!?(?:[0-9]+|[@*?$!-])/.exec(source.slice(start, end))?.[0];
   if (!name) return null;
   const nameEnd =
     identifier && source[start + name.length] === '['
-      ? findSubscriptEnd(source, start + name.length)
+      ? findSubscriptEnd(source, start + name.length, end)
       : start + name.length;
   if (nameEnd === -1) return null;
   const operator = source[nameEnd];
@@ -1276,10 +1281,27 @@ function patternOperatorAt(
   return { operator, nameEnd, next: nameEnd + length };
 }
 
-function findSubscriptEnd(source: string, open: number): number {
-  for (let i = open + 1, depth = 0; i < source.length; i++) {
-    if (source[i] === '[') depth++;
-    if (source[i] !== ']') continue;
+function findSubscriptEnd(source: string, open: number, end: number): number {
+  for (let i = open + 1, depth = 0; i < end; i++) {
+    const char = source[i];
+    if (char === "'") {
+      i = skipSingleQuoted(source, i, end) - 1;
+      continue;
+    }
+    if (char === '"') {
+      const close = source.indexOf('"', i + 1);
+      if (close === -1 || close >= end) return -1;
+      i = close;
+      continue;
+    }
+    if (opensCommandSubstitution(source, i)) {
+      const next = findSubstitutionNext(source, i, end);
+      if (next === -1) return -1;
+      i = next - 1;
+      continue;
+    }
+    if (char === '[') depth++;
+    if (char !== ']') continue;
     if (depth === 0) return i + 1;
     depth--;
   }

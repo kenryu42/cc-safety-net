@@ -398,6 +398,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a quoted associative key holding a bracket and an operator character',
+      command: 'echo "${map["path]/to"]}"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a single-quoted pattern after a nested array subscript',
       command: "printf '%s\\n' \"${items[indices[0]]#'$('}\"",
       options: options({ cwd: paths.cwd }),

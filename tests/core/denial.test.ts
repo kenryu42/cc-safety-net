@@ -250,7 +250,7 @@ describe('denial renderer', () => {
 
   test('an arbitrary corpus command reaches the reader intact, up to the cap', () => {
     const commands = corpusStrings();
-    expect(commands).toHaveLength(200);
+    expect(commands).toHaveLength(201);
     for (const command of commands) {
       const rendering = next.formatDenial({
         reason: 'Corpus command',
