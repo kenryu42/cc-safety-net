@@ -195,6 +195,7 @@ describe('core/shell/parse', () => {
     "example=${example:-'$(rm -rf x)'}",
     "echo ${x:-'$(rm -rf x)'} ${y:-'`rm -rf x`'}",
     "echo ${x:-'${ rm -rf x; }'}",
+    'echo ${x:-"${y:-"it\'s"}" \'$(rm -rf x)\'}',
   ])('leaves a single-quoted operand literal in an unquoted word: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');
@@ -203,9 +204,29 @@ describe('core/shell/parse', () => {
   });
 
   test.each([
+    ["echo ${x:-$(printf '%s' '}')} tail", "${x:-$(printf '%s' '}')}", 'printf %s }'],
+    [
+      'echo "${x:-$(awk \'{print $1}\' data.txt)}" tail',
+      "${x:-$(awk '{print $1}' data.txt)}",
+      'awk {print $1} data.txt',
+    ],
+  ])('reads a brace inside a substitution as part of the operand: %s', (source, word, nested) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('complete');
+    const command = program.nodes[0];
+    expect(command?.kind === 'command' && command.words.map((entry) => entry.text)).toEqual([
+      'echo',
+      word,
+      'tail',
+    ]);
+    expect(nestedCommandTexts(program)).toEqual([nested]);
+  });
+
+  test.each([
     'echo "${x:-\'$(rm -rf x)\'}"',
     'echo ${x:-"$(rm -rf x)"}',
     'echo ${x:-"\'$(rm -rf x)\'"}',
+    'echo ${x:-"${y:-"\'$(rm -rf x)\'"}"}',
   ])('still reads a substitution the quotes do not protect: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('complete');

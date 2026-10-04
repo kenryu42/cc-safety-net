@@ -341,6 +341,23 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a brace inside a substitution in a double-quoted default-value operand',
+      command: 'value="${value:-$(awk \'{print $1}\' data.txt)}"; echo "$value"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'blocks a home removal quoted inside a nested double-quoted operand',
+      command: 'echo ${x:-"${y:-"\'$(rm -rf ~/)\'"}"}',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'targeting root or home',
+      },
+    },
+    {
       name: 'blocks a home removal single-quoted inside a double-quoted operand',
       command: 'echo ${x:-"\'$(rm -rf ~/)\'"}',
       options: options({ cwd: paths.cwd }),

@@ -399,13 +399,14 @@ function scanSequence(
           attach: (heredoc) => {
             redirection.heredoc = heredoc;
             if (heredoc.quotedDelimiter) return;
-            const body = readExpandedTextSubstitutions(
+            const body = readExpandedText(
               source,
               heredoc.bodySpan.start,
               heredoc.bodySpan.end,
               limits,
               wordBudget,
               depth + 1,
+              'heredoc',
             );
             nested.push(...body.programs);
             issues.push(...body.issues);
@@ -823,32 +824,51 @@ function readSubstitution(
   };
 }
 
-function readExpandedTextSubstitutions(
+type ExpandedTextKind = 'heredoc' | 'operand' | 'quoted-operand';
+
+function readExpandedText(
   source: string,
   start: number,
   end: number,
   limits: CommandParserLimits,
   wordBudget: WordBudget,
   depth: number,
-  operandQuotes = false,
-) {
+  kind: ExpandedTextKind,
+): { programs: CommandProgram[]; issues: CommandIssue[]; close: number } {
   const programs: CommandProgram[] = [];
   const issues: CommandIssue[] = [];
+  let level = { quotes: kind === 'operand', double: false };
+  const enclosing: (typeof level)[] = [];
   let i = start;
-  let double = false;
   while (i < end) {
     const char = source[i];
     if (char === '\\') {
       i += 2;
       continue;
     }
-    if (operandQuotes && char === '"') {
-      double = !double;
+    if (level.quotes && char === '"') {
+      level = { quotes: true, double: !level.double };
       i++;
       continue;
     }
-    if (operandQuotes && !double && char === "'") {
+    if (level.quotes && !level.double && char === "'") {
       i = skipSingleQuoted(source, i, end);
+      continue;
+    }
+    if (char === '}' && !level.double) {
+      const parent = enclosing.pop();
+      if (parent) {
+        level = parent;
+        i++;
+        continue;
+      }
+      if (kind !== 'heredoc') return { programs, issues, close: i };
+    }
+    if (char === '$' && source[i + 1] === '{') {
+      if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
+      enclosing.push(level);
+      level = { quotes: level.quotes && !level.double, double: false };
+      i += 2;
       continue;
     }
     const substitution =
@@ -869,7 +889,7 @@ function readExpandedTextSubstitutions(
     }
     i = substitution.next;
   }
-  return { programs, issues };
+  return { programs, issues, close: -1 };
 }
 
 function collectSubstitution(
@@ -1091,17 +1111,17 @@ function readParameterExpansion(
   operandQuotes: boolean,
 ): { program: CommandProgram; next: number; provenance: WordProvenance } | null {
   if (source[start] !== '$' || source[start + 1] !== '{') return null;
-  const close = findParameterExpansionEnd(source, start + 2, end, operandQuotes);
-  const innerEnd = close === -1 ? end : close;
-  const inner = readExpandedTextSubstitutions(
+  const inner = readExpandedText(
     source,
     start + 2,
-    innerEnd,
+    end,
     limits,
     wordBudget,
     depth + 1,
-    operandQuotes,
+    operandQuotes ? 'operand' : 'quoted-operand',
   );
+  const close = inner.close;
+  const innerEnd = close === -1 ? end : close;
   const issues = [
     ...inner.programs.flatMap((program) => program.issues),
     ...inner.issues,
