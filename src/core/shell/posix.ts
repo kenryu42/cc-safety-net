@@ -802,7 +802,7 @@ function readSubstitution(
           {
             code: 'unsupported-backtick-escape',
             message:
-              'a backslash before $ or ` inside backticks changes the command the shell runs and cannot be analyzed',
+              'a backslash before $, ` or a quoted backslash inside backticks changes the command the shell runs and cannot be analyzed',
           },
         ]
       : [];
@@ -1219,6 +1219,7 @@ function backtickBodyHidesExpansion(source: string, start: number, end: number):
   for (let i = start; i < end; i++) {
     if (source[i] !== '\\') continue;
     if (source[i + 1] === '$' || source[i + 1] === '`') return true;
+    if (source[i + 1] === '\\' && (source[i + 2] === "'" || source[i + 2] === '"')) return true;
     i++;
   }
   return false;
