@@ -1258,17 +1258,30 @@ function patternOperatorAt(
   source: string,
   start: number,
 ): { operator: string; nameEnd: number; next: number } | null {
-  const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|[0-9]+|[@*?$!-])/.exec(
-    source.slice(start),
-  )?.[0];
+  const identifier = /^!?[A-Za-z_][A-Za-z0-9_]*/.exec(source.slice(start))?.[0];
+  const name = identifier ?? /^!?(?:[0-9]+|[@*?$!-])/.exec(source.slice(start))?.[0];
   if (!name) return null;
-  const operator = source[start + name.length];
+  const nameEnd =
+    identifier && source[start + name.length] === '['
+      ? findSubscriptEnd(source, start + name.length)
+      : start + name.length;
+  if (nameEnd === -1) return null;
+  const operator = source[nameEnd];
   if (operator !== '#' && operator !== '%' && operator !== '/') return null;
-  const second = source[start + name.length + 1];
+  const second = source[nameEnd + 1];
   const length =
     second === operator || (operator === '/' && (second === '#' || second === '%')) ? 2 : 1;
-  const nameEnd = start + name.length;
   return { operator, nameEnd, next: nameEnd + length };
+}
+
+function findSubscriptEnd(source: string, open: number): number {
+  for (let i = open + 1, depth = 0; i < source.length; i++) {
+    if (source[i] === '[') depth++;
+    if (source[i] !== ']') continue;
+    if (depth === 0) return i + 1;
+    depth--;
+  }
+  return -1;
 }
 
 function skipSingleQuoted(source: string, start: number, end: number): number {
