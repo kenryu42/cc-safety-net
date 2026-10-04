@@ -423,6 +423,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'fails closed on a function substitution in an array subscript before a pattern operator',
+      command: 'echo "${arr[${ rm -rf ~/; printf 0; }]#x}"',
+      options: options({ cwd: paths.cwd }),
+      expected: functionSubstitutionBlock,
+    },
+    {
       name: 'blocks a home removal in an array subscript before a pattern operator',
       command: 'echo "${arr[$(rm -rf ~/)]#x}"',
       options: options({ cwd: paths.cwd }),

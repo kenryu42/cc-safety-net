@@ -839,6 +839,9 @@ function readExpandedText(
   const issues: CommandIssue[] = [];
   const patternQuotes = kind !== 'heredoc';
   const opening = patternQuotes ? patternOperatorAt(source, start) : null;
+  if (opening && containsFunctionSubstitutionOpener(source, start, opening.next)) {
+    issues.push(FUNCTION_SUBSTITUTION_ISSUE);
+  }
   let level = operandLevel(kind === 'operand', opening);
   const enclosing: (typeof level)[] = [];
   let i = opening?.next ?? start;
@@ -878,6 +881,9 @@ function readExpandedText(
     if (char === '$' && source[i + 1] === '{') {
       if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
       const nested = patternQuotes ? patternOperatorAt(source, i + 2) : null;
+      if (nested && containsFunctionSubstitutionOpener(source, i + 2, nested.next)) {
+        issues.push(FUNCTION_SUBSTITUTION_ISSUE);
+      }
       enclosing.push(level);
       level = operandLevel(level.quotes && !level.double, nested);
       i = nested?.next ?? i + 2;

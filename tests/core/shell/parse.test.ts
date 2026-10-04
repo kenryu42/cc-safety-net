@@ -146,6 +146,8 @@ describe('core/shell/parse', () => {
     'echo $$${ rm -rf x; }',
     'echo ${x:-${ rm -rf x; }}',
     'echo "${x:+${ rm -rf x; }}"',
+    'echo "${arr[${ rm -rf x; }]#x}"',
+    'echo ${arr[${ rm -rf x; }]%x}',
   ])('rejects a function substitution where the shell expands it: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('invalid');
