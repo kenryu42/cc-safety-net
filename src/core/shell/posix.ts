@@ -838,12 +838,10 @@ function readExpandedText(
   const programs: CommandProgram[] = [];
   const issues: CommandIssue[] = [];
   const patternQuotes = kind !== 'heredoc';
-  let level = {
-    quotes: kind === 'operand' || (patternQuotes && startsPatternOperand(source, start)),
-    double: false,
-  };
+  const opening = patternQuotes ? patternOperatorAt(source, start) : null;
+  let level = operandLevel(kind === 'operand', opening);
   const enclosing: (typeof level)[] = [];
-  let i = start;
+  let i = opening?.next ?? start;
   while (i < end) {
     const char = source[i];
     if (char === '\\') {
@@ -851,7 +849,7 @@ function readExpandedText(
       continue;
     }
     if (level.quotes && char === '"') {
-      level = { quotes: true, double: !level.double };
+      level = { ...level, double: !level.double };
       i++;
       continue;
     }
@@ -861,6 +859,11 @@ function readExpandedText(
     }
     if (level.quotes && !level.double && char === '$' && source[i + 1] === "'") {
       i = readAnsiCString(source, i + 2, end).next;
+      continue;
+    }
+    if (level.patternSlash && !level.double && char === '/') {
+      level = operandLevel(false, null);
+      i++;
       continue;
     }
     if (char === '}' && !level.double) {
@@ -874,13 +877,10 @@ function readExpandedText(
     }
     if (char === '$' && source[i + 1] === '{') {
       if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
+      const nested = patternQuotes ? patternOperatorAt(source, i + 2) : null;
       enclosing.push(level);
-      level = {
-        quotes:
-          (level.quotes && !level.double) || (patternQuotes && startsPatternOperand(source, i + 2)),
-        double: false,
-      };
-      i += 2;
+      level = operandLevel(level.quotes && !level.double, nested);
+      i = nested?.next ?? i + 2;
       continue;
     }
     const substitution =
@@ -1175,16 +1175,17 @@ export function findParameterExpansionEnd(
   end: number,
   operandQuotes: boolean,
 ): number {
-  let level = { quotes: operandQuotes || startsPatternOperand(source, start), double: false };
+  const opening = patternOperatorAt(source, start);
+  let level = operandLevel(operandQuotes, opening);
   const enclosing: (typeof level)[] = [];
-  for (let i = start; i < end; i++) {
+  for (let i = opening?.next ?? start; i < end; i++) {
     const char = source[i];
     if (char === '\\') {
       i++;
       continue;
     }
     if (level.quotes && char === '"') {
-      level = { quotes: true, double: !level.double };
+      level = { ...level, double: !level.double };
       continue;
     }
     if (level.quotes && !level.double && char === "'") {
@@ -1195,13 +1196,15 @@ export function findParameterExpansionEnd(
       i = readAnsiCString(source, i + 2, end).next - 1;
       continue;
     }
+    if (level.patternSlash && !level.double && char === '/') {
+      level = operandLevel(false, null);
+      continue;
+    }
     if (char === '$' && source[i + 1] === '{') {
+      const nested = patternOperatorAt(source, i + 2);
       enclosing.push(level);
-      level = {
-        quotes: (level.quotes && !level.double) || startsPatternOperand(source, i + 2),
-        double: false,
-      };
-      i++;
+      level = operandLevel(level.quotes && !level.double, nested);
+      i = (nested?.next ?? i + 2) - 1;
       continue;
     }
     if (char !== '}' || level.double) continue;
@@ -1212,13 +1215,28 @@ export function findParameterExpansionEnd(
   return -1;
 }
 
-function startsPatternOperand(source: string, start: number): boolean {
+function operandLevel(base: boolean, opening: { operator: string } | null) {
+  return {
+    quotes: base || opening !== null,
+    double: false,
+    patternSlash: !base && opening?.operator === '/',
+  };
+}
+
+function patternOperatorAt(
+  source: string,
+  start: number,
+): { operator: string; next: number } | null {
   const name = /^!?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|[0-9]+|[@*?$!-])/.exec(
     source.slice(start),
   )?.[0];
-  if (!name) return false;
+  if (!name) return null;
   const operator = source[start + name.length];
-  return operator === '#' || operator === '%';
+  if (operator !== '#' && operator !== '%' && operator !== '/') return null;
+  const second = source[start + name.length + 1];
+  const length =
+    second === operator || (operator === '/' && (second === '#' || second === '%')) ? 2 : 1;
+  return { operator, next: start + name.length + length };
 }
 
 function skipSingleQuoted(source: string, start: number, end: number): number {

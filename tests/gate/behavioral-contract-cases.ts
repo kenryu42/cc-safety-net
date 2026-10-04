@@ -400,6 +400,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a single-quoted pattern in a double-quoted substitution',
+      command: "printf '%s\\n' \"${text//'$('}\"",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks a home removal quoted inside a nested double-quoted operand',
       command: 'echo ${x:-"${y:-"\'$(rm -rf ~/)\'"}"}',
       options: options({ cwd: paths.cwd }),
