@@ -835,8 +835,8 @@ function readExpandedText(
   depth: number,
   kind: ExpandedTextKind,
 ): { programs: CommandProgram[]; issues: CommandIssue[]; close: number } {
-  const patternQuotes = kind !== 'bare';
-  const opening = patternQuotes ? patternOperatorAt(source, start, end) : null;
+  const operand = kind !== 'bare';
+  const opening = operand ? patternOperatorAt(source, start, end) : null;
   const name = opening
     ? readExpandedText(source, start, opening.nameEnd, limits, wordBudget, depth, 'bare')
     : null;
@@ -877,11 +877,11 @@ function readExpandedText(
         i++;
         continue;
       }
-      if (kind !== 'bare') return { programs, issues, close: i };
+      if (operand) return { programs, issues, close: i };
     }
     if (char === '$' && source[i + 1] === '{') {
       if (opensFunctionSubstitution(source, i)) issues.push(FUNCTION_SUBSTITUTION_ISSUE);
-      const nested = patternQuotes ? patternOperatorAt(source, i + 2, end) : null;
+      const nested = operand ? patternOperatorAt(source, i + 2, end) : null;
       if (nested) {
         const nestedName = readExpandedText(
           source,
@@ -902,7 +902,7 @@ function readExpandedText(
       continue;
     }
     const substitution =
-      char === '$' || char === '`'
+      char === '$' || char === '`' || (operand && opensProcessSubstitution(source, i))
         ? readSubstitution(source, i, end, limits, wordBudget, depth)
         : null;
     if (!substitution) {
@@ -919,7 +919,7 @@ function readExpandedText(
     }
     i = substitution.next;
   }
-  return { programs, issues, close: kind === 'bare' && enclosing.length === 0 ? end : -1 };
+  return { programs, issues, close: !operand && enclosing.length === 0 ? end : -1 };
 }
 
 function collectSubstitution(
@@ -1214,7 +1214,7 @@ export function findParameterExpansionEnd(
       i = readAnsiCString(source, i + 2, end).next - 1;
       continue;
     }
-    if (opensCommandSubstitution(source, i)) {
+    if (opensSubstitution(source, i)) {
       const next = findSubstitutionNext(source, i, end);
       if (next === -1) return -1;
       i = next - 1;
@@ -1239,8 +1239,13 @@ export function findParameterExpansionEnd(
   return -1;
 }
 
-function opensCommandSubstitution(source: string, index: number): boolean {
-  return source[index] === '`' || (source[index] === '$' && source[index + 1] === '(');
+function opensProcessSubstitution(source: string, index: number): boolean {
+  return (source[index] === '<' || source[index] === '>') && source[index + 1] === '(';
+}
+
+function opensSubstitution(source: string, index: number): boolean {
+  if (source[index] === '`' || opensProcessSubstitution(source, index)) return true;
+  return source[index] === '$' && source[index + 1] === '(';
 }
 
 function findSubstitutionNext(source: string, start: number, end: number): number {
@@ -1284,20 +1289,18 @@ function patternOperatorAt(
 function findSubscriptEnd(source: string, open: number, end: number): number {
   for (let i = open + 1, depth = 0; i < end; i++) {
     const char = source[i];
+    if (opensSubstitution(source, i)) {
+      const next = findSubstitutionNext(source, i, end);
+      if (next === -1) return -1;
+      i = next - 1;
+      continue;
+    }
     if (char === "'") {
       i = skipSingleQuoted(source, i, end) - 1;
       continue;
     }
     if (char === '"') {
-      const close = source.indexOf('"', i + 1);
-      if (close === -1 || close >= end) return -1;
-      i = close;
-      continue;
-    }
-    if (opensCommandSubstitution(source, i)) {
-      const next = findSubstitutionNext(source, i, end);
-      if (next === -1) return -1;
-      i = next - 1;
+      i = skipDoubleQuoted(source, i, end) - 1;
       continue;
     }
     if (char === '[') depth++;
@@ -1306,6 +1309,17 @@ function findSubscriptEnd(source: string, open: number, end: number): number {
     depth--;
   }
   return -1;
+}
+
+function skipDoubleQuoted(source: string, start: number, end: number): number {
+  for (let i = start + 1; i < end; i++) {
+    if (source[i] === '\\') {
+      i++;
+      continue;
+    }
+    if (source[i] === '"') return i + 1;
+  }
+  return end;
 }
 
 function skipSingleQuoted(source: string, start: number, end: number): number {

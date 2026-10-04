@@ -328,6 +328,17 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'blocks a home removal in a process substitution used as a pattern operand',
+      command: 'echo "${y#<(rm -rf ~/)}"',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'targeting root or home',
+      },
+    },
+    {
       name: 'fails closed on an unclosed expansion inside an array subscript before a pattern operator',
       command: 'echo "${arr[${i]#x}"',
       options: options({ cwd: paths.cwd }),
@@ -394,6 +405,12 @@ export function behavioralContractCases(paths: {
     {
       name: 'allows a single-quoted pattern in a double-quoted array prefix removal',
       command: "printf '%s\\n' \"${items[@]#'$('}\"",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows a quoted associative key holding an escaped quote before a quoted pattern',
+      command: 'echo "${map["a\\"b"]#\'$(\'}"',
       options: options({ cwd: paths.cwd }),
       expected: { kind: 'allow' },
     },
