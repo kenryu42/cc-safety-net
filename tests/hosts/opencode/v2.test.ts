@@ -196,7 +196,7 @@ test.each(['/bin/fish', '/bin/pwsh', 'cmd.exe'])(
   },
 );
 
-test.each(['/bin/ash', '/bin/mksh', '/usr/bin/yash'])(
+test.each(['/bin/ash', '/bin/mksh', '/usr/bin/yash', '/bin/lksh', '/bin/ksh93', '/bin/rbash'])(
   'a POSIX adapter accepts actual shell %s before spawn',
   async (shell) => {
     const adapter = runShellAdapter(shell);
