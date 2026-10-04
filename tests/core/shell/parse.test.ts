@@ -311,7 +311,7 @@ describe('core/shell/parse', () => {
     expect(parseCommand(source, 'posix').status).toBe('limited');
   });
 
-  test.each(['echo ${x', 'echo ${x:-$(date)', 'echo "${x'])(
+  test.each(['echo ${x', 'echo ${x:-$(date)', 'echo "${x', 'echo "${arr[${i]#x}"'])(
     'rejects an unclosed parameter expansion: %s',
     (source) => {
       const program = parseCommand(source, 'posix');

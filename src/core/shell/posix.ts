@@ -842,6 +842,7 @@ function readExpandedText(
     : null;
   const programs = name?.programs ?? [];
   const issues = name?.issues ?? [];
+  if (name?.close === -1) issues.push(UNCLOSED_PARAMETER_EXPANSION_ISSUE);
   let level = operandLevel(kind === 'operand', opening);
   const enclosing: (typeof level)[] = [];
   let i = opening?.next ?? start;
@@ -893,6 +894,7 @@ function readExpandedText(
         );
         programs.push(...nestedName.programs);
         issues.push(...nestedName.issues);
+        if (nestedName.close === -1) issues.push(UNCLOSED_PARAMETER_EXPANSION_ISSUE);
       }
       enclosing.push(level);
       level = operandLevel(level.quotes && !level.double, nested);
@@ -917,7 +919,7 @@ function readExpandedText(
     }
     i = substitution.next;
   }
-  return { programs, issues, close: -1 };
+  return { programs, issues, close: kind === 'bare' && enclosing.length === 0 ? end : -1 };
 }
 
 function collectSubstitution(

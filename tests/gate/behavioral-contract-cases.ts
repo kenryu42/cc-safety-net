@@ -328,6 +328,17 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'fails closed on an unclosed expansion inside an array subscript before a pattern operator',
+      command: 'echo "${arr[${i]#x}"',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'analysis.strict-unparseable',
+        intent: 'stop_and_explain',
+        reasonIncludes: 'could not be safely analyzed',
+      },
+    },
+    {
       name: 'fails closed on a backtick body whose doubled backslash reaches a quote across a line continuation',
       command: "echo `echo \\\\\\\n'$(rm -rf ~/)\\\\\\\n'`",
       options: options({ cwd: paths.cwd }),
