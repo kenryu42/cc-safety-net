@@ -339,6 +339,17 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'fails closed on a brace that ends the expansion early in bash 3.2',
+      command: 'echo ${x:-$(echo })}',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'analysis.strict-unparseable',
+        intent: 'stop_and_explain',
+        reasonIncludes: 'could not be safely analyzed',
+      },
+    },
+    {
       name: 'fails closed on an unclosed expansion inside an array subscript before a pattern operator',
       command: 'echo "${arr[${i]#x}"',
       options: options({ cwd: paths.cwd }),

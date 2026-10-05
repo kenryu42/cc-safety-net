@@ -1137,6 +1137,28 @@ function skipLineContinuations(source: string, start: number): number {
   return index;
 }
 
+const AMBIGUOUS_PARAMETER_EXPANSION_ISSUE: CommandIssue = Object.freeze({
+  code: 'ambiguous-parameter-expansion',
+  message:
+    'a } inside a substitution inside ${ } ends the expansion in bash 3.2 but not in other shells, so the command cannot be analyzed',
+});
+
+function hasUnquotedBrace(text: string): boolean {
+  let single = false;
+  let double = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '\\' && !single) {
+      i++;
+      continue;
+    }
+    if (char === "'" && !double) single = !single;
+    if (char === '"' && !single) double = !double;
+    if (char === '}' && !single && !double) return true;
+  }
+  return false;
+}
+
 const UNCLOSED_PARAMETER_EXPANSION_ISSUE: CommandIssue = Object.freeze({
   code: 'unclosed-parameter-expansion',
   message: '${ parameter expansion is not closed',
@@ -1167,6 +1189,9 @@ function readParameterExpansion(
     ...inner.programs.flatMap((program) => program.issues),
     ...inner.issues,
     ...(close === -1 ? [UNCLOSED_PARAMETER_EXPANSION_ISSUE] : []),
+    ...(inner.programs.some((program) => hasUnquotedBrace(program.source))
+      ? [AMBIGUOUS_PARAMETER_EXPANSION_ISSUE]
+      : []),
   ];
   if (inner.programs.length === 0 && issues.length === 0) return null;
   return {
@@ -1447,7 +1472,8 @@ function getParseStatus(issues: readonly CommandIssue[], limited = false): Comma
         issue.code === 'unsupported-heredoc-context' ||
         issue.code === 'unsupported-function-substitution' ||
         issue.code === 'unsupported-backtick-escape' ||
-        issue.code === 'unclosed-parameter-expansion',
+        issue.code === 'unclosed-parameter-expansion' ||
+        issue.code === 'ambiguous-parameter-expansion',
     )
   ) {
     return 'invalid';

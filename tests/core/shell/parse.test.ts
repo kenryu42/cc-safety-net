@@ -319,6 +319,28 @@ describe('core/shell/parse', () => {
     expect(parseCommand(source, 'posix').status).toBe('limited');
   });
 
+  test.each([
+    'echo ${x:-$(echo })}',
+    'echo "${x#<(echo })}"',
+    'echo ${x:-`echo }`}',
+    'echo "${arr[$(echo })]#x}"',
+    'echo ${x:-${y:-$(echo })}}',
+  ])('rejects a brace that ends the expansion early in bash 3.2: %s', (source) => {
+    const program = parseCommand(source, 'posix');
+    expect(program.status).toBe('invalid');
+    expect(program.issues.map((issue) => issue.code)).toContain('ambiguous-parameter-expansion');
+  });
+
+  test.each([
+    'echo "${x:-$(echo "}")}"',
+    "echo ${x:-$(echo '}')}",
+    'echo ${x:-$(echo \\})}',
+    'echo "${x:-$(awk \'{print $1}\' f)}"',
+    'cat <<EOF\n$(echo })\nEOF',
+  ])('keeps a quoted or escaped brace inside a substitution: %s', (source) => {
+    expect(parseCommand(source, 'posix').status).toBe('complete');
+  });
+
   test.each(['echo ${x', 'echo ${x:-$(date)', 'echo "${x', 'echo "${arr[${i]#x}"'])(
     'rejects an unclosed parameter expansion: %s',
     (source) => {
