@@ -843,6 +843,9 @@ function readExpandedText(
   const programs = name?.programs ?? [];
   const issues = name?.issues ?? [];
   if (name?.close === -1) issues.push(UNCLOSED_PARAMETER_EXPANSION_ISSUE);
+  if (kind === 'operand' && programs.some((program) => hasBraceAtExpansionLevel(program.source))) {
+    issues.push(AMBIGUOUS_PARAMETER_EXPANSION_ISSUE);
+  }
   let level = operandLevel(kind === 'operand', opening);
   const enclosing: (typeof level)[] = [];
   let i = opening?.next ?? start;
@@ -916,6 +919,12 @@ function readExpandedText(
       mayRunFunctionSubstitution(substitution.program)
     ) {
       issues.push(FUNCTION_SUBSTITUTION_ISSUE);
+    }
+    if (
+      bodyMayCloseExpansion(source, i, kind === 'operand' && enclosing.length === 0) &&
+      hasBraceAtExpansionLevel(substitution.program.source)
+    ) {
+      issues.push(AMBIGUOUS_PARAMETER_EXPANSION_ISSUE);
     }
     i = substitution.next;
   }
@@ -1143,7 +1152,13 @@ const AMBIGUOUS_PARAMETER_EXPANSION_ISSUE: CommandIssue = Object.freeze({
     'a } inside a substitution inside ${ } ends the expansion in bash 3.2 but not in other shells, so the command cannot be analyzed',
 });
 
-function hasUnquotedBrace(text: string): boolean {
+function bodyMayCloseExpansion(source: string, start: number, topLevelUnquoted: boolean): boolean {
+  if (opensProcessSubstitution(source, start)) return true;
+  return topLevelUnquoted && source.startsWith('$(', start) && !source.startsWith('$((', start);
+}
+
+function hasBraceAtExpansionLevel(text: string): boolean {
+  let depth = 0;
   let single = false;
   let double = false;
   for (let i = 0; i < text.length; i++) {
@@ -1152,9 +1167,28 @@ function hasUnquotedBrace(text: string): boolean {
       i++;
       continue;
     }
-    if (char === "'" && !double) single = !single;
-    if (char === '"' && !single) double = !double;
-    if (char === '}' && !single && !double) return true;
+    if (char === "'" && !double) {
+      single = !single;
+      continue;
+    }
+    if (single) continue;
+    if (char === '"') {
+      double = !double;
+      continue;
+    }
+    if (double) continue;
+    if (char === '$' && text[i + 1] === "'") {
+      i = readAnsiCString(text, i + 2, text.length).next - 1;
+      continue;
+    }
+    if (char === '$' && text[i + 1] === '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (char !== '}') continue;
+    if (depth === 0) return true;
+    depth--;
   }
   return false;
 }
@@ -1189,9 +1223,6 @@ function readParameterExpansion(
     ...inner.programs.flatMap((program) => program.issues),
     ...inner.issues,
     ...(close === -1 ? [UNCLOSED_PARAMETER_EXPANSION_ISSUE] : []),
-    ...(inner.programs.some((program) => hasUnquotedBrace(program.source))
-      ? [AMBIGUOUS_PARAMETER_EXPANSION_ISSUE]
-      : []),
   ];
   if (inner.programs.length === 0 && issues.length === 0) return null;
   return {

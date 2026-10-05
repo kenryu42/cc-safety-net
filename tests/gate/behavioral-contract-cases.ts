@@ -339,6 +339,12 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'allows a brace inside a substitution in a double-quoted expansion',
+      command: 'echo "${x:-$(echo })}"',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'fails closed on a brace that ends the expansion early in bash 3.2',
       command: 'echo ${x:-$(echo })}',
       options: options({ cwd: paths.cwd }),

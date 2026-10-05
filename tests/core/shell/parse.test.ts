@@ -321,10 +321,16 @@ describe('core/shell/parse', () => {
 
   test.each([
     'echo ${x:-$(echo })}',
+    'echo ${x#$(echo })}',
+    'echo ${x:-$(echo ${y} })}',
+    'echo ${x:-${z}$(echo })}',
+    'echo ${x:-$(echo ${y:-$(echo })})}',
+    "echo ${x:-$(echo $'it\\'s' })}",
+    'echo ${x:-$(echo a # }\n)}',
+    'echo ${arr[$(echo })]#x}',
+    'echo ${x#<(echo })}',
     'echo "${x#<(echo })}"',
-    'echo ${x:-`echo }`}',
-    'echo "${arr[$(echo })]#x}"',
-    'echo ${x:-${y:-$(echo })}}',
+    'echo $(echo ${x:-$(echo })})',
   ])('rejects a brace that ends the expansion early in bash 3.2: %s', (source) => {
     const program = parseCommand(source, 'posix');
     expect(program.status).toBe('invalid');
@@ -337,7 +343,16 @@ describe('core/shell/parse', () => {
     'echo ${x:-$(echo \\})}',
     'echo "${x:-$(awk \'{print $1}\' f)}"',
     'cat <<EOF\n$(echo })\nEOF',
-  ])('keeps a quoted or escaped brace inside a substitution: %s', (source) => {
+    "echo ${x:-$(printf '%s' $'can\\'t} open')}",
+    'echo "${x:-$(echo })}"',
+    'echo "${x#$(echo })}"',
+    'echo "${x:-$(echo ${y} })}"',
+    'echo "${arr[$(echo })]#x}"',
+    'echo ${x:-${y:-$(echo })}}',
+    'echo ${x:-$(echo ${y})}',
+    'echo ${x:-`echo }`}',
+    'echo "${x:-`echo }`}"',
+  ])('keeps a brace every shell nests or quotes inside a substitution: %s', (source) => {
     expect(parseCommand(source, 'posix').status).toBe('complete');
   });
 
