@@ -921,6 +921,7 @@ function readExpandedText(
       issues.push(FUNCTION_SUBSTITUTION_ISSUE);
     }
     if (
+      !level.double &&
       bodyMayCloseExpansion(source, i, kind === 'operand' && enclosing.length === 0) &&
       hasBraceAtExpansionLevel(substitution.program.source)
     ) {

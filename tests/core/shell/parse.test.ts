@@ -352,6 +352,9 @@ describe('core/shell/parse', () => {
     'echo ${x:-$(echo ${y})}',
     'echo ${x:-`echo }`}',
     'echo "${x:-`echo }`}"',
+    'echo ${x:-"$(echo })"}',
+    'echo ${x:-"$(echo ${y} })"}',
+    'echo ${x:-"<(echo })"}',
   ])('keeps a brace every shell nests or quotes inside a substitution: %s', (source) => {
     expect(parseCommand(source, 'posix').status).toBe('complete');
   });

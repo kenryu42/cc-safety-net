@@ -339,6 +339,12 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'allows a brace inside a substitution in a double-quoted stretch of an unquoted expansion',
+      command: 'echo ${x:-"$(echo })"}',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a brace inside a substitution in a double-quoted expansion',
       command: 'echo "${x:-$(echo })}"',
       options: options({ cwd: paths.cwd }),
