@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/bin/cc-safety-net.js\" hook --coding-cli"
+          }
+        ]
+      }
+    ]
+  }
+}

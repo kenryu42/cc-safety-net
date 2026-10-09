@@ -1,0 +1,4 @@
+interface:
+  display_name: "CC Safety Net"
+policy:
+  allow_implicit_invocation: false

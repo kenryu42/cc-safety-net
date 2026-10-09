@@ -1,0 +1,14 @@
+{
+  "name": "cc-safety-net",
+  "owner": {
+    "name": "J Liew",
+    "email": "jliew@420024lab.com"
+  },
+  "plugins": [
+    {
+      "name": "cc-safety-net",
+      "source": "./",
+      "description": "Block destructive commands and secret access"
+    }
+  ]
+}

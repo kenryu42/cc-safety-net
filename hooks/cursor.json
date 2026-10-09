@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/dist/bin/cc-safety-net.js\" hook --cursor",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ]
+  }
+}

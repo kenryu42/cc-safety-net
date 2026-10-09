@@ -1,0 +1,23 @@
+{
+  "name": "cc-safety-net",
+  "version": "2.6.2",
+  "description": "Block destructive commands and secret access",
+  "author": {
+    "name": "J Liew",
+    "email": "jliew@420024lab.com"
+  },
+  "homepage": "https://github.com/kenryu42/cc-safety-net",
+  "repository": "https://github.com/kenryu42/cc-safety-net.git",
+  "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "git",
+    "safety net",
+    "destructive",
+    "command",
+    "guard",
+    "hook",
+    "plugin"
+  ]
+}

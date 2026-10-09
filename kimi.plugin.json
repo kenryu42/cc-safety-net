@@ -1,0 +1,26 @@
+{
+  "name": "cc-safety-net",
+  "version": "2.6.2",
+  "description": "Block destructive commands and secret-file access before Kimi Code runs a tool.",
+  "keywords": ["kimi-code", "security", "safety", "guardrail", "pretooluse"],
+  "author": {
+    "name": "J Liew"
+  },
+  "homepage": "https://ccsafetynet.com",
+  "license": "MIT",
+  "interface": {
+    "displayName": "CC Safety Net",
+    "shortDescription": "Block destructive commands and secret access",
+    "longDescription": "Inspect Kimi Code tool calls and block destructive Git and filesystem commands and access to protected secret files.",
+    "developerName": "J Liew",
+    "websiteURL": "https://ccsafetynet.com"
+  },
+  "skills": "./skills/cc-safety-net/",
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "command": "node ./dist/bin/cc-safety-net.js hook --kimi-code",
+      "timeout": 30
+    }
+  ]
+}
