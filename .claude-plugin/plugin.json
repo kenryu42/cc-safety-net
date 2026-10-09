@@ -1,12 +1,16 @@
 {
   "name": "cc-safety-net",
-  "version": "2.6.4",
+  "version": "2.6.5",
   "description": "Block destructive commands and secret access",
   "author": {
     "name": "J Liew",
     "email": "jliew@420024lab.com"
   },
   "homepage": "https://github.com/kenryu42/cc-safety-net",
+  "documentationUrl": "https://ccsafetynet.com/docs",
+  "supportUrl": "https://github.com/kenryu42/cc-safety-net/issues",
+  "privacyPolicyUrl": "https://ccsafetynet.com/privacy",
+  "termsOfServiceUrl": "https://github.com/kenryu42/cc-safety-net/blob/main/LICENSE",
   "repository": "https://github.com/kenryu42/cc-safety-net.git",
   "license": "MIT",
   "keywords": [
