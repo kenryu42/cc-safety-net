@@ -39,6 +39,7 @@ var __export = (target, all) => {
 // src/bin/hook.ts
 var exports_hook = {};
 __export(exports_hook, {
+  CURSOR_AGENT_PROBE: () => CURSOR_AGENT_PROBE,
   DEEPSEEK_HARNESS_NPM_PROBE: () => DEEPSEEK_HARNESS_NPM_PROBE,
   GEMINI_CLI_HOOK_EVENT: () => GEMINI_CLI_HOOK_EVENT,
   HERMES_AGENT_HOOK_EVENT: () => HERMES_AGENT_HOOK_EVENT,
@@ -277,7 +278,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.6.2";
+var AUDIT_LOG_VERSION = "2.6.3";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -806,6 +807,7 @@ var DEEPSEEK_HARNESS_NPM_PROBE = [
   "@deepseek-ai/dsh",
   "--version"
 ];
+var CURSOR_AGENT_PROBE = ["cursor-agent", "--version"];
 var catalog = [
   {
     id: "antigravity-cli",

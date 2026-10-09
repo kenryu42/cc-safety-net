@@ -1,7 +1,7 @@
 {
   "name": "cc-safety-net",
   "displayName": "CC Safety Net",
-  "version": "2.6.2",
+  "version": "2.6.3",
   "description": "Block destructive commands and secret access",
   "author": {
     "name": "J Liew",
@@ -10,7 +10,13 @@
   "homepage": "https://ccsafetynet.com",
   "repository": "https://github.com/kenryu42/cc-safety-net",
   "license": "MIT",
-  "keywords": ["cursor", "safety", "security", "hook", "destructive-command"],
-  "logo": "src/gui/frontend/favicon.svg",
+  "keywords": [
+    "cursor",
+    "safety",
+    "security",
+    "hook",
+    "destructive-command"
+  ],
+  "logo": "assets/logo.svg",
   "hooks": "./hooks/cursor.json"
 }
