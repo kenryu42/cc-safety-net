@@ -1,7 +1,7 @@
 {
   "name": "cc-safety-net",
   "displayName": "CC Safety Net",
-  "version": "2.6.5",
+  "version": "2.6.6",
   "description": "Block destructive commands and secret access",
   "author": {
     "name": "J Liew",

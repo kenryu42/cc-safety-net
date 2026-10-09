@@ -1,6 +1,7 @@
 {
   "name": "cc-safety-net",
-  "version": "2.6.5",
+  "displayName": "CC Safety Net",
+  "version": "2.6.6",
   "description": "Block destructive commands and secret access",
   "author": {
     "name": "J Liew",
@@ -14,15 +15,16 @@
   "repository": "https://github.com/kenryu42/cc-safety-net.git",
   "license": "MIT",
   "keywords": [
-    "claude",
-    "claude-code",
+    "security",
+    "safety",
+    "guardrails",
+    "destructive-commands",
+    "secret-protection",
     "git",
-    "safety net",
-    "destructive",
-    "command",
-    "guard",
-    "hook",
-    "plugin"
+    "rm-rf",
+    "env-files",
+    "ssh-keys",
+    "pretooluse"
   ],
   "icon": "./assets/logo.png"
 }
