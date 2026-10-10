@@ -112,9 +112,8 @@ export function projectSensitiveShellText(source: string, environment: Environme
 
 /** @internal */
 export function createSemanticFactStore(): SemanticFactStore {
-  const shellFacts = new Map<string, GuardSyntax>();
   const commandPrograms = new Map<string, CommandProgram>();
-  const structuralLimitFacts = new WeakMap<CommandProgram, GuardSyntax>();
+  const shellFacts = new WeakMap<CommandProgram, GuardSyntax>();
   const getCommandProgram = (source: string, dialect: ShellKind) => {
     const key = `${dialect}\u0000${source}`;
     const existing = commandPrograms.get(key);
@@ -128,22 +127,13 @@ export function createSemanticFactStore(): SemanticFactStore {
       throw new TypeError('Shell syntax source does not match command program source.');
     }
     const program = suppliedProgram ?? getCommandProgram(source, 'posix');
-    if (program.status === 'limited') {
-      const existing = structuralLimitFacts.get(program);
-      if (existing) return existing;
-      const syntax = {
-        status: 'structural-limit' as const,
-        source,
-        program,
-        assignmentFallbacks: [],
-      };
-      structuralLimitFacts.set(program, syntax);
-      return syntax;
-    }
-    const existing = shellFacts.get(source);
+    const existing = shellFacts.get(program);
     if (existing) return existing;
-    const syntax = readGuardSyntax(source, program);
-    shellFacts.set(source, syntax);
+    const syntax =
+      program.status === 'limited'
+        ? { status: 'structural-limit' as const, source, program, assignmentFallbacks: [] }
+        : readGuardSyntax(source, program);
+    shellFacts.set(program, syntax);
     return syntax;
   };
   return {

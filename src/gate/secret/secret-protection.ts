@@ -15,10 +15,11 @@ import {
   SECRET_VARIANT_DOT_SUFFIX_RULES,
   SECRET_VARIANT_SEPARATOR_RULES,
 } from '@/core/rules/secret';
-import { advanceQuoteScanState, parseShellArgv } from '@/core/shell/tokens';
+import { advanceQuoteScanState, normalizeCommandToken, parseShellArgv } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
 import { extractAwkSystemCommands } from '@/gate/analyzer/awk';
 import { closingParenthesis, firstArgumentHasName } from '@/gate/analyzer/interpreters';
+import { readPowerShellScript } from '@/gate/analyzer/powershell-wrapper';
 import { extractXargsChildCommandWithInfo } from '@/gate/analyzer/xargs';
 import type { CommandSyntaxFacts, SemanticFactStore, SemanticFacts } from '@/gate/facts';
 import {
@@ -159,6 +160,7 @@ const GH_TEXT_FLAGS = new Set(['--search', '-S', '--title', '-t', '--body', '-b'
 const GIT_MESSAGE_SUBCOMMANDS = new Set(['commit', 'merge', 'notes', 'stash', 'tag']);
 const GIT_MESSAGE_FLAGS = new Set(['-m', '--message']);
 const GIT_GREP_FLAGS = new Set(['--grep']);
+const POWERSHELL_HEADS = new Set(['powershell', 'pwsh']);
 const JQ_COMMANDS = new Set(['jq', 'gojq', 'jaq']);
 const PATTERN_FILE_SHORT = 'f';
 const PATTERN_FILE_LONG = 'file';
@@ -640,11 +642,15 @@ function walkShellText(
   environment: EnvironmentContext,
   cwd: string,
   budget: Budget,
+  powershell = false,
 ): SecretCandidate[] | null {
-  const syntax = store.getShellSyntax(text);
+  const syntax = store.getShellSyntax(
+    text,
+    powershell ? store.getCommandProgram(text, 'powershell') : undefined,
+  );
   if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
   return syntax.status === 'complete'
-    ? extractCommandPathTargets(syntax, store, options, environment, cwd, budget)
+    ? extractCommandPathTargets(syntax, store, options, environment, cwd, budget, powershell)
     : null;
 }
 
@@ -732,6 +738,15 @@ function extractSegmentPathTargets(
         post.map(here)),
     ];
   }
+
+  const powerShellScript = POWERSHELL_HEADS.has(normalizeCommandToken(executable))
+    ? readPowerShellScript(stripped)
+    : undefined;
+  const powerShellTargets =
+    powerShellScript === undefined
+      ? null
+      : walkShellText(powerShellScript, store, options, environment, cwd, budget, true);
+  if (powerShellTargets) return [...assignmentValues, ...powerShellTargets];
 
   if (command === 'export') {
     return [

@@ -3405,6 +3405,37 @@ describe('secret protection through tool inputs', () => {
       );
     }
   });
+
+  test('a script handed to pwsh or powershell is read as PowerShell', () => {
+    const cases: readonly { command: string; expected: Verdict }[] = [
+      { command: "pwsh -c 'Get-Content ~/.ssh/config'", expected: ssh('~/.ssh/config') },
+      {
+        command: "powershell -Command 'Get-Content ~/.ssh/config'",
+        expected: ssh('~/.ssh/config'),
+      },
+      {
+        command: "pwsh -NoProfile -c 'Get-Content ~/.ssh/config'",
+        expected: ssh('~/.ssh/config'),
+      },
+      { command: "pwsh -c 'cat ~/.ssh/config'", expected: ssh('~/.ssh/config') },
+      { command: "pwsh -c 'Get-Content .env'", expected: env('.env') },
+      { command: "pwsh -c 'Get-Content ~\\.ssh\\config'", expected: ssh('~/.ssh/config') },
+      { command: "pwsh -c 'Get-Content .\\report.txt'", expected: null },
+      { command: "pwsh.exe -c 'Get-Content ~/.ssh/config'", expected: ssh('~/.ssh/config') },
+      {
+        command: "eval 'Get-Content ~\\.ssh\\config'; pwsh -c 'Get-Content ~\\.ssh\\config'",
+        expected: ssh('~/.ssh/config'),
+      },
+    ];
+    for (const shell of ['posix', 'powershell'] as const) {
+      for (const row of cases) {
+        expect(
+          routeVerdict({ command: row.command }, { kind: 'command', shell }),
+          `${shell}: ${row.command}`,
+        ).toStrictEqual(row.expected);
+      }
+    }
+  });
 });
 
 describe('the policy layer over the built-in catalog', () => {

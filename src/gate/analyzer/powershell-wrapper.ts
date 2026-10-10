@@ -23,16 +23,13 @@ export function analyzePowerShellWrapperMatch(
   analyzeNested: (script: string) => DestructiveCommandRuleMatch | null,
 ): DestructiveCommandRuleMatch | null {
   const texts = words.map(analysisWordText);
-  const commandIndex = texts.every(
+  const script = texts.every(
     (text, index) =>
       index === 0 || (text !== STOP_PARSING && isLiteralScriptWord(words[index], text)),
   )
-    ? readCommandIndex(texts, 1)
+    ? readPowerShellScript(texts)
     : undefined;
-  const script = commandIndex === undefined ? [] : texts.slice(commandIndex + 1);
-  if (script.length > 0) {
-    return analyzeNested(script.join(' '));
-  }
+  if (script !== undefined) return analyzeNested(script);
   if (texts.some(isEncodedCommandParameter)) return dynamicShellSourceMatch();
   const text = texts.join(' ');
   return DELETE_VERB.test(text) && RECURSIVE_FLAG.test(text)
@@ -41,6 +38,12 @@ export function analyzePowerShellWrapperMatch(
         REASON_NESTED_RECURSIVE_DELETE_UNREAD,
       )
     : null;
+}
+
+export function readPowerShellScript(texts: readonly string[]): string | undefined {
+  const commandIndex = readCommandIndex(texts, 1);
+  const script = commandIndex === undefined ? [] : texts.slice(commandIndex + 1);
+  return script.length > 0 ? script.join(' ') : undefined;
 }
 
 function readCommandIndex(texts: readonly string[], index: number): number | undefined {
