@@ -128,6 +128,7 @@ __export(exports_analyzer, {
   parseEnvAssignment: () => parseEnvAssignment,
   parseInterpreterArgv: () => parseInterpreterArgv,
   powerShellTargetForPolicy: () => powerShellTargetForPolicy,
+  readPowerShellScript: () => readPowerShellScript,
   reconstructEnvSplitWords: () => reconstructEnvSplitWords,
   resolveTrackedHeredocPath: () => resolveTrackedHeredocPath,
   scanChar: () => scanChar,
@@ -3874,6 +3875,9 @@ function getUnsetOperandsStart(tokens, commandIndex) {
   }
   return i;
 }
+// src/gate/analyzer/powershell-wrapper.ts
+var import_destructive7 = require("./core-shell.js");
+
 // src/gate/analyzer/reasons.ts
 var import_budget5 = require("./core.js");
 var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Simplify the command and retry, or ask the user to verify.";
@@ -3887,6 +3891,48 @@ function dynamicShellSourceMatch() {
   };
 }
 var REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT = "CC Safety Net could not validate the command because its structure exceeds safe analysis limits.";
+
+// src/gate/analyzer/powershell-wrapper.ts
+var REASON_NESTED_RECURSIVE_DELETE_UNREAD = "Recursive delete handed to powershell or pwsh in a form CC Safety Net does not read is blocked: pass the script as a single -Command with literal paths, after only -NoProfile, -NonInteractive, -NoLogo, or -ExecutionPolicy.";
+var READ_SWITCH = /^-(?:noprofile|nop|noninteractive|noni|nologo)$/i;
+var READ_EXECUTION_POLICY = /^-(?:executionpolicy|ep)$/i;
+var READ_COMMAND = /^-(?:command|c)$/i;
+var PARAMETER_NAME = /^(?:--?|[/\u2013\u2014\u2015])(\w+)$/;
+var ENCODED_COMMAND = "encodedcommand";
+var DELETE_VERB = /(?<![\w-])(?:remove-item|ri|rm|rmdir|rd|del|erase)(?![\w-])/i;
+var RECURSIVE_FLAG = /(?<![\w-])(?:[-\u2013\u2014\u2015]{1,2}r(?:e(?:c(?:u(?:r(?:s(?:e|ive?)?)?)?)?)?)?(?!\w)|-[dfipvwx]*r[dfipvwx]*(?!\w))|\/s(?!\w)/i;
+var OUTER_EXPANSION = /[$`]/;
+var STOP_PARSING = "--%";
+function analyzePowerShellWrapperMatch(words, analyzeNested) {
+  const texts = words.map(analysisWordText);
+  const script = texts.every((text, index) => index === 0 || text !== STOP_PARSING && isLiteralScriptWord(words[index], text)) ? readPowerShellScript(texts) : undefined;
+  if (script !== undefined)
+    return analyzeNested(script);
+  if (texts.some(isEncodedCommandParameter))
+    return dynamicShellSourceMatch();
+  const text = texts.join(" ");
+  return DELETE_VERB.test(text) && RECURSIVE_FLAG.test(text) ? import_destructive7.destructiveCommandMatch("powershell.nested-recursive-delete-unread", REASON_NESTED_RECURSIVE_DELETE_UNREAD) : null;
+}
+function readPowerShellScript(texts) {
+  const commandIndex = readCommandIndex(texts, 1);
+  const script = commandIndex === undefined ? [] : texts.slice(commandIndex + 1);
+  return script.length > 0 ? script.join(" ") : undefined;
+}
+function readCommandIndex(texts, index) {
+  const text = texts[index] ?? "";
+  if (READ_COMMAND.test(text))
+    return index;
+  if (READ_SWITCH.test(text))
+    return readCommandIndex(texts, index + 1);
+  return READ_EXECUTION_POLICY.test(text) ? readCommandIndex(texts, index + 2) : undefined;
+}
+function isLiteralScriptWord(word, text) {
+  return word?.provenance === "unknown" ? !OUTER_EXPANSION.test(text) : isLiteralExecutionSourceWord(word, text);
+}
+function isEncodedCommandParameter(text) {
+  const name = PARAMETER_NAME.exec(text)?.[1]?.toLowerCase();
+  return name !== undefined && (name === "ec" || ENCODED_COMMAND.startsWith(name));
+}
 // src/gate/analyzer/index.ts
 var import_budget6 = require("./core.js");
 var import_analysis_context = require("./core.js");
@@ -3954,13 +4000,13 @@ var import_tmpdir3 = require("./core.js");
 
 // src/gate/analyzer/cmd.ts
 var import_effective_rules5 = require("./core.js");
-var import_destructive8 = require("./core-shell.js");
+var import_destructive9 = require("./core-shell.js");
 var import_git_metadata_protection4 = require("./gate.js");
 
 // src/gate/analyzer/powershell/remove-item.ts
 var import_canonicalization2 = require("./core.js");
 var import_effective_rules4 = require("./core.js");
-var import_destructive7 = require("./core-shell.js");
+var import_destructive8 = require("./core-shell.js");
 var import_git_metadata_protection3 = require("./gate.js");
 var REMOVE_ITEM_ALIASES = new Set(["remove-item", "ri", "del", "erase", "rd", "rm", "rmdir"]);
 var REASON_REMOVE_ITEM_RF = "PowerShell Remove-Item -Recurse -Force outside cwd is blocked. Retry deleting only explicit paths inside the current directory; escalate for anything outside it.";
@@ -4021,23 +4067,23 @@ function analyzePowerShellSegment(segment, hasPipelineInput, ctx, policy) {
     return null;
   }
   if (import_effective_rules4.destructiveCommandRuleIsEnabled(policy, "powershell.remove-item-pipeline-dynamic-target", ctx.strict) && hasPipelineInput && (parsed.targets.length === 0 || parsed.recursive)) {
-    return import_destructive7.destructiveCommandMatch("powershell.remove-item-pipeline-dynamic-target", REASON_REMOVE_ITEM_PIPELINE);
+    return import_destructive8.destructiveCommandMatch("powershell.remove-item-pipeline-dynamic-target", REASON_REMOVE_ITEM_PIPELINE);
   }
   for (const target of parsed.targets) {
     if (!import_canonicalization2.isUnsupportedWindowsNamespacePath(target.text) && isDangerousRootOrHomeTarget(powerShellTargetForPolicy(target.text))) {
-      return import_destructive7.destructiveCommandMatch(parsed.recursive && parsed.force ? "powershell.remove-item-recursive-force-root-or-home" : "powershell.remove-item-root-or-home", REASON_REMOVE_ITEM_ROOT_HOME);
+      return import_destructive8.destructiveCommandMatch(parsed.recursive && parsed.force ? "powershell.remove-item-recursive-force-root-or-home" : "powershell.remove-item-root-or-home", REASON_REMOVE_ITEM_ROOT_HOME);
     }
   }
   for (const target of parsed.targets) {
     if (ctx.resolvedCwd && import_git_metadata_protection3.isProtectedGitDeleteTarget(powerShellTargetForPolicy(target.text), ctx.resolvedCwd, ctx.protectedGitMetadata, parsed.recursive, ctx.environment, ctx.budget, true)) {
-      return import_destructive7.destructiveCommandMatch("powershell.remove-item-git-metadata", import_git_metadata_protection3.REASON_GIT_METADATA_PROTECTION);
+      return import_destructive8.destructiveCommandMatch("powershell.remove-item-git-metadata", import_git_metadata_protection3.REASON_GIT_METADATA_PROTECTION);
     }
   }
   if (!parsed.recursive || !parsed.force) {
     return null;
   }
   if (import_effective_rules4.destructiveCommandRuleIsEnabled(policy, "powershell.remove-item-recursive-force-dynamic-target", ctx.strict) && (parsed.hasDynamicTarget || parsed.targets.length === 0)) {
-    return import_destructive7.destructiveCommandMatch("powershell.remove-item-recursive-force-dynamic-target", REASON_REMOVE_ITEM_DYNAMIC_TARGET);
+    return import_destructive8.destructiveCommandMatch("powershell.remove-item-recursive-force-dynamic-target", REASON_REMOVE_ITEM_DYNAMIC_TARGET);
   }
   for (const target of parsed.targets) {
     const match = matchRecursiveDeleteClassification(classifyRecursiveDeleteTarget(powerShellTargetForPolicy(target.text), ctx), ctx, policy, REMOVE_ITEM_RULES);
@@ -4223,7 +4269,7 @@ function analyzeCmdMatch(words, options) {
   const recursiveDeletes = commands.filter((command) => command.recursiveDelete);
   const mentionsRecursiveDelete = recursiveDeletes.length > 0 || CMD_DELETE_WORD.test(body) && CMD_RECURSIVE_SWITCH.test(body);
   if (mentionsRecursiveDelete && (body.includes("\\\"") || options.gitBashEscapesBodyQuotes && body.includes('"') || options.powerShellRawWords.some((raw) => ESCAPED_QUOTE_INSIDE_WORD.test(raw)) || recursiveDeletes.some((command) => command.tokens.some((token) => WINDOWS_NAMESPACE_PREFIX.test(token))))) {
-    return import_destructive8.destructiveCommandMatch("cmd.recursive-delete-escaped-quote", REASON_CMD_DELETE_ESCAPED_QUOTE);
+    return import_destructive9.destructiveCommandMatch("cmd.recursive-delete-escaped-quote", REASON_CMD_DELETE_ESCAPED_QUOTE);
   }
   const ctx = createRecursiveDeleteTargetContext({
     ...options,
@@ -4240,46 +4286,6 @@ function recursiveDeleteTargetMatch(tokens, ctx, policy) {
 // src/gate/analyzer/rule.ts
 var import_git = require("./analyzer-core.js");
 var import_parallel = require("./analyzer-core.js");
-
-// src/gate/analyzer/powershell-wrapper.ts
-var import_destructive9 = require("./core-shell.js");
-var REASON_NESTED_RECURSIVE_DELETE_UNREAD = "Recursive delete handed to powershell or pwsh in a form CC Safety Net does not read is blocked: pass the script as a single -Command with literal paths, after only -NoProfile, -NonInteractive, -NoLogo, or -ExecutionPolicy.";
-var READ_SWITCH = /^-(?:noprofile|nop|noninteractive|noni|nologo)$/i;
-var READ_EXECUTION_POLICY = /^-(?:executionpolicy|ep)$/i;
-var READ_COMMAND = /^-(?:command|c)$/i;
-var PARAMETER_NAME = /^(?:--?|[/\u2013\u2014\u2015])(\w+)$/;
-var ENCODED_COMMAND = "encodedcommand";
-var DELETE_VERB = /(?<![\w-])(?:remove-item|ri|rm|rmdir|rd|del|erase)(?![\w-])/i;
-var RECURSIVE_FLAG = /(?<![\w-])(?:[-\u2013\u2014\u2015]{1,2}r(?:e(?:c(?:u(?:r(?:s(?:e|ive?)?)?)?)?)?)?(?!\w)|-[dfipvwx]*r[dfipvwx]*(?!\w))|\/s(?!\w)/i;
-var OUTER_EXPANSION = /[$`]/;
-var STOP_PARSING = "--%";
-function analyzePowerShellWrapperMatch(words, analyzeNested) {
-  const texts = words.map(analysisWordText);
-  const commandIndex = texts.every((text, index) => index === 0 || text !== STOP_PARSING && isLiteralScriptWord(words[index], text)) ? readCommandIndex(texts, 1) : undefined;
-  const script = commandIndex === undefined ? [] : texts.slice(commandIndex + 1);
-  if (script.length > 0) {
-    return analyzeNested(script.join(" "));
-  }
-  if (texts.some(isEncodedCommandParameter))
-    return dynamicShellSourceMatch();
-  const text = texts.join(" ");
-  return DELETE_VERB.test(text) && RECURSIVE_FLAG.test(text) ? import_destructive9.destructiveCommandMatch("powershell.nested-recursive-delete-unread", REASON_NESTED_RECURSIVE_DELETE_UNREAD) : null;
-}
-function readCommandIndex(texts, index) {
-  const text = texts[index] ?? "";
-  if (READ_COMMAND.test(text))
-    return index;
-  if (READ_SWITCH.test(text))
-    return readCommandIndex(texts, index + 1);
-  return READ_EXECUTION_POLICY.test(text) ? readCommandIndex(texts, index + 2) : undefined;
-}
-function isLiteralScriptWord(word, text) {
-  return word?.provenance === "unknown" ? !OUTER_EXPANSION.test(text) : isLiteralExecutionSourceWord(word, text);
-}
-function isEncodedCommandParameter(text) {
-  const name = PARAMETER_NAME.exec(text)?.[1]?.toLowerCase();
-  return name !== undefined && (name === "ec" || ENCODED_COMMAND.startsWith(name));
-}
 
 // src/gate/analyzer/rm.ts
 var import_canonicalization3 = require("./core.js");

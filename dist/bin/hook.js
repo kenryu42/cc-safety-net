@@ -278,7 +278,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.6.6";
+var AUDIT_LOG_VERSION = "2.6.7";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;

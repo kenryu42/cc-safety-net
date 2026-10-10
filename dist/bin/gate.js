@@ -844,9 +844,8 @@ function projectSensitiveShellText(source, environment) {
   return import_canonicalization2.expandSupportedPathEnvironmentVariables(source, environment);
 }
 function createSemanticFactStore() {
-  const shellFacts = new Map;
   const commandPrograms = new Map;
-  const structuralLimitFacts = new WeakMap;
+  const shellFacts = new WeakMap;
   const getCommandProgram = (source, dialect) => {
     const key = `${dialect}\x00${source}`;
     const existing = commandPrograms.get(key);
@@ -861,24 +860,11 @@ function createSemanticFactStore() {
       throw new TypeError("Shell syntax source does not match command program source.");
     }
     const program = suppliedProgram ?? getCommandProgram(source, "posix");
-    if (program.status === "limited") {
-      const existing = structuralLimitFacts.get(program);
-      if (existing)
-        return existing;
-      const syntax = {
-        status: "structural-limit",
-        source,
-        program,
-        assignmentFallbacks: []
-      };
-      structuralLimitFacts.set(program, syntax);
-      return syntax;
-    }
-    const existing = shellFacts.get(source);
+    const existing = shellFacts.get(program);
     if (existing)
       return existing;
-    const syntax = readGuardSyntax(source, program);
-    shellFacts.set(source, syntax);
+    const syntax = program.status === "limited" ? { status: "structural-limit", source, program, assignmentFallbacks: [] } : readGuardSyntax(source, program);
+    shellFacts.set(program, syntax);
     return syntax;
   };
   return {
@@ -1345,6 +1331,7 @@ var import_secret = require("./core-shell.js");
 var import_tokens5 = require("./core-shell.js");
 var import_awk = require("./analyzer.js");
 var import_interpreters = require("./analyzer.js");
+var import_powershell_wrapper = require("./analyzer.js");
 var import_xargs = require("./analyzer.js");
 var REASON_SECRET_PROTECTION = "Access to a sensitive path is not allowed.";
 var NON_PATH_OPERAND_COMMANDS = new Set(["echo", "printf"]);
@@ -1464,6 +1451,7 @@ var GH_TEXT_FLAGS = new Set(["--search", "-S", "--title", "-t", "--body", "-b", 
 var GIT_MESSAGE_SUBCOMMANDS = new Set(["commit", "merge", "notes", "stash", "tag"]);
 var GIT_MESSAGE_FLAGS = new Set(["-m", "--message"]);
 var GIT_GREP_FLAGS = new Set(["--grep"]);
+var POWERSHELL_HEADS = new Set(["powershell", "pwsh"]);
 var JQ_COMMANDS = new Set(["jq", "gojq", "jaq"]);
 var PATTERN_FILE_SHORT = "f";
 var PATTERN_FILE_LONG = "file";
@@ -1699,11 +1687,11 @@ function referencedShellVariables(text) {
     ...Array.from(text.matchAll(/\$(?:\{(!)|\{?([A-Za-z_][A-Za-z0-9_]*))/g), (match) => match[1] ?? match[2] ?? "")
   ];
 }
-function walkShellText(text, store, options, environment, cwd, budget) {
-  const syntax = store.getShellSyntax(text);
+function walkShellText(text, store, options, environment, cwd, budget, powershell = false) {
+  const syntax = store.getShellSyntax(text, powershell ? store.getCommandProgram(text, "powershell") : undefined);
   if (syntax.status === "structural-limit")
     throw new StructuralShellSyntaxLimitError;
-  return syntax.status === "complete" ? extractCommandPathTargets(syntax, store, options, environment, cwd, budget) : null;
+  return syntax.status === "complete" ? extractCommandPathTargets(syntax, store, options, environment, cwd, budget, powershell) : null;
 }
 function extractSegmentPathTargets(tokens, store, options, environment, cwd, budget, shellWords) {
   const here = (target) => ({ target, cwd });
@@ -1749,6 +1737,12 @@ function extractSegmentPathTargets(tokens, store, options, environment, cwd, bud
       ...walkShellText(post.join(" "), store, options, environment, cwd, budget) ?? post.map(here)
     ];
   }
+  const powerShellScript = POWERSHELL_HEADS.has(import_tokens5.normalizeCommandToken(executable)) ? import_powershell_wrapper.readPowerShellScript(stripped) : undefined;
+  if (powerShellScript !== undefined)
+    budget.charge("derivedTokens", stripped.length);
+  const powerShellTargets = powerShellScript === undefined ? null : walkShellText(powerShellScript, store, options, environment, cwd, budget, true);
+  if (powerShellTargets?.length)
+    return [...assignmentValues, ...powerShellTargets];
   if (command === "export") {
     return [
       ...assignmentValues,
