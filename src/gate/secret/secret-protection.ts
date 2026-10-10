@@ -742,11 +742,12 @@ function extractSegmentPathTargets(
   const powerShellScript = POWERSHELL_HEADS.has(normalizeCommandToken(executable))
     ? readPowerShellScript(stripped)
     : undefined;
+  if (powerShellScript !== undefined) budget.charge('derivedTokens', stripped.length);
   const powerShellTargets =
     powerShellScript === undefined
       ? null
       : walkShellText(powerShellScript, store, options, environment, cwd, budget, true);
-  if (powerShellTargets) return [...assignmentValues, ...powerShellTargets];
+  if (powerShellTargets?.length) return [...assignmentValues, ...powerShellTargets];
 
   if (command === 'export') {
     return [

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import { createBudget } from '@/core/budget';
+import { createBudget, LIMITS } from '@/core/budget';
 import { createProcessEnvironment, type Environment } from '@/core/environment';
 import type { SecretProtectionConfig } from '@/core/policy/types';
 import { SECRET_DEFAULT_OFF_RULE_ID_SET, SECRET_PROTECTION_RULE_ID_SET } from '@/core/rules/secret';
@@ -3421,6 +3421,8 @@ describe('secret protection through tool inputs', () => {
       { command: "pwsh -c 'Get-Content .env'", expected: env('.env') },
       { command: "pwsh -c 'Get-Content ~\\.ssh\\config'", expected: ssh('~/.ssh/config') },
       { command: "pwsh -c 'Get-Content .\\report.txt'", expected: null },
+      { command: "pwsh -c '.env'", expected: env('.env') },
+      { command: "pwsh -c '~/.ssh/config'", expected: ssh('~/.ssh/config') },
       { command: "pwsh.exe -c 'Get-Content ~/.ssh/config'", expected: ssh('~/.ssh/config') },
       {
         command: "eval 'Get-Content ~\\.ssh\\config'; pwsh -c 'Get-Content ~\\.ssh\\config'",
@@ -3435,6 +3437,15 @@ describe('secret protection through tool inputs', () => {
         ).toStrictEqual(row.expected);
       }
     }
+  });
+
+  test('deeply nested pwsh scripts stop at the derived-command work limit', () => {
+    expect(() =>
+      routeVerdict(
+        { command: `${'pwsh -c '.repeat(400)}Get-Content notes.txt` },
+        { kind: 'command', shell: 'posix' },
+      ),
+    ).toThrow(LIMITS.derivedTokens.reason);
   });
 });
 
