@@ -1285,6 +1285,7 @@ var import_tokens6 = require("./core-shell.js");
 var import_command_words5 = require("./analyzer.js");
 var import_dangerous_text2 = require("./analyzer.js");
 var import_deferred_assignment = require("./analyzer.js");
+var import_device2 = require("./analyzer.js");
 var import_heredoc_files2 = require("./analyzer.js");
 var import_interpreters2 = require("./analyzer.js");
 var import_remove_item = require("./analyzer.js");
@@ -2741,6 +2742,16 @@ function analyzeCommandView(commandView, depth, inheritedOptions, originalCwd, s
     });
     if (match)
       return resultFromCommandMatch(segmentStr, match);
+  }
+  const redirectMatch = import_effective_rules3.filterDestructiveCommandMatch(import_device2.analyzeDeviceRedirectionMatch(commandView.redirections), options.policy);
+  if (redirectMatch) {
+    options.trace?.recordSegment({
+      type: "rule-check",
+      rule: "analyzer/device.ts:analyzeDeviceRedirectionMatch",
+      matched: true,
+      reason: redirectMatch.reason
+    });
+    return resultFromCommandMatch(segmentStr, redirectMatch);
   }
   if (segment.length === 1 && segment[0]?.includes(" ") && !import_model.isDynamicExecutable(commandView.dialect, commandView.words)) {
     const textMatch = import_effective_rules3.filterDestructiveCommandMatch(import_dangerous_text2.dangerousInTextMatch(segment[0]), options.policy);

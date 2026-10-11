@@ -1643,16 +1643,24 @@ var DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     id: "dd.device-write",
     category: "Filesystem",
     label: "dd device write",
-    description: "Blocks dd writing to a /dev device.",
+    description: "Blocks dd writing to a /dev device other than /dev/null, /dev/zero, or /dev/full.",
     example: "dd if=/dev/zero of=/dev/sda",
     intent: "manual_only"
   },
   {
     id: "mkfs.device",
     category: "Filesystem",
-    label: "mkfs device format",
-    description: "Blocks mkfs formatting a /dev device.",
+    label: "Filesystem format on a device",
+    description: "Blocks mkfs, mke2fs, and newfs formatting a /dev device.",
     example: "mkfs.ext4 /dev/sda1",
+    intent: "manual_only"
+  },
+  {
+    id: "disk.erase",
+    category: "Filesystem",
+    label: "Disk erase or repartition",
+    description: "Blocks diskutil erase and partition verbs, wipefs -a/-o, sgdisk writes, and parted label or partition edits on a /dev device.",
+    example: "diskutil eraseDisk APFS Untitled disk4",
     intent: "manual_only"
   },
   {
@@ -1662,6 +1670,14 @@ var DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     description: "Blocks shred against any target, including shred --help and shred --version.",
     example: "shred -u secret.txt",
     intent: "use_alternative"
+  },
+  {
+    id: "redirect.block-device",
+    category: "Filesystem",
+    label: "Redirect onto a disk device",
+    description: "Blocks output redirects whose literal target is a disk device path under /dev.",
+    example: "cat disk.img > /dev/sda",
+    intent: "manual_only"
   },
   {
     id: "interpreter.dangerous-command",
