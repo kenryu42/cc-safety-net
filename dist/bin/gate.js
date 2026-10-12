@@ -2227,12 +2227,27 @@ function extractInlineCodePathTargets(command, code, store, options, environment
   const literalsWalkedAsShell = new Set(shellExec ? literalsExecCallsReceive : []);
   const literalRolesReadable = codeRolesReadable && literals.length > 0 && !holdsUnreadableLiteralRoles(masked.masked, family === "python" ? "#" : "//");
   const openers = literalRolesReadable ? innermostOpeners(masked.masked) : [];
-  const sequencesMayHoldArguments = literalRolesReadable && namesCommandExecution(masked.masked);
+  const identifiers = literalRolesReadable ? Array.from(masked.masked.matchAll(/[A-Za-z_$][\w$]*/g), (match) => ({
+    name: match[0],
+    index: match.index
+  })) : [];
+  const sequencesMayHoldArguments = namesCommandExecution(identifiers);
+  const displayCallsAreData = !rebindsDisplayCall(masked.masked, identifiers);
+  const nonDataUses = identifiers.filter((identifier) => !inDataPosition(masked.masked, {
+    start: identifier.index,
+    text: identifier.name,
+    tokenStart: identifier.index,
+    tokenEnd: identifier.index + identifier.name.length
+  }, openers, sequencesMayHoldArguments, displayCallsAreData)).reduce((uses, identifier) => {
+    const indices = uses.get(identifier.name) ?? [];
+    indices.push(identifier.index);
+    return uses.set(identifier.name, indices);
+  }, new Map);
   return [
     ...literals.filter((literal) => literal.text !== "").map((literal) => {
       if (!literalRolesReadable || literalsWalkedAsShell.has(literal))
         return here(literal.text);
-      if (inDataPosition(masked.masked, literal, openers, sequencesMayHoldArguments)) {
+      if (inDataPosition(masked.masked, literal, openers, sequencesMayHoldArguments, displayCallsAreData) || assignedOnlyToData(masked.masked, literal, openers, nonDataUses)) {
         return { ...here(literal.text), literalRole: "data" };
       }
       return feedsOnlyWrite(masked, literal, openers) ? { ...here(literal.text), literalRole: "write" } : here(literal.text);
@@ -2258,8 +2273,15 @@ function holdsUnreadableLiteralRoles(masked, commentOpener) {
     return comment >= 0 && /[()[\]{}]/.test(line.slice(comment));
   });
 }
-function namesCommandExecution(masked) {
-  return Array.from(masked.matchAll(/[A-Za-z_$][\w$]*/g), (match) => identifierParts(match[0])).some((parts) => parts.some((part) => COMMAND_EXECUTION_IDENTIFIER_PART.test(part)));
+function rebindsDisplayCall(masked, identifiers) {
+  return DISPLAY_NAME_BINDING.test(masked) || identifiers.some((identifier) => {
+    const call = DISPLAY_CALL_SHAPE.get(identifier.name);
+    const end = identifier.index + identifier.name.length;
+    return call !== undefined && !call.test(masked.slice(end, end + 40));
+  });
+}
+function namesCommandExecution(identifiers) {
+  return identifiers.some((identifier) => identifierParts(identifier.name).some((part) => COMMAND_EXECUTION_IDENTIFIER_PART.test(part)));
 }
 var WINDOWS_SHELLS = new Set(["cmd", "powershell", "pwsh"]);
 function runsArgvWithoutCodeFlag(masked, start) {
@@ -2282,7 +2304,7 @@ function innermostOpeners(masked) {
     return innermost;
   });
 }
-function inDataPosition(masked, literal, openers, sequencesMayHoldArguments) {
+function inDataPosition(masked, literal, openers, sequencesMayHoldArguments, displayCallsAreData) {
   const opener = openers[literal.tokenStart] ?? -1;
   const bracket = masked[opener] ?? "";
   const before = previousNonWhitespaceIndex(masked, literal.tokenStart);
@@ -2301,8 +2323,29 @@ function inDataPosition(masked, literal, openers, sequencesMayHoldArguments) {
   const element = (previous === bracket || previous === ",") && (next === "," || next === BRACKET_CLOSERS[bracket] || bracket === "{" && next === ":");
   if (bracket !== "(")
     return element && bracket !== "";
-  return element && (previous === "," || next === ",") && isGroupingParenthesis(masked, opener);
+  return element && (displayCallsAreData && DISPLAY_CALL.test(masked.slice(Math.max(0, opener - 20), opener)) || (previous === "," || next === ",") && isGroupingParenthesis(masked, opener));
 }
+function assignedOnlyToData(masked, literal, openers, nonDataUses) {
+  const from = Math.max(0, literal.tokenStart - 80);
+  const prefix = `${from === 0 ? `
+` : ""}${masked.slice(from, literal.tokenStart)}`;
+  const name = STATEMENT_ASSIGNMENT_TARGET.exec(prefix)?.[1];
+  const bracket = masked[openers[literal.tokenStart] ?? -1];
+  if (name === undefined || bracket === "(" || bracket === "[")
+    return false;
+  const statementEnd = nextNonWhitespaceIndex(masked, literal.tokenEnd) + 1;
+  if (!/^\s*(?:[;\n]|$)/.test(masked.slice(literal.tokenEnd, statementEnd)))
+    return false;
+  const target = literal.tokenStart - prefix.length + prefix.lastIndexOf(name);
+  return (nonDataUses.get(name) ?? []).every((index) => index === target);
+}
+var DISPLAY_CALL = /(?:^|[^\w$.])(?:print|console\s*\.\s*log)\s*$/;
+var DISPLAY_CALL_SHAPE = new Map([
+  ["print", /^\s*\(/],
+  ["console", /^\s*\.\s*[\w$]+\s*\(/]
+]);
+var DISPLAY_NAME_BINDING = /(?:^|[^\w$])(?:as|class|const|def|function|import|let|var)\s+(?:print|console)(?![\w$])/;
+var STATEMENT_ASSIGNMENT_TARGET = /[;\n{]\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=\s*$/;
 var PATH_CONSTRUCTOR_CALL = /(?:^|[^\w$.])(?:pathlib\s*\.\s*)?Path\s*$/;
 var PATH_WRITE_METHOD = /^\s*\.\s*write_(?:text|bytes)\s*\(/;
 var BARE_OPEN_CALL = /(?:^|[^\w$.])open\s*$/;
