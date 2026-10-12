@@ -39,10 +39,22 @@ var __export = (target, all) => {
 // src/bin/hook.ts
 var exports_hook = {};
 __export(exports_hook, {
+  ANTIGRAVITY_CLI_COMMAND_TOOLS: () => ANTIGRAVITY_CLI_COMMAND_TOOLS,
+  CLAUDE_CODE_COMMAND_TOOLS: () => CLAUDE_CODE_COMMAND_TOOLS,
+  CODEX_COMMAND_TOOLS: () => CODEX_COMMAND_TOOLS,
+  COPILOT_CLI_COMMAND_TOOLS: () => COPILOT_CLI_COMMAND_TOOLS,
   CURSOR_AGENT_PROBE: () => CURSOR_AGENT_PROBE,
+  CURSOR_COMMAND_TOOLS: () => CURSOR_COMMAND_TOOLS,
   DEEPSEEK_HARNESS_NPM_PROBE: () => DEEPSEEK_HARNESS_NPM_PROBE,
+  DEVIN_COMMAND_TOOLS: () => DEVIN_COMMAND_TOOLS,
+  DEVIN_PROCESS_INPUT_TOOL: () => DEVIN_PROCESS_INPUT_TOOL,
+  DROID_COMMAND_TOOLS: () => DROID_COMMAND_TOOLS,
+  GEMINI_CLI_COMMAND_TOOLS: () => GEMINI_CLI_COMMAND_TOOLS,
   GEMINI_CLI_HOOK_EVENT: () => GEMINI_CLI_HOOK_EVENT,
+  GROK_BUILD_COMMAND_TOOLS: () => GROK_BUILD_COMMAND_TOOLS,
+  HERMES_AGENT_COMMAND_TOOLS: () => HERMES_AGENT_COMMAND_TOOLS,
   HERMES_AGENT_HOOK_EVENT: () => HERMES_AGENT_HOOK_EVENT,
+  KIMI_CODE_COMMAND_TOOLS: () => KIMI_CODE_COMMAND_TOOLS,
   PRE_TOOL_USE_HOOK_EVENT: () => PRE_TOOL_USE_HOOK_EVENT,
   detectClaudeShapeAgent: () => detectClaudeShapeAgent,
   doctorIntegrationOrder: () => doctorIntegrationOrder,
@@ -278,7 +290,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.6.9";
+var AUDIT_LOG_VERSION = "2.6.10";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -457,7 +469,7 @@ function evaluateRuntimeGuard(environment, invocation, options) {
   }
 }
 function writeRuntimeAudit(environment, invocation, evaluation, options, includeInvocationCommand = true, failure) {
-  writeGuardAudit(environment, projectGuardAudit(invocation, evaluation, options.guard?.auditAllowed ?? false, includeInvocationCommand, failure), options.audit.getSessionId, {
+  writeGuardAudit(environment, projectGuardAudit(evaluation.promotedInvocation ?? invocation, evaluation, options.guard?.auditAllowed ?? false, includeInvocationCommand, failure), options.audit.getSessionId, {
     agent: options.audit.agent,
     shape: options.audit.shape
   });
@@ -664,7 +676,9 @@ async function runConfiguredHookAdapter(adapter) {
 function getAntigravityHooksPath(homeDir) {
   return import_node_path3.join(homeDir, ".gemini", "config", "hooks.json");
 }
-var ANTIGRAVITY_CLI_COMMAND_TOOLS = new Map([["run_command", "auto"]]);
+var ANTIGRAVITY_CLI_COMMAND_TOOLS = new Map([
+  ["run_command", "auto"]
+]);
 var ANTIGRAVITY_PATH_KEYS = new Set([
   "absolutepath",
   "directorypath",
@@ -1319,8 +1333,9 @@ function cursorBaseCwd(cwd) {
 // src/hosts/devin/hook.ts
 var import_intake8 = require("./gate.js");
 var DEVIN_COMMAND_TOOLS = new Map([["exec", "auto"]]);
+var DEVIN_PROCESS_INPUT_TOOL = "write_to_process";
 function textTypedIntoProcess(toolName, toolInput) {
-  if (toolName !== "write_to_process" || typeof toolInput !== "object" || toolInput === null) {
+  if (toolName !== DEVIN_PROCESS_INPUT_TOOL || typeof toolInput !== "object" || toolInput === null) {
     return;
   }
   const text = toolInput.text_input;
@@ -1360,7 +1375,9 @@ async function runDroidHook() {
 
 // src/hosts/gemini-cli/hook.ts
 var import_intake10 = require("./gate.js");
-var GEMINI_CLI_COMMAND_TOOLS = new Map([["run_shell_command", "auto"]]);
+var GEMINI_CLI_COMMAND_TOOLS = new Map([
+  ["run_shell_command", "auto"]
+]);
 function getGeminiCliToolRoute(toolName) {
   return import_intake10.getToolRoute(toolName, GEMINI_CLI_COMMAND_TOOLS);
 }

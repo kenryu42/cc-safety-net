@@ -42,6 +42,8 @@ __export(exports_core, {
   AnalysisLimit: () => AnalysisLimit,
   BLOCK_INTENTS: () => BLOCK_INTENTS,
   BUILTIN_ANALYZED_COMMANDS: () => BUILTIN_ANALYZED_COMMANDS,
+  COMMAND_TOOL_NAME_PATTERN: () => COMMAND_TOOL_NAME_PATTERN,
+  COMMAND_TOOL_NAME_RULE: () => COMMAND_TOOL_NAME_RULE,
   DEFAULT_AUDIT_RETENTION_DAYS: () => DEFAULT_AUDIT_RETENTION_DAYS,
   DEFAULT_CONFIG: () => DEFAULT_CONFIG,
   DEFAULT_GUI_POLICY: () => DEFAULT_GUI_POLICY,
@@ -1100,7 +1102,8 @@ function readRulesConfig(path) {
         version: 1,
         rules: parsed.rules ?? [],
         overrides: parsed.overrides ?? {},
-        transparent_wrappers: parsed.transparent_wrappers ?? []
+        transparent_wrappers: parsed.transparent_wrappers ?? [],
+        ...parsed.command_tools ? { command_tools: parsed.command_tools } : {}
       },
       errors: []
     };
@@ -1143,7 +1146,15 @@ function duplicateRuleNameIssues(rules) {
 }
 var INTENT_ERROR = `must be one of ${BLOCK_INTENTS.join(", ")}`;
 var RULE_OVERRIDE_KEY_PATTERN = /^[^/]+\/[^/]+$/;
-var RULES_CONFIG_FIELDS = ["version", "rules", "overrides", "transparent_wrappers"];
+var RULES_CONFIG_FIELDS = [
+  "version",
+  "rules",
+  "overrides",
+  "transparent_wrappers",
+  "command_tools"
+];
+var COMMAND_TOOL_NAME_PATTERN = /^[^\s\p{Cc}]{1,256}$/u;
+var COMMAND_TOOL_NAME_RULE = "non-empty, at most 256 characters, no whitespace or control characters";
 function getRulesConfigValidation(config) {
   const issues = rulesConfigIssues(config);
   return {
@@ -1162,7 +1173,8 @@ function rulesConfigIssues(config) {
     ...transparentWrapperIssues(config.transparent_wrappers),
     ...overLimit ? [] : duplicateRuleSourceIssues(config.rules),
     ...isRecord(config.overrides) ? Object.keys(config.overrides).filter((key) => !RULE_OVERRIDE_KEY_PATTERN.test(key)).map((key) => custom(["overrides", key], "must use <rulebook-name>/<rule-name>")) : [],
-    ...reservedWrapperIssues(config.transparent_wrappers)
+    ...reservedWrapperIssues(config.transparent_wrappers),
+    ...commandToolIssues(config.command_tools)
   ];
 }
 function ruleSourceIssues(rules, overLimit) {
@@ -1279,6 +1291,40 @@ function reservedWrapperIssues(wrappers) {
     seen.add(wrapper);
     return [];
   });
+}
+function commandToolIssues(tools) {
+  if (tools === undefined)
+    return [];
+  if (!Array.isArray(tools)) {
+    return [typed(["command_tools"], "must be an array of tool names or {name, cwd} objects")];
+  }
+  const seen = new Set;
+  const firstClaim = (name, index) => {
+    if (seen.has(name))
+      return [custom(["command_tools", index], `duplicate tool "${name}"`)];
+    seen.add(name);
+    return [];
+  };
+  return tools.flatMap((tool, index) => {
+    if (typeof tool === "string") {
+      return isCommandToolName(tool) ? firstClaim(tool, index) : [typed(["command_tools", index], `must be a tool name: ${COMMAND_TOOL_NAME_RULE}`)];
+    }
+    if (!isRecord(tool)) {
+      return [typed(["command_tools", index], "must be a tool name or a {name, cwd} object")];
+    }
+    const issues = [
+      ...isCommandToolName(tool.name) ? [] : [
+        typed(["command_tools", index, "name"], `must be a tool name: ${COMMAND_TOOL_NAME_RULE}`)
+      ],
+      ...tool.cwd === undefined || isCommandToolName(tool.cwd) ? [] : [
+        typed(["command_tools", index, "cwd"], `must be an argument name: ${COMMAND_TOOL_NAME_RULE}`)
+      ]
+    ];
+    return issues.length > 0 ? issues : firstClaim(tool.name, index);
+  });
+}
+function isCommandToolName(value) {
+  return typeof value === "string" && COMMAND_TOOL_NAME_PATTERN.test(value);
 }
 function collectValidSources(config, issues) {
   const rules = isRecord(config) ? config.rules : undefined;
@@ -2705,6 +2751,100 @@ function isPathOrSubpath(path, basePath) {
 function normalizePathForComparison2(path) {
   return process.platform === "win32" ? path.toLowerCase() : path;
 }
+// src/core/denial.ts
+var FOOTERS = {
+  hard_stop: "Do not retry this operation or attempt any workaround (other tools, flags, or paths). Report the block to the user and continue with the rest of the task.",
+  use_alternative: "Do not retry the blocked form. Continue the task using the safer alternative described above.",
+  scope_down: "Retry with a narrower, explicit target as described above. Escalate to the user if the broad operation is truly required.",
+  manual_only: "If this operation is truly needed, ask the user for explicit permission and have them run the command manually.",
+  stop_and_explain: "Do not brute-force variants. Simplify or restructure the command so it can be analyzed, or report the block to the user."
+};
+function formatBlockedMessage(input) {
+  const maxLen = input.maxLen ?? 200;
+  const redact = input.redact ?? ((text) => text);
+  const excerpt = (text) => text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+  return [
+    input.askUser ? "CC Safety Net could not verify this command" : "BLOCKED by CC Safety Net",
+    `Reason: ${redact(input.reason)}`,
+    input.ruleId ? `Rule: ${input.ruleId}` : undefined,
+    input.toolName ? `Tool: ${input.toolName}` : undefined,
+    input.command ? `Command: ${excerpt(redact(input.command))}` : undefined,
+    input.segment && input.segment !== input.command ? `Segment: ${excerpt(redact(input.segment))}` : undefined,
+    input.cwd ? `Working directory: ${excerpt(redact(input.cwd))}` : undefined,
+    input.configWarning ? `Config warning: ${redact(input.configWarning)}` : undefined,
+    input.askUser ? "Approve only if you expected this command." : FOOTERS[input.intent ?? "manual_only"]
+  ].filter((line) => line !== undefined).join(`
+
+`);
+}
+function projectGuardDenial(evaluation, options) {
+  if (evaluation.decision.kind !== "deny")
+    return;
+  const evidence = options.includeEvidence ? evaluation.decision.evidence : undefined;
+  return {
+    reason: evaluation.decision.reason,
+    ruleId: evaluation.decision.ruleId,
+    intent: evaluation.decision.intent,
+    command: evidence?.command,
+    segment: evidence?.segment,
+    toolName: options.toolName,
+    ...evaluation.configFallback ? { configWarning: evaluation.configFallback.reason } : {},
+    ...evaluation.decision.unverifiedByStandardMode ? { unverifiedByStandardMode: true } : {}
+  };
+}
+function createFailedClosedDenial(options = {}) {
+  return {
+    reason: REASON_SAFETY_NET_FAILED_CLOSED,
+    ruleId: "analysis.failed-closed",
+    intent: "stop_and_explain",
+    command: options.command,
+    segment: options.segment ?? options.command,
+    toolName: options.toolName
+  };
+}
+var CWD_DENIALS = {
+  session: {
+    unusable: {
+      reason: "CC Safety Net cannot check tool calls because the session's working directory or workspace root no longer exists, is inaccessible, is not a directory, or uses an unsupported path form. Ask the user to restart the session from an existing directory.",
+      intent: "hard_stop",
+      ruleId: "cwd.session-unusable"
+    },
+    "outside-workspace": {
+      reason: "CC Safety Net cannot check tool calls because the session's working directory is outside its workspace roots. Ask the user to restart the session from a directory inside the workspace.",
+      intent: "hard_stop",
+      ruleId: "cwd.session-outside-workspace"
+    }
+  },
+  requested: {
+    unusable: {
+      reason: "CC Safety Net could not use the requested working directory because it does not exist, is inaccessible, is not a directory, or uses an unsupported path form. Use an existing accessible working directory. If the requested directory is missing, create it from an accessible location before retrying the command.",
+      intent: "use_alternative",
+      ruleId: "cwd.requested-unusable"
+    },
+    "outside-workspace": {
+      reason: "CC Safety Net could not use the requested working directory because it is outside the session's workspace. Use a working directory inside the workspace.",
+      intent: "use_alternative",
+      ruleId: "cwd.requested-outside-workspace"
+    }
+  }
+};
+function createCwdDenial(cause, options = {}) {
+  return {
+    ...CWD_DENIALS[cause.directory][cause.problem],
+    command: options.command,
+    toolName: options.toolName,
+    cwd: cause.cwd
+  };
+}
+function formatDenial(denial) {
+  return formatBlockedMessage({ ...denial, redact: redactSecrets });
+}
+function formatAskPrompt(denial) {
+  return formatBlockedMessage({ ...denial, redact: redactSecrets, askUser: true });
+}
+function formatIntegrationError(cause) {
+  return redactSecrets(cause instanceof Error ? cause.message : String(cause));
+}
 // src/core/policy/analysis-context.ts
 function resolveCommandAnalysisContext(options) {
   const capabilities = options.effectiveCapabilities;
@@ -3029,6 +3169,7 @@ function loadRulesPolicy(environment, options) {
       ...applyOverrides(projectPolicy.rules, projectOverrides)
     ],
     transparent_wrappers: mergeTransparentWrappers(user.config, project.config),
+    command_tools: mergeCommandTools(user.config, project.config),
     rulebooks: [...userPolicy.rulebooks, ...projectPolicy.rulebooks],
     errors: [
       ...userReadErrors,
@@ -3192,6 +3333,16 @@ function mergeTransparentWrappers(userConfig, projectConfig) {
     ])
   ];
 }
+function mergeCommandTools(userConfig, projectConfig) {
+  const user = (userConfig?.command_tools ?? []).map(toCommandToolDeclaration);
+  const project = (projectConfig?.command_tools ?? []).map(toCommandToolDeclaration);
+  return [...user, ...project.filter((tool) => !user.some((claim) => claim.name === tool.name))];
+}
+function toCommandToolDeclaration(entry) {
+  if (typeof entry === "string")
+    return { name: entry };
+  return entry.cwd === undefined ? { name: entry.name } : { name: entry.name, cwd: entry.cwd };
+}
 function applyOverrides(rules, overrides) {
   return rules.flatMap((rule) => {
     const override = overrides[rule.name];
@@ -3217,6 +3368,7 @@ function invalidLoadedRulesPolicy(paths, error) {
   return {
     rules: [],
     transparent_wrappers: [],
+    command_tools: [],
     rulebooks: [],
     errors: [error],
     warnings: [],
@@ -3242,6 +3394,7 @@ function loadPolicySnapshot(environment, options) {
   const policy = {
     rules: rules.rules,
     transparentWrappers: rules.transparent_wrappers,
+    commandTools: rules.command_tools,
     safety: userPolicy.safety,
     worktreeMode: userPolicy.worktreeMode,
     destructiveCommandProtectionEnabled: userPolicy.destructiveCommandProtectionEnabled,
@@ -3334,100 +3487,6 @@ function combineInvalidReasons(...reasons) {
 }
 function withTerminalPeriod(value) {
   return /[.!?]$/.test(value) ? value : `${value}.`;
-}
-// src/core/denial.ts
-var FOOTERS = {
-  hard_stop: "Do not retry this operation or attempt any workaround (other tools, flags, or paths). Report the block to the user and continue with the rest of the task.",
-  use_alternative: "Do not retry the blocked form. Continue the task using the safer alternative described above.",
-  scope_down: "Retry with a narrower, explicit target as described above. Escalate to the user if the broad operation is truly required.",
-  manual_only: "If this operation is truly needed, ask the user for explicit permission and have them run the command manually.",
-  stop_and_explain: "Do not brute-force variants. Simplify or restructure the command so it can be analyzed, or report the block to the user."
-};
-function formatBlockedMessage(input) {
-  const maxLen = input.maxLen ?? 200;
-  const redact = input.redact ?? ((text) => text);
-  const excerpt = (text) => text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
-  return [
-    input.askUser ? "CC Safety Net could not verify this command" : "BLOCKED by CC Safety Net",
-    `Reason: ${redact(input.reason)}`,
-    input.ruleId ? `Rule: ${input.ruleId}` : undefined,
-    input.toolName ? `Tool: ${input.toolName}` : undefined,
-    input.command ? `Command: ${excerpt(redact(input.command))}` : undefined,
-    input.segment && input.segment !== input.command ? `Segment: ${excerpt(redact(input.segment))}` : undefined,
-    input.cwd ? `Working directory: ${excerpt(redact(input.cwd))}` : undefined,
-    input.configWarning ? `Config warning: ${redact(input.configWarning)}` : undefined,
-    input.askUser ? "Approve only if you expected this command." : FOOTERS[input.intent ?? "manual_only"]
-  ].filter((line) => line !== undefined).join(`
-
-`);
-}
-function projectGuardDenial(evaluation, options) {
-  if (evaluation.decision.kind !== "deny")
-    return;
-  const evidence = options.includeEvidence ? evaluation.decision.evidence : undefined;
-  return {
-    reason: evaluation.decision.reason,
-    ruleId: evaluation.decision.ruleId,
-    intent: evaluation.decision.intent,
-    command: evidence?.command,
-    segment: evidence?.segment,
-    toolName: options.toolName,
-    ...evaluation.configFallback ? { configWarning: evaluation.configFallback.reason } : {},
-    ...evaluation.decision.unverifiedByStandardMode ? { unverifiedByStandardMode: true } : {}
-  };
-}
-function createFailedClosedDenial(options = {}) {
-  return {
-    reason: REASON_SAFETY_NET_FAILED_CLOSED,
-    ruleId: "analysis.failed-closed",
-    intent: "stop_and_explain",
-    command: options.command,
-    segment: options.segment ?? options.command,
-    toolName: options.toolName
-  };
-}
-var CWD_DENIALS = {
-  session: {
-    unusable: {
-      reason: "CC Safety Net cannot check tool calls because the session's working directory or workspace root no longer exists, is inaccessible, is not a directory, or uses an unsupported path form. Ask the user to restart the session from an existing directory.",
-      intent: "hard_stop",
-      ruleId: "cwd.session-unusable"
-    },
-    "outside-workspace": {
-      reason: "CC Safety Net cannot check tool calls because the session's working directory is outside its workspace roots. Ask the user to restart the session from a directory inside the workspace.",
-      intent: "hard_stop",
-      ruleId: "cwd.session-outside-workspace"
-    }
-  },
-  requested: {
-    unusable: {
-      reason: "CC Safety Net could not use the requested working directory because it does not exist, is inaccessible, is not a directory, or uses an unsupported path form. Use an existing accessible working directory. If the requested directory is missing, create it from an accessible location before retrying the command.",
-      intent: "use_alternative",
-      ruleId: "cwd.requested-unusable"
-    },
-    "outside-workspace": {
-      reason: "CC Safety Net could not use the requested working directory because it is outside the session's workspace. Use a working directory inside the workspace.",
-      intent: "use_alternative",
-      ruleId: "cwd.requested-outside-workspace"
-    }
-  }
-};
-function createCwdDenial(cause, options = {}) {
-  return {
-    ...CWD_DENIALS[cause.directory][cause.problem],
-    command: options.command,
-    toolName: options.toolName,
-    cwd: cause.cwd
-  };
-}
-function formatDenial(denial) {
-  return formatBlockedMessage({ ...denial, redact: redactSecrets });
-}
-function formatAskPrompt(denial) {
-  return formatBlockedMessage({ ...denial, redact: redactSecrets, askUser: true });
-}
-function formatIntegrationError(cause) {
-  return redactSecrets(cause instanceof Error ? cause.message : String(cause));
 }
 // src/core/environment.ts
 var import_node_fs4 = require("node:fs");

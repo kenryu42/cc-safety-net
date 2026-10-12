@@ -87,9 +87,10 @@ module.exports = __toCommonJS(exports_gate);
 
 // src/gate/pipeline.ts
 var import_budget2 = require("./core.js");
+var import_denial2 = require("./core.js");
 var import_env = require("./core.js");
 var import_snapshot = require("./core.js");
-var import_tool_input4 = require("./core.js");
+var import_tool_input5 = require("./core.js");
 var import_analyzer = require("./analyzer.js");
 var import_dangerous_text = require("./analyzer.js");
 var import_reasons = require("./analyzer.js");
@@ -1320,11 +1321,133 @@ function comparePath2(path) {
   return process.platform === "win32" ? path.toLowerCase() : path;
 }
 
-// src/gate/secret/secret-protection.ts
+// src/gate/intake.ts
+var import_node_fs2 = require("node:fs");
 var import_node_path3 = require("node:path");
+var import_denial = require("./core.js");
+var import_canonicalization5 = require("./core.js");
+var import_tool_input4 = require("./core.js");
+function isUsableDirectory(path) {
+  try {
+    if (!import_node_fs2.statSync(path).isDirectory())
+      return false;
+    import_node_fs2.accessSync(path, import_node_fs2.constants.R_OK | import_node_fs2.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function resolveContainedCwd(requestedCwd, trustedRoots, paths) {
+  if (import_canonicalization5.isUnsupportedWindowsNamespacePath(requestedCwd))
+    return;
+  const roots = trustedRoots.flatMap((root) => canonicalDirectory(root, paths));
+  if (!roots[0])
+    return;
+  const requested = canonicalDirectory(import_node_path3.isAbsolute(requestedCwd) ? requestedCwd : import_node_path3.resolve(roots[0], requestedCwd), paths)[0];
+  if (!requested)
+    return;
+  return roots.some((root) => isSameOrInsidePath(requested, root)) ? requested : undefined;
+}
+function resolveCanonicalCwd(requestedCwd, baseCwd, paths) {
+  if (import_canonicalization5.isUnsupportedWindowsNamespacePath(requestedCwd))
+    return;
+  return canonicalDirectory(import_node_path3.isAbsolute(requestedCwd) ? requestedCwd : import_node_path3.resolve(baseCwd, requestedCwd), paths)[0];
+}
+function firstTrustedRoot(trustedRoots, paths) {
+  return trustedRoots.flatMap((root) => canonicalDirectory(root, paths))[0];
+}
+function cwdProblem(requestedCwd, baseCwd, paths) {
+  return resolveCanonicalCwd(requestedCwd, baseCwd, paths) ? "outside-workspace" : "unusable";
+}
+function canonicalDirectory(path, paths) {
+  const realPath = paths.realpath(path);
+  if (realPath === null)
+    return [];
+  return paths.isDirectory(realPath) ? [realPath] : [];
+}
+function isSameOrInsidePath(path, root) {
+  const rel = import_node_path3.relative(root, path);
+  return rel === "" || rel !== ".." && !rel.startsWith(`..${import_node_path3.sep}`) && !import_node_path3.isAbsolute(rel);
+}
+var HOOK_INPUT_MAX_BYTES = 8 * 1024 * 1024;
+async function readBoundedHookInput(input) {
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of input) {
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk, "utf-8") : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    bytes += buffer.byteLength;
+    if (bytes > HOOK_INPUT_MAX_BYTES) {
+      stopHookInput(input);
+      throw new Error("hook input byte limit exceeded");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, bytes).toString("utf-8");
+}
+function stopHookInput(input) {
+  const stop = input.destroy ?? input.cancel;
+  if (!stop)
+    return;
+  try {
+    Promise.resolve(stop.call(input)).catch(() => {});
+  } catch {}
+}
+function parseHookJson(inputText, outputDeny, strictReason) {
+  try {
+    return JSON.parse(inputText);
+  } catch {
+    outputDeny({ reason: strictReason });
+    return;
+  }
+}
+function getToolRoute(toolName, commandTools) {
+  const shell = commandTools.get(toolName);
+  return shell ? { kind: "command", shell } : { kind: import_tool_input4.getNonCommandToolInputKind(toolName) };
+}
+function resolveStandardHookContext(cwdInput, toolInput, toolName, outputDeny, paths, processCwd) {
+  const requestedCwd = cwdInput === undefined ? processCwd : cwdInput;
+  if (typeof requestedCwd !== "string" || requestedCwd.trim() === "") {
+    outputFailedClosed(outputDeny, toolInput, toolName);
+    return null;
+  }
+  const cwd = firstTrustedRoot([requestedCwd], paths);
+  if (cwd)
+    return { configCwd: cwd, executionCwd: cwd };
+  outputCwdDenial(outputDeny, toolInput, toolName, {
+    directory: "session",
+    problem: "unusable",
+    cwd: requestedCwd
+  });
+  return null;
+}
+function outputFailedClosed(outputDeny, toolInput, toolName) {
+  outputDeny(import_denial.createFailedClosedDenial({ command: readableCommand(toolInput), toolName }));
+}
+function outputCwdDenial(outputDeny, toolInput, toolName, cause) {
+  outputDeny(import_denial.createCwdDenial(cause, { command: readableCommand(toolInput), toolName }));
+}
+function readableCommand(toolInput) {
+  try {
+    return import_tool_input4.getCommandFromToolInput(toolInput);
+  } catch (error) {
+    if (!(error instanceof import_tool_input4.ToolInputLimitError))
+      throw error;
+    return;
+  }
+}
+
+// src/gate/invocation.ts
+function createToolInvocation(toolName, input, route, context, command) {
+  if (route.kind !== "command")
+    return { toolName, input, route, context };
+  return { toolName, input, route, context, command };
+}
+
+// src/gate/secret/secret-protection.ts
+var import_node_path4 = require("node:path");
 var import_node_url = require("node:url");
 var import_budget = require("./core.js");
-var import_canonicalization5 = require("./core.js");
+var import_canonicalization6 = require("./core.js");
 var import_allow_paths = require("./core.js");
 var import_constants = require("./core-shell.js");
 var import_secret = require("./core-shell.js");
@@ -3024,15 +3147,15 @@ function matchesAllowedPath(target, cwd, allowPaths, configCwd, environment, bud
   if (!normalized)
     return false;
   const homeValue = environment.env.get("HOME") ?? environment.home;
-  const resolvedHome = homeValue ? normalizePathText(import_canonicalization5.resolveExistingPath(import_canonicalization5.normalizeMsysDrivePath(homeValue), environment.paths, budget)) : "";
+  const resolvedHome = homeValue ? normalizePathText(import_canonicalization6.resolveExistingPath(import_canonicalization6.normalizeMsysDrivePath(homeValue), environment.paths, budget)) : "";
   const home = comparable(resolvedHome);
   const guardHomeValue = environment.env.get("CC_SAFETY_NET_HOME");
-  const guardRoot = comparable(guardHomeValue ? normalizePathText(import_canonicalization5.resolveExistingPath(import_node_path3.resolve(import_canonicalization5.normalizeMsysDrivePath(guardHomeValue)), environment.paths, budget)) : resolvedHome && normalizePathText(import_canonicalization5.resolveExistingPath(`${resolvedHome}/.cc-safety-net`, environment.paths, budget)));
+  const guardRoot = comparable(guardHomeValue ? normalizePathText(import_canonicalization6.resolveExistingPath(import_node_path4.resolve(import_canonicalization6.normalizeMsysDrivePath(guardHomeValue)), environment.paths, budget)) : resolvedHome && normalizePathText(import_canonicalization6.resolveExistingPath(`${resolvedHome}/.cc-safety-net`, environment.paths, budget)));
   if (guardRoot && isSameOrChildPath(normalized, guardRoot))
     return false;
   return allowPaths.some((entry) => {
     const recursive = import_allow_paths.parseRecursiveSecretAllowPath(entry);
-    if (recursive && import_node_path3.posix.basename(normalized) !== comparable(recursive.name))
+    if (recursive && import_node_path4.posix.basename(normalized) !== comparable(recursive.name))
       return false;
     const root = comparable(normalizeAbsoluteCandidatePath(recursive?.root ?? entry, configCwd, environment, budget));
     if (!root)
@@ -3077,10 +3200,10 @@ function normalizeCandidatePath(target, cwd, environment, budget) {
     return normalized;
   }
   const expanded = expandHomePath(normalized, home);
-  const absolute = import_node_path3.isAbsolute(expanded) ? expanded : normalizePathText(import_node_path3.resolve(cwd, expanded));
-  const canonicalAbsolute = normalizePathText(import_canonicalization5.resolveExistingPath(absolute, environment.paths, budget));
+  const absolute = import_node_path4.isAbsolute(expanded) ? expanded : normalizePathText(import_node_path4.resolve(cwd, expanded));
+  const canonicalAbsolute = normalizePathText(import_canonicalization6.resolveExistingPath(absolute, environment.paths, budget));
   if (!isSameOrChildPath(canonicalAbsolute, home)) {
-    if (import_node_path3.isAbsolute(expanded))
+    if (import_node_path4.isAbsolute(expanded))
       return canonicalAbsolute;
     return canonicalAbsolute === absolute ? normalized : canonicalAbsolute;
   }
@@ -3095,8 +3218,8 @@ function normalizeUnresolvedHomePath(target, cwd, environment, budget) {
   if (!normalized || !home)
     return "";
   const expanded = expandHomePath(normalized, home);
-  const absolute = import_node_path3.posix.normalize(import_node_path3.isAbsolute(expanded) ? expanded : normalizePathText(import_node_path3.resolve(cwd, expanded)));
-  const literalHome = normalizePathText(import_canonicalization5.normalizeMsysDrivePath(environment.env.get("HOME") ?? environment.home));
+  const absolute = import_node_path4.posix.normalize(import_node_path4.isAbsolute(expanded) ? expanded : normalizePathText(import_node_path4.resolve(cwd, expanded)));
+  const literalHome = normalizePathText(import_canonicalization6.normalizeMsysDrivePath(environment.env.get("HOME") ?? environment.home));
   const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
   const root = [home, literalHome].find((candidate) => candidate !== "" && isSameOrChildPath(fold(absolute), fold(candidate)));
   if (root === undefined)
@@ -3109,12 +3232,12 @@ function normalizeAbsoluteCandidatePath(target, cwd, environment, budget) {
   if (!normalized)
     return "";
   const expanded = home ? expandHomePath(normalized, home) : normalized;
-  return normalizePathText(import_canonicalization5.resolveExistingPath(import_node_path3.isAbsolute(expanded) ? expanded : import_node_path3.resolve(cwd, expanded), environment.paths, budget));
+  return normalizePathText(import_canonicalization6.resolveExistingPath(import_node_path4.isAbsolute(expanded) ? expanded : import_node_path4.resolve(cwd, expanded), environment.paths, budget));
 }
 function prepareCandidatePath(target, environment, budget) {
   const homeValue = environment.env.get("HOME") ?? environment.home;
-  const home = homeValue ? normalizePathText(import_canonicalization5.resolveExistingPath(import_canonicalization5.normalizeMsysDrivePath(homeValue), environment.paths, budget)) : "";
-  const normalized = normalizePathText(import_canonicalization5.normalizeMsysDrivePath(normalizeFileUriPath(projectSensitiveShellText(target, environment))));
+  const home = homeValue ? normalizePathText(import_canonicalization6.resolveExistingPath(import_canonicalization6.normalizeMsysDrivePath(homeValue), environment.paths, budget)) : "";
+  const normalized = normalizePathText(import_canonicalization6.normalizeMsysDrivePath(normalizeFileUriPath(projectSensitiveShellText(target, environment))));
   return { home, normalized };
 }
 function normalizeFileUriPath(value) {
@@ -3136,7 +3259,7 @@ function expandHomePath(path, home) {
 function usesBackslashSeparators(value) {
   if (process.platform === "win32")
     return true;
-  return import_node_path3.win32.parse(value).root.length > 1;
+  return import_node_path4.win32.parse(value).root.length > 1;
 }
 function normalizePathText(value) {
   const trimmed = value.trim();
@@ -3174,9 +3297,21 @@ var DEFAULT_DEPENDENCIES = {
   getModes: import_env.getCCSafetyNetEnvModes
 };
 var BARE_SHELL_READING_STDIN = /^(?:\S*\/)?(?:ba|da|z|k)?sh(?:\s+-[A-Za-z-]*)*$/;
-function evaluateGuard(invocation, options) {
+var WORKING_DIRECTORY_ARGUMENTS = ["workdir", "cwd", "working_directory"];
+function evaluateGuard(hostInvocation, options) {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  const inputCommand = getInputCommandOrFail(invocation);
+  const inputCommand = getInputCommandOrFail(hostInvocation);
+  const loadSnapshot = () => callDependency("config-load", inputCommand, () => dependencies.loadPolicySnapshot(options.environment, {
+    ...options.policyOptions,
+    cwd: hostInvocation.context.configCwd
+  }));
+  const declarationSnapshot = hostInvocation.route.kind === "unknown" && inputCommand ? loadSnapshot() : undefined;
+  const declaration = declarationSnapshot?.policy.commandTools.find((tool) => tool.name === hostInvocation.toolName);
+  const promotion = declaration && inputCommand ? promoteDeclaredCommandTool(hostInvocation, inputCommand, declaration.cwd, options.environment.paths) : hostInvocation;
+  if ("decision" in promotion)
+    return promotion;
+  const invocation = promotion;
+  const promoted = invocation === hostInvocation ? {} : { promotedInvocation: invocation };
   const command = isCommandInvocation(invocation) ? invocation.command : inputCommand;
   const facts = callDependency("policy-protection", command, () => createSemanticFacts(invocation));
   const inputCandidate = getCommandSyntaxFact(facts, "input-candidate");
@@ -3184,6 +3319,7 @@ function evaluateGuard(invocation, options) {
   if (isCommandInvocation(invocation) && invocation.command?.trim() && declaredCommand?.program.status === "limited") {
     return {
       stage: "command-analysis",
+      ...promoted,
       decision: {
         kind: "deny",
         reason: import_reasons2.REASON_RECURSION_LIMIT,
@@ -3196,6 +3332,7 @@ function evaluateGuard(invocation, options) {
   if (inputCandidate?.program.status === "limited") {
     return {
       stage: "command-validation",
+      ...promoted,
       decision: {
         kind: "deny",
         reason: import_reasons2.REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
@@ -3211,6 +3348,7 @@ function evaluateGuard(invocation, options) {
     const displayCommand = command ?? policyTarget.target;
     return {
       stage: "policy-protection",
+      ...promoted,
       decision: {
         kind: "deny",
         reason: REASON_POLICY_CONFIG_PROTECTION,
@@ -3225,6 +3363,7 @@ function evaluateGuard(invocation, options) {
     const displayCommand = command ?? policyApplyTarget.target;
     return {
       stage: "policy-protection",
+      ...promoted,
       decision: {
         kind: "deny",
         reason: REASON_POLICY_APPLY_PROTECTION,
@@ -3239,6 +3378,7 @@ function evaluateGuard(invocation, options) {
     const displayCommand = command ?? gitMetadataTarget.target;
     return {
       stage: "policy-protection",
+      ...promoted,
       decision: {
         kind: "deny",
         reason: REASON_GIT_METADATA_PROTECTION,
@@ -3248,13 +3388,14 @@ function evaluateGuard(invocation, options) {
       }
     };
   }
-  const snapshot = callDependency("config-load", command, () => dependencies.loadPolicySnapshot(options.environment, {
-    ...options.policyOptions,
-    cwd: invocation.context.configCwd
-  }));
+  const snapshot = declarationSnapshot ?? loadSnapshot();
   const policy = snapshot.policy;
   const modes = dependencies.getModes(policy, options.environment.env);
-  const reported = { level: modes.effectiveLevel, ...getConfigFallback(snapshot) };
+  const reported = {
+    level: modes.effectiveLevel,
+    ...getConfigFallback(snapshot),
+    ...promoted
+  };
   const secretTarget = policy.secretProtection.enabled === false ? null : callDependency("secret-protection", command, () => dependencies.findSensitiveTarget(facts, policy.secretProtection, options.environment, budget, {
     strict: isCommandInvocation(invocation) || inputCandidate?.program.dialect === "powershell" ? modes.strict : undefined
   }));
@@ -3306,6 +3447,38 @@ function evaluateGuard(invocation, options) {
   }
   return { stage: "command-analysis", ...reported, decision: { kind: "allow" } };
 }
+function promoteDeclaredCommandTool(invocation, command, cwdArgument, paths) {
+  const requestedCwds = [
+    ...new Set((cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS).flatMap((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(invocation.input, key);
+      return descriptor ? [descriptor.value] : [];
+    }))
+  ];
+  const usableCwds = requestedCwds.filter((value) => typeof value === "string" && value.trim() !== "");
+  if (requestedCwds.length > 1 || usableCwds.length !== requestedCwds.length) {
+    return failedClosedEvaluation("command-validation", command);
+  }
+  const requestedCwd = usableCwds[0];
+  const executionCwd = requestedCwd === undefined ? invocation.context.configCwd : resolveCanonicalCwd(requestedCwd, invocation.context.configCwd, paths);
+  if (!executionCwd) {
+    const denial = import_denial2.createCwdDenial({
+      directory: "requested",
+      problem: "unusable",
+      cwd: requestedCwd ?? ""
+    });
+    return {
+      stage: "command-validation",
+      decision: {
+        kind: "deny",
+        reason: denial.reason,
+        ruleId: denial.ruleId,
+        intent: denial.intent,
+        evidence: { command, segment: command }
+      }
+    };
+  }
+  return createToolInvocation(invocation.toolName, invocation.input, { kind: "command", shell: "auto" }, { configCwd: invocation.context.configCwd, executionCwd }, command);
+}
 function resolveGitMetadataForCwds(cwds, environment) {
   const resolved = [
     ...new Set(cwds.filter((cwd) => typeof cwd === "string" && cwd !== ""))
@@ -3331,17 +3504,17 @@ function getDeclaredCommandProgram(facts) {
 }
 function getInputCommandOrFail(invocation) {
   try {
-    return import_tool_input4.getCommandFromToolInput(invocation.input);
+    return import_tool_input5.getCommandFromToolInput(invocation.input);
   } catch (cause) {
     const command = isCommandInvocation(invocation) ? invocation.command : undefined;
-    throw new GuardEvaluationError("policy-protection", failedClosedEvaluation("policy-protection", cause instanceof import_tool_input4.ToolInputLimitError ? undefined : command, cause), cause);
+    throw new GuardEvaluationError("policy-protection", failedClosedEvaluation("policy-protection", cause instanceof import_tool_input5.ToolInputLimitError ? undefined : command, cause), cause);
   }
 }
 function callDependency(stage, command, call) {
   try {
     return call();
   } catch (cause) {
-    throw new GuardEvaluationError(stage, failedClosedEvaluation(stage, cause instanceof import_tool_input4.ToolInputLimitError ? undefined : command, cause), cause);
+    throw new GuardEvaluationError(stage, failedClosedEvaluation(stage, cause instanceof import_tool_input5.ToolInputLimitError ? undefined : command, cause), cause);
   }
 }
 function failedClosedEvaluation(stage, command, cause) {
@@ -3359,124 +3532,4 @@ function failedClosedEvaluation(stage, command, cause) {
 }
 function isCommandInvocation(invocation) {
   return invocation.route.kind === "command";
-}
-// src/gate/invocation.ts
-function createToolInvocation(toolName, input, route, context, command) {
-  if (route.kind !== "command")
-    return { toolName, input, route, context };
-  return { toolName, input, route, context, command };
-}
-// src/gate/intake.ts
-var import_node_fs2 = require("node:fs");
-var import_node_path4 = require("node:path");
-var import_denial = require("./core.js");
-var import_canonicalization6 = require("./core.js");
-var import_tool_input5 = require("./core.js");
-function isUsableDirectory(path) {
-  try {
-    if (!import_node_fs2.statSync(path).isDirectory())
-      return false;
-    import_node_fs2.accessSync(path, import_node_fs2.constants.R_OK | import_node_fs2.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function resolveContainedCwd(requestedCwd, trustedRoots, paths) {
-  if (import_canonicalization6.isUnsupportedWindowsNamespacePath(requestedCwd))
-    return;
-  const roots = trustedRoots.flatMap((root) => canonicalDirectory(root, paths));
-  if (!roots[0])
-    return;
-  const requested = canonicalDirectory(import_node_path4.isAbsolute(requestedCwd) ? requestedCwd : import_node_path4.resolve(roots[0], requestedCwd), paths)[0];
-  if (!requested)
-    return;
-  return roots.some((root) => isSameOrInsidePath(requested, root)) ? requested : undefined;
-}
-function resolveCanonicalCwd(requestedCwd, baseCwd, paths) {
-  if (import_canonicalization6.isUnsupportedWindowsNamespacePath(requestedCwd))
-    return;
-  return canonicalDirectory(import_node_path4.isAbsolute(requestedCwd) ? requestedCwd : import_node_path4.resolve(baseCwd, requestedCwd), paths)[0];
-}
-function firstTrustedRoot(trustedRoots, paths) {
-  return trustedRoots.flatMap((root) => canonicalDirectory(root, paths))[0];
-}
-function cwdProblem(requestedCwd, baseCwd, paths) {
-  return resolveCanonicalCwd(requestedCwd, baseCwd, paths) ? "outside-workspace" : "unusable";
-}
-function canonicalDirectory(path, paths) {
-  const realPath = paths.realpath(path);
-  if (realPath === null)
-    return [];
-  return paths.isDirectory(realPath) ? [realPath] : [];
-}
-function isSameOrInsidePath(path, root) {
-  const rel = import_node_path4.relative(root, path);
-  return rel === "" || rel !== ".." && !rel.startsWith(`..${import_node_path4.sep}`) && !import_node_path4.isAbsolute(rel);
-}
-var HOOK_INPUT_MAX_BYTES = 8 * 1024 * 1024;
-async function readBoundedHookInput(input) {
-  const chunks = [];
-  let bytes = 0;
-  for await (const chunk of input) {
-    const buffer = typeof chunk === "string" ? Buffer.from(chunk, "utf-8") : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    bytes += buffer.byteLength;
-    if (bytes > HOOK_INPUT_MAX_BYTES) {
-      stopHookInput(input);
-      throw new Error("hook input byte limit exceeded");
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks, bytes).toString("utf-8");
-}
-function stopHookInput(input) {
-  const stop = input.destroy ?? input.cancel;
-  if (!stop)
-    return;
-  try {
-    Promise.resolve(stop.call(input)).catch(() => {});
-  } catch {}
-}
-function parseHookJson(inputText, outputDeny, strictReason) {
-  try {
-    return JSON.parse(inputText);
-  } catch {
-    outputDeny({ reason: strictReason });
-    return;
-  }
-}
-function getToolRoute(toolName, commandTools) {
-  const shell = commandTools.get(toolName);
-  return shell ? { kind: "command", shell } : { kind: import_tool_input5.getNonCommandToolInputKind(toolName) };
-}
-function resolveStandardHookContext(cwdInput, toolInput, toolName, outputDeny, paths, processCwd) {
-  const requestedCwd = cwdInput === undefined ? processCwd : cwdInput;
-  if (typeof requestedCwd !== "string" || requestedCwd.trim() === "") {
-    outputFailedClosed(outputDeny, toolInput, toolName);
-    return null;
-  }
-  const cwd = firstTrustedRoot([requestedCwd], paths);
-  if (cwd)
-    return { configCwd: cwd, executionCwd: cwd };
-  outputCwdDenial(outputDeny, toolInput, toolName, {
-    directory: "session",
-    problem: "unusable",
-    cwd: requestedCwd
-  });
-  return null;
-}
-function outputFailedClosed(outputDeny, toolInput, toolName) {
-  outputDeny(import_denial.createFailedClosedDenial({ command: readableCommand(toolInput), toolName }));
-}
-function outputCwdDenial(outputDeny, toolInput, toolName, cause) {
-  outputDeny(import_denial.createCwdDenial(cause, { command: readableCommand(toolInput), toolName }));
-}
-function readableCommand(toolInput) {
-  try {
-    return import_tool_input5.getCommandFromToolInput(toolInput);
-  } catch (error) {
-    if (!(error instanceof import_tool_input5.ToolInputLimitError))
-      throw error;
-    return;
-  }
 }
