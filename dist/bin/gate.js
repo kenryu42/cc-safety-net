@@ -784,8 +784,14 @@ var PATH_LIKE_KEYS = new Set([
   "targetfile",
   "target_file"
 ]);
-var GREP_KEYS = new Set([...PATH_LIKE_KEYS, "glob"]);
-var GLOB_KEYS = new Set([...GREP_KEYS, "folder", "pattern", "patterns"]);
+var GREP_KEYS = new Set([
+  ...PATH_LIKE_KEYS,
+  "dir_path",
+  "glob",
+  "glob_pattern",
+  "include_pattern"
+]);
+var GLOB_KEYS = new Set([...PATH_LIKE_KEYS, "folder", "glob", "pattern", "patterns"]);
 
 class StructuralShellSyntaxLimitError extends Error {
   name = "StructuralShellSyntaxLimitError";

@@ -40,6 +40,7 @@ var __export = (target, all) => {
 var exports_hook = {};
 __export(exports_hook, {
   ANTIGRAVITY_CLI_COMMAND_TOOLS: () => ANTIGRAVITY_CLI_COMMAND_TOOLS,
+  ANTIGRAVITY_TASK_TOOL: () => ANTIGRAVITY_TASK_TOOL,
   CLAUDE_CODE_COMMAND_TOOLS: () => CLAUDE_CODE_COMMAND_TOOLS,
   CODEX_COMMAND_TOOLS: () => CODEX_COMMAND_TOOLS,
   COPILOT_CLI_COMMAND_TOOLS: () => COPILOT_CLI_COMMAND_TOOLS,
@@ -290,7 +291,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.6.10";
+var AUDIT_LOG_VERSION = "2.6.11";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -510,8 +511,13 @@ var getToolCwdHookContext = (cwdKey, commandTools, options) => (input, toolInput
   });
   return null;
 };
-function outputHookDeny(createDenyOutput, denial) {
-  console.log(JSON.stringify(createDenyOutput(import_denial.formatDenial(denial))));
+function outputHookDeny(adapter, denial) {
+  const message = import_denial.formatDenial(denial);
+  console.log(JSON.stringify(adapter.createDenyOutput(message)));
+  if (adapter.denyExitCode === undefined)
+    return;
+  console.error(message);
+  process.exitCode = adapter.denyExitCode;
 }
 async function readHookInput(outputDeny) {
   let inputText;
@@ -659,7 +665,7 @@ function getHookAuditCwd(input) {
   return typeof commandCwd === "string" ? commandCwd : null;
 }
 async function runConfiguredHookAdapter(adapter) {
-  const outputDeny = (denial) => outputHookDeny(adapter.createDenyOutput, denial);
+  const outputDeny = (denial) => outputHookDeny(adapter, denial);
   const createAskOutput = adapter.createAskOutput;
   const outputAsk = createAskOutput ? (denial) => console.log(JSON.stringify(createAskOutput(import_denial.formatAskPrompt(denial)))) : undefined;
   const createAllowOutput = adapter.createAllowOutput;
@@ -679,6 +685,7 @@ function getAntigravityHooksPath(homeDir) {
 var ANTIGRAVITY_CLI_COMMAND_TOOLS = new Map([
   ["run_command", "auto"]
 ]);
+var ANTIGRAVITY_TASK_TOOL = "manage_task";
 var ANTIGRAVITY_PATH_KEYS = new Set([
   "absolutepath",
   "directorypath",
@@ -702,11 +709,17 @@ async function runAntigravityCliHook() {
     }),
     isSupported: () => true,
     getToolName: (input) => input.toolCall?.name,
-    getToolInput: (input, toolName) => ({
-      ok: true,
-      input: normalizeAntigravityToolArgs(input.toolCall?.args, toolName),
-      route: getAntigravityCliToolRoute(toolName)
-    }),
+    getToolInput: (input, toolName) => {
+      const sent = inputSentToTask(input.toolCall?.args, toolName);
+      if (sent === undefined) {
+        return {
+          ok: true,
+          input: normalizeAntigravityToolArgs(input.toolCall?.args, toolName),
+          route: getAntigravityCliToolRoute(toolName)
+        };
+      }
+      return { ok: true, input: { command: sent }, route: { kind: "command", shell: "auto" } };
+    },
     getContext: resolveAntigravityContext,
     getSessionId: (input) => input.conversationId
   });
@@ -801,6 +814,11 @@ function requestedWorkspacePaths(input) {
   if (input.workspacePaths === undefined)
     return [process.cwd()];
   return Array.isArray(input.workspacePaths) ? input.workspacePaths.filter((path) => typeof path === "string" && path.trim() !== "") : [];
+}
+function inputSentToTask(args, toolName) {
+  if (toolName !== ANTIGRAVITY_TASK_TOOL || args?.Action !== "send_input")
+    return;
+  return typeof args.Input === "string" && args.Input !== "" ? args.Input : undefined;
 }
 function normalizeAntigravityToolArgs(args, toolName) {
   if (!args)
@@ -1137,6 +1155,7 @@ async function runPreToolUseHook(options) {
   await runConfiguredHookAdapter({
     agent: options.agent,
     ...options.getAgent ? { getAgent: options.getAgent } : {},
+    denyExitCode: options.denyExitCode,
     createDenyOutput: (message) => ({
       hookSpecificOutput: {
         hookEventName: PRE_TOOL_USE_HOOK_EVENT,
@@ -1172,6 +1191,7 @@ var CLAUDE_CODE_COMMAND_TOOLS = new Map([
   ["PowerShell", "powershell"],
   ["Monitor", "posix"]
 ]);
+var PERMISSION_MODES_THAT_PROMPT_ON_ASK = ["default", "acceptEdits", "plan", "auto"];
 function getClaudeCodeToolRoute(toolName, toolInput, environment) {
   const isCopilotShell = toolName === "Bash" && environment.env.get("COPILOT_CLI") === "1";
   if (isCopilotShell)
@@ -1183,7 +1203,7 @@ async function runClaudeCodeHook() {
   await runPreToolUseHook({
     agent: "claude-code",
     getAgent: (input, environment) => detectClaudeShapeAgent(input.transcript_path, environment),
-    canPromptPerson: (input) => ["default", "acceptEdits", "plan"].includes(input.permission_mode ?? ""),
+    canPromptPerson: (input) => PERMISSION_MODES_THAT_PROMPT_ON_ASK.includes(input.permission_mode ?? ""),
     getToolRoute: getClaudeCodeToolRoute
   });
 }
@@ -1334,12 +1354,29 @@ function cursorBaseCwd(cwd) {
 var import_intake8 = require("./gate.js");
 var DEVIN_COMMAND_TOOLS = new Map([["exec", "auto"]]);
 var DEVIN_PROCESS_INPUT_TOOL = "write_to_process";
+var LINE_ENDING_KEY = /<(CR|LF)>/g;
+var LINE_EDITING_KEY = /<(ESC|BS|UP|DOWN|LEFT|RIGHT|C-[a-z])>/g;
+var KEY_TOKEN = /<[A-Za-z][A-Za-z0-9-]*>/;
 function textTypedIntoProcess(toolName, toolInput) {
   if (toolName !== DEVIN_PROCESS_INPUT_TOOL || typeof toolInput !== "object" || toolInput === null) {
     return;
   }
+  const keys = toolInput.bytes_input;
+  const lines = typeof keys === "string" ? keys.replace(LINE_ENDING_KEY, `
+`) : "";
+  const typedKeys = lines.replace(LINE_EDITING_KEY, "");
+  if (KEY_TOKEN.test(typedKeys))
+    return null;
   const text = toolInput.text_input;
-  return typeof text === "string" && text !== "" ? text : undefined;
+  const hasText = typeof text === "string" && text !== "";
+  const hasTypedKeys = typedKeys.trim() !== "";
+  if (hasText && hasTypedKeys)
+    return null;
+  if ((hasText || hasTypedKeys) && typedKeys !== lines)
+    return null;
+  if (hasText)
+    return text;
+  return hasTypedKeys ? typedKeys : undefined;
 }
 async function runDevinHook() {
   await runConfiguredHookAdapter({
@@ -1347,8 +1384,12 @@ async function runDevinHook() {
     createDenyOutput: (message) => ({ decision: "block", reason: message }),
     isSupported: (input) => input.hook_event_name === PRE_TOOL_USE_HOOK_EVENT,
     getToolName: (input) => input.tool_name,
-    getToolInput: (input, toolName) => {
+    getToolInput: (input, toolName, outputDeny) => {
       const typed = textTypedIntoProcess(toolName, input.tool_input);
+      if (typed === null) {
+        import_intake8.outputFailedClosed(outputDeny, input.tool_input, toolName);
+        return { ok: false };
+      }
       if (typed === undefined) {
         return {
           ok: true,
@@ -1358,7 +1399,10 @@ async function runDevinHook() {
       }
       return { ok: true, input: { command: typed }, route: { kind: "command", shell: "auto" } };
     },
-    getContext: (_input, ...call) => getStandardHookContext({}, ...call),
+    getContext: getToolCwdHookContext("workdir", DEVIN_COMMAND_TOOLS, {
+      emptyMeansSessionCwd: false,
+      allowOutsideSessionCwd: true
+    }),
     getSessionId: (input) => typeof input.session_id === "string" && input.session_id !== "" ? input.session_id : undefined
   });
 }
@@ -1369,17 +1413,37 @@ var DROID_COMMAND_TOOLS = new Map([["Execute", "auto"]]);
 async function runDroidHook() {
   await runPreToolUseHook({
     agent: "droid",
+    denyExitCode: 2,
     getToolRoute: (toolName) => import_intake9.getToolRoute(toolName, DROID_COMMAND_TOOLS)
   });
 }
 
 // src/hosts/gemini-cli/hook.ts
+var import_node_path5 = require("node:path");
 var import_intake10 = require("./gate.js");
 var GEMINI_CLI_COMMAND_TOOLS = new Map([
   ["run_shell_command", "auto"]
 ]);
 function getGeminiCliToolRoute(toolName) {
   return import_intake10.getToolRoute(toolName, GEMINI_CLI_COMMAND_TOOLS);
+}
+function getHostResolvedFilePath(filePath, targetDir, paths) {
+  const clean = filePath.replaceAll("\x00", "");
+  const exists = (path) => paths.realpath(import_node_path5.resolve(targetDir, path)) !== null;
+  const stripped = clean.slice(1).replace(/^[\\/]+/, "");
+  if (!clean.startsWith("@") || stripped === "" || exists(clean))
+    return clean;
+  if (/^@[\\/]/.test(clean))
+    return stripped;
+  return exists(`@${stripped.split(/[\\/]/)[0]}`) ? clean : stripped;
+}
+function withHostResolvedFilePath(input, paths) {
+  const toolInput = input.tool_input;
+  const filePath = toolInput?.file_path;
+  if (typeof filePath !== "string")
+    return toolInput;
+  const hostPath = getHostResolvedFilePath(filePath, typeof input.cwd === "string" ? input.cwd : process.cwd(), paths);
+  return hostPath === filePath ? toolInput : { ...toolInput, file_path: [filePath, hostPath] };
 }
 async function runGeminiCLIHook() {
   await runConfiguredHookAdapter({
@@ -1391,9 +1455,9 @@ async function runGeminiCLIHook() {
     }),
     isSupported: (input) => input.hook_event_name === GEMINI_CLI_HOOK_EVENT,
     getToolName: (input) => input.tool_name,
-    getToolInput: (input, toolName) => ({
+    getToolInput: (input, toolName, _outputDeny, environment) => ({
       ok: true,
-      input: input.tool_input,
+      input: withHostResolvedFilePath(input, environment.paths),
       route: getGeminiCliToolRoute(toolName)
     }),
     getContext: getToolCwdHookContext("dir_path", GEMINI_CLI_COMMAND_TOOLS, {
@@ -1408,7 +1472,14 @@ async function runGeminiCLIHook() {
 var import_intake11 = require("./gate.js");
 var GROK_BUILD_COMMAND_TOOLS = new Map([
   ["run_terminal_command", "auto"],
-  ["monitor", "auto"]
+  ["run_terminal_cmd", "auto"],
+  ["monitor", "auto"],
+  ["bash", "auto"],
+  ["Shell", "auto"]
+]);
+var GROK_BUILD_TOOL_CWD_KEYS = new Map([
+  ["bash", "workdir"],
+  ["Shell", "working_directory"]
 ]);
 function getGrokBuildToolRoute(toolName) {
   return import_intake11.getToolRoute(toolName, GROK_BUILD_COMMAND_TOOLS);
@@ -1460,7 +1531,25 @@ function resolveGrokBuildContext(input, toolInput, toolName, outputDeny, environ
     });
     return null;
   }
-  return { configCwd: base, executionCwd: base };
+  const cwdKey = GROK_BUILD_TOOL_CWD_KEYS.get(toolName);
+  const args = input.toolInput;
+  if (!cwdKey || !args || !Object.hasOwn(args, cwdKey)) {
+    return { configCwd: base, executionCwd: base };
+  }
+  const requestedCwd = args[cwdKey];
+  if (typeof requestedCwd !== "string" || requestedCwd.trim() === "") {
+    import_intake11.outputFailedClosed(outputDeny, toolInput, toolName);
+    return null;
+  }
+  const executionCwd = import_intake11.resolveContainedCwd(requestedCwd, [base, root], environment.paths);
+  if (executionCwd)
+    return { configCwd: base, executionCwd };
+  import_intake11.outputCwdDenial(outputDeny, toolInput, toolName, {
+    directory: "requested",
+    problem: import_intake11.cwdProblem(requestedCwd, base, environment.paths),
+    cwd: requestedCwd
+  });
+  return null;
 }
 function requestedGrokBuildRoot(input) {
   const root = input.workspaceRoot === undefined ? input.cwd : input.workspaceRoot;
@@ -1471,7 +1560,7 @@ function grokBuildBaseCwd(cwd) {
 }
 
 // src/hosts/hermes-agent/hook.ts
-var import_node_path5 = require("node:path");
+var import_node_path6 = require("node:path");
 var import_intake12 = require("./gate.js");
 var HERMES_AGENT_COMMAND_TOOLS = new Map([["terminal", "posix"]]);
 async function runHermesAgentHook() {
@@ -1502,7 +1591,7 @@ function resolveHermesAgentContext(input, toolInput, toolName, outputDeny, envir
     import_intake12.outputFailedClosed(outputDeny, toolInput, toolName);
     return null;
   }
-  const executionCwd = import_intake12.firstTrustedRoot([import_node_path5.resolve(context.configCwd, workdir)], environment.paths);
+  const executionCwd = import_intake12.firstTrustedRoot([import_node_path6.resolve(context.configCwd, workdir)], environment.paths);
   if (!executionCwd) {
     import_intake12.outputCwdDenial(outputDeny, toolInput, toolName, {
       directory: "requested",
