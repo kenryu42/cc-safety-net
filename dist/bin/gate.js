@@ -48,6 +48,7 @@ __export(exports_gate, {
   REASON_SECRET_PROTECTION: () => REASON_SECRET_PROTECTION,
   SHELL_STDIN_INTERPRETERS: () => SHELL_STDIN_INTERPRETERS,
   StructuralShellSyntaxLimitError: () => StructuralShellSyntaxLimitError,
+  UnparseableCommandError: () => UnparseableCommandError,
   createSemanticFactStore: () => createSemanticFactStore,
   createSemanticFacts: () => createSemanticFacts,
   createToolInvocation: () => createToolInvocation,
@@ -93,8 +94,8 @@ var import_snapshot = require("./core.js");
 var import_tool_input5 = require("./core.js");
 var import_analyzer = require("./analyzer.js");
 var import_dangerous_text = require("./analyzer.js");
-var import_reasons = require("./analyzer.js");
 var import_reasons2 = require("./analyzer.js");
+var import_reasons3 = require("./analyzer.js");
 
 // src/gate/guards/git-metadata-protection.ts
 var import_node_fs = require("node:fs");
@@ -766,6 +767,7 @@ function hasOutputProcessSubstitution(word) {
 var import_canonicalization2 = require("./core.js");
 var import_parse2 = require("./core-shell.js");
 var import_tool_input = require("./core.js");
+var import_reasons = require("./analyzer.js");
 var PATH_LIKE_KEYS = new Set([
   "absolutepath",
   "destination",
@@ -797,6 +799,13 @@ class StructuralShellSyntaxLimitError extends Error {
   name = "StructuralShellSyntaxLimitError";
   constructor() {
     super("Structural command analysis limit exceeded.");
+  }
+}
+
+class UnparseableCommandError extends Error {
+  name = "UnparseableCommandError";
+  constructor() {
+    super(import_reasons.REASON_STRICT_UNPARSEABLE);
   }
 }
 function createSemanticFacts(invocation) {
@@ -1757,7 +1766,7 @@ function extractCommandPathTargets(syntax, store, options, environment, cwd, bud
   if (syntax.status === "unclosed-quote")
     return [];
   if (syntax.status === "invalid")
-    throw new Error("Unable to parse command for secret protection");
+    throw new UnparseableCommandError;
   const targets = [
     ...syntax.assignmentFallbacks.map((target) => ({ target, cwd })),
     ...extractCommandSubstitutionPathTargets(projectSensitiveShellText(syntax.source, environment), store, options, environment, cwd, budget)
@@ -3328,7 +3337,7 @@ function evaluateGuard(hostInvocation, options) {
       ...promoted,
       decision: {
         kind: "deny",
-        reason: import_reasons2.REASON_RECURSION_LIMIT,
+        reason: import_reasons3.REASON_RECURSION_LIMIT,
         ruleId: "analysis.recursion-limit",
         intent: "stop_and_explain",
         evidence: { command: invocation.command, segment: invocation.command }
@@ -3341,7 +3350,7 @@ function evaluateGuard(hostInvocation, options) {
       ...promoted,
       decision: {
         kind: "deny",
-        reason: import_reasons2.REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
+        reason: import_reasons3.REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
         ruleId: "analysis.structural-limit",
         intent: "stop_and_explain"
       }
@@ -3435,15 +3444,12 @@ function evaluateGuard(hostInvocation, options) {
     environment: options.environment,
     protectedGitMetadata,
     effectiveCapabilities: modes.capabilities,
-    strict: modes.strict,
-    paranoidRm: modes.paranoidRm,
-    paranoidInterpreters: modes.paranoidInterpreters,
     worktreeMode: modes.worktreeMode,
     budget,
     ...options.trace ? { trace: options.trace } : {}
   }, getDeclaredCommandProgram(facts), facts.store), invocation.command, options.trace));
   if (analysis.decision) {
-    const unverifiedByStandardMode = !modes.strict && (analysis.decision.ruleId === "raw-text.dangerous-command" || analysis.decision.reason === import_reasons.REASON_DYNAMIC_SHELL_SOURCE && !BARE_SHELL_READING_STDIN.test(analysis.decision.evidence?.segment ?? "") && import_dangerous_text.dangerousInTextMatch(invocation.command) === null);
+    const unverifiedByStandardMode = !modes.strict && (analysis.decision.ruleId === "raw-text.dangerous-command" || analysis.decision.reason === import_reasons2.REASON_DYNAMIC_SHELL_SOURCE && !BARE_SHELL_READING_STDIN.test(analysis.decision.evidence?.segment ?? "") && import_dangerous_text.dangerousInTextMatch(invocation.command) === null);
     return {
       stage: "command-analysis",
       ...reported,
@@ -3524,13 +3530,12 @@ function callDependency(stage, command, call) {
   }
 }
 function failedClosedEvaluation(stage, command, cause) {
-  const isAnalysisLimit = cause instanceof import_budget2.AnalysisLimit || cause instanceof StructuralShellSyntaxLimitError;
+  const denial = cause instanceof UnparseableCommandError ? { reason: import_reasons3.REASON_STRICT_UNPARSEABLE, ruleId: "analysis.strict-unparseable" } : cause instanceof import_budget2.AnalysisLimit || cause instanceof StructuralShellSyntaxLimitError ? { reason: import_reasons3.REASON_COMMAND_ANALYSIS_LIMIT, ruleId: "analysis.limit" } : { reason: import_reasons3.REASON_SAFETY_NET_FAILED_CLOSED, ruleId: "analysis.failed-closed" };
   return {
     stage,
     decision: {
       kind: "deny",
-      reason: isAnalysisLimit ? import_reasons2.REASON_COMMAND_ANALYSIS_LIMIT : import_reasons2.REASON_SAFETY_NET_FAILED_CLOSED,
-      ruleId: isAnalysisLimit ? "analysis.limit" : "analysis.failed-closed",
+      ...denial,
       intent: "stop_and_explain",
       ...command ? { evidence: { command, segment: command } } : {}
     }

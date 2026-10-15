@@ -1708,7 +1708,7 @@ function readPolicyConfig(path, home) {
   if (!file.exists) {
     const embedded = globalThis.__CC_SAFETY_NET_EMBEDDED_POLICY__;
     if (!isRecord2(embedded))
-      return { policy: createEmptyPolicy(), errors: [] };
+      return { policy: normalizePolicyConfig(createDefaultGuiPolicy()), errors: [] };
     const gui = normalizeGuiPolicy(embedded, home);
     return {
       policy: normalizePolicyConfig(gui),
@@ -1719,7 +1719,7 @@ function readPolicyConfig(path, home) {
   }
   if (file.parsed === undefined) {
     return {
-      policy: createEmptyPolicy(),
+      policy: normalizePolicyConfig(createDefaultGuiPolicy()),
       errors: file.errors,
       ...file.fallback ? { fallback: file.fallback } : {}
     };
@@ -1745,21 +1745,6 @@ function resolveSecretDisabledRules(overrides) {
       ...entries.flatMap(([id, value]) => value === "off" ? [id] : [])
     ])
   ];
-}
-function createEmptyPolicy() {
-  return {
-    safety: {},
-    worktreeMode: false,
-    destructiveCommandProtectionEnabled: true,
-    destructiveCommandRuleOverrides: {},
-    destructiveCommandAllowPaths: [],
-    secretProtection: {
-      enabled: true,
-      disabledRules: resolveSecretDisabledRules({}),
-      denyPaths: [],
-      allowPaths: []
-    }
-  };
 }
 function normalizePolicyConfig(config) {
   return {
@@ -2848,17 +2833,12 @@ function formatIntegrationError(cause) {
 // src/core/policy/analysis-context.ts
 function resolveCommandAnalysisContext(options) {
   const capabilities = options.effectiveCapabilities;
-  const strict = options.strict ?? capabilities.fail_closed.enabled;
-  const paranoidRm = options.paranoidRm ?? capabilities.paranoid_rm.enabled;
-  const paranoidInterpreters = options.paranoidInterpreters ?? capabilities.paranoid_interpreters.enabled;
-  const effectiveCapabilities = {
-    fail_closed: applyAnalysisOverride(capabilities.fail_closed, options.strict, "strict"),
-    paranoid_rm: applyAnalysisOverride(capabilities.paranoid_rm, options.paranoidRm, "paranoidRm"),
-    paranoid_interpreters: applyAnalysisOverride(capabilities.paranoid_interpreters, options.paranoidInterpreters, "paranoidInterpreters")
-  };
+  const strict = capabilities.fail_closed.enabled;
+  const paranoidRm = capabilities.paranoid_rm.enabled;
+  const paranoidInterpreters = capabilities.paranoid_interpreters.enabled;
   return {
-    policy: createCommandAnalysisPolicy(options.policySnapshot.policy, effectiveCapabilities),
-    effectiveCapabilities,
+    policy: createCommandAnalysisPolicy(options.policySnapshot.policy, capabilities),
+    effectiveCapabilities: capabilities,
     effectiveLevel: deriveEffectiveSafetyLevel({
       failClosed: strict,
       paranoidRm,
@@ -2868,15 +2848,6 @@ function resolveCommandAnalysisContext(options) {
     paranoidRm,
     paranoidInterpreters,
     worktreeMode: options.worktreeMode ?? false
-  };
-}
-function applyAnalysisOverride(capability, override, option) {
-  if (override === undefined || override === capability.enabled)
-    return capability;
-  return {
-    enabled: override,
-    source: "capability_override",
-    sources: [...capability.sources, `analysis options.${option}`]
   };
 }
 // src/core/policy/scope-policy.ts

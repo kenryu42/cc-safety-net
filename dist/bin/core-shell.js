@@ -71,13 +71,12 @@ __export(exports_core_shell, {
   checkPolicyRuleMatch: () => checkPolicyRuleMatch,
   consumeHeredocBodies: () => consumeHeredocBodies,
   createCommandAccumulator: () => createCommandAccumulator,
+  createCommandWord: () => createCommandWord,
   createCommandWordParts: () => createCommandWordParts,
+  createParsedCommandWord: () => createParsedCommandWord,
   destructiveCommandMatch: () => destructiveCommandMatch,
   expandPosixLiteralBraceWord: () => expandPosixLiteralBraceWord,
   extractShortOpts: () => extractShortOpts,
-  freezeCommandProgram: () => freezeCommandProgram,
-  freezeCommandWord: () => freezeCommandWord,
-  freezeParsedCommandWord: () => freezeParsedCommandWord,
   getBasename: () => getBasename,
   getCalledCommandName: () => getCalledCommandName,
   getCustomRuleOptionsWithValues: () => getCustomRuleOptionsWithValues,
@@ -1938,25 +1937,6 @@ function createCommandAccumulator() {
     }
   };
 }
-function freezeCommandView(command) {
-  return Object.freeze({
-    ...command,
-    span: Object.freeze(command.span),
-    words: Object.freeze(command.words),
-    redirections: Object.freeze(command.redirections.map((redirection) => Object.freeze({
-      ...redirection,
-      span: Object.freeze(redirection.span),
-      ...redirection.heredoc ? {
-        heredoc: Object.freeze({
-          ...redirection.heredoc,
-          bodySpan: Object.freeze(redirection.heredoc.bodySpan),
-          terminatorSpan: Object.freeze(redirection.heredoc.terminatorSpan)
-        })
-      } : {}
-    }))),
-    nested: Object.freeze(command.nested.map((program) => freezeCommandProgram(program)))
-  });
-}
 function appendAccumulatedCommand(nodes, accumulator, command) {
   nodes.push(command);
   accumulator.reset();
@@ -1972,7 +1952,7 @@ function createCommandWordParts(source) {
     }
   };
 }
-function freezeCommandWord(word) {
+function createCommandWord(word) {
   const parts = word.parts ?? [
     {
       raw: word.raw,
@@ -1980,40 +1960,16 @@ function freezeCommandWord(word) {
       provenance: word.provenance
     }
   ];
-  return Object.freeze({
-    kind: "word",
-    ...word,
-    span: Object.freeze(word.span),
-    parts: Object.freeze(parts.map((part) => Object.freeze({ ...part, span: Object.freeze(part.span) })))
-  });
+  return { kind: "word", ...word, parts };
 }
-function freezeParsedCommandWord(source, start, end, text, provenance, quoted, parts) {
-  return freezeCommandWord({
+function createParsedCommandWord(source, start, end, text, provenance, quoted, parts) {
+  return createCommandWord({
     text,
     raw: source.slice(start, end),
     span: { start, end },
     provenance,
     quoted,
     ...parts ? { parts } : {}
-  });
-}
-function freezeCommandProgram(program) {
-  return Object.freeze({
-    ...program,
-    span: Object.freeze(program.span),
-    issues: Object.freeze(program.issues.map((issue) => Object.freeze({ ...issue }))),
-    nodes: Object.freeze(program.nodes.map((node) => {
-      if (node.kind === "command")
-        return freezeCommandView(node);
-      if (node.kind === "group" || node.kind === "function") {
-        return Object.freeze({
-          ...node,
-          span: Object.freeze(node.span),
-          body: freezeCommandProgram(node.body)
-        });
-      }
-      return Object.freeze({ ...node, span: Object.freeze(node.span) });
-    }))
   });
 }
 
@@ -2032,7 +1988,7 @@ var RESERVED_COMMAND_PREFIXES = new Set([
 function parsePosixCommand(source, limits) {
   const span = { start: 0, end: source.length };
   if (source.length > limits.maxInputLength) {
-    return freezeCommandProgram({
+    return {
       kind: "program",
       dialect: "posix",
       source,
@@ -2045,12 +2001,12 @@ function parsePosixCommand(source, limits) {
         }
       ],
       nodes: []
-    });
+    };
   }
   const parseState = { wordsUsed: 0, maxWords: limits.maxWords, quotedExpansionEnd: Infinity };
   const result = scanSequence(source, 0, source.length, limits, parseState, 0);
   const issues = substitutionFollowsQuotedExpansion(source, parseState.quotedExpansionEnd, result.nodes) ? [...result.issues, QUOTED_PARAMETER_EXPANSION_ISSUE] : result.issues;
-  return freezeCommandProgram({
+  return {
     kind: "program",
     dialect: "posix",
     source,
@@ -2058,7 +2014,7 @@ function parsePosixCommand(source, limits) {
     status: getParseStatus(issues, result.limited),
     issues,
     nodes: result.nodes
-  });
+  };
 }
 function scanSequence(source, start, end, limits, parseState, depth, closing) {
   const nodes = [];
@@ -2106,11 +2062,11 @@ function scanSequence(source, start, end, limits, parseState, depth, closing) {
 ` ? i + 2 : i + 1;
         const previous = nodes.at(-1);
         if (previous?.kind !== "connector" || !CONTINUATION_CONNECTORS.has(previous.operator)) {
-          nodes.push(Object.freeze({
+          nodes.push({
             kind: "connector",
             operator: source.slice(i, connectorEnd),
-            span: Object.freeze({ start: i, end: connectorEnd })
-          }));
+            span: { start: i, end: connectorEnd }
+          });
         }
         if (pendingHeredocs.length > 0) {
           const bodies = consumeHeredocBodies(source, connectorEnd, end, pendingHeredocs.splice(0));
@@ -2180,11 +2136,11 @@ function scanSequence(source, start, end, limits, parseState, depth, closing) {
           message: `connector ${connector} has no preceding command`
         });
       }
-      nodes.push(Object.freeze({
+      nodes.push({
         kind: "connector",
         operator: connector,
-        span: Object.freeze({ start: i, end: i + connector.length })
-      }));
+        span: { start: i, end: i + connector.length }
+      });
       i += connector.length;
       continue;
     }
@@ -2250,7 +2206,7 @@ function scanSequence(source, start, end, limits, parseState, depth, closing) {
       const heredocRedirect = redirect === "<<" || redirect === "<<-";
       const delimiter = heredocRedirect ? readHeredocDelimiter(source, targetStart, end) : undefined;
       const targetResult = delimiter ? {
-        word: freezeParsedCommandWord(source, targetStart, delimiter.next, delimiter.delimiter, "literal", delimiter.quoted),
+        word: createParsedCommandWord(source, targetStart, delimiter.next, delimiter.delimiter, "literal", delimiter.quoted),
         nested: [],
         issues: [],
         next: delimiter.next,
@@ -2470,7 +2426,7 @@ function readWord(source, start, end, limits, parseState, depth) {
     i++;
   }
   return {
-    word: freezeParsedCommandWord(source, start, i, text, provenance, quoted, provenance === "literal" ? undefined : derivePosixWordParts(source, start, i)),
+    word: createParsedCommandWord(source, start, i, text, provenance, quoted, provenance === "literal" ? undefined : derivePosixWordParts(source, start, i)),
     nested,
     issues,
     next: i,
@@ -2581,7 +2537,7 @@ function readSubstitution(source, start, end, limits, parseState, depth) {
       });
     }
     return {
-      program: freezeCommandProgram({
+      program: {
         kind: "program",
         dialect: "posix",
         source: source.slice(start + openLength, innerEnd),
@@ -2589,7 +2545,7 @@ function readSubstitution(source, start, end, limits, parseState, depth) {
         status: getParseStatus(arithmeticIssues, arithmeticLimited),
         issues: arithmeticIssues,
         nodes: arithmeticNodes
-      }),
+      },
       next,
       provenance: "arithmetic"
     };
@@ -2610,7 +2566,7 @@ function readSubstitution(source, start, end, limits, parseState, depth) {
   const escapeIssue = backtick && /\\[\\$`\n]/.test(source.slice(start + openLength, innerEnd)) ? [BACKTICK_ESCAPE_ISSUE] : [];
   const issues = [...inner.issues, ...substitutionIssue, ...contextIssue, ...escapeIssue];
   return {
-    program: freezeCommandProgram({
+    program: {
       kind: "program",
       dialect: "posix",
       source: source.slice(start + openLength, innerEnd),
@@ -2618,7 +2574,7 @@ function readSubstitution(source, start, end, limits, parseState, depth) {
       status: getParseStatus(issues, inner.limited),
       issues,
       nodes: inner.nodes
-    }),
+    },
     next,
     provenance: "command-substitution"
   };
@@ -3251,7 +3207,7 @@ function expandLiteralCommandWord(source, word, maxWords, maxDepth, maxExpandedL
   if (texts.some((text) => text === null))
     return;
   return {
-    words: texts.filter((text) => text !== null && text !== "").map((text) => freezeParsedCommandWord(source, word.span.start, word.span.end, text, "literal", false))
+    words: texts.filter((text) => text !== null && text !== "").map((text) => createParsedCommandWord(source, word.span.start, word.span.end, text, "literal", false))
   };
 }
 function expandBraceValues(raw, maxWords, maxExpansions, maxExpandedLength, ranges) {
@@ -3356,7 +3312,7 @@ function decodePosixLiteralWord(value, maxDepth) {
   return result.word.text.slice(1);
 }
 function limitedProgram(source, start, end, code) {
-  return freezeCommandProgram({
+  return {
     kind: "program",
     dialect: "posix",
     source: source.slice(start, end),
@@ -3364,7 +3320,7 @@ function limitedProgram(source, start, end, code) {
     status: "limited",
     issues: [{ code, message: "command structure exceeds parser limit" }],
     nodes: []
-  });
+  };
 }
 function limitedResult(nodes, issues, next, code, limit) {
   return {
@@ -3506,7 +3462,7 @@ function isPowerShellPathExpression(word) {
 function parsePowerShellCommand(source, limits) {
   const span = { start: 0, end: source.length };
   if (source.length > limits.maxInputLength) {
-    return freezeCommandProgram({
+    return {
       kind: "program",
       dialect: "powershell",
       source,
@@ -3519,10 +3475,10 @@ function parsePowerShellCommand(source, limits) {
         }
       ],
       nodes: []
-    });
+    };
   }
   const result = scanPowerShellSequence(source, 0, source.length, limits, 0);
-  return freezeCommandProgram({
+  return {
     kind: "program",
     dialect: "powershell",
     source,
@@ -3530,7 +3486,7 @@ function parsePowerShellCommand(source, limits) {
     status: getPowerShellParseStatus(result.issues, result.limited),
     issues: result.issues,
     nodes: result.nodes
-  });
+  };
 }
 function scanPowerShellSequence(source, start, end, limits, depth, closingBrace = false) {
   const nodes = [];
@@ -3608,7 +3564,7 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
       }
       const inner = scanPowerShellSequence(source, i + 1, end, limits, depth + 1, true);
       const bodyEnd = inner.closed ? inner.next - 1 : inner.next;
-      const body = freezeCommandProgram({
+      const body = {
         kind: "program",
         dialect: "powershell",
         source: source.slice(i + 1, bodyEnd),
@@ -3616,13 +3572,13 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
         status: inner.limited ? "limited" : inner.issues.length > 0 ? "partial" : "complete",
         issues: inner.issues,
         nodes: inner.nodes
-      });
-      nodes.push(Object.freeze({
+      };
+      nodes.push({
         kind: "group",
         style: "brace",
-        span: Object.freeze({ start: i, end: inner.next }),
+        span: { start: i, end: inner.next },
         body
-      }));
+      });
       issues.push(...inner.issues);
       if (!inner.closed) {
         issues.push({
@@ -3649,12 +3605,12 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
         targetStart++;
       const target = targetStart < end ? readPowerShellWord(source, targetStart, end, limits, depth) : undefined;
       const redirectEnd = target?.next ?? operatorEnd;
-      accumulator.redirections.push(Object.freeze({
+      accumulator.redirections.push({
         kind: "redirection",
         operator: source.slice(i, operatorEnd),
-        span: Object.freeze({ start: i, end: redirectEnd }),
+        span: { start: i, end: redirectEnd },
         ...target ? { target: target.word } : {}
-      }));
+      });
       if (target) {
         issues.push(...target.issues);
         accumulator.nested.push(...target.nested);
@@ -3667,7 +3623,7 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
     }
     if (char === ",") {
       accumulator.start = accumulator.start === -1 ? i : accumulator.start;
-      accumulator.words.push(freezeCommandWord({
+      accumulator.words.push(createCommandWord({
         text: ",",
         raw: ",",
         span: { start: i, end: i + 1 },
@@ -3811,7 +3767,7 @@ function readPowerShellWord(source, start, end, limits, depth) {
     i++;
   }
   return {
-    word: freezeParsedCommandWord(source, start, i, text, provenance, quoted, provenance === "literal" ? undefined : derivePowerShellWordParts(source, start, i)),
+    word: createParsedCommandWord(source, start, i, text, provenance, quoted, provenance === "literal" ? undefined : derivePowerShellWordParts(source, start, i)),
     next: i,
     issues,
     nested,
@@ -3825,7 +3781,7 @@ function readPowerShellSubexpression(source, start, end, limits, depth) {
   const next = close === -1 ? end : close + 1;
   if (depth >= limits.maxDepth) {
     return {
-      program: freezeCommandProgram({
+      program: {
         kind: "program",
         dialect: "powershell",
         source: source.slice(start + 2, innerEnd),
@@ -3833,7 +3789,7 @@ function readPowerShellSubexpression(source, start, end, limits, depth) {
         status: "limited",
         issues: [depthLimitIssue(limits.maxDepth)],
         nodes: []
-      }),
+      },
       next
     };
   }
@@ -3845,7 +3801,7 @@ function readPowerShellSubexpression(source, start, end, limits, depth) {
     }
   ] : [];
   return {
-    program: freezeCommandProgram({
+    program: {
       kind: "program",
       dialect: "powershell",
       source: source.slice(start + 2, innerEnd),
@@ -3853,7 +3809,7 @@ function readPowerShellSubexpression(source, start, end, limits, depth) {
       status: inner.limited ? "limited" : inner.issues.length + unclosedIssue.length > 0 ? "partial" : "complete",
       issues: [...inner.issues, ...unclosedIssue],
       nodes: inner.nodes
-    }),
+    },
     next
   };
 }
@@ -4047,11 +4003,11 @@ function getPowerShellParseStatus(issues, limited) {
   return issues.length > 0 ? "partial" : "complete";
 }
 function connector(source, start, end) {
-  return Object.freeze({
+  return {
     kind: "connector",
     operator: source.slice(start, end),
-    span: Object.freeze({ start, end })
-  });
+    span: { start, end }
+  };
 }
 
 // src/core/shell/parse.ts
@@ -4068,10 +4024,10 @@ function* walkCommandViews(program) {
   }
 }
 function projectCommandViews(program) {
-  return Object.freeze([...walkCommandViews(program)]);
+  return [...walkCommandViews(program)];
 }
 function projectSegmentWords(program) {
-  return Object.freeze(projectCommandViews(program).map((view) => Object.freeze(view.words.map((word) => word.text))));
+  return projectCommandViews(program).map((view) => view.words.map((word) => word.text));
 }
 function parseSimpleWords(source) {
   const program = parseCommand(source, "posix");

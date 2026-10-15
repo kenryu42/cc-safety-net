@@ -173,7 +173,6 @@ function reportCommandArgErrors(errors) {
 // src/hosts/antigravity-cli/hook.ts
 var import_node_path3 = require("node:path");
 var import_budget2 = require("./core.js");
-var import_denial2 = require("./core.js");
 var import_canonicalization = require("./core.js");
 var import_tool_input3 = require("./core.js");
 var import_intake2 = require("./gate.js");
@@ -291,7 +290,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.6.11";
+var AUDIT_LOG_VERSION = "2.6.12";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -482,6 +481,8 @@ function classifyAuditError(cause) {
     return "tool-input-limit";
   if (cause instanceof import_semantic_facts.StructuralShellSyntaxLimitError)
     return "structural-shell-syntax-limit";
+  if (cause instanceof import_semantic_facts.UnparseableCommandError)
+    return "unparseable-command";
   return "unexpected-error";
 }
 
@@ -727,7 +728,7 @@ async function runAntigravityCliHook() {
 function resolveAntigravityContext(input, toolInput, toolName, outputDeny, environment) {
   const workspacePaths = requestedWorkspacePaths(input);
   if (!workspacePaths[0]) {
-    outputAntigravityCwdDeny(outputDeny, toolInput, toolName);
+    import_intake2.outputFailedClosed(outputDeny, toolInput, toolName);
     return null;
   }
   const configRoots = workspacePaths.flatMap((root) => {
@@ -735,7 +736,7 @@ function resolveAntigravityContext(input, toolInput, toolName, outputDeny, envir
     return canonicalRoot ? [canonicalRoot] : [];
   });
   if (!configRoots[0]) {
-    outputAntigravityCwdDeny(outputDeny, toolInput, toolName, {
+    import_intake2.outputCwdDenial(outputDeny, toolInput, toolName, {
       directory: "session",
       problem: "unusable",
       cwd: workspacePaths[0]
@@ -748,16 +749,16 @@ function resolveAntigravityContext(input, toolInput, toolName, outputDeny, envir
       targetRoot = resolveAntigravityTargetRoot(toolInput, toolName, configRoots, environment.paths);
     } catch (error) {
       if (error instanceof import_tool_input3.ToolInputLimitError) {
-        outputAntigravityCwdDeny(outputDeny, undefined, toolName);
+        import_intake2.outputFailedClosed(outputDeny, undefined, toolName);
         return null;
       }
       if (!(error instanceof import_budget2.AnalysisLimit))
         throw error;
-      outputAntigravityCwdDeny(outputDeny, toolInput, toolName);
+      import_intake2.outputFailedClosed(outputDeny, toolInput, toolName);
       return null;
     }
     if (!targetRoot) {
-      outputAntigravityCwdDeny(outputDeny, toolInput, toolName);
+      import_intake2.outputFailedClosed(outputDeny, toolInput, toolName);
       return null;
     }
     return { configCwd: targetRoot, executionCwd: targetRoot };
@@ -768,19 +769,19 @@ function resolveAntigravityContext(input, toolInput, toolName, outputDeny, envir
   }
   const cwd = args.Cwd;
   if (typeof cwd !== "string" || cwd.trim() === "") {
-    outputAntigravityCwdDeny(outputDeny, toolInput, toolName);
+    import_intake2.outputFailedClosed(outputDeny, toolInput, toolName);
     return null;
   }
   const containedCwd = import_intake2.resolveContainedCwd(cwd, configRoots, environment.paths);
   if (containedCwd) {
     const configCwd = mostSpecificContainingRoot(containedCwd, configRoots);
     if (!configCwd) {
-      outputAntigravityCwdDeny(outputDeny, toolInput, toolName);
+      import_intake2.outputFailedClosed(outputDeny, toolInput, toolName);
       return null;
     }
     return { configCwd, executionCwd: containedCwd };
   }
-  outputAntigravityCwdDeny(outputDeny, toolInput, toolName, {
+  import_intake2.outputCwdDenial(outputDeny, toolInput, toolName, {
     directory: "requested",
     problem: import_intake2.cwdProblem(cwd, configRoots[0], environment.paths),
     cwd
@@ -804,11 +805,6 @@ function resolveAntigravityTargetRoot(toolInput, toolName, configRoots, paths) {
 }
 function mostSpecificContainingRoot(path, roots) {
   return roots.filter((root) => import_intake2.isSameOrInsidePath(path, root)).reduce((best, root) => root.length > best.length ? root : best, "") || null;
-}
-function outputAntigravityCwdDeny(outputDeny, toolInput, toolName, cause) {
-  const command = toolInput && typeof toolInput === "object" ? toolInput.command : undefined;
-  const evidence = { command: typeof command === "string" ? command : undefined, toolName };
-  outputDeny(cause ? import_denial2.createCwdDenial(cause, evidence) : import_denial2.createFailedClosedDenial(evidence));
 }
 function requestedWorkspacePaths(input) {
   if (input.workspacePaths === undefined)
@@ -844,15 +840,12 @@ var catalog = [
   {
     id: "antigravity-cli",
     displayName: "Antigravity CLI",
-    doctorOrder: 3,
     runtime: {
-      order: 1,
       flags: ["-ac", "--agy-cli"],
       description: "Run as Antigravity CLI PreToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 2,
       flag: "--agy-cli",
       artifactKind: "hook config",
       probeCommand: ["agy", "--version"]
@@ -861,9 +854,7 @@ var catalog = [
   {
     id: "claude-code",
     displayName: "Claude Code",
-    doctorOrder: 1,
     runtime: {
-      order: 2,
       displayName: "Coding CLI",
       flags: ["-cc", "--coding-cli"],
       legacyFlags: ["--claude-code"],
@@ -871,7 +862,6 @@ var catalog = [
       legacyTopLevelFlags: ["-cc", "--claude-code"]
     },
     install: {
-      order: 3,
       flag: "--claude-code",
       artifactKind: "plugin",
       probeCommand: ["claude", "--version"]
@@ -880,15 +870,12 @@ var catalog = [
   {
     id: "codex",
     displayName: "Codex",
-    doctorOrder: 4,
     runtime: {
-      order: 3,
       flags: ["-cx", "--codex"],
       description: "Run as a Codex PreToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 4,
       flag: "--codex",
       artifactKind: "plugin",
       probeCommand: ["codex", "--version"]
@@ -897,15 +884,12 @@ var catalog = [
   {
     id: "copilot-cli",
     displayName: "GitHub Copilot CLI",
-    doctorOrder: 10,
     runtime: {
-      order: 8,
       flags: ["-cp", "--copilot-cli"],
       description: "Run as GitHub Copilot CLI PreToolUse hook",
       legacyTopLevelFlags: ["-cp", "--copilot-cli"]
     },
     install: {
-      order: 10,
       flag: "--copilot-cli",
       artifactKind: "plugin",
       probeCommand: ["copilot", "--binary-version"]
@@ -914,15 +898,12 @@ var catalog = [
   {
     id: "gemini-cli",
     displayName: "Gemini CLI",
-    doctorOrder: 9,
     runtime: {
-      order: 7,
       flags: ["-gc", "--gemini-cli"],
       description: "Run as Gemini CLI BeforeTool hook",
       legacyTopLevelFlags: ["-gc", "--gemini-cli"]
     },
     install: {
-      order: 9,
       flag: "--gemini-cli",
       artifactKind: "extension",
       probeCommand: ["gemini", "--version"]
@@ -931,15 +912,12 @@ var catalog = [
   {
     id: "grok-build",
     displayName: "Grok Build",
-    doctorOrder: 11,
     runtime: {
-      order: 9,
       flags: ["-gb", "--grok-build"],
       description: "Run as Grok Build PreToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 11,
       flag: "--grok-build",
       artifactKind: "hook config",
       probeCommand: ["grok", "--version"]
@@ -948,15 +926,12 @@ var catalog = [
   {
     id: "hermes-agent",
     displayName: "Hermes Agent",
-    doctorOrder: 12,
     runtime: {
-      order: 10,
       flags: ["-ha", "--hermes-agent"],
       description: "Run as Hermes Agent pre_tool_call hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 12,
       flag: "--hermes-agent",
       artifactKind: "plugin",
       probeCommand: ["hermes", "--version"]
@@ -965,15 +940,12 @@ var catalog = [
   {
     id: "kimi-code",
     displayName: "Kimi Code",
-    doctorOrder: 13,
     runtime: {
-      order: 11,
       flags: ["-kc", "--kimi-code"],
       description: "Run as Kimi Code PreToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 13,
       flag: "--kimi-code",
       artifactKind: "hook config",
       probeCommand: ["kimi", "--version"]
@@ -982,9 +954,7 @@ var catalog = [
   {
     id: "openclaw",
     displayName: "OpenClaw",
-    doctorOrder: 14,
     install: {
-      order: 14,
       flag: "--openclaw",
       artifactKind: "plugin",
       probeCommand: ["openclaw", "--version"]
@@ -993,9 +963,7 @@ var catalog = [
   {
     id: "opencode",
     displayName: "OpenCode",
-    doctorOrder: 15,
     install: {
-      order: 15,
       flag: "--opencode",
       artifactKind: "plugin",
       probeCommand: ["opencode", "--version"]
@@ -1004,9 +972,7 @@ var catalog = [
   {
     id: "pi",
     displayName: "Pi",
-    doctorOrder: 16,
     install: {
-      order: 16,
       flag: "--pi",
       artifactKind: "package",
       probeCommand: ["pi", "--version"]
@@ -1015,15 +981,12 @@ var catalog = [
   {
     id: "cursor",
     displayName: "Cursor",
-    doctorOrder: 5,
     runtime: {
-      order: 4,
       flags: ["-cu", "--cursor"],
       description: "Run as Cursor preToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 5,
       flag: "--cursor",
       artifactKind: "hook config",
       probeCommand: ["cursor", "--version"]
@@ -1032,9 +995,7 @@ var catalog = [
   {
     id: "deepseek-harness",
     displayName: "DeepSeek Harness",
-    doctorOrder: 6,
     install: {
-      order: 6,
       flag: "--deepseek-harness",
       artifactKind: "package",
       probeCommand: DEEPSEEK_HARNESS_NPM_PROBE
@@ -1043,15 +1004,12 @@ var catalog = [
   {
     id: "devin",
     displayName: "Devin CLI",
-    doctorOrder: 7,
     runtime: {
-      order: 5,
       flags: ["-dv", "--devin"],
       description: "Run as Devin CLI PreToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 7,
       flag: "--devin",
       artifactKind: "hook config",
       probeCommand: ["devin", "--version"]
@@ -1060,15 +1018,12 @@ var catalog = [
   {
     id: "droid",
     displayName: "Factory Droid",
-    doctorOrder: 8,
     runtime: {
-      order: 6,
       flags: ["-fd", "--droid"],
       description: "Run as Factory Droid PreToolUse hook",
       legacyTopLevelFlags: []
     },
     install: {
-      order: 8,
       flag: "--droid",
       artifactKind: "hook config",
       probeCommand: ["droid", "--version"]
@@ -1077,17 +1032,16 @@ var catalog = [
   {
     id: "amp",
     displayName: "Amp Code",
-    doctorOrder: 2,
     install: {
-      order: 1,
       flag: "--amp",
       artifactKind: "plugin",
       probeCommand: ["amp", "--version"]
     }
   }
 ];
-var doctorIntegrationOrder = catalog.slice().sort((a, b) => a.doctorOrder - b.doctorOrder).map((integration) => integration.id);
-var runtimeHookIntegrationMetadata = catalog.filter((integration) => ("runtime" in integration)).slice().sort((a, b) => a.runtime.order - b.runtime.order).map((integration) => ({
+var catalogByDisplayName = catalog.slice().sort((a, b) => a.displayName.localeCompare(b.displayName, "en"));
+var doctorIntegrationOrder = catalogByDisplayName.map((integration) => integration.id).sort((a, b) => Number(b === "claude-code") - Number(a === "claude-code"));
+var runtimeHookIntegrationMetadata = catalogByDisplayName.filter((integration) => ("runtime" in integration)).map((integration) => ({
   id: integration.id,
   displayName: "displayName" in integration.runtime ? integration.runtime.displayName : integration.displayName,
   flags: integration.runtime.flags,
@@ -1095,7 +1049,10 @@ var runtimeHookIntegrationMetadata = catalog.filter((integration) => ("runtime" 
   description: integration.runtime.description,
   legacyTopLevelFlags: integration.runtime.legacyTopLevelFlags
 }));
-var installIntegrationMetadata = catalog.slice().sort((a, b) => a.install.order - b.install.order).map((integration) => ({ id: integration.id, ...integration.install })).map(({ order: _, ...integration }) => integration);
+var installIntegrationMetadata = catalogByDisplayName.map((integration) => ({
+  id: integration.id,
+  ...integration.install
+}));
 var integrationDisplayNames = Object.fromEntries(catalog.map((integration) => [integration.id, integration.displayName]));
 function getIntegrationDisplayName(id) {
   return integrationDisplayNames[id];
@@ -1560,7 +1517,6 @@ function grokBuildBaseCwd(cwd) {
 }
 
 // src/hosts/hermes-agent/hook.ts
-var import_node_path6 = require("node:path");
 var import_intake12 = require("./gate.js");
 var HERMES_AGENT_COMMAND_TOOLS = new Map([["terminal", "posix"]]);
 async function runHermesAgentHook() {
@@ -1574,33 +1530,12 @@ async function runHermesAgentHook() {
       input: input.tool_input,
       route: import_intake12.getToolRoute(toolName, HERMES_AGENT_COMMAND_TOOLS)
     }),
-    getContext: resolveHermesAgentContext,
+    getContext: getToolCwdHookContext("workdir", HERMES_AGENT_COMMAND_TOOLS, {
+      emptyMeansSessionCwd: false,
+      allowOutsideSessionCwd: true
+    }),
     getSessionId: (input) => input.session_id
   });
-}
-function resolveHermesAgentContext(input, toolInput, toolName, outputDeny, environment) {
-  const context = getStandardHookContext(input, toolInput, toolName, outputDeny, environment);
-  if (!context)
-    return null;
-  if (!toolInput || typeof toolInput !== "object" || Array.isArray(toolInput))
-    return context;
-  if (!Object.hasOwn(toolInput, "workdir"))
-    return context;
-  const workdir = toolInput.workdir;
-  if (typeof workdir !== "string" || workdir.trim() === "") {
-    import_intake12.outputFailedClosed(outputDeny, toolInput, toolName);
-    return null;
-  }
-  const executionCwd = import_intake12.firstTrustedRoot([import_node_path6.resolve(context.configCwd, workdir)], environment.paths);
-  if (!executionCwd) {
-    import_intake12.outputCwdDenial(outputDeny, toolInput, toolName, {
-      directory: "requested",
-      problem: "unusable",
-      cwd: workdir
-    });
-    return null;
-  }
-  return { ...context, executionCwd };
 }
 
 // src/hosts/kimi-code/hook.ts

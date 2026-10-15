@@ -42,12 +42,12 @@ __export(exports_analyzer, {
   ANALYZER_RULES: () => ANALYZER_RULES,
   AWK_EXECUTABLE_SOURCE_SELECTORS: () => AWK_EXECUTABLE_SOURCE_SELECTORS,
   REASON_AWK_SYSTEM_DYNAMIC: () => REASON_AWK_SYSTEM_DYNAMIC,
-  REASON_COMMAND_ANALYSIS_LIMIT: () => import_budget5.REASON_COMMAND_ANALYSIS_LIMIT,
+  REASON_COMMAND_ANALYSIS_LIMIT: () => import_budget2.REASON_COMMAND_ANALYSIS_LIMIT,
   REASON_DYNAMIC_SHELL_SOURCE: () => REASON_DYNAMIC_SHELL_SOURCE,
   REASON_INTERPRETER_BLOCKED: () => REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS: () => REASON_INTERPRETER_DANGEROUS,
-  REASON_RECURSION_LIMIT: () => import_budget5.REASON_RECURSION_LIMIT,
-  REASON_SAFETY_NET_FAILED_CLOSED: () => import_budget5.REASON_SAFETY_NET_FAILED_CLOSED,
+  REASON_RECURSION_LIMIT: () => import_budget2.REASON_RECURSION_LIMIT,
+  REASON_SAFETY_NET_FAILED_CLOSED: () => import_budget2.REASON_SAFETY_NET_FAILED_CLOSED,
   REASON_STRICT_UNPARSEABLE: () => REASON_STRICT_UNPARSEABLE,
   REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT: () => REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
   REASON_UNSUPPORTED_HEREDOC_SYNTAX: () => REASON_UNSUPPORTED_HEREDOC_SYNTAX,
@@ -555,6 +555,19 @@ function stripWrappersWithInfo(tokens, environment, cwd, inheritedEnvAssignments
     envSplitValues: stripped.envSplitValues
   };
 }
+// src/gate/analyzer/reasons.ts
+var import_budget2 = require("./core.js");
+var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Simplify the command and retry, or ask the user to verify.";
+var REASON_UNSUPPORTED_HEREDOC_SYNTAX = "Unsupported heredoc syntax";
+var REASON_DYNAMIC_SHELL_SOURCE = "shell execution source cannot be verified safely. Use a literal command string or ask the user to run it manually.";
+function dynamicShellSourceMatch() {
+  return {
+    id: "analysis.dynamic-shell-source",
+    reason: REASON_DYNAMIC_SHELL_SOURCE,
+    intent: "stop_and_explain"
+  };
+}
+var REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT = "CC Safety Net could not validate the command because its structure exceeds safe analysis limits.";
 // src/gate/analyzer/xargs.ts
 var import_effective_rules3 = require("./core.js");
 var import_transparent_wrappers3 = require("./core.js");
@@ -1043,7 +1056,7 @@ function findAwkRegexEnd(code, index) {
 }
 
 // src/gate/analyzer/child-command.ts
-var import_budget2 = require("./core.js");
+var import_budget3 = require("./core.js");
 var import_tokens3 = require("./core-shell.js");
 
 // src/gate/analyzer/transparent-wrappers.ts
@@ -1237,13 +1250,13 @@ function* normalizeChildCommandCandidates(tokens, environment, wrapperCwd, cwd, 
   if (wrapperInfo.envSplitValues) {
     const spliced = reconstructEnvSplitWords(wrapperInfo.envSplitValues, childTokens);
     if (!spliced)
-      throw new import_budget2.AnalysisLimit("derivedCommandShape");
+      throw new import_budget3.AnalysisLimit("derivedCommandShape");
     reserveChildNormalization(budget);
     yield* normalizeChildCommandCandidates(spliced, environment, childWrapperCwd, cwd, wrapperEnvAssignments, envAssignments, policy, budget, wrappedByTransparent);
     return;
   }
   if (isStandardCommandWrapper(childTokens[0] ?? "")) {
-    throw new import_budget2.AnalysisLimit("wrapperPeelIterations");
+    throw new import_budget3.AnalysisLimit("wrapperPeelIterations");
   }
   const transparentWrapper = unwrapTransparentWrapper(childTokens, policy);
   if (transparentWrapper) {
@@ -1275,8 +1288,8 @@ function normalizedChildCommand(tokens, wrapperCwd, cwd, wrapperEnvAssignments, 
   };
 }
 function reserveChildNormalization(budget) {
-  if (budget.iterations >= import_budget2.LIMITS.wrapperPeelIterations.cap) {
-    throw new import_budget2.AnalysisLimit("wrapperPeelIterations");
+  if (budget.iterations >= import_budget3.LIMITS.wrapperPeelIterations.cap) {
+    throw new import_budget3.AnalysisLimit("wrapperPeelIterations");
   }
   budget.iterations++;
 }
@@ -2000,7 +2013,7 @@ function substitutionAddsExecutableSource(existing, candidates, substituted) {
 }
 
 // src/gate/analyzer/find.ts
-var import_budget4 = require("./core.js");
+var import_budget5 = require("./core.js");
 var import_tmpdir2 = require("./core.js");
 var import_effective_rules2 = require("./core.js");
 var import_constants3 = require("./core-shell.js");
@@ -2010,7 +2023,7 @@ var import_git_metadata_protection2 = require("./gate.js");
 
 // src/gate/analyzer/recursive-delete-targets.ts
 var import_node_path2 = require("node:path");
-var import_budget3 = require("./core.js");
+var import_budget4 = require("./core.js");
 var import_canonicalization = require("./core.js");
 var import_tmpdir = require("./core.js");
 var import_allow_paths = require("./core.js");
@@ -2071,7 +2084,7 @@ function isRawOffsetDoubleQuoted(raw, offset) {
 function createRecursiveDeleteTargetContext(options) {
   const homeDir = options.environment.home;
   const paths = options.environment.paths;
-  const budget = options.budget ?? import_budget3.createBudget();
+  const budget = options.budget ?? import_budget4.createBudget();
   return {
     anchoredCwd: options.originalCwd ?? options.cwd ?? null,
     resolvedCwd: options.cwd ?? null,
@@ -2600,7 +2613,7 @@ function analyzeFindMatch(words, context) {
     if (match)
       return match;
   }
-  const budget = context.budget ?? import_budget4.createBudget();
+  const budget = context.budget ?? import_budget5.createBudget();
   let i = 0;
   while (i < tokens.length) {
     const token = tokens[i];
@@ -3955,22 +3968,6 @@ function getUnsetOperandsStart(tokens, commandIndex) {
 }
 // src/gate/analyzer/powershell-wrapper.ts
 var import_destructive7 = require("./core-shell.js");
-
-// src/gate/analyzer/reasons.ts
-var import_budget5 = require("./core.js");
-var REASON_STRICT_UNPARSEABLE = "Command could not be safely analyzed (strict mode). Simplify the command and retry, or ask the user to verify.";
-var REASON_UNSUPPORTED_HEREDOC_SYNTAX = "Unsupported heredoc syntax";
-var REASON_DYNAMIC_SHELL_SOURCE = "shell execution source cannot be verified safely. Use a literal command string or ask the user to run it manually.";
-function dynamicShellSourceMatch() {
-  return {
-    id: "analysis.dynamic-shell-source",
-    reason: REASON_DYNAMIC_SHELL_SOURCE,
-    intent: "stop_and_explain"
-  };
-}
-var REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT = "CC Safety Net could not validate the command because its structure exceeds safe analysis limits.";
-
-// src/gate/analyzer/powershell-wrapper.ts
 var REASON_NESTED_RECURSIVE_DELETE_UNREAD = "Recursive delete handed to powershell or pwsh in a form CC Safety Net does not read is blocked: pass the script as a single -Command with literal paths, after only -NoProfile, -NonInteractive, -NoLogo, or -ExecutionPolicy.";
 var READ_SWITCH = /^-(?:noprofile|nop|noninteractive|noni|nologo)$/i;
 var READ_EXECUTION_POLICY = /^-(?:executionpolicy|ep)$/i;
