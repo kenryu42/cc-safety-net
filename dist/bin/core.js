@@ -130,9 +130,11 @@ __export(exports_core, {
   getUserPolicyPath: () => getUserPolicyPath,
   getUserRulesConfigPath: () => getUserRulesConfigPath,
   getUserRulesDir: () => getUserRulesDir,
+  gitDirectoryRedirects: () => gitDirectoryRedirects,
   hasUnsafeTmpdirWordSplitting: () => hasUnsafeTmpdirWordSplitting,
   isBlockIntent: () => isBlockIntent,
   isGitConfigEnvName: () => isGitConfigEnvName,
+  isGitDirectory: () => isGitDirectory,
   isGitHubRef: () => isGitHubRef,
   isGitHubRepositorySource: () => isGitHubRepositorySource,
   isGitHubRulebookSource: () => isGitHubRulebookSource,
@@ -1929,7 +1931,7 @@ function resolveLinkedWorktreeTargets(cwd) {
     if (!worktreeGitdirBacklinkMatches(targets.gitDir, dotGitPath)) {
       return null;
     }
-    return worktreeConfigMatchesRoot(targets.gitDir, import_node_path4.dirname(dotGitPath)) ? { gitDir: targets.gitDir, commonDir: targets.commonDir } : null;
+    return gitDirectoriesRedirect(targets.gitDir, targets.commonDir) ? null : { gitDir: targets.gitDir, commonDir: targets.commonDir };
   } catch {
     return null;
   }
@@ -1971,20 +1973,12 @@ function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
   const rawBacklink = readWorktreeGitdirBacklink(gitDir);
   return rawBacklink === null ? false : gitDirPathReferenceMatches(gitDir, rawBacklink, dotGitPath);
 }
-function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
-  const configuredWorktree = readWorktreeConfigWorktree(gitDir);
-  return configuredWorktree === null ? true : gitDirPathReferenceMatches(gitDir, configuredWorktree, worktreeRoot);
-}
 function readWorktreeGitdirBacklink(gitDir) {
   const backlinkPath = import_node_path4.join(gitDir, "gitdir");
   if (!import_node_fs2.existsSync(backlinkPath))
     return null;
   const rawBacklink = import_node_fs2.readFileSync(backlinkPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
   return rawBacklink === "" ? null : rawBacklink;
-}
-function readWorktreeConfigWorktree(gitDir) {
-  const configWorktreePath = import_node_path4.join(gitDir, "config.worktree");
-  return import_node_fs2.existsSync(configWorktreePath) ? readCoreWorktree(configWorktreePath) : null;
 }
 function gitDirPathReferenceMatches(gitDir, target, expectedPath) {
   try {
@@ -2008,46 +2002,62 @@ function normalizePathForComparison(path) {
   const trimmed = normalized.length > 1 && normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
   return process.platform === "win32" ? trimmed.toLowerCase() : trimmed;
 }
-function readCoreWorktree(configPath) {
-  const content = import_node_fs2.readFileSync(configPath, "utf-8");
-  let inCore = false;
-  let configuredWorktree = null;
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
-      continue;
-    }
-    if (trimmed.startsWith("[")) {
-      inCore = /^\[core\]$/i.test(trimmed);
-      continue;
-    }
-    if (!inCore) {
-      continue;
-    }
-    const match = trimmed.match(/^worktree\s*=\s*(.*)$/i);
-    if (match) {
-      configuredWorktree = parseGitConfigValue(match[1] ?? "");
-    }
+function isGitDirectory(gitDir) {
+  try {
+    import_node_fs2.accessSync(import_node_path4.join(gitDir, "objects"), import_node_fs2.constants.X_OK);
+    import_node_fs2.accessSync(import_node_path4.join(gitDir, "refs"), import_node_fs2.constants.X_OK);
+    return /^(?:ref:[\t\n\r ]*refs\/|[0-9a-fA-F]{40})/.test(readRegularFile(import_node_path4.join(gitDir, "HEAD")));
+  } catch {
+    return false;
   }
-  return configuredWorktree;
 }
-function parseGitConfigValue(value) {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith('"') || !trimmed.endsWith('"')) {
-    return trimmed;
+function gitDirectoryRedirects(gitDir) {
+  return import_node_fs2.existsSync(import_node_path4.join(gitDir, "commondir")) || gitDirectoriesRedirect(gitDir, gitDir);
+}
+function gitDirectoriesRedirect(gitDir, commonDir) {
+  return [import_node_path4.join(commonDir, "config"), import_node_path4.join(gitDir, "config.worktree")].some(configNamesWorktree) || holdsSymbolicLinkOrFifo(gitDir);
+}
+var GIT_FILE_SIZE_LIMIT = 1048576;
+function readRegularFile(path) {
+  const stat = import_node_fs2.statSync(path);
+  if (!stat.isFile() || stat.size > GIT_FILE_SIZE_LIMIT) {
+    throw new Error(`${path} is not a regular file within ${GIT_FILE_SIZE_LIMIT} bytes`);
   }
-  return unescapeDoubleQuotedGitConfigValue(trimmed.slice(1, -1));
+  return import_node_fs2.readFileSync(path, "utf-8");
 }
-var GIT_CONFIG_ESCAPES = {
-  "\\": "\\",
-  '"': '"',
-  n: `
-`,
-  t: "\t",
-  b: "\b"
-};
-function unescapeDoubleQuotedGitConfigValue(value) {
-  return value.replace(/\\(.?)/gs, (sequence, next) => next === "" ? sequence : GIT_CONFIG_ESCAPES[next] ?? sequence);
+function configNamesWorktree(configPath) {
+  try {
+    return /(?:^|[\s\]])worktree\s*=/i.test(readRegularFile(configPath));
+  } catch (error) {
+    return error.code !== "ENOENT";
+  }
+}
+var GIT_DIRECTORY_ENTRY_BUDGET = 1e4;
+function holdsSymbolicLinkOrFifo(gitDir) {
+  const pending = [gitDir];
+  let visited = 0;
+  try {
+    while (pending.length > 0) {
+      const directory = pending.pop();
+      const dir = import_node_fs2.opendirSync(directory);
+      try {
+        for (let entry = dir.readSync();entry !== null; entry = dir.readSync()) {
+          visited++;
+          if (entry.isSymbolicLink() || entry.isFIFO() || visited > GIT_DIRECTORY_ENTRY_BUDGET) {
+            return true;
+          }
+          const isObjectStore = directory === gitDir && entry.name === "objects";
+          if (entry.isDirectory() && !isObjectStore)
+            pending.push(import_node_path4.join(directory, entry.name));
+        }
+      } finally {
+        dir.closeSync();
+      }
+    }
+    return false;
+  } catch (error) {
+    return error.code !== "ENOENT";
+  }
 }
 function findDotGit(cwd) {
   try {
@@ -3582,10 +3592,13 @@ function fakeRealpath(entries, path, seen) {
 function withGitFacts(base, overrides = {}) {
   const metadata = new Map;
   const facts = new Map;
+  const redirects = new Map;
   const environment = {
     ...base,
     gitMetadata: (cwd) => memoized(metadata, cwd, () => resolveProtectedGitMetadata(cwd, environment)),
     worktreeFacts: (cwd) => memoized(facts, cwd, () => resolveWorktreeFacts(cwd)),
+    isGitDirectory,
+    gitDirectoryRedirects: (gitDir) => memoized(redirects, gitDir, () => gitDirectoryRedirects(gitDir)),
     ...overrides
   };
   return environment;

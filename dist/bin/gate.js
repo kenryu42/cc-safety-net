@@ -63,6 +63,7 @@ __export(exports_gate, {
   findSensitiveTargetInSemanticFacts: () => findSensitiveTargetInSemanticFacts,
   firstTrustedRoot: () => firstTrustedRoot,
   getCommandSyntaxFact: () => getCommandSyntaxFact,
+  getExecutedCommandSyntaxFact: () => getExecutedCommandSyntaxFact,
   getToolRoute: () => getToolRoute,
   isAssignmentOnlySegment: () => isAssignmentOnlySegment,
   isCodeInterpreter: () => isCodeInterpreter,
@@ -854,6 +855,9 @@ function createSemanticFacts(invocation) {
 function getCommandSyntaxFact(facts, usage) {
   return facts.commands.find((fact) => fact.usages.includes(usage));
 }
+function getExecutedCommandSyntaxFact(facts) {
+  return getCommandSyntaxFact(facts, "declared-command") ?? getCommandSyntaxFact(facts, "input-candidate");
+}
 function projectSensitiveShellText(source, environment) {
   if (!source.includes("$"))
     return source;
@@ -885,7 +889,8 @@ function createSemanticFactStore() {
   };
   return {
     getShellSyntax,
-    getCommandProgram
+    getCommandProgram,
+    readsAutoAsPowerShell: () => [...commandPrograms].some(([key, program]) => key.startsWith("auto\x00") && program.dialect === "powershell")
   };
 }
 function extractDirectPathFacts(invocation) {
@@ -959,7 +964,7 @@ function findGitMetadataMutationTargetInSemanticFacts(facts, metadata, environme
   }
   if (facts.invocation.route.kind !== "command")
     return null;
-  const command = getCommandSyntaxFact(facts, "input-candidate");
+  const command = getExecutedCommandSyntaxFact(facts);
   if (!command)
     return null;
   const target = findProtectedPathMutationInCommand(command.shell, cwd, environment, budget, {
@@ -1155,7 +1160,7 @@ function isSafetyNetEntrypoint(value) {
 // src/gate/guards/policy-apply-protection.ts
 var REASON_POLICY_APPLY_PROTECTION = "Only the user may apply a policy proposal, because it rewrites the configuration CC Safety Net enforces. Ask them to run `cc-safety-net policy apply <file>` themselves in a terminal; you can run `cc-safety-net policy check <file>` to show them what it would change.";
 function findPolicyApplyInvocationInSemanticFacts(facts, environment, budget) {
-  const command = getCommandSyntaxFact(facts, "input-candidate");
+  const command = getExecutedCommandSyntaxFact(facts);
   if (!command)
     return null;
   const target = findProtectedPathMutationInCommand(command.shell, facts.invocation.context.executionCwd, environment, budget, {
@@ -1209,7 +1214,7 @@ function findPolicyConfigMutationTargetInSemanticFacts(facts, environment, budge
   if (facts.invocation.route.kind === "patch") {
     return findPolicyConfigMutationTargetInPaths(facts.paths, false, facts.invocation.context.executionCwd, identity, environment, budget);
   }
-  const command = getCommandSyntaxFact(facts, "input-candidate");
+  const command = getExecutedCommandSyntaxFact(facts);
   if (facts.invocation.route.kind === "command") {
     return command ? findPolicyConfigMutationTargetInCommand(command.shell, facts.invocation.context.executionCwd, identity, environment, budget) : null;
   }
@@ -1680,7 +1685,7 @@ function findSensitiveTargetInSemanticFacts(facts, config, environment, budget, 
   return refinedTarget?.ruleId !== "secret.deny-path" && isMetadataOnlyCommand(facts, environment) ? null : refinedTarget;
 }
 function isMetadataOnlyCommand(facts, environment) {
-  const syntax = getCommandSyntaxFact(facts, "input-candidate") ?? getCommandSyntaxFact(facts, "declared-command");
+  const syntax = getExecutedCommandSyntaxFact(facts);
   if (!syntax)
     return false;
   if (syntax.program.nodes.some((node) => node.kind === "command" && node.nested.length > 0)) {
@@ -1751,7 +1756,7 @@ function extractToolPathTargets(facts, environment, budget, options = {}) {
   if (route !== "command" && route !== "unknown") {
     return facts.paths.map((target) => ({ target, cwd }));
   }
-  const command = getCommandSyntaxFact(facts, "input-candidate");
+  const command = getExecutedCommandSyntaxFact(facts);
   return [
     ...command ? extractCommandPathTargets(command.shell, facts.store, options, environment, cwd, budget, isPowerShell(command)) : [],
     ...route === "unknown" ? facts.paths.map((target) => ({ target, cwd })) : []
@@ -3448,8 +3453,34 @@ function evaluateGuard(hostInvocation, options) {
     budget,
     ...options.trace ? { trace: options.trace } : {}
   }, getDeclaredCommandProgram(facts), facts.store), invocation.command, options.trace));
+  const readAsPosix = invocation.route.shell === "auto" && facts.store.readsAutoAsPowerShell() ? () => {
+    const posixTrace = options.trace?.branch();
+    const evaluation = {
+      ...evaluateGuard({ ...invocation, route: { kind: "command", shell: "posix" } }, {
+        ...options,
+        ...posixTrace ? { trace: posixTrace.trace } : {},
+        dependencies: {
+          ...options.dependencies,
+          loadPolicySnapshot: () => snapshot,
+          resolveGitMetadata: () => protectedGitMetadata
+        }
+      }),
+      ...promoted
+    };
+    return {
+      decision: evaluation.decision,
+      withItsTrace: () => {
+        posixTrace?.adopt();
+        return evaluation;
+      }
+    };
+  } : undefined;
   if (analysis.decision) {
     const unverifiedByStandardMode = !modes.strict && (analysis.decision.ruleId === "raw-text.dangerous-command" || analysis.decision.reason === import_reasons2.REASON_DYNAMIC_SHELL_SOURCE && !BARE_SHELL_READING_STDIN.test(analysis.decision.evidence?.segment ?? "") && import_dangerous_text.dangerousInTextMatch(invocation.command) === null);
+    const posixReading = unverifiedByStandardMode ? readAsPosix?.() : undefined;
+    if (posixReading?.decision.kind === "deny" && !posixReading.decision.unverifiedByStandardMode) {
+      return posixReading.withItsTrace();
+    }
     return {
       stage: "command-analysis",
       ...reported,
@@ -3457,7 +3488,11 @@ function evaluateGuard(hostInvocation, options) {
       decision: unverifiedByStandardMode ? { ...analysis.decision, unverifiedByStandardMode: true } : analysis.decision
     };
   }
-  return { stage: "command-analysis", ...reported, decision: { kind: "allow" } };
+  return readAsPosix?.().withItsTrace() ?? {
+    stage: "command-analysis",
+    ...reported,
+    decision: { kind: "allow" }
+  };
 }
 function promoteDeclaredCommandTool(invocation, command, cwdArgument, paths) {
   const requestedCwds = [

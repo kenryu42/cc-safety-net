@@ -106,6 +106,7 @@ __export(exports_analyzer, {
   hasLinearInterpreterDanger: () => hasLinearInterpreterDanger,
   hasRecursiveForceFlags: () => hasRecursiveForceFlags,
   hasRecursiveOption: () => hasRecursiveOption,
+  hasUnidentifiableCommandString: () => hasUnidentifiableCommandString,
   hasWordBoundaryAfter: () => hasWordBoundaryAfter,
   isAsciiWord: () => isAsciiWord,
   isDangerousRootOrHomeTarget: () => isDangerousRootOrHomeTarget,
@@ -2468,28 +2469,29 @@ function extractDashCArg(tokens) {
   }
   return null;
 }
+var SYNTAX_CHECK_OPTION = /^-[cn]+$/;
 function isShellSyntaxCheck(tokens) {
-  const shell = import_tokens4.getBasename(tokens[0] ?? "").toLowerCase();
-  if (shell === "zsh" || shell === "ksh")
-    return import_tokens4.parseShellArgv(tokens).syntaxCheck;
-  let enabled = false;
-  for (const token of tokens.slice(1)) {
-    if (token === "--")
-      return enabled;
-    if (token.startsWith("+") && !token.startsWith("++")) {
-      if (token.slice(1).includes("n"))
-        enabled = false;
-      continue;
-    }
-    if (!token.startsWith("-") || token.startsWith("--"))
-      return enabled;
-    const flags = token.slice(1);
-    if (flags.includes("n"))
-      enabled = true;
-    if (flags.includes("c"))
-      return enabled;
+  const words = tokens.slice(1);
+  if (words.some((word) => /^[-+]./.test(word) && word !== "--" && !SYNTAX_CHECK_OPTION.test(word))) {
+    return false;
   }
-  return enabled;
+  const optionEnd = words.findIndex((word) => !SYNTAX_CHECK_OPTION.test(word));
+  return words.slice(0, optionEnd === -1 ? undefined : optionEnd).some((word) => word.includes("n"));
+}
+var OPTION_CLUSTER_TAKING_NO_VALUE = /^-[abcefhiklmnprstuvx]+$/;
+function hasUnidentifiableCommandString(tokens) {
+  const operandIndex = tokens.findIndex((word, index) => index > 0 && !OPTION_CLUSTER_TAKING_NO_VALUE.test(word));
+  const words = operandIndex === -1 || /^[-+]/.test(tokens[operandIndex] ?? "") ? tokens.slice(1) : tokens.slice(1, operandIndex + 1);
+  if (words.some((word) => word.startsWith("+")))
+    return true;
+  const dashCClusters = words.filter((word) => word.startsWith("-") && !word.startsWith("--") && word.includes("c"));
+  if (dashCClusters.length === 0)
+    return false;
+  const command = extractDashCArg(tokens);
+  if (command === null) {
+    return words.some((word) => word.startsWith("-") && !dashCClusters.includes(word));
+  }
+  return /^[-+]/.test(command) || dashCClusters.some((word) => /[oO]/.test(word));
 }
 function getCommandStringAfterDashC(tokens, dashCIndex, allowDashCommand) {
   if (tokens[dashCIndex + 1] === "--")

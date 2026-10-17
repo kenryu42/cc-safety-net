@@ -154,7 +154,6 @@ function scanShellShortOptions(shell, token, nextToken, mode) {
   let followingValues = 0;
   let commandSelected = false;
   let stdinMode = false;
-  let syntaxCheck = false;
   for (let optionIndex = 1;optionIndex < token.length; optionIndex++) {
     const option = token[optionIndex];
     if (option === undefined)
@@ -177,8 +176,6 @@ function scanShellShortOptions(shell, token, nextToken, mode) {
       interactive = token[0] === "-";
     if (mode === "argv" && token[0] === "-" && option === "c")
       commandSelected = true;
-    if (mode === "argv" && option === "n")
-      syntaxCheck = token[0] === "-";
     if (mode === "argv" && option === "s")
       stdinMode = token[0] === "-";
     if (!SHELL_SHORT_VALUE_OPTIONS[shell]?.includes(option))
@@ -187,13 +184,12 @@ function scanShellShortOptions(shell, token, nextToken, mode) {
       followingValues++;
     break;
   }
-  return { interactive, followingValues, commandSelected, stdinMode, syntaxCheck };
+  return { interactive, followingValues, commandSelected, stdinMode };
 }
 function parseShellArgv(tokens) {
   const shell = getBasename(tokens[0] ?? "").toLowerCase();
   let commandSelected = false;
   let stdinMode = false;
-  let syntaxCheck = false;
   for (let index = 1;index < tokens.length; index++) {
     const token = tokens[index];
     if (token === undefined)
@@ -204,8 +200,7 @@ function parseShellArgv(tokens) {
         command: commandIndex === null ? null : tokens[commandIndex] ?? null,
         commandIndex,
         scriptIndex: !commandSelected && !stdinMode && tokens[index + 1] !== undefined ? index + 1 : null,
-        readsStdinAsCommands: !commandSelected && (stdinMode || tokens[index + 1] === undefined),
-        syntaxCheck
+        readsStdinAsCommands: !commandSelected && (stdinMode || tokens[index + 1] === undefined)
       };
     }
     if (token === "-" || token[0] !== "-" && token[0] !== "+") {
@@ -213,8 +208,7 @@ function parseShellArgv(tokens) {
         command: commandSelected ? token : null,
         commandIndex: commandSelected ? index : null,
         scriptIndex: !commandSelected && !stdinMode && token !== "-" ? index : null,
-        readsStdinAsCommands: !commandSelected && (stdinMode || token === "-"),
-        syntaxCheck
+        readsStdinAsCommands: !commandSelected && (stdinMode || token === "-")
       };
     }
     if (token.startsWith("--")) {
@@ -226,8 +220,6 @@ function parseShellArgv(tokens) {
     const shortScan = scanShellShortOptions(shell, token, tokens[index + 1], "argv");
     if (shortScan.commandSelected)
       commandSelected = true;
-    if (shortScan.syntaxCheck)
-      syntaxCheck = true;
     if (shortScan.stdinMode)
       stdinMode = true;
     index += shortScan.followingValues;
@@ -236,8 +228,7 @@ function parseShellArgv(tokens) {
     command: null,
     commandIndex: null,
     scriptIndex: null,
-    readsStdinAsCommands: !commandSelected,
-    syntaxCheck
+    readsStdinAsCommands: !commandSelected
   };
 }
 function advanceQuoteScanState(char, state) {
@@ -2005,7 +1996,11 @@ function parsePosixCommand(source, limits) {
   }
   const parseState = { wordsUsed: 0, maxWords: limits.maxWords, quotedExpansionEnd: Infinity };
   const result = scanSequence(source, 0, source.length, limits, parseState, 0);
-  const issues = substitutionFollowsQuotedExpansion(source, parseState.quotedExpansionEnd, result.nodes) ? [...result.issues, QUOTED_PARAMETER_EXPANSION_ISSUE] : result.issues;
+  const issues = [
+    ...result.issues,
+    ...substitutionFollowsQuotedExpansion(source, parseState.quotedExpansionEnd, result.nodes) ? [QUOTED_PARAMETER_EXPANSION_ISSUE] : [],
+    ...CONTROL_BLANK.test(source) ? [UNSUPPORTED_BLANK_ISSUE] : []
+  ];
   return {
     kind: "program",
     dialect: "posix",
@@ -2055,6 +2050,8 @@ function scanSequence(source, start, end, limits, parseState, depth, closing) {
       };
     }
     if (isShellWhitespace(char)) {
+      if (char.charCodeAt(0) > 127)
+        issues.push(UNSUPPORTED_BLANK_ISSUE);
       if (char === `
 ` || char === "\r") {
         flushCommand();
@@ -2821,6 +2818,11 @@ var UNCLOSED_PARAMETER_EXPANSION_ISSUE = Object.freeze({
   code: "unclosed-parameter-expansion",
   message: "${ parameter expansion is not closed"
 });
+var CONTROL_BLANK = /[\v\f\r]/;
+var UNSUPPORTED_BLANK_ISSUE = Object.freeze({
+  code: "unsupported-blank",
+  message: "a vertical tab, form feed, carriage return or Unicode space is part of a word in bash and zsh, not a separator"
+});
 var QUOTED_PARAMETER_EXPANSION_ISSUE = Object.freeze({
   code: "unsupported-parameter-expansion",
   message: "a line continuation inside ${ }, or a quote or backslash inside ${ } with a substitution in or after it, cannot be analyzed"
@@ -2991,7 +2993,7 @@ function readFixedBaseEscape(source, start, end, base, maxLength, fallbackNext) 
 function getParseStatus(issues, limited = false) {
   if (limited)
     return "limited";
-  if (issues.some((issue) => issue.code === "invalid-ansi-c-code-point" || issue.code === "missing-heredoc-delimiter" || issue.code === "ambiguous-heredoc-delimiter" || issue.code === "unterminated-heredoc" || issue.code === "unsupported-heredoc-context" || issue.code === "unsupported-function-substitution" || issue.code === "unsupported-backtick-escape" || issue.code === "unclosed-parameter-expansion" || issue.code === "unsupported-parameter-expansion")) {
+  if (issues.some((issue) => issue.code === "invalid-ansi-c-code-point" || issue.code === "missing-heredoc-delimiter" || issue.code === "ambiguous-heredoc-delimiter" || issue.code === "unterminated-heredoc" || issue.code === "unsupported-heredoc-context" || issue.code === "unsupported-function-substitution" || issue.code === "unsupported-backtick-escape" || issue.code === "unclosed-parameter-expansion" || issue.code === "unsupported-parameter-expansion" || issue.code === "unsupported-blank")) {
     return "invalid";
   }
   return issues.length > 0 ? "partial" : "complete";

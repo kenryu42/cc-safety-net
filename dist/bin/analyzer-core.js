@@ -62,6 +62,7 @@ __export(exports_analyzer_core, {
   extractShellScriptOperandSource: () => extractShellScriptOperandSource,
   extractShellStdinSource: () => extractShellStdinSource,
   extractTrapSource: () => extractTrapSource,
+  findGitRepositoryRoot: () => findGitRepositoryRoot,
   getGitConfigEntries: () => getGitConfigEntries,
   getGitEnvValue: () => getGitEnvValue,
   getGitExecutionContext: () => getGitExecutionContext,
@@ -76,6 +77,7 @@ __export(exports_analyzer_core, {
   isTrackedGitEnvName: () => isTrackedGitEnvName,
   isVerifiableLocalGeneratorSource: () => isVerifiableLocalGeneratorSource,
   matchesGitLongOption: () => matchesGitLongOption,
+  mayRedirectGitRepository: () => mayRedirectGitRepository,
   parseGitContextAppendEnvAssignment: () => parseGitContextAppendEnvAssignment,
   quoteShellWord: () => quoteShellWord,
   resolveCwdAfterCommandView: () => resolveCwdAfterCommandView,
@@ -168,6 +170,7 @@ var import_parse = require("./core-shell.js");
 var import_tokens = require("./core-shell.js");
 var import_command_words = require("./analyzer.js");
 var import_shell_git_env = require("./analyzer.js");
+var import_shell_wrappers = require("./analyzer.js");
 var import_transparent_wrappers = require("./analyzer.js");
 var import_wrapper_prelude = require("./analyzer.js");
 var NO_SOURCE = { kind: "none" };
@@ -484,9 +487,10 @@ function wordsHaveDynamicExecutionCarrier(words, dynamicNames) {
   }
   if (import_constants.SHELL_WRAPPERS.has(normalizedHead)) {
     const shellWords = words.slice(headIndex);
-    const parsed = import_tokens.parseShellArgv(shellWords.map((word) => word.text));
+    const shellTokens = shellWords.map((word) => word.text);
+    const parsed = import_tokens.parseShellArgv(shellTokens);
     const sourceIndex = parsed.commandIndex ?? parsed.scriptIndex;
-    return !parsed.syntaxCheck && sourceIndex !== null && wordSuppliesDynamicExecutionSource(shellWords[sourceIndex], dynamicNames);
+    return !import_shell_wrappers.isShellSyntaxCheck(shellTokens) && sourceIndex !== null && wordSuppliesDynamicExecutionSource(shellWords[sourceIndex], dynamicNames);
   }
   const carrierIndex = findCarrierCommandIndex(words, headIndex, dynamicNames);
   if (carrierIndex === null)
@@ -1280,7 +1284,7 @@ var import_transparent_wrappers4 = require("./core.js");
 var import_constants5 = require("./core-shell.js");
 var import_destructive4 = require("./core-shell.js");
 var import_model = require("./core-shell.js");
-var import_parse6 = require("./core-shell.js");
+var import_parse7 = require("./core-shell.js");
 var import_tokens6 = require("./core-shell.js");
 var import_command_words5 = require("./analyzer.js");
 var import_dangerous_text2 = require("./analyzer.js");
@@ -1295,7 +1299,7 @@ var import_reasons2 = require("./analyzer.js");
 var import_budget = require("./core.js");
 var import_canonicalization = require("./core.js");
 var import_chdir2 = require("./core.js");
-var import_tmpdir2 = require("./core.js");
+var import_tmpdir3 = require("./core.js");
 var import_effective_rules2 = require("./core.js");
 var import_transparent_wrappers2 = require("./core.js");
 var import_constants4 = require("./core-shell.js");
@@ -1317,13 +1321,14 @@ var import_command_words3 = require("./analyzer.js");
 
 // src/gate/analyzer/git/temp-root-relaxation.ts
 var import_node_path2 = require("node:path");
-var import_tmpdir = require("./core.js");
+var import_tmpdir2 = require("./core.js");
 var import_command_words2 = require("./analyzer.js");
 var import_shell_git_env2 = require("./analyzer.js");
 
 // src/gate/analyzer/git/worktree.ts
 var import_node_path = require("node:path");
 var import_chdir = require("./core.js");
+var import_tmpdir = require("./core.js");
 var import_constants3 = require("./core-shell.js");
 function hasGitContextEnvOverride(env, envAssignments) {
   return GIT_CONTEXT_ENV_OVERRIDES.some((name) => envAssignments?.has(name) || env.has(name));
@@ -1393,6 +1398,24 @@ function resolveGitCwd(baseCwd, target, paths) {
     return null;
   }
 }
+function findGitRepositoryRoot(directory, paths) {
+  if (paths.entryKind(import_node_path.join(directory, ".git")) !== "missing")
+    return directory;
+  const parent = import_node_path.dirname(directory);
+  return parent === directory ? null : findGitRepositoryRoot(parent, paths);
+}
+function mayRedirectGitRepository(tokens, gitCwd, root, environment, envAssignments) {
+  const paths = environment.paths;
+  const gitDirectory = import_node_path.join(root, ".git");
+  const ownsItsGitDirectory = paths.isDirectory(gitDirectory);
+  const gitFallsThroughToAncestors = ownsItsGitDirectory && !environment.isGitDirectory(gitDirectory);
+  const discoveryVisits = selfAndAncestors(gitCwd).filter((directory) => gitFallsThroughToAncestors || directory !== root && import_tmpdir.isPathOrSubpath(directory, root));
+  return getGitConfigEntries(tokens, environment.env, envAssignments).entries.some((entry) => entry.key.toLowerCase() === "core.worktree") || discoveryVisits.some((directory) => paths.entryKind(import_node_path.join(directory, "HEAD")) !== "missing" || directory !== root && paths.entryKind(import_node_path.join(directory, ".git")) !== "missing") || ownsItsGitDirectory && environment.gitDirectoryRedirects(gitDirectory);
+}
+function selfAndAncestors(directory) {
+  const parent = import_node_path.dirname(directory);
+  return parent === directory ? [directory] : [directory, ...selfAndAncestors(parent)];
+}
 
 // src/gate/analyzer/git/worktree-relaxation.ts
 var import_tokens4 = require("./core-shell.js");
@@ -1405,7 +1428,8 @@ function getGitWorktreeRelaxationForMatch(tokens, match, options) {
     return null;
   }
   const facts = options.environment.worktreeFacts(context.gitCwd);
-  if (!facts) {
+  const root = findGitRepositoryRoot(context.gitCwd, options.environment.paths);
+  if (!facts || root === null || mayRedirectGitRepository(tokens, context.gitCwd, root, options.environment, options.envAssignments)) {
     return null;
   }
   if (isNonRelaxableLocalDiscard(tokens, options, facts)) {
@@ -1515,16 +1539,17 @@ function getGitTempRootRelaxationForMatch(words, match, options) {
     return null;
   }
   const subject = match.id === "git.worktree-remove-force" ? worktreeRemoveOperand(words, options.shellAssignments, paths) : findGitRepositoryRoot(context.gitCwd, paths);
-  if (subject === null || match.id !== "git.worktree-remove-force" && !isDisposableRepository(subject, tokens, match, options) || !import_tmpdir.isTrustedTempPath(subject, options.environment) || import_tmpdir.isTrustedTempRootPath(subject, options.environment) || import_tmpdir.isPathOrSubpath(workspace, subject) || import_tmpdir.isPathOrSubpath(subject, workspace)) {
+  if (subject === null || match.id !== "git.worktree-remove-force" && !isDisposableRepository(subject, context.gitCwd, tokens, match, options) || !import_tmpdir2.isTrustedTempPath(subject, options.environment) || import_tmpdir2.isTrustedTempRootPath(subject, options.environment) || import_tmpdir2.isPathOrSubpath(workspace, subject) || import_tmpdir2.isPathOrSubpath(subject, workspace)) {
     return null;
   }
   return { kind: "temp-root", originalReason: match.reason, gitCwd: context.gitCwd };
 }
-function isDisposableRepository(root, tokens, match, options) {
+function isDisposableRepository(root, gitCwd, tokens, match, options) {
   const paths = options.environment.paths;
   const gitEntry = import_node_path2.join(root, ".git");
-  if (paths.entryKind(gitEntry) !== "present")
+  if (paths.entryKind(gitEntry) !== "present" || mayRedirectGitRepository(tokens, gitCwd, root, options.environment, options.envAssignments)) {
     return false;
+  }
   const ownsItsGitDirectory = paths.isDirectory(gitEntry);
   if (ownsItsGitDirectory)
     return true;
@@ -1544,12 +1569,6 @@ function worktreeRemoveOperand(words, shellAssignments, paths) {
     return null;
   }
   return paths.realpath(expanded);
-}
-function findGitRepositoryRoot(directory, paths) {
-  if (paths.entryKind(import_node_path2.join(directory, ".git")) !== "missing")
-    return directory;
-  const parent = import_node_path2.dirname(directory);
-  return parent === directory ? null : findGitRepositoryRoot(parent, paths);
 }
 
 // src/gate/analyzer/git/index.ts
@@ -1626,7 +1645,7 @@ var import_reasons = require("./analyzer.js");
 var import_rm_flags = require("./analyzer.js");
 var import_rule = require("./analyzer.js");
 var import_shell_git_env3 = require("./analyzer.js");
-var import_shell_wrappers = require("./analyzer.js");
+var import_shell_wrappers2 = require("./analyzer.js");
 var import_transparent_wrappers3 = require("./analyzer.js");
 var import_wrapper_prelude2 = require("./analyzer.js");
 function findCommandAnalyzer(head) {
@@ -1716,7 +1735,7 @@ function analyzeSegment(commandWords, depth, options) {
   const cwdForRm = prelude.cwd === null ? undefined : prelude.cwd ?? baseCwdForRm;
   const originalCwdForRm = prelude.cwd === null ? undefined : originalCwd;
   const nestedEffectiveCwd = prelude.cwd === undefined ? options.effectiveCwd : prelude.cwd;
-  const allowTmpdirVar = child ? child.allowTmpdirVar : !import_tmpdir2.isTmpdirOverriddenToNonTemp(envAssignments, options.environment);
+  const allowTmpdirVar = child ? child.allowTmpdirVar : !import_tmpdir3.isTmpdirOverriddenToNonTemp(envAssignments, options.environment);
   const dynamicCommandMatch = import_derived_input.analyzeDynamicCommandStructure(dialect, prelude.words, options.environment, depth === 0, options.strict, options.policy);
   if (dynamicCommandMatch) {
     trace?.recordSegment({
@@ -1785,10 +1804,12 @@ function analyzeSegment(commandWords, depth, options) {
   }
   const shellWrapperHead = stream ? import_constants4.SHELL_WRAPPERS.has(normalizedHead) : isShellWrapperCommand(head, normalizedHead);
   if (shellWrapperHead) {
-    if (import_shell_wrappers.isShellSyntaxCheck(stripped))
+    if (import_shell_wrappers2.isShellSyntaxCheck(stripped))
       return null;
+    if (import_shell_wrappers2.hasUnidentifiableCommandString(stripped))
+      return dynamicShellSourceResult(trace);
     if (stream && child) {
-      const streamDashCArg = import_shell_wrappers.extractDashCArg(stripped);
+      const streamDashCArg = import_shell_wrappers2.extractDashCArg(stripped);
       if (streamDashCArg) {
         if (child.dynamicSourceInput ?? child.dynamicInput) {
           const dynamic = childShellDynamicResult(child, options.policy);
@@ -1814,7 +1835,7 @@ function analyzeSegment(commandWords, depth, options) {
       return child.dynamicSourceInput ?? child.dynamicInput ? childShellDynamicResult(child, options.policy) : null;
     }
     if (embedded) {
-      const embeddedDashCArg = import_shell_wrappers.extractDashCArg(stripped);
+      const embeddedDashCArg = import_shell_wrappers2.extractDashCArg(stripped);
       const embeddedResult = embeddedDashCArg ? options.analyzeNested(embeddedDashCArg, {
         effectiveCwd: nestedEffectiveCwd,
         envAssignments
@@ -1826,7 +1847,7 @@ function analyzeSegment(commandWords, depth, options) {
       const startupResult = analyzeShellStartupSources(stripped, envAssignments, nestedEffectiveCwd, options, trace, depth);
       if (startupResult)
         return startupResult;
-      const dashCArg = import_shell_wrappers.extractDashCArg(stripped);
+      const dashCArg = import_shell_wrappers2.extractDashCArg(stripped);
       if (dashCArg) {
         const positionalSource = extractPositionalShellSource(words, dashCArg);
         if (positionalSource.kind === "dynamic")
@@ -2109,7 +2130,7 @@ function analyzeEmbeddedSuffix(tokens, index, depth, options, cwd, originalCwd, 
       originalCwd: childCommand.wrapperCwd === null ? undefined : originalCwd,
       effectiveCwd: childCommand.wrapperCwd === undefined ? effectiveCwd : childCommand.wrapperCwd,
       envAssignments: childCommand.envAssignments,
-      allowTmpdirVar: !import_tmpdir2.isTmpdirOverriddenToNonTemp(childCommand.envAssignments, options.environment),
+      allowTmpdirVar: !import_tmpdir3.isTmpdirOverriddenToNonTemp(childCommand.envAssignments, options.environment),
       worktreeMode: false,
       wrappedByTransparent: childCommand.wrappedByTransparent
     });
@@ -2157,7 +2178,7 @@ function childDynamicRmResult(child, policy) {
   return match ? blockResultFromMatch(match) : null;
 }
 function analyzeShellStartupSources(tokens, envAssignments, effectiveCwd, options, trace, depth) {
-  const startup = import_shell_wrappers.extractShellStartupLoaderMetadata(tokens);
+  const startup = import_shell_wrappers2.extractShellStartupLoaderMetadata(tokens);
   if (startup.argvSource?.kind === "absent")
     return dynamicShellSourceResult(trace);
   if (startup.argvSourceApplies && startup.argvSource) {
@@ -2379,7 +2400,7 @@ function stripLeadingGrouping(tokens) {
 
 // src/gate/analyzer/analyze-command.ts
 var import_shell_git_env4 = require("./analyzer.js");
-var import_shell_wrappers2 = require("./analyzer.js");
+var import_shell_wrappers3 = require("./analyzer.js");
 var import_wrapper_prelude3 = require("./analyzer.js");
 var REASON_UNQUOTED_HEREDOC = "Unquoted heredoc input is not supported safely. Quote the delimiter or ask the user to verify.";
 var REASON_UNSUPPORTED_HEREDOC = "This heredoc form or stdin consumer is not supported safely. Use a quoted heredoc with a supported consumer (cat, tee, git apply, git commit, gh pr create, gh issue create), or ask the user to verify.";
@@ -2393,7 +2414,7 @@ function analyzeCommandInternal(command, depth, options, parsedProgram) {
       intent: "stop_and_explain"
     };
   }
-  const program = parsedProgram ?? options.factStore?.getCommandProgram(command, options.shell ?? "auto") ?? import_parse6.parseCommand(command, options.shell);
+  const program = parsedProgram ?? options.factStore?.getCommandProgram(command, options.shell ?? "auto") ?? import_parse7.parseCommand(command, options.shell);
   if (program.status === "limited") {
     options.trace?.recordSegment({ type: "error", message: import_reasons2.REASON_RECURSION_LIMIT });
     return {
@@ -2632,6 +2653,7 @@ function withTraceSegment(trace, currentSegmentIndex, flattenNested = trace.flat
     flattenNested,
     allocateSegment: trace.allocateSegment,
     getNextSegmentIndex: trace.getNextSegmentIndex,
+    branch: trace.branch,
     recordGlobal: trace.recordGlobal,
     recordSegment: (step, segmentIndex = currentSegmentIndex) => trace.recordSegment(step, segmentIndex)
   };
@@ -2647,7 +2669,7 @@ function analyzeCommandNestedPrograms(commandView, depth, options, originalCwd, 
       if (depth + 1 >= import_budget2.LIMITS.recursionDepth.cap) {
         return recursionLimitAnalysis(evaluatedSource, options, initialStates);
       }
-      const evaluatedProgram = import_parse6.parseCommand(evaluatedSource, "powershell");
+      const evaluatedProgram = import_parse7.parseCommand(evaluatedSource, "powershell");
       if (evaluatedProgram.status === "limited") {
         return recursionLimitAnalysis(evaluatedSource, options, initialStates);
       }
@@ -3110,7 +3132,7 @@ function isInertShellHeredoc(commandView, heredocs, state, envAssignments, optio
   if ((stripped.envSplitValues?.length ?? 0) > 0 || !import_constants5.SHELL_WRAPPERS.has(head) && !import_constants5.SHELL_WRAPPERS.has(import_tokens6.getBasename(head))) {
     return false;
   }
-  return import_shell_wrappers2.isShellSyntaxCheck(tokens);
+  return import_shell_wrappers3.isShellSyntaxCheck(tokens);
 }
 function updateCwdAfterCommandView(commandView, state, literalPipelineInput, environment, trace) {
   const nextCwd = resolveCwdAfterCommandView(commandView, state.effectiveCwd, environment, state.shellGitContextState.shellAssignments, literalPipelineInput);
@@ -3298,7 +3320,7 @@ function recordStrictUnparseable(command, options) {
 var import_node_path5 = require("node:path");
 var import_budget3 = require("./core.js");
 var import_chdir3 = require("./core.js");
-var import_tmpdir3 = require("./core.js");
+var import_tmpdir4 = require("./core.js");
 var import_effective_rules4 = require("./core.js");
 var import_transparent_wrappers5 = require("./core.js");
 var import_constants6 = require("./core-shell.js");
@@ -3314,8 +3336,9 @@ var import_dynamic_input = require("./analyzer.js");
 var import_find = require("./analyzer.js");
 var import_interpreters3 = require("./analyzer.js");
 var import_rm = require("./analyzer.js");
+var import_reasons3 = require("./analyzer.js");
 var import_rm_flags2 = require("./analyzer.js");
-var import_shell_wrappers3 = require("./analyzer.js");
+var import_shell_wrappers4 = require("./analyzer.js");
 var import_xargs = require("./analyzer.js");
 var REASON_PARALLEL_RM = "parallel rm -rf with dynamic input is dangerous. Use explicit file list instead.";
 var REASON_PARALLEL_SHELL = "parallel with shell -c can execute arbitrary commands from dynamic input. Run the inner command directly on an explicit file list instead.";
@@ -3472,9 +3495,11 @@ function analyzeParallelChildWords(childCommand, parseResult, context, execution
         return null;
       return firstMatch(jobs, (job) => context.analyzeChild(expandParallelJob(childTokens, job, context.budget), import_child_command2.childProvenance(childCommand, executionContext)));
     };
-    if (import_shell_wrappers3.isShellSyntaxCheck(childTokens))
+    if (import_shell_wrappers4.isShellSyntaxCheck(childTokens))
       return analyzeExpandedShellArgv();
-    const dashCArg = import_shell_wrappers3.extractDashCArg(childTokens);
+    if (import_shell_wrappers4.hasUnidentifiableCommandString(childTokens))
+      return import_reasons3.dynamicShellSourceMatch();
+    const dashCArg = import_shell_wrappers4.extractDashCArg(childTokens);
     if (dashCArg) {
       if (isOnlyParallelPlaceholder(dashCArg)) {
         const reason = parallelShellDynamicReason(context);
@@ -3664,9 +3689,9 @@ function gitGlobalConfigCanChange(tokens) {
   return false;
 }
 function shellArgvHasParallelSource(tokens) {
-  if (import_shell_wrappers3.isShellSyntaxCheck(tokens))
+  if (import_shell_wrappers4.isShellSyntaxCheck(tokens))
     return false;
-  const dashCArg = import_shell_wrappers3.extractDashCArg(tokens);
+  const dashCArg = import_shell_wrappers4.extractDashCArg(tokens);
   if (dashCArg !== null)
     return hasParallelPlaceholder(dashCArg);
   const scriptSource = extractShellScriptOperandSource(import_command_words6.textCommandWords(tokens));
@@ -3769,8 +3794,8 @@ function analyzeParallelRmExpansion(tokens, cwd, context) {
     strict: context.strict,
     paranoid: context.paranoidRm,
     allowTmpdirVar: context.allowTmpdirVar,
-    tmpdirWordSplittingUnsafe: import_tmpdir3.hasUnsafeTmpdirWordSplitting(context.envAssignments ?? new Map, context.environment),
-    trustedTmpdirValue: import_tmpdir3.isTmpdirValueTrusted(context.envAssignments ?? new Map, context.environment),
+    tmpdirWordSplittingUnsafe: import_tmpdir4.hasUnsafeTmpdirWordSplitting(context.envAssignments ?? new Map, context.environment),
+    trustedTmpdirValue: import_tmpdir4.isTmpdirValueTrusted(context.envAssignments ?? new Map, context.environment),
     protectedGitMetadata: context.protectedGitMetadata,
     policy: context.policy
   }), context.policy);
