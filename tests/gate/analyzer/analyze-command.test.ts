@@ -224,6 +224,12 @@ describe('analyzeCommand', () => {
       intent: 'stop_and_explain',
     });
   });
+  test('a getconf temp-directory script path stays dynamic where getconf has no value', () => {
+    expect(decision('D=$(getconf DARWIN_USER_TEMP_DIR)x; bash $D/run.sh', standard)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'analysis.dynamic-shell-source',
+    });
+  });
   test('strict mode keeps a variable shell-script path a dynamic shell source', () => {
     expect(decision(`S=${scratch}; bash $S/make-fixture.sh`, standard)).toBeNull();
     expect(decision(`S=${scratch}; bash $S/make-fixture.sh`, strict)).toMatchObject({

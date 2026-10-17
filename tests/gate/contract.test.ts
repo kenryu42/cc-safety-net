@@ -59,6 +59,7 @@ const environment = createTestEnvironment({
   ),
   home: homedir(),
   tmpdir: tmpdir(),
+  darwinUserTempDir: () => `${tmpdir()}/`,
   paths: processPathResolver,
 });
 

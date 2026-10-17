@@ -38,17 +38,52 @@ const COMPOUND_BODY_KEYWORDS = new Set(['do', 'then', 'else']);
 const COMPOUND_OPEN_KEYWORDS = new Set(['do', 'then', 'case']);
 const COMPOUND_CLOSE_KEYWORDS = new Set(['done', 'fi', 'esac']);
 
+const UNQUOTED_ASSIGNMENT_TILDE_RE = /^[A-Za-z_][A-Za-z0-9_]*=~(?:\/|$)/;
+
 const SHELL_VARIABLE_RE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g;
+
+type ShellLocation = { home: string; cwd: string | null | undefined };
+
+export function withImplicitShellVariables(
+  assignments: ReadonlyMap<string, string>,
+  location: ShellLocation,
+): Map<string, string> {
+  return new Map([
+    ['HOME', location.home],
+    ...(typeof location.cwd === 'string' ? [['PWD', location.cwd] as const] : []),
+    ...assignments,
+  ]);
+}
+
+export function expandHomeTildeWord(word: CommandWord, home: string): string | null {
+  return word.provenance === 'literal' &&
+    !word.quoted &&
+    word.raw === word.text &&
+    word.raw.startsWith('~/')
+    ? `${home}${word.raw.slice(1)}`
+    : null;
+}
 
 export function segmentTokensWithExpandedAssignments(
   words: readonly CommandWord[],
   state: ShellGitContextEnvState,
+  location: ShellLocation & { darwinUserTempDir: () => string | null },
 ): string[] {
-  return words.map((word) =>
-    word.provenance === 'variable' && isEnvAssignmentToken(word.text)
-      ? substituteKnownShellVariables(word.text, state.shellAssignments)
-      : analysisWordText(word),
-  );
+  const knownVariables = withImplicitShellVariables(state.shellAssignments, location);
+  return words.map((word) => {
+    if (!isEnvAssignmentToken(word.text)) return analysisWordText(word);
+    if (word.provenance === 'variable') {
+      return substituteKnownShellVariables(word.text, knownVariables);
+    }
+    if (word.provenance === 'command-substitution') {
+      return (
+        expandDarwinUserTempDirWord(word, location.darwinUserTempDir) ?? analysisWordText(word)
+      );
+    }
+    return word.provenance === 'literal' && UNQUOTED_ASSIGNMENT_TILDE_RE.test(word.raw)
+      ? word.text.replace('=~', `=${knownVariables.get('HOME')}`)
+      : analysisWordText(word);
+  });
 }
 
 function substituteKnownShellVariables(
@@ -58,6 +93,29 @@ function substituteKnownShellVariables(
   return text.replace(SHELL_VARIABLE_RE, (match, braced?: string, bare?: string) => {
     return assignments.get(braced ?? bare ?? '') ?? match;
   });
+}
+
+const DARWIN_USER_TEMP_DIR_SUBSTITUTIONS = new Set([
+  '$(getconf DARWIN_USER_TEMP_DIR)',
+  '`getconf DARWIN_USER_TEMP_DIR`',
+]);
+
+function expandDarwinUserTempDirWord(
+  word: CommandWord,
+  darwinUserTempDir: () => string | null,
+): string | null {
+  if (word.provenance !== 'command-substitution') return null;
+  const pieces = word.parts.map((part) => {
+    if (part.provenance === 'command-substitution') {
+      return DARWIN_USER_TEMP_DIR_SUBSTITUTIONS.has(part.raw) ? darwinUserTempDir() : null;
+    }
+    return part.provenance === 'literal' && !/[$`\\']/.test(part.raw)
+      ? part.raw.replaceAll('"', '')
+      : null;
+  });
+  if (!pieces.every((piece): piece is string => piece !== null)) return null;
+  const expanded = pieces.join('');
+  return /[\s$`*?[]/.test(expanded) ? null : expanded;
 }
 
 export function expandKnownVariableWord(

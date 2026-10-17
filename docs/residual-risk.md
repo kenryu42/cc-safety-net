@@ -170,9 +170,11 @@ interpreter bodies").
 Glob, brace, extglob, arithmetic, and `IFS` word-splitting semantics. Standard applies bounded
 conservative checks and the documented compatibility exceptions (the only expansion it performs is
 literal `$VAR`/`${VAR}` substitution, from literal assignments and literal `for` lists of at most
-eight words, of a `cd` operand, a `git -C` or `git worktree remove` operand, a shell-script operand
-(standard mode only), and the file a heredoc writer creates, plus `~`, `~/…`, `$HOME` and a bare
-`cd` resolving a `cd` operand to the home directory) but never exact expansion emulation; crafted expansion tricks that
+eight words, of a `cd` operand, a `git -C` or `git worktree remove` operand, a shell-script or
+`source` operand (standard mode only), and the file a heredoc writer creates, plus `~`, `~/…`, `$HOME`
+and a bare `cd` resolving a `cd` operand to the home directory; an assignment value also expands a
+leading unquoted `~`, `$HOME`, `$PWD` and an exact `$(getconf DARWIN_USER_TEMP_DIR)`, read once from
+`getconf` on macOS) but never exact expansion emulation; crafted expansion tricks that
 survive those checks are residual, and strict-tier fail-closed behavior owns the adversarial case.
 
 Adjudicated 2026-07-22. Sources: `SECURITY.md` non-goals ("does not expand shell globs or

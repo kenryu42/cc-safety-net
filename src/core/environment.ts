@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { lstatSync, realpathSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from './git/metadata';
@@ -21,6 +22,7 @@ export type Environment = Readonly<{
   env: ReadonlyMap<string, string>;
   home: string;
   tmpdir: string;
+  darwinUserTempDir: () => string | null;
   paths: PathResolver;
 
   gitMetadata: (cwd: string) => ProtectedGitMetadata | null;
@@ -62,6 +64,7 @@ export const processPathResolver: PathResolver = {
 };
 
 export function createProcessEnvironment(): Environment {
+  const darwinUserTempDir = new Map<string, string | null>();
   return withGitFacts({
     env: new Map(
       Object.entries(process.env).flatMap(([name, value]) =>
@@ -70,8 +73,20 @@ export function createProcessEnvironment(): Environment {
     ),
     home: normalizeMsysDrivePath(process.env.HOME || homedir()),
     tmpdir: tmpdir(),
+    darwinUserTempDir: () => memoized(darwinUserTempDir, '', readDarwinUserTempDir),
     paths: processPathResolver,
   });
+}
+
+function readDarwinUserTempDir(): string | null {
+  if (process.platform !== 'darwin') return null;
+  const result = spawnSync('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 1000,
+  });
+  const value = result.stdout?.replace(/\n$/, '');
+  return result.status === 0 && value?.startsWith('/') ? value : null;
 }
 
 /** @internal */
@@ -87,6 +102,7 @@ export function createTestEnvironment(
       env: new Map(),
       home: '/home/user',
       tmpdir: '/tmp',
+      darwinUserTempDir: () => null,
       paths: {
         realpath: (path) => fakeRealpath(entries, path, new Set()),
         entryKind: (path) => {

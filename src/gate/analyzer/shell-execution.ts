@@ -8,7 +8,7 @@ import type {
 import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse';
 import { getBasename, normalizeCommandToken, parseShellArgv } from '@/core/shell/tokens';
 import { analysisWordText, isLiteralExecutionSourceWord } from './command-words';
-import { expandKnownVariableWord } from './shell-git-env';
+import { expandHomeTildeWord, expandKnownVariableWord } from './shell-git-env';
 import { isShellSyntaxCheck } from './shell-wrappers';
 import { isStandardCommandWrapper } from './transparent-wrappers';
 import { parseEnvAssignment } from './wrapper-prelude';
@@ -221,11 +221,14 @@ export function extractShellStdinSource(
 
 export function extractShellScriptOperandSource(
   words: readonly CommandWord[],
+  home?: string,
   shellAssignments: ReadonlyMap<string, string> = new Map(),
 ): ShellExecutionSource {
   const scriptIndex = parseShellArgv(words.map(analysisWordText)).scriptIndex;
   if (scriptIndex === null) return NO_SOURCE;
   const word = words[scriptIndex];
+  const tildePath = word && home !== undefined ? expandHomeTildeWord(word, home) : null;
+  if (tildePath !== null) return { kind: 'literal', source: tildePath };
   const source = wordText(word);
   if (isLiteralExecutionSourceWord(word, source)) return { kind: 'literal', source };
   const expanded = word ? expandKnownVariableWord(word, shellAssignments) : null;
