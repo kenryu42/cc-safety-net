@@ -3470,6 +3470,7 @@ function withTerminalPeriod(value) {
   return /[.!?]$/.test(value) ? value : `${value}.`;
 }
 // src/core/environment.ts
+var import_node_child_process2 = require("node:child_process");
 var import_node_fs4 = require("node:fs");
 var import_node_os = require("node:os");
 
@@ -3553,12 +3554,25 @@ var processPathResolver = {
   }
 };
 function createProcessEnvironment() {
+  const darwinUserTempDir = new Map;
   return withGitFacts({
     env: new Map(Object.entries(process.env).flatMap(([name, value]) => value === undefined ? [] : [[name, value]])),
     home: normalizeMsysDrivePath(process.env.HOME || import_node_os.homedir()),
     tmpdir: import_node_os.tmpdir(),
+    darwinUserTempDir: () => memoized(darwinUserTempDir, "", readDarwinUserTempDir),
     paths: processPathResolver
   });
+}
+function readDarwinUserTempDir() {
+  if (process.platform !== "darwin")
+    return null;
+  const result = import_node_child_process2.spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1000
+  });
+  const value = result.stdout?.replace(/\n$/, "");
+  return result.status === 0 && value?.startsWith("/") ? value : null;
 }
 function createTestEnvironment(overrides = {}) {
   const { entries = new Map, ...rest } = overrides;
@@ -3566,6 +3580,7 @@ function createTestEnvironment(overrides = {}) {
     env: new Map,
     home: "/home/user",
     tmpdir: "/tmp",
+    darwinUserTempDir: () => null,
     paths: {
       realpath: (path) => fakeRealpath(entries, path, new Set),
       entryKind: (path) => {
