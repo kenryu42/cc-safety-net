@@ -1057,7 +1057,7 @@ var RULE_SOURCE_LIMIT_ERROR = "Rule config exceeds CC Safety Net's safe source l
 // src/core/policy/transparent-wrappers.ts
 var import_constants = require("./core-shell.js");
 var import_tokens = require("./core-shell.js");
-var BUILTIN_ANALYZED_COMMANDS = new Set(["rm", "find", "xargs", "parallel"]);
+var BUILTIN_ANALYZED_COMMANDS = new Set(["rm", "find", "rsync", "xargs", "parallel"]);
 var RESERVED_TRANSPARENT_WRAPPERS = new Set([
   "git",
   "busybox",

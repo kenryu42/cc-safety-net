@@ -1630,6 +1630,14 @@ var DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     intent: "scope_down"
   },
   {
+    id: "rsync.delete",
+    category: "Filesystem",
+    label: "rsync delete",
+    description: "Blocks rsync delete modes whose destination is outside the cwd, a temp root, or a variable.",
+    example: 'rsync -a --delete "$SRC/" "$DST/"',
+    intent: "scope_down"
+  },
+  {
     id: "dd.device-write",
     category: "Filesystem",
     label: "dd device write",
