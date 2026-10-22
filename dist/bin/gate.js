@@ -74,6 +74,7 @@ __export(exports_gate, {
   mayHaveGitMetadataEntryNamed: () => mayHaveGitMetadataEntryNamed,
   outputCwdDenial: () => outputCwdDenial,
   outputFailedClosed: () => outputFailedClosed,
+  outputMalformedToolCall: () => outputMalformedToolCall,
   parseHookJson: () => parseHookJson,
   projectSensitiveShellText: () => projectSensitiveShellText,
   readBoundedHookInput: () => readBoundedHookInput,
@@ -1442,6 +1443,9 @@ function resolveStandardHookContext(cwdInput, toolInput, toolName, outputDeny, p
 }
 function outputFailedClosed(outputDeny, toolInput, toolName) {
   outputDeny(import_denial.createFailedClosedDenial({ command: readableCommand(toolInput), toolName }));
+}
+function outputMalformedToolCall(outputDeny, toolInput, toolName) {
+  outputDeny(import_denial.createMalformedToolCallDenial({ command: readableCommand(toolInput), toolName }));
 }
 function outputCwdDenial(outputDeny, toolInput, toolName, cause) {
   outputDeny(import_denial.createCwdDenial(cause, { command: readableCommand(toolInput), toolName }));
@@ -3437,10 +3441,7 @@ function evaluateGuard(hostInvocation, options) {
     return { stage: "non-command", ...reported, decision: { kind: "allow" } };
   }
   if (!invocation.command || invocation.command.trim() === "") {
-    return {
-      ...failedClosedEvaluation("command-validation", command),
-      ...reported
-    };
+    return { ...malformedToolCallEvaluation(command), ...reported };
   }
   const analysis = callDependency("command-analysis", command, () => import_analyzer.analyzeOrCapBreach(() => dependencies.analyzeCommand(invocation.command, {
     cwd: invocation.context.executionCwd,
@@ -3503,7 +3504,7 @@ function promoteDeclaredCommandTool(invocation, command, cwdArgument, paths) {
   ];
   const usableCwds = requestedCwds.filter((value) => typeof value === "string" && value.trim() !== "");
   if (requestedCwds.length > 1 || usableCwds.length !== requestedCwds.length) {
-    return failedClosedEvaluation("command-validation", command);
+    return malformedToolCallEvaluation(command);
   }
   const requestedCwd = usableCwds[0];
   const executionCwd = requestedCwd === undefined ? invocation.context.configCwd : resolveCanonicalCwd(requestedCwd, invocation.context.configCwd, paths);
@@ -3572,6 +3573,19 @@ function failedClosedEvaluation(stage, command, cause) {
       kind: "deny",
       ...denial,
       intent: "stop_and_explain",
+      ...command ? { evidence: { command, segment: command } } : {}
+    }
+  };
+}
+function malformedToolCallEvaluation(command) {
+  const denial = import_denial2.createMalformedToolCallDenial();
+  return {
+    stage: "command-validation",
+    decision: {
+      kind: "deny",
+      reason: denial.reason,
+      ruleId: denial.ruleId,
+      intent: denial.intent,
       ...command ? { evidence: { command, segment: command } } : {}
     }
   };

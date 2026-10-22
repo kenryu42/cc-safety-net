@@ -85,7 +85,8 @@ __export(exports_analyzer_core, {
   resolveGitConfigCount: () => resolveGitConfigCount,
   shellSourceHasDynamicExecutionCarrier: () => shellSourceHasDynamicExecutionCarrier,
   shellSourceHasUnresolvedDynamicExecutionCarrier: () => shellSourceHasUnresolvedDynamicExecutionCarrier,
-  splitAtDoubleDash: () => splitAtDoubleDash
+  splitAtDoubleDash: () => splitAtDoubleDash,
+  substitutesRemoteFetch: () => substitutesRemoteFetch
 });
 module.exports = __toCommonJS(exports_analyzer_core);
 
@@ -168,6 +169,7 @@ function hasAnyEnvAssignment(envAssignments, names) {
 var import_constants = require("./core-shell.js");
 var import_parse = require("./core-shell.js");
 var import_tokens = require("./core-shell.js");
+var import_traversal = require("./core-shell.js");
 var import_command_words = require("./analyzer.js");
 var import_shell_git_env = require("./analyzer.js");
 var import_shell_wrappers = require("./analyzer.js");
@@ -339,6 +341,12 @@ var REMOTE_FETCHERS = new Set([
   "ncat",
   "netcat"
 ]);
+function substitutesRemoteFetch(word, nested, environment) {
+  return nested.filter((program) => program.span.start >= word.span.start && program.span.end <= word.span.end).flatMap(import_traversal.projectCommandViews).some((view) => {
+    const head = import_wrapper_prelude.stripWrapperWords(view.words, environment).words[0];
+    return head !== undefined && REMOTE_FETCHERS.has(import_tokens.getBasename(import_tokens.normalizeCommandToken(import_command_words.analysisWordText(head))));
+  });
+}
 function isVerifiableLocalGeneratorSource(command) {
   if (command.words.length !== 2 || command.redirections.length !== 0 || command.nested.length !== 1) {
     return false;
@@ -597,7 +605,7 @@ var import_tokens3 = require("./core-shell.js");
 // src/gate/analyzer/git/parse.ts
 var import_constants2 = require("./core-shell.js");
 var import_tokens2 = require("./core-shell.js");
-var import_traversal = require("./core-shell.js");
+var import_traversal2 = require("./core-shell.js");
 var MAX_GIT_ALIAS_EXPANSION_DEPTH = 5;
 var REASON_GIT_ALIAS_CONFIG = "Git aliases supplied through command-line or environment config can hide or execute commands. Run git without Git alias overrides, or ask the user to run it manually.";
 function splitAtDoubleDash(tokens) {
@@ -760,7 +768,7 @@ function getGitConfigParameterEntries(env, envAssignments) {
     return [];
   }
   const entries = [];
-  const parsed = import_traversal.parseSimpleWords(parameters);
+  const parsed = import_traversal2.parseSimpleWords(parameters);
   if (!parsed)
     return null;
   for (const token of parsed) {
@@ -816,7 +824,7 @@ function parseGitAliasValue(value) {
   if (!trimmedValue || trimmedValue.startsWith("!")) {
     return null;
   }
-  return import_traversal.parseSimpleWords(trimmedValue);
+  return import_traversal2.parseSimpleWords(trimmedValue);
 }
 
 // src/gate/analyzer/git/rules.ts
@@ -1853,6 +1861,11 @@ function analyzeSegment(commandWords, depth, options) {
         return startupResult;
       const dashCArg = import_shell_wrappers2.extractDashCArg(stripped);
       if (dashCArg) {
+        const scriptIndex = import_tokens5.parseShellArgv(stripped).commandIndex;
+        const scriptWord = scriptIndex === null ? undefined : words[scriptIndex];
+        if (scriptWord && options.commandView && substitutesRemoteFetch(scriptWord, options.commandView.nested, options.environment)) {
+          return dynamicShellSourceResult(trace);
+        }
         const positionalSource = extractPositionalShellSource(words, dashCArg);
         if (positionalSource.kind === "dynamic")
           return dynamicShellSourceResult(trace);
@@ -3380,7 +3393,7 @@ var import_constants6 = require("./core-shell.js");
 var import_custom2 = require("./core-shell.js");
 var import_destructive5 = require("./core-shell.js");
 var import_tokens7 = require("./core-shell.js");
-var import_traversal2 = require("./core-shell.js");
+var import_traversal3 = require("./core-shell.js");
 var import_awk2 = require("./analyzer.js");
 var import_child_command2 = require("./analyzer.js");
 var import_command_words6 = require("./analyzer.js");
@@ -3663,7 +3676,7 @@ function analyzeParallelShellSource(source, quoteJobValues, childCommand, parseR
   if (parseResult.jobs.length > 0) {
     return firstMatch(parseResult.jobs, (job) => context.analyzeNested(expandParallelString(source, quoteJobValues ? job.map(quoteShellWord) : job, context.budget), nestedOverrides));
   }
-  const scriptTokens = import_traversal2.parseSimpleWords(source);
+  const scriptTokens = import_traversal3.parseSimpleWords(source);
   if (scriptTokens?.[0] && import_tokens7.normalizeCommandToken(scriptTokens[0]) === "rm" && import_rm_flags2.hasRecursiveForceFlags(scriptTokens)) {
     const reason = parallelRmDynamicReason(context);
     if (reason)

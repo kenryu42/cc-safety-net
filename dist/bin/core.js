@@ -84,6 +84,7 @@ __export(exports_core, {
   createCwdDenial: () => createCwdDenial,
   createDefaultGuiPolicy: () => createDefaultGuiPolicy,
   createFailedClosedDenial: () => createFailedClosedDenial,
+  createMalformedToolCallDenial: () => createMalformedToolCallDenial,
   createPolicyPreview: () => createPolicyPreview,
   createPolicySnapshot: () => createPolicySnapshot,
   createProcessEnvironment: () => createProcessEnvironment,
@@ -2794,6 +2795,16 @@ function createFailedClosedDenial(options = {}) {
     intent: "stop_and_explain",
     command: options.command,
     segment: options.segment ?? options.command,
+    toolName: options.toolName
+  };
+}
+function createMalformedToolCallDenial(options = {}) {
+  return {
+    reason: "CC Safety Net could not check this tool call because it arrived without a usable tool name or arguments. This is not a CC Safety Net failure. Send the call again with its tool name and complete arguments.",
+    ruleId: "tool-call.malformed",
+    intent: "use_alternative",
+    command: options.command,
+    segment: options.command,
     toolName: options.toolName
   };
 }

@@ -290,7 +290,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.6.16";
+var AUDIT_LOG_VERSION = "2.6.17";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -499,7 +499,7 @@ var getToolCwdHookContext = (cwdKey, commandTools, options) => (input, toolInput
   if (options?.emptyMeansSessionCwd && requestedCwd === "")
     return context;
   if (typeof requestedCwd !== "string" || requestedCwd.trim() === "") {
-    import_intake.outputFailedClosed(outputDeny, toolInput, toolName);
+    import_intake.outputMalformedToolCall(outputDeny, toolInput, toolName);
     return null;
   }
   const executionCwd = options?.allowOutsideSessionCwd ? import_intake.resolveCanonicalCwd(requestedCwd, context.configCwd, environment.paths) : import_intake.resolveContainedCwd(requestedCwd, [context.configCwd], environment.paths);
@@ -561,7 +561,7 @@ async function runHookAdapter(adapter) {
   };
   const toolNameInput = adapter.getToolName(input);
   if (typeof toolNameInput !== "string" || toolNameInput.trim() === "") {
-    import_intake.outputFailedClosed((denial) => outputPreflightDeny(denial), getRawHookToolInput(input));
+    import_intake.outputMalformedToolCall((denial) => outputPreflightDeny(denial), getRawHookToolInput(input));
     return;
   }
   const toolName = toolNameInput;
@@ -769,7 +769,7 @@ function resolveAntigravityContext(input, toolInput, toolName, outputDeny, envir
   }
   const cwd = args.Cwd;
   if (typeof cwd !== "string" || cwd.trim() === "") {
-    import_intake2.outputFailedClosed(outputDeny, toolInput, toolName);
+    import_intake2.outputMalformedToolCall(outputDeny, toolInput, toolName);
     return null;
   }
   const containedCwd = import_intake2.resolveContainedCwd(cwd, configRoots, environment.paths);
@@ -1280,7 +1280,7 @@ function resolveCursorContext(input, toolInput, toolName, outputDeny, environmen
   }
   const requestedWorkingDirectory = toolInput.working_directory;
   if (typeof requestedWorkingDirectory !== "string" || requestedWorkingDirectory.trim() === "") {
-    import_intake7.outputFailedClosed(outputDeny, toolInput, toolName);
+    import_intake7.outputMalformedToolCall(outputDeny, toolInput, toolName);
     return null;
   }
   const workingDirectory = import_canonicalization3.normalizeUriDrivePath(requestedWorkingDirectory);
@@ -1495,7 +1495,7 @@ function resolveGrokBuildContext(input, toolInput, toolName, outputDeny, environ
   }
   const requestedCwd = args[cwdKey];
   if (typeof requestedCwd !== "string" || requestedCwd.trim() === "") {
-    import_intake11.outputFailedClosed(outputDeny, toolInput, toolName);
+    import_intake11.outputMalformedToolCall(outputDeny, toolInput, toolName);
     return null;
   }
   const executionCwd = import_intake11.resolveContainedCwd(requestedCwd, [base, root], environment.paths);
