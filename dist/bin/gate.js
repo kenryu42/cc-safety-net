@@ -2404,7 +2404,7 @@ function extractInlineCodePathTargets(command, code, store, options, environment
     ...shellExec ? literalsExecCallsReceive.flatMap((literal) => walkShellText(literal.text, store, { ...options, commandHoldsPipe: true }, environment, cwd, budget) ?? [here(literal.text)]) : [],
     ...languageEval ? masked.literals.flatMap((literal) => extractInlineCodePathTargets(command, literal.text.replace(/\\(.)/g, (_, escaped) => escaped === "n" ? `
 ` : escaped), store, options, environment, cwd, budget)) : [],
-    ...codeRolesReadable ? [] : (masked.masked.match(BARE_PATH_PATTERN) ?? []).map(here),
+    ...codeRolesReadable ? [] : [masked.masked, ...masked.comments].flatMap((text) => text.match(BARE_PATH_PATTERN) ?? []).map(here),
     ...literalsPresumedData ? (code.match(/\$\{[^}]*\}|\$[A-Za-z_]\w*/g) ?? []).map(here) : []
   ];
 }
@@ -2544,8 +2544,13 @@ var HOLE_UNREADABLE_CHARACTER = {
 function maskStringLiterals(code, family) {
   if (family === "opaque")
     return { kind: "unmaskable" };
-  const scan = { masked: code.split(""), literals: [] };
-  return maskCode(code, 0, family, scan, false) === null ? { kind: "unmaskable" } : { kind: "masked", masked: scan.masked.join(""), literals: scan.literals };
+  const scan = { masked: code.split(""), literals: [], comments: [] };
+  return maskCode(code, 0, family, scan, false) === null ? { kind: "unmaskable" } : {
+    kind: "masked",
+    masked: scan.masked.join(""),
+    literals: scan.literals,
+    comments: scan.comments
+  };
 }
 function maskCode(code, from, family, scan, insideHole) {
   let openBraces = 0;
@@ -2555,6 +2560,14 @@ function maskCode(code, from, family, scan, insideHole) {
       return index;
     if (insideHole && char === HOLE_UNREADABLE_CHARACTER[family])
       return null;
+    if (family === "python" && char === "#") {
+      const lineEnd = code.slice(index).search(/[\r\n]/);
+      const end = lineEnd === -1 ? code.length : index + lineEnd;
+      scan.comments.push(code.slice(index, end));
+      scan.masked.fill(" ", index, end);
+      index = end - 1;
+      continue;
+    }
     if (char === "{")
       openBraces++;
     if (char === "}")
@@ -2900,13 +2913,7 @@ function isWrapperToken(token) {
 }
 var PUBLIC_KEY_BASENAMES = new Set(["id_rsa.pub", "id_ed25519.pub", "id_ecdsa.pub"]);
 var ENV_PREFIX = ".env.";
-var ENV_EXEMPTION_BASENAMES = new Set([
-  ".env.example",
-  ".env.sample",
-  ".env.template",
-  ".env.tpl",
-  ".env.defaults"
-]);
+var ENV_TEMPLATE_SUFFIXES = [".example", ".sample", ".template", ".tpl"];
 var ENV_EXEMPTION_PREFIXES = [".env.example.", ".env.sample."];
 function isRemoteUrl(target) {
   let url;
@@ -2957,7 +2964,7 @@ function isSensitivePath(target, cwd, config, environment, budget) {
       return rule.id;
     }
   }
-  if (ENV_EXEMPTION_BASENAMES.has(comparableName) || ENV_EXEMPTION_PREFIXES.some((prefix) => comparableName.startsWith(prefix))) {
+  if (comparableName === ".env.defaults" || comparableName.startsWith(ENV_PREFIX) && ENV_TEMPLATE_SUFFIXES.some((suffix) => comparableName.endsWith(suffix)) || ENV_EXEMPTION_PREFIXES.some((prefix) => comparableName.startsWith(prefix))) {
     return null;
   }
   const codingCliRuleId = matchesCodingCliPath(normalized, cwd, config, environment, budget);
