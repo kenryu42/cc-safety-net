@@ -3025,6 +3025,11 @@ var RUBY_DASH_VALUE_FLAGS = new Set([
   "--enable"
 ]);
 var INTERPRETER_SHELL_CONTINUATION = /\\\r?\n/g;
+var NATIVE_DELETE_ROOT_OR_HOME_ARGUMENT = String.raw`\s*\(\s*(?:(?<quote>['"])(?<literal>[^'"\n]{1,256})\k<quote>|(?:os\.path\.)?expanduser\(['"]~/?['"]\)|(?:pathlib\.)?Path\.home\(\)|os\.environ\[['"]HOME['"]\]|os\.getenv\(['"]HOME['"]\)|\$ENV\{['"]?HOME['"]?\}|(?:\w+\.|require\(['"](?:node:)?os['"]\)\.)?homedir\(\)|process\.env\.HOME|Dir\.home(?:\(\))?|ENV\[['"]HOME['"]\])\s*`;
+var NATIVE_RECURSIVE_DELETE_OF_ROOT_OR_HOME = [
+  new RegExp(String.raw`\b(?:rmtree|remove_tree|rm_rf|rm_r|remove_dir|remove_entry(?:_secure)?)${NATIVE_DELETE_ROOT_OR_HOME_ARGUMENT}[,)]`, "g"),
+  new RegExp(String.raw`\b(?:rmSync|rmdirSync|rm|rmdir)${NATIVE_DELETE_ROOT_OR_HOME_ARGUMENT},\s*\{[^}]{0,256}?(?:\brecursive|(?<keyQuote>['"])recursive\k<keyQuote>)\s*:\s*true\b`, "g")
+];
 var INTERPRETER_EXECUTABLE_SOURCE_SELECTORS = new Map([
   [
     "python",
@@ -3285,6 +3290,10 @@ function supportsInlineEval(interpreter) {
 }
 function containsDangerousCode(code, scanWork, standard = false) {
   const executableCode = collapseInterpreterShellContinuations(code, scanWork);
+  chargeNativeLinearPass(scanWork, executableCode);
+  const deletesRootOrHome = NATIVE_RECURSIVE_DELETE_OF_ROOT_OR_HOME.some((call) => Array.from(executableCode.matchAll(call)).some((match) => match.groups?.literal === undefined || isDangerousRootOrHomeTarget(match.groups.literal, true)));
+  if (deletesRootOrHome)
+    return true;
   if (!interpreterCodeHasDangerousText(executableCode, scanWork))
     return false;
   chargeNativeLinearPass(scanWork, executableCode);

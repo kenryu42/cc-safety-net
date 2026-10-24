@@ -64,7 +64,9 @@ those only as part of a workflow below.
    argv-capable tool; when invoking through a shell, shell-escape the whole command as one
    argument. Never interpolate raw command text into double quotes: `$()`, backticks, and
    variables would expand before `explain` receives it. Add `--cwd <path>` when the decision
-   depends on the working directory. Once received, `explain` analyzes the string and never
+   depends on the working directory, and `--shell posix` or `--shell powershell` when the blocked
+   call came from a host tool that runs that shell, such as Claude Code's `Bash` or `PowerShell`
+   tool; the default `auto` can read a command differently. Once received, `explain` analyzes the string and never
    executes it.
 3. Read the trace: how the command was split, which rule matched, and the RESULT status and
    reason. `explain` exits 0 for both allowed and blocked verdicts; read the verdict from the
