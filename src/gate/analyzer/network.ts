@@ -220,7 +220,6 @@ function commandName(token: string): string {
 
 function isLoopbackUrl(url: string): boolean {
   const authority = url.replace(/^[a-z][a-z\d+.-]*:\/\//i, '').split(/[/?#]/)[0] ?? '';
-  if (/[^\w.:@[\]%-]/.test(authority)) return false;
   const host = authority.slice(authority.lastIndexOf('@') + 1).toLowerCase();
   const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0];
   return LOOPBACK_HOST.test(name ?? '');
