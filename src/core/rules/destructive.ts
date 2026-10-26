@@ -534,6 +534,15 @@ const DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     intent: 'manual_only',
   },
   {
+    id: 'unshare.user-namespace',
+    category: 'Execution',
+    label: 'unshare user namespace',
+    description:
+      'Blocks unshare creating a user namespace: -U/--user, -r/--map-root-user, -c/--map-current-user, --map-user(s), --map-group(s), or --map-auto.',
+    example: 'unshare -r id',
+    intent: 'manual_only',
+  },
+  {
     id: 'interpreter.dangerous-command',
     category: 'Execution',
     label: 'Interpreter dangerous command',

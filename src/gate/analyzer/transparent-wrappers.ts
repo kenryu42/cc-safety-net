@@ -82,6 +82,7 @@ function isProtectableCommand(
   const normalized = normalizeCommandToken(token);
   return (
     normalized === 'git' ||
+    normalized === 'unshare' ||
     basename === 'busybox' ||
     isStandardCommandWrapper(token) ||
     BUILTIN_ANALYZED_COMMANDS.has(basename) ||

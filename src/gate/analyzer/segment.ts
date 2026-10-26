@@ -31,6 +31,7 @@ import { analysisWordText, analyzedViewWords, textCommandWords } from './command
 import { dangerousInTextMatch } from './dangerous-text';
 import { analyzeDynamicCommandStructure, hasDynamicExecutableSource } from './derived-input';
 import { analyzeDeviceCommandMatch } from './device';
+import { analyzeNamespaceCommandMatch } from './namespace';
 import { analyzeNetworkCommandMatch } from './network';
 import { analyzeGitDetailed } from './git';
 import { resolveTrackedHeredocPath } from './heredoc-files';
@@ -602,6 +603,10 @@ export function analyzeSegment(
           [
             'analyzer/network.ts:analyzeNetworkCommandMatch',
             analyzeNetworkCommandMatch(normalizedHead, stripped),
+          ],
+          [
+            'analyzer/namespace.ts:analyzeNamespaceCommandMatch',
+            analyzeNamespaceCommandMatch(normalizedHead, stripped),
           ],
         ] as const
       )
