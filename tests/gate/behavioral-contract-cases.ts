@@ -2023,6 +2023,9 @@ export function behavioralContractCases(paths: {
       "bash -c 'curl 169.254.169.254'",
       'sudo curl http://METADATA.GOOG/computeMetadata/v1/',
       'curl -g http://[fd00:ec2::254]/latest/meta-data/',
+      'xargs curl http://169.254.169.254/',
+      'find . -exec curl http://169.254.169.254/ \\;',
+      'git ls-files | xargs -n 1 sudo curl http://169.254.169.254/',
     ].map((command) => ({
       name: `blocks a request to a cloud metadata endpoint: ${command}`,
       command,
@@ -2040,6 +2043,12 @@ export function behavioralContractCases(paths: {
       'echo http://169.254.169.254/',
       'curl http://169.254.169.2540/',
       'curl http://metadata.google.internal.example.com/',
+      'git grep 169.254.169.254',
+      "git commit -m 'fix: allow IMDS access to 169.254.169.254'",
+      'gh pr create --title "Block metadata.google.internal" --body x',
+      'git ls-files | xargs grep -l 169.254.169.254',
+      "find . -name '*.py' -exec grep -l 169.254.169.254 {} +",
+      'export NO_PROXY=localhost,169.254.169.254',
     ].map((command) => ({
       name: `allows text mentioning a metadata host or a different host: ${command}`,
       command,
