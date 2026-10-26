@@ -2060,6 +2060,8 @@ export function behavioralContractCases(paths: {
       "sed -i 's/169.254.169.254/127.0.0.1/' config.yaml",
       'dig metadata.google.internal',
       'curl http://169.254.170.20/',
+      "curl --noproxy 'localhost,169.254.169.254' http://localhost:8080/health",
+      'curl --noproxy=169.254.169.254 http://localhost:8080/health',
     ].map((command) => ({
       name: `allows text mentioning a metadata host or a different host: ${command}`,
       command,
