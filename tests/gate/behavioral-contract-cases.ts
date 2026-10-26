@@ -2141,7 +2141,6 @@ export function behavioralContractCases(paths: {
       'unshare --map-subids bash',
       'unshare --owner 0:0 bash',
       'unshare --whitelist-env FOO -U bash',
-      "printf '%s\\n' true | xargs -n1 unshare -r",
       'find . -maxdepth 0 -exec unshare -r id \\;',
     ].map((command) => ({
       name: `blocks creating a user namespace: ${command}`,
@@ -2157,6 +2156,7 @@ export function behavioralContractCases(paths: {
     ...[
       'unshare -n true',
       'printf x | xargs unshare -n true',
+      "printf '%s\\n' true | xargs echo unshare -r id",
       'unshare -u hostname',
       'unshare -n grep -r foo .',
       'unshare -w /tmp/Ur -n true',

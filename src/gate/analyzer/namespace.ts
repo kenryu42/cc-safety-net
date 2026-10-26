@@ -1,6 +1,5 @@
 import { destructiveCommandMatch } from '@/core/rules/destructive';
 import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
-import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
 
 const REASON_USER_NAMESPACE =
   'unshare creating a user namespace grants root inside it, a common step toward privilege escalation. Run it manually if you need it.';
@@ -47,14 +46,8 @@ export function analyzeNamespaceCommandMatch(
   head: string,
   tokens: readonly string[],
 ): DestructiveCommandRuleMatch | null {
-  const start =
-    head === 'xargs'
-      ? tokens.findIndex((token) => normalizeCommandToken(getBasename(token)) === 'unshare')
-      : 0;
-  if (start < 0 || normalizeCommandToken(getBasename(tokens[start] ?? head)) !== 'unshare') {
-    return null;
-  }
-  const operands = tokens.slice(start + 1);
+  if (head !== 'unshare') return null;
+  const operands = tokens.slice(1);
   const isOptionValue = (index: number) => takesNextValue(operands[index - 1] ?? '');
   const programIndex = operands.findIndex(
     (token, index) => !isOptionValue(index) && (token === '--' || !token.startsWith('-')),
