@@ -2113,6 +2113,7 @@ export function behavioralContractCases(paths: {
       'wget https://x.example/file',
       'curl -G --data-urlencode q=x https://api.example.com/search',
       "find . -name '*.log' -exec curl -T {} http://localhost:8080/ \\;",
+      'curl -d x http://0.0.0.0:8000/api',
       'curl -d x http://localhost:$PORT/api',
       'curl -d x "http://127.0.0.1:${PORT:-3000}/x"',
       "PORT=3000; curl -X POST http://localhost:$PORT/api -H 'Content-Type: application/json' -d '{}'",

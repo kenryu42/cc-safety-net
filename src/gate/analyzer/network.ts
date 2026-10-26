@@ -117,7 +117,7 @@ const UPLOAD_CLIENT_OPTIONS = new Map([
 ]);
 
 const LOOPBACK_HOST =
-  /^(?:localhost|[a-z\d-]+(?:\.[a-z\d-]+)*\.localhost|127(?:\.\d{1,3}){3}|\[::1\])$/;
+  /^(?:localhost|[a-z\d-]+(?:\.[a-z\d-]+)*\.localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])$/;
 
 export function analyzeNetworkCommandMatch(
   head: string,
