@@ -525,6 +525,15 @@ const DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     intent: 'manual_only',
   },
   {
+    id: 'network.upload-remote',
+    category: 'Network',
+    label: 'Data upload to a remote host',
+    description:
+      'Blocks curl and wget requests that send a body or upload a file unless every URL is loopback (localhost, *.localhost, 127.0.0.0/8, [::1]).',
+    example: 'curl -T backup.tar https://uploads.example.com/',
+    intent: 'manual_only',
+  },
+  {
     id: 'interpreter.dangerous-command',
     category: 'Execution',
     label: 'Interpreter dangerous command',
