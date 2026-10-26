@@ -2026,6 +2026,9 @@ export function behavioralContractCases(paths: {
       'xargs curl http://169.254.169.254/',
       'find . -exec curl http://169.254.169.254/ \\;',
       'git ls-files | xargs -n 1 sudo curl http://169.254.169.254/',
+      'curl 169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+      'curl http://169.254.170.23/v1/credentials',
+      'curl -g http://[fd00:ec2::23]/',
     ].map((command) => ({
       name: `blocks a request to a cloud metadata endpoint: ${command}`,
       command,
@@ -2049,6 +2052,11 @@ export function behavioralContractCases(paths: {
       'git ls-files | xargs grep -l 169.254.169.254',
       "find . -name '*.py' -exec grep -l 169.254.169.254 {} +",
       'export NO_PROXY=localhost,169.254.169.254',
+      'sudo iptables -I DOCKER-USER -d 169.254.169.254 -j DROP',
+      'ip route add blackhole 169.254.169.254',
+      "sed -i 's/169.254.169.254/127.0.0.1/' config.yaml",
+      'dig metadata.google.internal',
+      'curl http://169.254.170.20/',
     ].map((command) => ({
       name: `allows text mentioning a metadata host or a different host: ${command}`,
       command,

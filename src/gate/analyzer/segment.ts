@@ -601,7 +601,7 @@ export function analyzeSegment(
           ],
           [
             'analyzer/network.ts:analyzeNetworkCommandMatch',
-            analyzeNetworkCommandMatch(normalizedHead, stripped),
+            analyzeNetworkCommandMatch(normalizedHead, stripped, options.environment),
           ],
         ] as const
       )

@@ -520,7 +520,7 @@ const DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     category: 'Network',
     label: 'Cloud metadata endpoint',
     description:
-      'Blocks commands naming a cloud metadata host (169.254.169.254, fd00:ec2::254, metadata.google.internal, metadata.goog, 100.100.100.200), except echo, printf, grep, and rg.',
+      'Blocks HTTP clients, raw socket tools, and code interpreters naming a cloud metadata host (169.254.169.254, fd00:ec2::254, 169.254.170.2, 169.254.170.23, fd00:ec2::23, metadata.google.internal, metadata.goog, 100.100.100.200).',
     example: 'curl http://169.254.169.254/latest/meta-data/iam/security-credentials/',
     intent: 'manual_only',
   },
