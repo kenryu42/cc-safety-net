@@ -1,13 +1,14 @@
 import { destructiveCommandMatch } from '@/core/rules/destructive';
 import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
+import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
 
 const REASON_USER_NAMESPACE =
   'unshare creating a user namespace grants root inside it, a common step toward privilege escalation. Run it manually if you need it.';
 
 const USER_NAMESPACE_LONG_OPTION =
-  /^--(?:user|map-root-user|map-current-user|map-auto|map-(?:user|group)s?)(?:=|$)/;
-const USER_NAMESPACE_SHORT_FLAG = /[Urc]/;
-const SHORT_VALUE_FLAG = /[RwSG]/;
+  /^--(?:user|map-root-user|map-current-user|map-auto|map-subids|map-(?:user|group)s?|owner|mount-binfmt|load-interp)(?:=|$)/;
+const USER_NAMESPACE_SHORT_FLAG = /[Urcl]/;
+const SHORT_VALUE_FLAG = /[RwSGl]/;
 const LONG_VALUE_OPTIONS = new Set([
   '--propagation',
   '--setgroups',
@@ -19,6 +20,9 @@ const LONG_VALUE_OPTIONS = new Set([
   '--map-group',
   '--map-users',
   '--map-groups',
+  '--owner',
+  '--whitelist-env',
+  '--load-interp',
 ]);
 
 function firstValueFlagIndex(cluster: string) {
@@ -36,15 +40,21 @@ function takesNextValue(token: string) {
 function createsUserNamespace(option: string) {
   return option.startsWith('--')
     ? USER_NAMESPACE_LONG_OPTION.test(option)
-    : USER_NAMESPACE_SHORT_FLAG.test(option.slice(1, firstValueFlagIndex(option)));
+    : USER_NAMESPACE_SHORT_FLAG.test(option.slice(1, firstValueFlagIndex(option) + 1));
 }
 
 export function analyzeNamespaceCommandMatch(
   head: string,
   tokens: readonly string[],
 ): DestructiveCommandRuleMatch | null {
-  if (head !== 'unshare') return null;
-  const operands = tokens.slice(1);
+  const start =
+    head === 'xargs'
+      ? tokens.findIndex((token) => normalizeCommandToken(getBasename(token)) === 'unshare')
+      : 0;
+  if (start < 0 || normalizeCommandToken(getBasename(tokens[start] ?? head)) !== 'unshare') {
+    return null;
+  }
+  const operands = tokens.slice(start + 1);
   const isOptionValue = (index: number) => takesNextValue(operands[index - 1] ?? '');
   const programIndex = operands.findIndex(
     (token, index) => !isOptionValue(index) && (token === '--' || !token.startsWith('-')),

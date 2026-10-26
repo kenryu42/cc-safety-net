@@ -2135,6 +2135,14 @@ export function behavioralContractCases(paths: {
       'unshare --propagation private -fpU bash',
       'sudo unshare -U bash',
       'timeout 10 unshare -r id',
+      'unshare --mount-binfmt bash',
+      'unshare -l /usr/bin/qemu-aarch64 bash',
+      'unshare --load-interp /usr/bin/qemu-aarch64 bash',
+      'unshare --map-subids bash',
+      'unshare --owner 0:0 bash',
+      'unshare --whitelist-env FOO -U bash',
+      "printf '%s\\n' true | xargs -n1 unshare -r",
+      'find . -maxdepth 0 -exec unshare -r id \\;',
     ].map((command) => ({
       name: `blocks creating a user namespace: ${command}`,
       command,
@@ -2148,6 +2156,7 @@ export function behavioralContractCases(paths: {
     })),
     ...[
       'unshare -n true',
+      'printf x | xargs unshare -n true',
       'unshare -u hostname',
       'unshare -n grep -r foo .',
       'unshare -w /tmp/Ur -n true',
