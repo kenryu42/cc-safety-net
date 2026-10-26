@@ -2117,6 +2117,8 @@ export function behavioralContractCases(paths: {
       'curl -d x http://localhost:$PORT/api',
       'curl -d x "http://127.0.0.1:${PORT:-3000}/x"',
       "PORT=3000; curl -X POST http://localhost:$PORT/api -H 'Content-Type: application/json' -d '{}'",
+      "curl --proxy '' -d '{}' http://localhost:3000/api",
+      "curl --url-query page=1 -d '{}' http://localhost:3000/api",
     ].map((command) => ({
       name: `allows a request that uploads nothing or only to loopback: ${command}`,
       command,

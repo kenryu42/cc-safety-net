@@ -77,6 +77,7 @@ const UPLOAD_CLIENT_OPTIONS = new Map([
         '--max-filesize',
         '--max-redirs',
         '--noproxy',
+        '--url-query',
         '--aws-sigv4',
         '--variable',
         '--stderr',
@@ -166,7 +167,7 @@ function uploadsToRemoteHost(head: string, tokens: readonly string[]): boolean {
   const urls: string[] = [];
   const record = (role: OptionRole, value: string) => {
     roles.add(role);
-    if (role === 'url') urls.push(value);
+    if (role === 'url' && value !== '') urls.push(value);
     if (role === 'source') urls.push('');
   };
   let index = 0;
