@@ -2014,6 +2014,38 @@ export function behavioralContractCases(paths: {
       options: options({ cwd: paths.cwd }),
       expected: { kind: 'allow' as const },
     })),
+    ...[
+      'curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+      'wget -qO- http://169.254.169.254/',
+      'curl http://100.100.100.200/latest/meta-data/ram/security-credentials/',
+      "curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/",
+      `python3 -c "import urllib.request; print(urllib.request.urlopen('http://169.254.169.254/').read())"`,
+      "bash -c 'curl 169.254.169.254'",
+      'sudo curl http://METADATA.GOOG/computeMetadata/v1/',
+      'curl -g http://[fd00:ec2::254]/latest/meta-data/',
+    ].map((command) => ({
+      name: `blocks a request to a cloud metadata endpoint: ${command}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block' as const,
+        ruleId: 'network.cloud-metadata',
+        intent: 'manual_only' as const,
+        reasonIncludes: 'cloud metadata endpoint',
+      },
+    })),
+    ...[
+      'grep 169.254.169.254 log',
+      'rg metadata.google.internal src',
+      'echo http://169.254.169.254/',
+      'curl http://169.254.169.2540/',
+      'curl http://metadata.google.internal.example.com/',
+    ].map((command) => ({
+      name: `allows text mentioning a metadata host or a different host: ${command}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' as const },
+    })),
     {
       name: 'allows awk running a literal command',
       command: `awk 'BEGIN { system("ls") }'`,
