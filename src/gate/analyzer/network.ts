@@ -1,3 +1,4 @@
+import { REQUEST_CLIENT_COMMANDS } from '@/core/rules/constants';
 import { destructiveCommandMatch } from '@/core/rules/destructive';
 import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import { isInterpreterCommand } from '@/core/policy/transparent-wrappers';
@@ -10,23 +11,6 @@ import { extractXargsChildCommandWithInfo } from './xargs';
 const REASON_CLOUD_METADATA =
   'This reaches a cloud metadata endpoint, which hands out instance credentials. Run metadata requests manually if you need them.';
 
-const REQUEST_CLIENT_HEADS = new Set([
-  'curl',
-  'wget',
-  'aria2c',
-  'http',
-  'https',
-  'xh',
-  'xhs',
-  'httpie',
-  'fetch',
-  'lwp-request',
-  'nc',
-  'ncat',
-  'netcat',
-  'socat',
-  'telnet',
-]);
 const CLOUD_METADATA_HOST =
   /(?<![\w.-])(?:169\.254\.169\.254|169\.254\.170\.23|169\.254\.170\.2|100\.100\.100\.200|metadata\.google\.internal|metadata\.goog)(?![\w-]|\.[\w-])|(?<![\w:])fd00:ec2::(?:254|23)(?![\w:])/i;
 
@@ -51,7 +35,7 @@ export function analyzeNetworkCommandMatch(
         .find((match) => match) ?? null
     );
   }
-  return (REQUEST_CLIENT_HEADS.has(head) || isInterpreterCommand(head)) &&
+  return (REQUEST_CLIENT_COMMANDS.has(head) || isInterpreterCommand(head)) &&
     tokens.some((token) => CLOUD_METADATA_HOST.test(token))
     ? destructiveCommandMatch('network.cloud-metadata', REASON_CLOUD_METADATA)
     : null;

@@ -2029,6 +2029,9 @@ export function behavioralContractCases(paths: {
       'curl 169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
       'curl http://169.254.170.23/v1/credentials',
       'curl -g http://[fd00:ec2::23]/',
+      'timeout 10 curl -s http://169.254.169.254/latest/meta-data/',
+      'nohup wget http://169.254.169.254/ &',
+      'timeout 5 nc 169.254.169.254 80',
     ].map((command) => ({
       name: `blocks a request to a cloud metadata endpoint: ${command}`,
       command,

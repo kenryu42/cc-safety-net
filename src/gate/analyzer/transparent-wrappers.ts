@@ -3,7 +3,12 @@ import {
   isInterpreterCommand,
 } from '@/core/policy/transparent-wrappers';
 import type { EffectivePolicy } from '@/core/policy/types';
-import { AWK_INTERPRETERS, DISPLAY_COMMANDS, SHELL_WRAPPERS } from '@/core/rules/constants';
+import {
+  AWK_INTERPRETERS,
+  DISPLAY_COMMANDS,
+  REQUEST_CLIENT_COMMANDS,
+  SHELL_WRAPPERS,
+} from '@/core/rules/constants';
 import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
 import { isDeviceCommand } from './device';
 
@@ -81,6 +86,7 @@ function isProtectableCommand(
     isStandardCommandWrapper(token) ||
     BUILTIN_ANALYZED_COMMANDS.has(basename) ||
     isDeviceCommand(normalized) ||
+    REQUEST_CLIENT_COMMANDS.has(normalized) ||
     isTransparentWrapper(basename, policy) ||
     SHELL_WRAPPERS.has(normalized) ||
     token === '$SHELL' ||
