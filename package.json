@@ -128,7 +128,7 @@
     "zod": "^4.6.6"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "packageManager": "bun@1.4.2",
   "dsh": {

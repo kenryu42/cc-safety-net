@@ -80,7 +80,7 @@ CC Safety Net supports these coding agent CLIs on Windows, macOS, and Linux.
 
 ## Quick start
 
-You need Node.js 18 or higher. Install into the coding CLIs on this machine, then check that protection is working:
+You need Node.js 22 or higher. Install into the coding CLIs on this machine, then check that protection is working:
 
 ```bash
 npx -y cc-safety-net@latest install

@@ -100,7 +100,7 @@ This section is for invited collaborators and for anyone running a local build.
 ### Prerequisites
 
 - **Bun** - Required build/test runtime and package manager ([install guide](https://bun.sh/docs/installation))
-- **Node.js 18 or newer** - Supported runtime for built artifacts
+- **Node.js 22 or newer** - Supported runtime for built artifacts
 - **Claude Code** or **OpenCode** - For testing the plugin
 
 `package.json` defines the project Bun version in `packageManager`. CI, `bun run build`,
@@ -233,7 +233,7 @@ bun run build
 | Convention | Rule |
 |------------|------|
 | Build/test runtime | **Bun**, pinned in `package.json` |
-| Published runtime | **Node.js 18+** |
+| Published runtime | **Node.js 22+** |
 | Package Manager | **bun only** (`bun install`, `bun run`) |
 | Formatter | **Oxfmt** |
 | Linter | **Oxlint** (type-aware) |
