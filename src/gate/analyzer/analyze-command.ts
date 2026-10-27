@@ -19,7 +19,7 @@ import {
   isDynamicExecutable,
 } from '@/core/shell/model';
 import { parseCommand } from '@/core/shell/parse';
-import { getBasename, normalizeCommandToken, parseShellArgv } from '@/core/shell/tokens';
+import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
 import type {
   AnalysisModeFlag,
   AnalyzeInput,
@@ -31,7 +31,6 @@ import type {
   PathResolver,
 } from '@/gate/analysis';
 import type { SemanticFactStore } from '@/gate/facts';
-import { SHELL_STDIN_INTERPRETERS } from '@/gate/guards/guard-walk';
 import type { CommandTraceContext } from '@/gate/trace';
 import { analysisWordText, analyzedViewWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
@@ -1306,13 +1305,7 @@ function getHeredocReason(commandView: CommandView, standard: boolean): string |
   const outputProcessSubstitution = commandView.redirections.some(
     (redirection) => redirection !== heredoc && hasOutputProcessSubstitution(redirection.target),
   );
-  const head = commandView.words[0];
-  const shellRunsHeredocAsProgram =
-    standard &&
-    [...SHELL_STDIN_INTERPRETERS].some((shell) => isBareCommandWord(head, shell)) &&
-    isLiteralHeredoc(heredoc.heredoc) &&
-    parseShellArgv(commandView.words.map(analysisWordText)).readsStdinAsCommands;
-  if (isBareCommandWord(head, 'cat') || shellRunsHeredocAsProgram) {
+  if (isBareCommandWord(commandView.words[0], 'cat')) {
     return outputProcessSubstitution ? REASON_UNSUPPORTED_HEREDOC : undefined;
   }
   if (isBareCommandWord(commandView.words[0], 'tee')) {
@@ -1322,6 +1315,7 @@ function getHeredocReason(commandView: CommandView, standard: boolean): string |
       : undefined;
   }
 
+  const head = commandView.words[0];
   const sub = commandView.words[1];
   if (
     isBareCommandWord(head, 'git') &&

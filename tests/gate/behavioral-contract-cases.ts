@@ -1945,6 +1945,21 @@ export function behavioralContractCases(paths: {
           options: standardOptions,
           expected: { kind: 'allow' as const },
         },
+        ...[
+          'bash <<\'EOF\'\nrm -rf "$1"\nEOF',
+          "bash <<'EOF'\nfor d in a b; do rm -rf ~/$d; done\nEOF",
+          'bash <<\'EOF\'\nwhile read f; do rm -rf "$f"; done\nEOF',
+        ].map((command) => ({
+          name: `keeps the raw-text scan on a heredoc a shell runs: ${command}`,
+          command,
+          options: standardOptions,
+          expected: {
+            kind: 'block' as const,
+            ruleId: 'raw-text.dangerous-command',
+            intent: 'stop_and_explain' as const,
+            reasonIncludes: 'Unparseable command text contains a destructive pattern',
+          },
+        })),
         ...(['strict', 'paranoid'] as const).flatMap((level) =>
           [...uploads, unshare, reset, benign, ...interpreterBodies].map((command) => ({
             name: `fails closed on a heredoc a shell runs as its program at ${level} safety: ${command}`,
