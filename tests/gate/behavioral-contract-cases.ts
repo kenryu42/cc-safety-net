@@ -1917,7 +1917,7 @@ export function behavioralContractCases(paths: {
         kind: 'block',
         ruleId: 'dd.device-write',
         intent: 'manual_only',
-        reasonIncludes: 'can destroy a disk or partition',
+        reasonIncludes: 'Ask the user to run device writes manually',
       },
     },
     ...[
@@ -1943,7 +1943,7 @@ export function behavioralContractCases(paths: {
         kind: 'block' as const,
         ruleId: 'disk.erase',
         intent: 'manual_only' as const,
-        reasonIncludes: 'erases or repartitions a disk',
+        reasonIncludes: 'Ask the user to run disk erase',
       },
     })),
     {
@@ -1954,7 +1954,7 @@ export function behavioralContractCases(paths: {
         kind: 'block',
         ruleId: 'disk.erase',
         intent: 'manual_only',
-        reasonIncludes: 'erases or repartitions a disk',
+        reasonIncludes: 'Ask the user to run disk erase',
       },
     },
     ...['newfs_hfs /dev/disk2s1', 'newfs_msdos /dev/disk3', 'mke2fs -t ext4 /dev/sde'].map(
@@ -1966,7 +1966,7 @@ export function behavioralContractCases(paths: {
           kind: 'block' as const,
           ruleId: 'mkfs.device',
           intent: 'manual_only' as const,
-          reasonIncludes: 'erases everything on it',
+          reasonIncludes: 'Ask the user to run the format manually',
         },
       }),
     ),
@@ -2000,7 +2000,7 @@ export function behavioralContractCases(paths: {
         kind: 'block' as const,
         ruleId: 'redirect.block-device',
         intent: 'manual_only' as const,
-        reasonIncludes: 'overwrites a disk device',
+        reasonIncludes: 'Ask the user to run device writes manually',
       },
     })),
     ...[
@@ -2040,7 +2040,7 @@ export function behavioralContractCases(paths: {
         kind: 'block' as const,
         ruleId: 'network.cloud-metadata',
         intent: 'manual_only' as const,
-        reasonIncludes: 'cloud metadata endpoint',
+        reasonIncludes: 'Ask the user to run metadata requests manually',
       },
     })),
     ...[
@@ -2097,7 +2097,7 @@ export function behavioralContractCases(paths: {
         kind: 'block' as const,
         ruleId: 'network.upload-remote',
         intent: 'manual_only' as const,
-        reasonIncludes: 'uploads data to a remote host',
+        reasonIncludes: 'ask the user to run the upload manually',
       },
     })),
     ...[
@@ -2150,7 +2150,7 @@ export function behavioralContractCases(paths: {
         kind: 'block' as const,
         ruleId: 'unshare.user-namespace',
         intent: 'manual_only' as const,
-        reasonIncludes: 'user namespace',
+        reasonIncludes: 'Ask the user to run it manually',
       },
     })),
     ...[

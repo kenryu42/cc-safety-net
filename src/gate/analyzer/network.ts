@@ -5,10 +5,10 @@ import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
 
 const REASON_CLOUD_METADATA =
-  'This reaches a cloud metadata endpoint, which hands out instance credentials. Run metadata requests manually if you need them.';
+  'This reaches a cloud metadata endpoint, which hands out instance credentials. Ask the user to run metadata requests manually if they are needed.';
 
 const REASON_UPLOAD_REMOTE =
-  'This uploads data to a remote host, which can send local files or secrets off the machine. Run the upload manually if you need it, or send it to localhost.';
+  'This uploads data to a remote host, which can send local files or secrets off the machine. Send it to localhost instead, or ask the user to run the upload manually if it is needed.';
 
 const CLOUD_METADATA_HOST =
   /(?<![\w.-])(?:169\.254\.169\.254|169\.254\.170\.23|169\.254\.170\.2|100\.100\.100\.200|metadata\.google\.internal|metadata\.goog)(?![\w-]|\.[\w-])|(?<![\w:])fd00:ec2::(?:254|23)(?![\w:])/i;

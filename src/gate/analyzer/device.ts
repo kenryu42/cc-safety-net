@@ -3,15 +3,15 @@ import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import type { CommandRedirection } from '@/core/shell/model';
 
 const REASON_DD_DEVICE_WRITE =
-  'dd writing to a /dev device can destroy a disk or partition. Run device writes manually after confirming the target.';
+  'dd writing to a /dev device can destroy a disk or partition. Ask the user to run device writes manually after confirming the target.';
 const REASON_MKFS_DEVICE =
-  'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.';
+  'mkfs formatting a /dev device erases everything on it. Ask the user to run the format manually after confirming the target.';
 const REASON_DISK_ERASE =
-  'This erases or repartitions a disk. Run disk erase and partition commands manually after confirming the target.';
+  'This erases or repartitions a disk. Ask the user to run disk erase and partition commands manually after confirming the target.';
 const REASON_REDIRECT_BLOCK_DEVICE =
-  'This output redirect overwrites a disk device. Run device writes manually after confirming the target.';
+  'This output redirect overwrites a disk device. Ask the user to run device writes manually after confirming the target.';
 const REASON_SHRED_TARGET =
-  'shred permanently destroys the given target. Use rm for ordinary deletes, or run shred manually.';
+  'shred permanently destroys the given target. Use rm for ordinary deletes, or ask the user to run shred manually.';
 
 const DD_SINK_TARGETS = new Set(['of=/dev/null', 'of=/dev/zero', 'of=/dev/full']);
 const FILESYSTEM_FORMAT_HEAD = /^(?:mkfs(?:\..+)?|mke2fs|newfs(?:_.+)?)$/;

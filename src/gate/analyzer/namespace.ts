@@ -2,7 +2,7 @@ import { destructiveCommandMatch } from '@/core/rules/destructive';
 import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 
 const REASON_USER_NAMESPACE =
-  'unshare creating a user namespace grants root inside it, a common step toward privilege escalation. Run it manually if you need it.';
+  'unshare creating a user namespace grants root inside it, a common step toward privilege escalation. Ask the user to run it manually if it is needed.';
 
 const USER_NAMESPACE_LONG_OPTION =
   /^--(?:user|map-root-user|map-current-user|map-auto|map-subids|map-(?:user|group)s?|owner|mount-binfmt|load-interp)(?:=|$)/;

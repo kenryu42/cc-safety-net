@@ -340,13 +340,13 @@ describe('device commands', () => {
     const formatsDevice: DestructiveCommandRuleMatch = {
       id: 'mkfs.device',
       reason:
-        'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.',
+        'mkfs formatting a /dev device erases everything on it. Ask the user to run the format manually after confirming the target.',
       intent: 'manual_only',
     };
     const erasesDisk: DestructiveCommandRuleMatch = {
       id: 'disk.erase',
       reason:
-        'This erases or repartitions a disk. Run disk erase and partition commands manually after confirming the target.',
+        'This erases or repartitions a disk. Ask the user to run disk erase and partition commands manually after confirming the target.',
       intent: 'manual_only',
     };
     const rows: readonly {
@@ -358,7 +358,7 @@ describe('device commands', () => {
         match: {
           id: 'dd.device-write',
           reason:
-            'dd writing to a /dev device can destroy a disk or partition. Run device writes manually after confirming the target.',
+            'dd writing to a /dev device can destroy a disk or partition. Ask the user to run device writes manually after confirming the target.',
           intent: 'manual_only',
         },
       },
@@ -371,7 +371,7 @@ describe('device commands', () => {
         match: {
           id: 'dd.device-write',
           reason:
-            'dd writing to a /dev device can destroy a disk or partition. Run device writes manually after confirming the target.',
+            'dd writing to a /dev device can destroy a disk or partition. Ask the user to run device writes manually after confirming the target.',
           intent: 'manual_only',
         },
       },
@@ -382,7 +382,7 @@ describe('device commands', () => {
         match: {
           id: 'mkfs.device',
           reason:
-            'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.',
+            'mkfs formatting a /dev device erases everything on it. Ask the user to run the format manually after confirming the target.',
           intent: 'manual_only',
         },
       },
@@ -391,7 +391,7 @@ describe('device commands', () => {
         match: {
           id: 'mkfs.device',
           reason:
-            'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.',
+            'mkfs formatting a /dev device erases everything on it. Ask the user to run the format manually after confirming the target.',
           intent: 'manual_only',
         },
       },
@@ -462,7 +462,7 @@ describe('device commands', () => {
         match: {
           id: 'shred.target',
           reason:
-            'shred permanently destroys the given target. Use rm for ordinary deletes, or run shred manually.',
+            'shred permanently destroys the given target. Use rm for ordinary deletes, or ask the user to run shred manually.',
           intent: 'use_alternative',
         },
       },
