@@ -67,6 +67,7 @@ export const SCRIPT_FIXTURES = {
   'scripts/unparseable.sh': "echo 'unterminated\n",
   'scripts/one-liner.sh': 'rm -rf "$1"\npython3 -c \'print(1)\'\n',
   'scripts/clean.sh': 'rm -rf "$1"\nfind . -name \'*.tmp\' -delete\n',
+  'scripts/one-liner-upload.sh': `python3 -c 'print(1)'\n${UPLOAD}\n`,
 };
 
 export function behavioralContractCases(paths: {
@@ -2185,6 +2186,7 @@ export function behavioralContractCases(paths: {
       'chmod +x scripts/upload.sh && ./scripts/upload.sh',
       './scripts/upload.sh install',
       'sh scripts/upload.sh install --prefix out',
+      'sh scripts/one-liner-upload.sh',
     ].flatMap((command) =>
       levels.map(([level, values]) => ({
         name: `blocks a script file on disk that uploads data${level}: ${command}`,

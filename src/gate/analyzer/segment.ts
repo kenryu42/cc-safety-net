@@ -1003,7 +1003,7 @@ function analyzeScriptFile(
   if (options.writtenPaths?.has(path)) return null;
   const scriptReads = options.scriptReads ?? {};
   const scriptBudget = (scriptReads.budget ??= createBudget());
-  const analyze = (failClosed?: boolean) =>
+  const analyze = (withoutUncertainCapabilities?: boolean) =>
     nestedResultWithinLimits(() => {
       scriptBudget.charge('scriptFiles');
       const body = readShellScriptFile(path);
@@ -1013,13 +1013,14 @@ function analyzeScriptFile(
         effectiveCwd,
         envAssignments,
         scriptBudget,
-        failClosed,
+        withoutUncertainCapabilities,
       });
     });
   const concrete = (result: AnalyzeBlockResult | null) =>
     result && !UNCERTAIN_RULE_ID_RE.test(result.ruleId) ? result : null;
   const result = analyze();
-  return concrete(result) ?? (options.strict && result ? concrete(analyze(false)) : null);
+  const hasUncertainCapabilities = options.strict || options.paranoidInterpreters;
+  return concrete(result) ?? (hasUncertainCapabilities && result ? concrete(analyze(true)) : null);
 }
 
 function nestedResultWithinLimits(

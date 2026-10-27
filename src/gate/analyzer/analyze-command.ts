@@ -834,18 +834,19 @@ function analyzeCommandView(
           : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
-        ...(overrides?.failClosed === undefined
-          ? {}
-          : resolveCommandAnalysisContext({
+        ...(overrides?.withoutUncertainCapabilities
+          ? resolveCommandAnalysisContext({
               ...options,
               effectiveCapabilities: {
                 ...options.effectiveCapabilities,
-                fail_closed: {
-                  ...options.effectiveCapabilities.fail_closed,
-                  enabled: overrides.failClosed,
+                fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
+                paranoid_interpreters: {
+                  ...options.effectiveCapabilities.paranoid_interpreters,
+                  enabled: false,
                 },
               },
-            })),
+            })
+          : {}),
         budget: overrides?.scriptBudget ?? options.budget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
