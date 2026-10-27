@@ -42,6 +42,8 @@ export const LIMITS = Object.freeze({
 
   trackedHeredocFiles: { cap: 64, ...DERIVED },
 
+  scriptFiles: { cap: 64, ...DERIVED },
+
   controlFlowStates: { cap: 64, ...DERIVED },
 
   wrapperPeelIterations: { cap: 20, ...DERIVED },

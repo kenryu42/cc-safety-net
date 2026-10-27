@@ -63,4 +63,5 @@ export interface AnalyzeNestedOverrides {
   shell?: ShellKind;
 
   functionDefinitions?: ReadonlyMap<string, CommandProgram>;
+  scriptBudget?: Budget;
 }

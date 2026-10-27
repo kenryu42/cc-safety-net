@@ -15,6 +15,7 @@ const CAPS: Readonly<Record<CountedKind, number>> = {
   recursionDepth: 10,
   derivedTokens: 16_384,
   trackedHeredocFiles: 64,
+  scriptFiles: 64,
   controlFlowStates: 64,
   wrapperPeelIterations: 20,
 };
@@ -26,6 +27,7 @@ const REASONS: Readonly<Record<keyof typeof LIMITS, string>> = {
   recursionDepth: RECURSION,
   derivedTokens: DERIVED_WORK,
   trackedHeredocFiles: DERIVED_WORK,
+  scriptFiles: DERIVED_WORK,
   controlFlowStates: DERIVED_WORK,
   wrapperPeelIterations: DERIVED_WORK,
   derivedCommandShape: DERIVED_WORK,
@@ -38,6 +40,7 @@ const COUNTED_KINDS: readonly CountedKind[] = [
   'recursionDepth',
   'derivedTokens',
   'trackedHeredocFiles',
+  'scriptFiles',
   'controlFlowStates',
   'wrapperPeelIterations',
 ];
@@ -112,6 +115,7 @@ describe('analysis budget', () => {
       recursionDepth: 'structural-shell-syntax-limit',
       derivedTokens: 'structural-shell-syntax-limit',
       trackedHeredocFiles: 'structural-shell-syntax-limit',
+      scriptFiles: 'structural-shell-syntax-limit',
       controlFlowStates: 'structural-shell-syntax-limit',
       wrapperPeelIterations: 'structural-shell-syntax-limit',
       derivedCommandShape: 'structural-shell-syntax-limit',

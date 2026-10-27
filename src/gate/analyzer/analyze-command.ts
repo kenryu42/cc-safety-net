@@ -70,6 +70,8 @@ export type InternalOptions = AnalyzeInput &
     factStore?: SemanticFactStore;
     budget: Budget;
     literalHeredocFiles?: ReadonlyMap<string, string>;
+    writtenPaths?: Set<string>;
+    scriptBudget?: Budget;
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     rootProgram?: CommandProgram;
   };
@@ -154,7 +156,12 @@ export function analyzeCommandInternal(
     options.environment.env,
     options.envAssignments,
   );
-  return analyzeProgram(program, depth, { ...options, rootProgram: program }, originalCwd, [
+  const programOptions = {
+    ...options,
+    rootProgram: program,
+    writtenPaths: options.writtenPaths ?? new Set<string>(),
+  };
+  return analyzeProgram(program, depth, programOptions, originalCwd, [
     {
       effectiveCwd,
       shellGitContextState,
@@ -710,6 +717,7 @@ function analyzeCommandView(
       intent: 'stop_and_explain',
     };
   }
+  recordWrittenPaths(commandView, state, options);
   invalidateLiteralHeredocFiles(
     commandView,
     state,
@@ -824,6 +832,8 @@ function analyzeCommandView(
           : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
+        budget: overrides?.scriptBudget ?? options.budget,
+        scriptBudget: overrides?.scriptBudget ?? options.scriptBudget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
         literalHeredocFiles: state.literalHeredocFiles,
@@ -919,6 +929,40 @@ function onlyAssignsVariables(commandView: CommandView): boolean {
     commandView.words.length > 0 &&
     commandView.words.every((word) => SHELL_ASSIGNMENT_WORD_RE.test(word.raw))
   );
+}
+
+const FILE_WRITING_COMMANDS = new Set(['cp', 'mv', 'install', 'ln', 'sed', 'curl', 'wget', 'tee']);
+
+function recordWrittenPaths(
+  commandView: CommandView,
+  state: AnalysisState,
+  options: InternalOptions,
+): void {
+  const writtenPaths = options.writtenPaths;
+  if (!writtenPaths) return;
+  const writesOperands = commandView.words.some((word) =>
+    FILE_WRITING_COMMANDS.has(getBasename(word.text)),
+  );
+  const targets = [
+    ...commandView.redirections.flatMap((redirection) =>
+      redirection.operator.includes('>') && redirection.target ? [redirection.target] : [],
+    ),
+    ...(writesOperands ? commandView.words : []),
+  ].filter((word) => word.provenance === 'literal');
+  const candidates = targets.flatMap((word) => [
+    word.text,
+    word.text.slice(word.text.indexOf('=') + 1),
+    getBasename(word.text.split(/[?#]/)[0] ?? ''),
+  ]);
+  for (const candidate of new Set(candidates)) {
+    const path = resolveTrackedHeredocPath(
+      candidate,
+      state.effectiveCwd,
+      options.environment.paths,
+      options.budget,
+    );
+    if (path) writtenPaths.add(path);
+  }
 }
 
 function invalidateLiteralHeredocFiles(
