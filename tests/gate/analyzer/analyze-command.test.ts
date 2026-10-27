@@ -132,6 +132,20 @@ describe('analyzeCommand', () => {
     });
     expect(decision('parallel echo {}{} ::: x', standard)).toBeNull();
   });
+  test('a long xargs chain is checked for metadata requests without exhausting the stack', () => {
+    expect(decision(`${'xargs '.repeat(16_000)}echo hi`, standard)).toBeNull();
+  });
+  test('nested find actions are checked for metadata requests without a blow-up', () => {
+    const fastest = (groups: number) =>
+      Math.min(
+        ...[0, 1].map(() => {
+          const started = performance.now();
+          decision(`${'find . -exec '.repeat(groups)}true \\;`, standard);
+          return performance.now() - started;
+        }),
+      );
+    expect(fastest(256) / fastest(32)).toBeLessThan(24);
+  });
   test('parallel command lists are analyzed one command at a time', () => {
     expect(decision(`parallel ::: ${Array(1025).fill('true').join(' ')}`, standard)).toBeNull();
     expect(decision('parallel ::: true true', standard)).toBeNull();

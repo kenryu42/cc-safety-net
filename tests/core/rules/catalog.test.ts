@@ -7,7 +7,7 @@ describe('rule catalogs', () => {
   const secret = nextSecret.SECRET_PROTECTION_RULE_METADATA;
 
   test('every destructive record is uniquely identified and fully described', () => {
-    expect(destructive).toHaveLength(71);
+    expect(destructive).toHaveLength(74);
     const ids = destructive.map((rule) => rule.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(nextDestructive.DESTRUCTIVE_COMMAND_RULE_ID_SET).toEqual(new Set(ids));

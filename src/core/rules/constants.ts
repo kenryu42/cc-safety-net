@@ -116,3 +116,21 @@ export const DISPLAY_COMMANDS: ReadonlySet<string> = new Set([
   'mesg',
   'notify-send',
 ]);
+
+export const REQUEST_CLIENT_COMMANDS = new Set([
+  'curl',
+  'wget',
+  'aria2c',
+  'http',
+  'https',
+  'xh',
+  'xhs',
+  'httpie',
+  'fetch',
+  'lwp-request',
+  'nc',
+  'ncat',
+  'netcat',
+  'socat',
+  'telnet',
+]);

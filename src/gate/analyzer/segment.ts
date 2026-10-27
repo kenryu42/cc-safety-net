@@ -31,6 +31,8 @@ import { analysisWordText, analyzedViewWords, textCommandWords } from './command
 import { dangerousInTextMatch } from './dangerous-text';
 import { analyzeDynamicCommandStructure, hasDynamicExecutableSource } from './derived-input';
 import { analyzeDeviceCommandMatch } from './device';
+import { analyzeNamespaceCommandMatch } from './namespace';
+import { analyzeNetworkCommandMatch } from './network';
 import { analyzeGitDetailed } from './git';
 import { resolveTrackedHeredocPath } from './heredoc-files';
 import {
@@ -590,20 +592,37 @@ export function analyzeSegment(
     });
   }
 
-  const filteredDeviceMatch = child
-    ? null
-    : filterDestructiveCommandMatch(
-        analyzeDeviceCommandMatch(normalizedHead, stripped),
-        options.policy,
-      );
-  if (filteredDeviceMatch) {
+  const argvRuleCheck = child
+    ? undefined
+    : (
+        [
+          [
+            'analyzer/device.ts:analyzeDeviceCommandMatch',
+            analyzeDeviceCommandMatch(normalizedHead, stripped),
+          ],
+          [
+            'analyzer/network.ts:analyzeNetworkCommandMatch',
+            analyzeNetworkCommandMatch(normalizedHead, stripped),
+          ],
+          [
+            'analyzer/namespace.ts:analyzeNamespaceCommandMatch',
+            analyzeNamespaceCommandMatch(normalizedHead, stripped),
+          ],
+        ] as const
+      )
+        .map(([rule, match]) => ({
+          rule,
+          match: filterDestructiveCommandMatch(match, options.policy),
+        }))
+        .find((check) => check.match);
+  if (argvRuleCheck?.match) {
     trace?.recordSegment({
       type: 'rule-check',
-      rule: 'analyzer/device.ts:analyzeDeviceCommandMatch',
+      rule: argvRuleCheck.rule,
       matched: true,
-      reason: filteredDeviceMatch.reason,
+      reason: argvRuleCheck.match.reason,
     });
-    return blockResultFromMatch(filteredDeviceMatch);
+    return blockResultFromMatch(argvRuleCheck.match);
   }
 
   const analyzerOptions =
