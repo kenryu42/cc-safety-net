@@ -44,7 +44,7 @@ describe('published runtime contract', () => {
     });
     expect(pkg.peerDependencies).toEqual({
       '@opencode-ai/plugin': '^1.18.29',
-      '@opencode/plugin': '^2.0.6',
+      '@opencode/plugin': '>=2.0.6 <2.2.0',
     });
     expect(pkg.peerDependenciesMeta).toEqual({
       '@opencode-ai/plugin': { optional: true },
