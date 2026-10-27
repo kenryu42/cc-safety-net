@@ -1,4 +1,4 @@
-import { AnalysisLimit, createBudget, LIMITS } from '@/core/budget';
+import { AnalysisLimit, type Budget, createBudget, LIMITS } from '@/core/budget';
 import { normalizeMsysDrivePath } from '@/core/paths/canonicalization';
 import { resolveChdirTarget } from '@/core/paths/chdir';
 import { isTmpdirOverriddenToNonTemp } from '@/core/paths/tmpdir';
@@ -1005,6 +1005,7 @@ function analyzeScriptFile(
   const scriptBudget = (scriptReads.budget ??= createBudget());
   const analyze = (withoutUncertainCapabilities?: boolean) =>
     nestedResultWithinLimits(() => {
+      if (withoutUncertainCapabilities) resetAllButScriptFiles(scriptBudget);
       scriptBudget.charge('scriptFiles');
       const body = readShellScriptFile(path);
       if (body === null) return null;
@@ -1021,6 +1022,12 @@ function analyzeScriptFile(
   const result = analyze();
   const hasUncertainCapabilities = options.strict || options.paranoidInterpreters;
   return concrete(result) ?? (hasUncertainCapabilities && result ? concrete(analyze(true)) : null);
+}
+
+function resetAllButScriptFiles(budget: Budget): void {
+  const scriptFiles = budget.counters.get('scriptFiles');
+  budget.counters.clear();
+  if (scriptFiles !== undefined) budget.counters.set('scriptFiles', scriptFiles);
 }
 
 function nestedResultWithinLimits(

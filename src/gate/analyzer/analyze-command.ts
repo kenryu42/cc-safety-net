@@ -946,6 +946,32 @@ function onlyAssignsVariables(commandView: CommandView): boolean {
 }
 
 const FILE_WRITING_COMMANDS = new Set(['cp', 'mv', 'install', 'ln', 'sed', 'curl', 'wget', 'tee']);
+const DESTINATION_WRITERS = new Set(['cp', 'mv', 'install', 'ln']);
+const SED_IN_PLACE_RE = /^-[^-]*i|^--in-place/;
+const TARGET_DIRECTORY_RE = /^(?:-t|--target-directory=?)(.*)$/;
+
+function writtenOperands(words: readonly CommandWord[]): string[] {
+  const writerIndex = words.findIndex((word) => FILE_WRITING_COMMANDS.has(getBasename(word.text)));
+  const writer = getBasename(words[writerIndex]?.text ?? '');
+  const operands = words
+    .slice(writerIndex + 1)
+    .filter((word) => word.provenance === 'literal')
+    .map((word) => word.text);
+  if (writerIndex === -1) return [];
+  if (writer === 'sed') return operands.some((text) => SED_IN_PLACE_RE.test(text)) ? operands : [];
+  if (!DESTINATION_WRITERS.has(writer)) return operands;
+  const targetIndex = operands.findIndex((text) => TARGET_DIRECTORY_RE.test(text));
+  const attachedTarget = operands[targetIndex]?.match(TARGET_DIRECTORY_RE)?.[1];
+  const separateTarget = targetIndex !== -1 && !attachedTarget;
+  const target = separateTarget ? operands[targetIndex + 1] : attachedTarget;
+  const paths = operands.filter(
+    (text, index) => !text.startsWith('-') && !(separateTarget && index === targetIndex + 1),
+  );
+  const destination = target ?? paths.at(-1);
+  if (destination === undefined) return [];
+  const sources = target === undefined ? paths.slice(0, -1) : paths;
+  return [destination, ...sources.map((source) => join(destination, getBasename(source)))];
+}
 
 function recordWrittenPaths(
   commandView: CommandView,
@@ -954,19 +980,19 @@ function recordWrittenPaths(
 ): void {
   const writtenPaths = options.writtenPaths;
   if (!writtenPaths) return;
-  const writerIndex = commandView.words.findIndex((word) =>
-    FILE_WRITING_COMMANDS.has(getBasename(word.text)),
-  );
   const targets = [
-    ...commandView.redirections.flatMap((redirection) =>
-      redirection.operator.includes('>') && redirection.target ? [redirection.target] : [],
-    ),
-    ...(writerIndex === -1 ? [] : commandView.words.slice(writerIndex + 1)),
-  ].filter((word) => word.provenance === 'literal');
-  const candidates = targets.flatMap((word) => [
-    word.text,
-    word.text.slice(word.text.indexOf('=') + 1),
-    getBasename(word.text.split(/[?#]/)[0] ?? ''),
+    ...commandView.redirections
+      .flatMap((redirection) =>
+        redirection.operator.includes('>') && redirection.target ? [redirection.target] : [],
+      )
+      .filter((word) => word.provenance === 'literal')
+      .map((word) => word.text),
+    ...writtenOperands(commandView.words),
+  ];
+  const candidates = targets.flatMap((text) => [
+    text,
+    text.slice(text.indexOf('=') + 1),
+    getBasename(text.split(/[?#]/)[0] ?? ''),
   ]);
   for (const candidate of new Set(candidates)) {
     const path = resolveTrackedHeredocPath(

@@ -68,6 +68,8 @@ export const SCRIPT_FIXTURES = {
   'scripts/one-liner.sh': 'rm -rf "$1"\npython3 -c \'print(1)\'\n',
   'scripts/clean.sh': 'rm -rf "$1"\nfind . -name \'*.tmp\' -delete\n',
   'scripts/one-liner-upload.sh': `python3 -c 'print(1)'\n${UPLOAD}\n`,
+  'scripts/heavy-clean.sh': `unknown-head ${Array.from({ length: 150 }, () => 'bash').join(' ')}\nrm -rf "$1"\nfind . -name '*.tmp' -delete\n`,
+  'lib/upload.sh': 'echo lib\n',
 };
 
 export function behavioralContractCases(paths: {
@@ -2187,6 +2189,9 @@ export function behavioralContractCases(paths: {
       './scripts/upload.sh install',
       'sh scripts/upload.sh install --prefix out',
       'sh scripts/one-liner-upload.sh',
+      'cp scripts/upload.sh /tmp/backup.sh && sh scripts/upload.sh',
+      'ln -s scripts/upload.sh link.sh && sh scripts/upload.sh',
+      'sed -n p scripts/upload.sh && sh scripts/upload.sh',
     ].flatMap((command) =>
       levels.map(([level, values]) => ({
         name: `blocks a script file on disk that uploads data${level}: ${command}`,
@@ -2200,17 +2205,19 @@ export function behavioralContractCases(paths: {
         },
       })),
     ),
-    ...levels.map(([level, values]) => ({
-      name: `blocks a script file on disk whose concrete match follows a fail-closed form${level}`,
-      command: 'sh scripts/clean.sh',
-      options: options({ cwd: paths.cwd, ...values }),
-      expected: {
-        kind: 'block' as const,
-        ruleId: 'find.delete',
-        intent: 'scope_down' as const,
-        reasonIncludes: 'Use -print first',
-      },
-    })),
+    ...['sh scripts/clean.sh', 'sh scripts/heavy-clean.sh'].flatMap((command) =>
+      levels.map(([level, values]) => ({
+        name: `blocks a script file on disk whose concrete match follows a fail-closed form${level}: ${command}`,
+        command,
+        options: options({ cwd: paths.cwd, ...values }),
+        expected: {
+          kind: 'block' as const,
+          ruleId: 'find.delete',
+          intent: 'scope_down' as const,
+          reasonIncludes: 'Use -print first',
+        },
+      })),
+    ),
     {
       name: 'blocks a script file on disk that creates a user namespace',
       command: 'sh scripts/unshare.sh',
@@ -2253,6 +2260,10 @@ export function behavioralContractCases(paths: {
       'wget --output-document=scripts/upload.sh https://x.example/u.sh && sh scripts/upload.sh',
       'echo ok | tee scripts/upload.sh && sh scripts/upload.sh',
       'cd scripts && curl -O https://x.example/upload.sh && sh upload.sh',
+      'cp lib/upload.sh scripts/ && sh scripts/upload.sh',
+      'cp -t scripts lib/upload.sh && sh scripts/upload.sh',
+      'mv --target-directory=scripts lib/upload.sh && sh scripts/upload.sh',
+      'sed -Ei s/curl/echo/ scripts/upload.sh && sh scripts/upload.sh',
     ].map((command) => ({
       name: `allows running a script file the same command may have rewritten: ${command}`,
       command,
