@@ -71,6 +71,8 @@ export const SCRIPT_FIXTURES = {
   'scripts/heavy-clean.sh': `unknown-head ${Array.from({ length: 150 }, () => 'bash').join(' ')}\nrm -rf "$1"\nfind . -name '*.tmp' -delete\n`,
   'lib/upload.sh': 'echo lib\n',
   'scripts/upload-crlf.sh': `echo probing\r\n${UPLOAD}\r\n`,
+  'scripts/runs-upload.sh': 'echo outer\necho more\nsh scripts/upload.sh\n',
+  'scripts/upload-in-function.sh': `publish() {\n  echo publishing\n  ${UPLOAD}\n}\npublish\n`,
 };
 
 export function behavioralContractCases(paths: {
@@ -2221,6 +2223,25 @@ export function behavioralContractCases(paths: {
         },
       })),
     ),
+    ...(
+      [
+        ['sh scripts/upload.sh', 'scripts/upload.sh:2: '],
+        ['source scripts/upload.sh', 'scripts/upload.sh:2: '],
+        ['./scripts/upload-sh-shebang.sh', './scripts/upload-sh-shebang.sh:2: '],
+        ['sh scripts/runs-upload.sh', 'scripts/upload.sh:2: '],
+        ['sh scripts/upload-in-function.sh', 'scripts/upload-in-function.sh:3: '],
+      ] as const
+    ).map(([command, location]) => ({
+      name: `names the file and line of a script on disk that uploads data: ${command}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block' as const,
+        ruleId: 'network.upload-remote',
+        intent: 'manual_only' as const,
+        reasonIncludes: `${location}This uploads data to a remote host`,
+      },
+    })),
     {
       name: 'blocks a script file on disk that creates a user namespace',
       command: 'sh scripts/unshare.sh',

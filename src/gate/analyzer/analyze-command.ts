@@ -361,7 +361,7 @@ function analyzeProgram(
           isPipelineConnector(previousConnector),
           literalShellInput,
         );
-        if (result) return { result, states };
+        if (result) return { result: { ...result, sourceOffset: node.span.start }, states };
         const functionBody = getCalledFunctionBody(node, analyzedState.functionDefinitions);
 
         if (functionBody) {
@@ -865,6 +865,8 @@ function analyzeCommandView(
             reason: nestedResult.reason,
             ruleId: nestedResult.ruleId,
             intent: nestedResult.intent,
+            sourceOffset: nestedResult.sourceOffset,
+            scriptLocation: nestedResult.scriptLocation,
           }
         : null;
     },

@@ -18,6 +18,10 @@ export interface AnalyzeResult {
   ruleId: string;
 
   intent?: BlockIntent;
+
+  sourceOffset?: number;
+
+  scriptLocation?: string;
 }
 
 export type EnvironmentContext = Environment;

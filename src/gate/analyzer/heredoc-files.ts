@@ -29,7 +29,7 @@ export function isPersistentHeredocFilePath(path: string): boolean {
 
 const SCRIPT_FILE_MAX_BYTES = 256 * 1024;
 
-export function readShellScriptFile(path: string): string | null {
+export function readShellScriptFile(path: string): { text: string; bytes: number } | null {
   if (!isPersistentHeredocFilePath(path)) return null;
   try {
     const stats = statSync(path, { throwIfNoEntry: false });
@@ -37,7 +37,7 @@ export function readShellScriptFile(path: string): string | null {
     const content = readFileSync(path);
     return content.length > SCRIPT_FILE_MAX_BYTES || content.includes(0)
       ? null
-      : content.toString('utf8').replaceAll('\r\n', '\n');
+      : { text: content.toString('utf8').replaceAll('\r\n', '\n'), bytes: content.length };
   } catch {
     return null;
   }

@@ -161,6 +161,14 @@ export function formatStepStyleD(
     case 'recurse':
       return { lines: [], incrementStep: false };
 
+    case 'script-file': {
+      lines.push('');
+      lines.push(`STEP ${stepNum} ${box.h} Read script file`);
+      lines.push(`  Path: ${step.path}`);
+      lines.push(`  Size: ${step.bytes} bytes`);
+      return { lines, incrementStep: true };
+    }
+
     case 'rule-check': {
       lines.push('');
       lines.push(`STEP ${stepNum} ${box.h} Match rules`);

@@ -1230,6 +1230,8 @@ describe('script files read from disk', () => {
     ['once.sh', 'sh once.sh\necho done\n'],
     ['thrice.sh', 'sh thrice.sh\nsh thrice.sh\nsh thrice.sh\necho done\n'],
     ['binary-tool', `#!/bin/sh\n${upload}\n\0`],
+    ['located.sh', `echo first\n${upload}\n`],
+    ['runs-located.sh', 'echo a\necho b\nsh located.sh\n'],
   ] as const) {
     writeFileSync(join(scripts, name), body);
   }
@@ -1283,6 +1285,12 @@ describe('script files read from disk', () => {
   test('running a self-calling script many times in one command stays bounded', () => {
     const repeated = Array.from({ length: 16 }, () => 'sh thrice.sh').join('; ');
     expect(fastest(repeated) / fastest('sh thrice.sh')).toBeLessThan(4);
+  });
+
+  test('a script run by another script is named by its own file and line', () => {
+    const reason = at('sh runs-located.sh')?.reason;
+    expect(reason).toStartWith('located.sh:2: This uploads data to a remote host');
+    expect(reason).not.toContain('runs-located.sh');
   });
 
   test('an executable holding a NUL byte is not analyzed as a script', () => {
