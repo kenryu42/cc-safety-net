@@ -149,7 +149,11 @@ describe('gate/analyzer/shell-execution', () => {
     expect(stdin('bash < script.sh', false)).toStrictEqual({ kind: 'dynamic' });
     expect(stdin('bash 0< script.sh', false)).toStrictEqual({ kind: 'dynamic' });
     expect(stdin('bash <&3', false)).toStrictEqual({ kind: 'dynamic' });
-    expect(stdin('bash <<EOF\nrm -rf /tmp/x\nEOF', false)).toStrictEqual({ kind: 'none' });
+    expect(stdin('bash <<EOF\nrm -rf /tmp/x\nEOF', false)).toStrictEqual({
+      kind: 'literal',
+      source: 'rm -rf /tmp/x\n',
+    });
+    expect(stdin('bash <<EOF\nrm -rf $DIR\nEOF', false)).toStrictEqual({ kind: 'none' });
     expect(stdin('bash 3< script.sh', true, 'x')).toStrictEqual({ kind: 'literal', source: 'x' });
   });
 

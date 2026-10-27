@@ -11,7 +11,6 @@ import type { CommandAnalysisPolicy } from '@/core/policy/types';
 import { SHELL_WRAPPERS } from '@/core/rules/constants';
 import { destructiveCommandMatch } from '@/core/rules/destructive';
 import {
-  type CommandHeredoc,
   type CommandProgram,
   type CommandRedirection,
   type CommandView,
@@ -20,7 +19,7 @@ import {
   isDynamicExecutable,
 } from '@/core/shell/model';
 import { parseCommand } from '@/core/shell/parse';
-import { getBasename, normalizeCommandToken } from '@/core/shell/tokens';
+import { getBasename, normalizeCommandToken, parseShellArgv } from '@/core/shell/tokens';
 import type {
   AnalysisModeFlag,
   AnalyzeInput,
@@ -32,6 +31,7 @@ import type {
   PathResolver,
 } from '@/gate/analysis';
 import type { SemanticFactStore } from '@/gate/facts';
+import { SHELL_STDIN_INTERPRETERS } from '@/gate/guards/guard-walk';
 import type { CommandTraceContext } from '@/gate/trace';
 import { analysisWordText, analyzedViewWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
@@ -50,7 +50,7 @@ import {
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
 import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
-import { extractLiteralPrintfOutput } from './shell-execution';
+import { extractLiteralPrintfOutput, isLiteralHeredoc } from './shell-execution';
 import {
   applyShellGitContextEnvSegment,
   cloneShellGitContextEnvState,
@@ -1279,10 +1279,6 @@ function isBareCommandWord(word: CommandWord | undefined, value: string): boolea
   );
 }
 
-function isLiteralHeredoc(heredoc: CommandHeredoc): boolean {
-  return heredoc.quotedDelimiter || !/[$`\\]/.test(heredoc.body);
-}
-
 function getHeredocReason(commandView: CommandView, standard: boolean): string | undefined {
   const heredocs = commandView.redirections.filter(
     (redirection) => redirection.operator === '<<' || redirection.operator === '<<-',
@@ -1310,7 +1306,12 @@ function getHeredocReason(commandView: CommandView, standard: boolean): string |
   const outputProcessSubstitution = commandView.redirections.some(
     (redirection) => redirection !== heredoc && hasOutputProcessSubstitution(redirection.target),
   );
-  if (isBareCommandWord(commandView.words[0], 'cat')) {
+  const head = commandView.words[0];
+  const shellRunsHeredocAsProgram =
+    [...SHELL_STDIN_INTERPRETERS].some((shell) => isBareCommandWord(head, shell)) &&
+    isLiteralHeredoc(heredoc.heredoc) &&
+    parseShellArgv(commandView.words.map(analysisWordText)).readsStdinAsCommands;
+  if (isBareCommandWord(head, 'cat') || shellRunsHeredocAsProgram) {
     return outputProcessSubstitution ? REASON_UNSUPPORTED_HEREDOC : undefined;
   }
   if (isBareCommandWord(commandView.words[0], 'tee')) {
@@ -1320,7 +1321,6 @@ function getHeredocReason(commandView: CommandView, standard: boolean): string |
       : undefined;
   }
 
-  const head = commandView.words[0];
   const sub = commandView.words[1];
   if (
     isBareCommandWord(head, 'git') &&

@@ -1,5 +1,6 @@
 import { SHELL_WRAPPERS } from '@/core/rules/constants';
 import type {
+  CommandHeredoc,
   CommandProgram,
   CommandRedirection,
   CommandView,
@@ -193,6 +194,10 @@ export function bindLiteralPositionalParameters(
   return bound;
 }
 
+export function isLiteralHeredoc(heredoc: CommandHeredoc): boolean {
+  return heredoc.quotedDelimiter || !/[$`\\]/.test(heredoc.body);
+}
+
 export function extractShellStdinSource(
   words: readonly CommandWord[],
   redirections: readonly CommandRedirection[],
@@ -209,7 +214,11 @@ export function extractShellStdinSource(
     )
     .at(-1);
   if (input) {
-    if (input.operator === '<<' || input.operator === '<<-') return NO_SOURCE;
+    if (input.operator === '<<' || input.operator === '<<-') {
+      return input.heredoc && isLiteralHeredoc(input.heredoc)
+        ? { kind: 'literal', source: input.heredoc.body }
+        : NO_SOURCE;
+    }
     if (input.operator !== '<<<' || input.target?.provenance !== 'literal') {
       return DYNAMIC_SOURCE;
     }
