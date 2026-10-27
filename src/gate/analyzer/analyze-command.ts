@@ -11,7 +11,6 @@ import type { CommandAnalysisPolicy } from '@/core/policy/types';
 import { SHELL_WRAPPERS } from '@/core/rules/constants';
 import { destructiveCommandMatch } from '@/core/rules/destructive';
 import {
-  type CommandHeredoc,
   type CommandProgram,
   type CommandRedirection,
   type CommandView,
@@ -50,7 +49,7 @@ import {
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
 import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
-import { extractLiteralPrintfOutput } from './shell-execution';
+import { extractLiteralPrintfOutput, isLiteralHeredoc } from './shell-execution';
 import {
   applyShellGitContextEnvSegment,
   cloneShellGitContextEnvState,
@@ -1277,10 +1276,6 @@ function isBareCommandWord(word: CommandWord | undefined, value: string): boolea
   return (
     word?.text === value && word.raw === value && word.provenance === 'literal' && !word.quoted
   );
-}
-
-function isLiteralHeredoc(heredoc: CommandHeredoc): boolean {
-  return heredoc.quotedDelimiter || !/[$`\\]/.test(heredoc.body);
 }
 
 function getHeredocReason(commandView: CommandView, standard: boolean): string | undefined {

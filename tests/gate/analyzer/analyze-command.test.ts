@@ -448,7 +448,7 @@ describe('analyzeCommand', () => {
         command: 'awk \'BEGIN { system("rm -rf /") }\'',
         ruleId: 'rm.recursive-force-root-or-home',
       },
-      { command: "bash <<'EOF'\nrm -rf ~\nEOF", ruleId: 'raw-text.dangerous-command' },
+      { command: "bash <<'EOF'\nrm -rf ~\nEOF", ruleId: 'rm.recursive-force-root-or-home' },
       {
         command: 'cat <<EOF && rm -rf ~\nharmless body\nEOF',
         ruleId: 'rm.recursive-force-root-or-home',
