@@ -1019,6 +1019,7 @@ function analyzeScriptFile(
         envAssignments,
         scriptBudget,
         withoutUncertainCapabilities,
+        untraced: true,
       });
     });
   const concrete = (result: AnalyzeBlockResult | null) =>

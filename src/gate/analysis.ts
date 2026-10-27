@@ -65,4 +65,5 @@ export interface AnalyzeNestedOverrides {
   functionDefinitions?: ReadonlyMap<string, CommandProgram>;
   scriptBudget?: Budget;
   withoutUncertainCapabilities?: boolean;
+  untraced?: boolean;
 }

