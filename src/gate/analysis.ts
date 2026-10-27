@@ -18,6 +18,10 @@ export interface AnalyzeResult {
   ruleId: string;
 
   intent?: BlockIntent;
+
+  sourceOffset?: number;
+
+  scriptLocation?: string;
 }
 
 export type EnvironmentContext = Environment;
@@ -63,4 +67,7 @@ export interface AnalyzeNestedOverrides {
   shell?: ShellKind;
 
   functionDefinitions?: ReadonlyMap<string, CommandProgram>;
+  scriptBudget?: Budget;
+  withoutUncertainCapabilities?: boolean;
+  untraced?: boolean;
 }

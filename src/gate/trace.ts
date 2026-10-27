@@ -27,6 +27,7 @@ export type TraceStep =
       innerCommand: string;
       depth: number;
     }
+  | { type: 'script-file'; path: string; bytes: number }
   | {
       type: 'rule-check';
       rule: string;

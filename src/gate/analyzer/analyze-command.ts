@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join, parse as parsePath, resolve, sep } from 'node:path';
 import { AnalysisLimit, type Budget, LIMITS } from '@/core/budget';
 import { resolveExistingPath } from '@/core/paths/canonicalization';
+import { resolveCommandAnalysisContext } from '@/core/policy/analysis-context';
 import {
   destructiveCommandRuleIsEnabled,
   filterDestructiveCommandMatch,
@@ -70,6 +71,8 @@ export type InternalOptions = AnalyzeInput &
     factStore?: SemanticFactStore;
     budget: Budget;
     literalHeredocFiles?: ReadonlyMap<string, string>;
+    writtenPaths?: Set<string>;
+    scriptReads?: { budget?: Budget };
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     rootProgram?: CommandProgram;
   };
@@ -154,7 +157,13 @@ export function analyzeCommandInternal(
     options.environment.env,
     options.envAssignments,
   );
-  return analyzeProgram(program, depth, { ...options, rootProgram: program }, originalCwd, [
+  const programOptions = {
+    ...options,
+    rootProgram: program,
+    writtenPaths: options.writtenPaths ?? new Set<string>(),
+    scriptReads: options.scriptReads ?? {},
+  };
+  return analyzeProgram(program, depth, programOptions, originalCwd, [
     {
       effectiveCwd,
       shellGitContextState,
@@ -352,7 +361,7 @@ function analyzeProgram(
           isPipelineConnector(previousConnector),
           literalShellInput,
         );
-        if (result) return { result, states };
+        if (result) return { result: { ...result, sourceOffset: node.span.start }, states };
         const functionBody = getCalledFunctionBody(node, analyzedState.functionDefinitions);
 
         if (functionBody) {
@@ -710,6 +719,7 @@ function analyzeCommandView(
       intent: 'stop_and_explain',
     };
   }
+  recordWrittenPaths(commandView, state, options);
   invalidateLiteralHeredocFiles(
     commandView,
     state,
@@ -824,6 +834,20 @@ function analyzeCommandView(
           : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
+        ...(overrides?.withoutUncertainCapabilities
+          ? resolveCommandAnalysisContext({
+              ...options,
+              effectiveCapabilities: {
+                ...options.effectiveCapabilities,
+                fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
+                paranoid_interpreters: {
+                  ...options.effectiveCapabilities.paranoid_interpreters,
+                  enabled: false,
+                },
+              },
+            })
+          : {}),
+        budget: overrides?.scriptBudget ?? options.budget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
         literalHeredocFiles: state.literalHeredocFiles,
@@ -831,15 +855,18 @@ function analyzeCommandView(
         functionDefinitions: overrides?.functionDefinitions,
         worktreeMode: overrides?.worktreeMode ?? options.worktreeMode,
         shell: overrides?.shell ?? options.shell,
-        trace: options.trace
-          ? withTraceSegment(options.trace, options.trace.currentSegmentIndex, true)
-          : undefined,
+        trace:
+          options.trace && !overrides?.untraced
+            ? withTraceSegment(options.trace, options.trace.currentSegmentIndex, true)
+            : undefined,
       });
       return nestedResult
         ? {
             reason: nestedResult.reason,
             ruleId: nestedResult.ruleId,
             intent: nestedResult.intent,
+            sourceOffset: nestedResult.sourceOffset,
+            scriptLocation: nestedResult.scriptLocation,
           }
         : null;
     },
@@ -919,6 +946,69 @@ function onlyAssignsVariables(commandView: CommandView): boolean {
     commandView.words.length > 0 &&
     commandView.words.every((word) => SHELL_ASSIGNMENT_WORD_RE.test(word.raw))
   );
+}
+
+const FILE_WRITING_COMMANDS = new Set(['cp', 'mv', 'install', 'ln', 'sed', 'curl', 'wget', 'tee']);
+const DESTINATION_WRITERS = new Set(['cp', 'mv', 'install', 'ln']);
+const SED_IN_PLACE_RE = /^-[^-]*i|^--in-place/;
+const TARGET_DIRECTORY_RE = /^(?:-t|--target-directory=?)(.*)$/;
+
+function writtenOperands(words: readonly CommandWord[]): string[] {
+  const writerIndex = words.findIndex((word) => FILE_WRITING_COMMANDS.has(getBasename(word.text)));
+  const writer = getBasename(words[writerIndex]?.text ?? '');
+  const operands = words
+    .slice(writerIndex + 1)
+    .filter((word) => word.provenance === 'literal')
+    .map((word) => word.text);
+  if (writerIndex === -1) return [];
+  if (writer === 'sed') return operands.some((text) => SED_IN_PLACE_RE.test(text)) ? operands : [];
+  if (!DESTINATION_WRITERS.has(writer)) return operands;
+  const targetIndex = operands.findIndex((text) => TARGET_DIRECTORY_RE.test(text));
+  const attachedTarget = operands[targetIndex]?.match(TARGET_DIRECTORY_RE)?.[1];
+  const separateTarget = targetIndex !== -1 && !attachedTarget;
+  const target = separateTarget ? operands[targetIndex + 1] : attachedTarget;
+  const paths = operands.filter(
+    (text, index) => !text.startsWith('-') && !(separateTarget && index === targetIndex + 1),
+  );
+  const destination = target ?? paths.at(-1);
+  if (destination === undefined) return [];
+  const possibleDestinations = target === undefined ? paths.slice(1) : [target];
+  return [
+    ...possibleDestinations,
+    ...paths.map((source) => join(destination, getBasename(source))),
+  ];
+}
+
+function recordWrittenPaths(
+  commandView: CommandView,
+  state: AnalysisState,
+  options: InternalOptions,
+): void {
+  const writtenPaths = options.writtenPaths;
+  if (!writtenPaths) return;
+  const targets = [
+    ...commandView.redirections
+      .flatMap((redirection) =>
+        redirection.operator.includes('>') && redirection.target ? [redirection.target] : [],
+      )
+      .filter((word) => word.provenance === 'literal')
+      .map((word) => word.text),
+    ...writtenOperands(commandView.words),
+  ];
+  const candidates = targets.flatMap((text) => [
+    text,
+    text.slice(text.indexOf('=') + 1),
+    getBasename(text.split(/[?#]/)[0] ?? ''),
+  ]);
+  for (const candidate of new Set(candidates.filter(Boolean))) {
+    const path = resolveTrackedHeredocPath(
+      candidate,
+      state.effectiveCwd,
+      options.environment.paths,
+      options.budget,
+    );
+    if (path) writtenPaths.add(path);
+  }
 }
 
 function invalidateLiteralHeredocFiles(

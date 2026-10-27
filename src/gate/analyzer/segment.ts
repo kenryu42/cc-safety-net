@@ -1,4 +1,5 @@
-import { AnalysisLimit, LIMITS } from '@/core/budget';
+import { sep } from 'node:path';
+import { AnalysisLimit, type Budget, createBudget, LIMITS } from '@/core/budget';
 import { normalizeMsysDrivePath } from '@/core/paths/canonicalization';
 import { resolveChdirTarget } from '@/core/paths/chdir';
 import { isTmpdirOverriddenToNonTemp } from '@/core/paths/tmpdir';
@@ -34,7 +35,7 @@ import { analyzeDeviceCommandMatch } from './device';
 import { analyzeNamespaceCommandMatch } from './namespace';
 import { analyzeNetworkCommandMatch } from './network';
 import { analyzeGitDetailed } from './git';
-import { resolveTrackedHeredocPath } from './heredoc-files';
+import { readShellScriptFile, resolveTrackedHeredocPath } from './heredoc-files';
 import {
   containsDangerousCode,
   extractInterpreterCodeArg,
@@ -458,7 +459,7 @@ export function analyzeSegment(
   }
 
   const executable = words[0];
-  if (!child && executable && head.includes('/') && options.literalHeredocFiles?.size) {
+  if (!child && executable && head.includes('/')) {
     const executablePath = literalOrAssignedPath(executable, options, operandShellCwd);
     const scriptResult =
       executablePath === null
@@ -970,7 +971,12 @@ function analyzeTrackedHeredocScript(
     options.budget,
   );
   const body = path ? options.literalHeredocFiles?.get(path) : undefined;
-  if (body === undefined) return failClosed ? dynamicShellSourceResult(trace) : null;
+  if (body === undefined && failClosed) return dynamicShellSourceResult(trace);
+  if (body === undefined) {
+    return path
+      ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath)
+      : null;
+  }
   if (runsByPath && body.startsWith('#!') && !SHELL_SHEBANG_RE.test(body)) return null;
 
   options.budget.charge('derivedTokens', 1);
@@ -985,6 +991,63 @@ function analyzeTrackedHeredocScript(
     options.analyzeNested(body, { effectiveCwd, envAssignments }),
   );
   return result?.intent === 'stop_and_explain' ? null : result;
+}
+
+const UNCERTAIN_RULE_ID_RE =
+  /^(?:analysis|raw-text)\.|^(?!custom\.).*dynamic|^interpreter\.one-liner-paranoid$/;
+
+function analyzeScriptFile(
+  source: string,
+  path: string,
+  effectiveCwd: string | null | undefined,
+  envAssignments: ReadonlyMap<string, string>,
+  options: InternalOptions,
+  trace: CommandTraceContext | undefined,
+  runsByPath: boolean,
+): AnalyzeBlockResult | null {
+  const writtenPaths = [...(options.writtenPaths ?? [])];
+  if (writtenPaths.some((written) => path === written || path.startsWith(`${written}${sep}`))) {
+    return null;
+  }
+  const scriptReads = options.scriptReads ?? {};
+  const scriptBudget = (scriptReads.budget ??= createBudget());
+  const analyze = (withoutUncertainCapabilities?: boolean) =>
+    nestedResultWithinLimits(() => {
+      if (withoutUncertainCapabilities) resetAllButScriptFiles(scriptBudget);
+      scriptBudget.charge('scriptFiles');
+      const script = readShellScriptFile(path);
+      if (script === null) return null;
+      if (runsByPath && script.text.startsWith('#!') && !SHELL_SHEBANG_RE.test(script.text)) {
+        return null;
+      }
+      if (!withoutUncertainCapabilities) {
+        trace?.recordSegment({ type: 'script-file', path: source, bytes: script.bytes });
+      }
+      const result = options.analyzeNested(script.text, {
+        effectiveCwd,
+        envAssignments,
+        scriptBudget,
+        withoutUncertainCapabilities,
+        untraced: true,
+      });
+      if (!result || result.scriptLocation) return result;
+      const line =
+        result.sourceOffset === undefined
+          ? ''
+          : `:${script.text.slice(0, result.sourceOffset).split('\n').length}`;
+      return { ...result, scriptLocation: `${source}${line}` };
+    });
+  const concrete = (result: AnalyzeBlockResult | null) =>
+    result && !UNCERTAIN_RULE_ID_RE.test(result.ruleId) ? result : null;
+  const result = analyze();
+  const hasUncertainCapabilities = options.strict || options.paranoidInterpreters;
+  return concrete(result) ?? (hasUncertainCapabilities && result ? concrete(analyze(true)) : null);
+}
+
+function resetAllButScriptFiles(budget: Budget): void {
+  const scriptFiles = budget.counters.get('scriptFiles');
+  budget.counters.clear();
+  if (scriptFiles !== undefined) budget.counters.set('scriptFiles', scriptFiles);
 }
 
 function nestedResultWithinLimits(

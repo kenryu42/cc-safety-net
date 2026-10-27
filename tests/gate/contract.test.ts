@@ -12,7 +12,11 @@ import { createToolInvocation, type ToolInvocation, type ToolRoute } from '@/gat
 import { evaluateGuard, type GuardDependencies, type GuardEvaluation } from '@/gate/pipeline';
 import { writeTree } from '../helpers/fixture-tree';
 import { policySnapshot } from '../helpers/policy';
-import { type BehavioralContractCase, behavioralContractCases } from './behavioral-contract-cases';
+import {
+  type BehavioralContractCase,
+  behavioralContractCases,
+  SCRIPT_FIXTURES,
+} from './behavioral-contract-cases';
 import { type PipelineContractCase, pipelineContractCases } from './pipeline-contract-cases';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'next-gate-contract-'));
@@ -25,6 +29,7 @@ writeTree(fixtureRoot, {
   'temp-a': null,
   'temp-b': null,
 });
+writeTree(workspace, SCRIPT_FIXTURES);
 for (const path of [repository, ...tempRepos]) {
   execFileSync('git', ['init', '--quiet', path]);
 }

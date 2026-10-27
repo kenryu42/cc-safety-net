@@ -2060,3 +2060,96 @@ exports[`explain reports an analysis budget breach as bounded output 22-path-lim
 "{"error":"Path canonicalization work limit exceeded."}
 "
 `;
+
+exports[`explain renders the same trace from both bins 23-script-file: json 1`] = `
+"{
+  "trace": {
+    "steps": [
+      {
+        "type": "parse",
+        "input": "sh scripts/evil.sh",
+        "segments": [
+          [
+            "sh",
+            "scripts/evil.sh"
+          ]
+        ]
+      }
+    ],
+    "segments": [
+      {
+        "index": 0,
+        "steps": [
+          {
+            "type": "script-file",
+            "path": "scripts/evil.sh",
+            "bytes": 152
+          }
+        ]
+      }
+    ]
+  },
+  "result": "blocked",
+  "reason": "scripts/evil.sh:3: This uploads data to a remote host, which can send local files or secrets off the machine. Send it to localhost instead, or ask the user to run the upload manually if it is needed.",
+  "segment": "sh scripts/evil.sh",
+  "ruleId": "network.upload-remote",
+  "configSource": null,
+  "configValid": true,
+  "effectiveLevel": "standard",
+  "selectedPreset": "standard",
+  "effectiveCapabilities": {
+    "fail_closed": {
+      "enabled": false,
+      "source": "preset",
+      "sources": [
+        "policy safety.level=standard"
+      ]
+    },
+    "paranoid_rm": {
+      "enabled": false,
+      "source": "preset",
+      "sources": [
+        "policy safety.level=standard"
+      ]
+    },
+    "paranoid_interpreters": {
+      "enabled": false,
+      "source": "preset",
+      "sources": [
+        "policy safety.level=standard"
+      ]
+    }
+  },
+  "destructiveCommandRuleOverrides": {}
+}
+"
+`;
+
+exports[`explain renders the same trace from both bins 23-script-file: human 1`] = `
+"+==========================================================+
+|  Command Analysis                                        |
++==========================================================+
+
+INPUT
+  sh scripts/evil.sh
+
+STEP 1 - Split shell commands
+  Segment 1: ["sh","scripts/evil.sh"]
+
+STEP 2 - Read script file
+  Path: scripts/evil.sh
+  Size: 152 bytes
+
+RESULT
+  Status: BLOCKED
+  Reason: scripts/evil.sh:3: This uploads data to a remote host, which can send
+          local files or secrets off the machine. Send it to localhost instead,
+          or ask the user to run the upload manually if it is needed.
+
+CONFIG
+  Path: none
+  Safety preset: standard
+  Effective capabilities: standard
+  Rule customizations: 0
+"
+`;

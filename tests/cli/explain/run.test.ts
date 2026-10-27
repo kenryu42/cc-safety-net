@@ -197,6 +197,14 @@ const PINS: Record<string, Facts> = {
     segments: [['tmpdir-check', 'rule-check', 'fallback-scan', 'custom-rules-check']],
   },
   '20-no-command': { result: 'allowed', steps: ['error'], segments: [] },
+  '23-script-file': {
+    result: 'blocked',
+    ruleId: 'network.upload-remote',
+    segment: 'sh scripts/evil.sh',
+    parseInput: 'sh scripts/evil.sh',
+    steps: ['parse'],
+    segments: [['script-file']],
+  },
 };
 
 function rowFor(slug: string, extra: Partial<CliRow>): CliRow {
@@ -233,6 +241,32 @@ describe('explain renders the same trace from both bins', () => {
       },
       30_000,
     );
+  }
+});
+
+test('explain names a script read from disk by path and size, never its text', async () => {
+  const asJson = await explain(
+    rowFor('23-script-file', { args: ['explain', '--json', 'sh scripts/evil.sh'] }),
+  );
+  const asHuman = await explain(
+    rowFor('23-script-file', { args: ['explain', 'sh scripts/evil.sh'] }),
+  );
+  const document = JSON.parse(asJson.stdout) as ExplainResult;
+  expect(document.reason).toStartWith('scripts/evil.sh:3: This uploads data to a remote host');
+  expect(document.trace.segments.flatMap((segment) => segment.steps)).toContainEqual({
+    type: 'script-file',
+    path: 'scripts/evil.sh',
+    bytes: 152,
+  });
+  expect(asHuman.stdout).toContain('Reason: scripts/evil.sh:3: This uploads data');
+  for (const text of [
+    'leaked-marker-one',
+    'leaked-marker-two',
+    'tok_live_8f3a9c2e5d',
+    'notes.txt',
+  ]) {
+    expect(asJson.stdout).not.toContain(text);
+    expect(asHuman.stdout).not.toContain(text);
   }
 });
 

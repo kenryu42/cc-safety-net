@@ -46,7 +46,7 @@ export function analyzeCommandWithProgram(
   if (!result) return null;
   return {
     kind: 'deny',
-    reason: result.reason,
+    reason: result.scriptLocation ? `${result.scriptLocation}: ${result.reason}` : result.reason,
     intent: result.intent ?? 'manual_only',
     ruleId: result.ruleId,
     evidence: { command, segment: result.segment },
