@@ -2263,6 +2263,7 @@ export function behavioralContractCases(paths: {
       'cp lib/upload.sh scripts/ && sh scripts/upload.sh',
       'cp -t scripts lib/upload.sh && sh scripts/upload.sh',
       'mv --target-directory=scripts lib/upload.sh && sh scripts/upload.sh',
+      'install scripts/benign.sh scripts/upload.sh -m 755 && sh scripts/upload.sh',
       'sed -Ei s/curl/echo/ scripts/upload.sh && sh scripts/upload.sh',
     ].map((command) => ({
       name: `allows running a script file the same command may have rewritten: ${command}`,

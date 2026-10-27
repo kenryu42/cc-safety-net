@@ -969,8 +969,11 @@ function writtenOperands(words: readonly CommandWord[]): string[] {
   );
   const destination = target ?? paths.at(-1);
   if (destination === undefined) return [];
-  const sources = target === undefined ? paths.slice(0, -1) : paths;
-  return [destination, ...sources.map((source) => join(destination, getBasename(source)))];
+  const possibleDestinations = target === undefined ? paths.slice(1) : [target];
+  return [
+    ...possibleDestinations,
+    ...paths.map((source) => join(destination, getBasename(source))),
+  ];
 }
 
 function recordWrittenPaths(
