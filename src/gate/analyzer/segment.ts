@@ -1,3 +1,4 @@
+import { sep } from 'node:path';
 import { AnalysisLimit, type Budget, createBudget, LIMITS } from '@/core/budget';
 import { normalizeMsysDrivePath } from '@/core/paths/canonicalization';
 import { resolveChdirTarget } from '@/core/paths/chdir';
@@ -1000,7 +1001,10 @@ function analyzeScriptFile(
   options: InternalOptions,
   runsByPath: boolean,
 ): AnalyzeBlockResult | null {
-  if (options.writtenPaths?.has(path)) return null;
+  const writtenPaths = [...(options.writtenPaths ?? [])];
+  if (writtenPaths.some((written) => path === written || path.startsWith(`${written}${sep}`))) {
+    return null;
+  }
   const scriptReads = options.scriptReads ?? {};
   const scriptBudget = (scriptReads.budget ??= createBudget());
   const analyze = (withoutUncertainCapabilities?: boolean) =>

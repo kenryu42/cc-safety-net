@@ -2192,6 +2192,7 @@ export function behavioralContractCases(paths: {
       'cp scripts/upload.sh /tmp/backup.sh && sh scripts/upload.sh',
       'ln -s scripts/upload.sh link.sh && sh scripts/upload.sh',
       'sed -n p scripts/upload.sh && sh scripts/upload.sh',
+      'curl -s https://example.com/ && sh scripts/upload.sh',
     ].flatMap((command) =>
       levels.map(([level, values]) => ({
         name: `blocks a script file on disk that uploads data${level}: ${command}`,
@@ -2264,6 +2265,7 @@ export function behavioralContractCases(paths: {
       'cp -t scripts lib/upload.sh && sh scripts/upload.sh',
       'mv --target-directory=scripts lib/upload.sh && sh scripts/upload.sh',
       'install scripts/benign.sh scripts/upload.sh -m 755 && sh scripts/upload.sh',
+      'cp -R lib/. scripts/ && sh scripts/upload.sh',
       'sed -Ei s/curl/echo/ scripts/upload.sh && sh scripts/upload.sh',
     ].map((command) => ({
       name: `allows running a script file the same command may have rewritten: ${command}`,

@@ -997,7 +997,7 @@ function recordWrittenPaths(
     text.slice(text.indexOf('=') + 1),
     getBasename(text.split(/[?#]/)[0] ?? ''),
   ]);
-  for (const candidate of new Set(candidates)) {
+  for (const candidate of new Set(candidates.filter(Boolean))) {
     const path = resolveTrackedHeredocPath(
       candidate,
       state.effectiveCwd,
