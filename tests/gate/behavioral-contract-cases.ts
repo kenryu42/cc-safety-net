@@ -70,6 +70,7 @@ export const SCRIPT_FIXTURES = {
   'scripts/one-liner-upload.sh': `python3 -c 'print(1)'\n${UPLOAD}\n`,
   'scripts/heavy-clean.sh': `unknown-head ${Array.from({ length: 150 }, () => 'bash').join(' ')}\nrm -rf "$1"\nfind . -name '*.tmp' -delete\n`,
   'lib/upload.sh': 'echo lib\n',
+  'scripts/upload-crlf.sh': `echo probing\r\n${UPLOAD}\r\n`,
 };
 
 export function behavioralContractCases(paths: {
@@ -2193,6 +2194,7 @@ export function behavioralContractCases(paths: {
       'ln -s scripts/upload.sh link.sh && sh scripts/upload.sh',
       'sed -n p scripts/upload.sh && sh scripts/upload.sh',
       'curl -s https://example.com/ && sh scripts/upload.sh',
+      'sh scripts/upload-crlf.sh',
     ].flatMap((command) =>
       levels.map(([level, values]) => ({
         name: `blocks a script file on disk that uploads data${level}: ${command}`,

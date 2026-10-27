@@ -37,7 +37,7 @@ export function readShellScriptFile(path: string): string | null {
     const content = readFileSync(path);
     return content.length > SCRIPT_FILE_MAX_BYTES || content.includes(0)
       ? null
-      : content.toString('utf8');
+      : content.toString('utf8').replaceAll('\r\n', '\n');
   } catch {
     return null;
   }
