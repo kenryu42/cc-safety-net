@@ -586,6 +586,23 @@ export function behavioralContractCases(paths: {
         segment: 'git checkout .',
       },
     },
+    ...[
+      'echo a && \\\n  git reset --hard',
+      'echo a || \\\n  git reset --hard',
+      'echo a ; \\\n  git reset --hard',
+      'echo a && \\\n\tgit reset --hard',
+      'cd /tmp && \\\n  \\\n  git reset --hard',
+    ].map((command) => ({
+      name: `blocks a command after a line continuation: ${JSON.stringify(command)}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block' as const,
+        ruleId: 'git.reset-hard',
+        intent: 'use_alternative' as const,
+        reasonIncludes: 'destroys all uncommitted changes',
+      },
+    })),
     {
       name: 'blocks a quoted glob checkout that git expands itself',
       command: "git checkout '*.ts'",
