@@ -184,6 +184,11 @@ function scanSequence(
       continue;
     }
 
+    if (char === '\\' && source[i + 1] === '\n') {
+      i += 2;
+      continue;
+    }
+
     if (char === '#') {
       while (i < end && source[i] !== '\n' && source[i] !== '\r') i++;
       continue;
