@@ -62,6 +62,8 @@ __export(exports_analyzer, {
   analyzeDeviceRedirectionMatch: () => analyzeDeviceRedirectionMatch,
   analyzeDynamicCommandStructure: () => analyzeDynamicCommandStructure,
   analyzeFindMatch: () => analyzeFindMatch,
+  analyzeNamespaceCommandMatch: () => analyzeNamespaceCommandMatch,
+  analyzeNetworkCommandMatch: () => analyzeNetworkCommandMatch,
   analyzeOrCapBreach: () => analyzeOrCapBreach,
   analyzePowerShellCommandViewMatch: () => analyzePowerShellCommandViewMatch,
   analyzePowerShellWrapperMatch: () => analyzePowerShellWrapperMatch,
@@ -134,6 +136,7 @@ __export(exports_analyzer, {
   parseInterpreterArgv: () => parseInterpreterArgv,
   powerShellTargetForPolicy: () => powerShellTargetForPolicy,
   readPowerShellScript: () => readPowerShellScript,
+  readShellScriptFile: () => readShellScriptFile,
   reconstructEnvSplitWords: () => reconstructEnvSplitWords,
   resolveTrackedHeredocPath: () => resolveTrackedHeredocPath,
   scanChar: () => scanChar,
@@ -1071,11 +1074,11 @@ var import_tokens2 = require("./core-shell.js");
 
 // src/gate/analyzer/device.ts
 var import_destructive2 = require("./core-shell.js");
-var REASON_DD_DEVICE_WRITE = "dd writing to a /dev device can destroy a disk or partition. Run device writes manually after confirming the target.";
-var REASON_MKFS_DEVICE = "mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.";
-var REASON_DISK_ERASE = "This erases or repartitions a disk. Run disk erase and partition commands manually after confirming the target.";
-var REASON_REDIRECT_BLOCK_DEVICE = "This output redirect overwrites a disk device. Run device writes manually after confirming the target.";
-var REASON_SHRED_TARGET = "shred permanently destroys the given target. Use rm for ordinary deletes, or run shred manually.";
+var REASON_DD_DEVICE_WRITE = "dd writing to a /dev device can destroy a disk or partition. Ask the user to run device writes manually after confirming the target.";
+var REASON_MKFS_DEVICE = "mkfs formatting a /dev device erases everything on it. Ask the user to run the format manually after confirming the target.";
+var REASON_DISK_ERASE = "This erases or repartitions a disk. Ask the user to run disk erase and partition commands manually after confirming the target.";
+var REASON_REDIRECT_BLOCK_DEVICE = "This output redirect overwrites a disk device. Ask the user to run device writes manually after confirming the target.";
+var REASON_SHRED_TARGET = "shred permanently destroys the given target. Use rm for ordinary deletes, or ask the user to run shred manually.";
 var DD_SINK_TARGETS = new Set(["of=/dev/null", "of=/dev/zero", "of=/dev/full"]);
 var FILESYSTEM_FORMAT_HEAD = /^(?:mkfs(?:\..+)?|mke2fs|newfs(?:_.+)?)$/;
 var DISK_ERASE_HEADS = new Set(["diskutil", "wipefs", "sgdisk", "parted"]);
@@ -1218,7 +1221,7 @@ function findChildIndices(tokens, startIndex, wrapper, policy) {
 function isProtectableCommand(token, policy) {
   const basename = import_tokens2.getBasename(token);
   const normalized = import_tokens2.normalizeCommandToken(token);
-  return normalized === "git" || basename === "busybox" || isStandardCommandWrapper(token) || import_transparent_wrappers.BUILTIN_ANALYZED_COMMANDS.has(basename) || isDeviceCommand(normalized) || isTransparentWrapper(basename, policy) || import_constants.SHELL_WRAPPERS.has(normalized) || token === "$SHELL" || import_transparent_wrappers.isInterpreterCommand(normalized) || import_constants.AWK_INTERPRETERS.has(normalized) || policy.rules.some((rule) => rule.command === basename);
+  return normalized === "git" || normalized === "unshare" || basename === "busybox" || isStandardCommandWrapper(token) || import_transparent_wrappers.BUILTIN_ANALYZED_COMMANDS.has(basename) || isDeviceCommand(normalized) || import_constants.REQUEST_CLIENT_COMMANDS.has(normalized) || isTransparentWrapper(basename, policy) || import_constants.SHELL_WRAPPERS.has(normalized) || token === "$SHELL" || import_transparent_wrappers.isInterpreterCommand(normalized) || import_constants.AWK_INTERPRETERS.has(normalized) || policy.rules.some((rule) => rule.command === basename);
 }
 function isTransparentWrapper(command, policy) {
   return EXEC_WRAPPERS.has(command) || policy.transparentWrappers.includes(command);
@@ -4088,7 +4091,7 @@ function analyzeCommandWithProgram(command, options, program, factStore) {
     return null;
   return {
     kind: "deny",
-    reason: result.reason,
+    reason: result.scriptLocation ? `${result.scriptLocation}: ${result.reason}` : result.reason,
     intent: result.intent ?? "manual_only",
     ruleId: result.ruleId,
     evidence: { command, segment: result.segment }
@@ -4755,6 +4758,7 @@ function gitAnalyzeOptions(context) {
   };
 }
 // src/gate/analyzer/heredoc-files.ts
+var import_node_fs = require("node:fs");
 var import_node_path3 = require("node:path");
 var import_canonicalization4 = require("./core.js");
 function resolveTrackedHeredocPath(source, effectiveCwd, paths, budget) {
@@ -4770,12 +4774,257 @@ function resolveTrackedHeredocPath(source, effectiveCwd, paths, budget) {
 function isPersistentHeredocFilePath(path) {
   return !["/dev", "/proc", "/sys"].some((root) => path === root || path.startsWith(`${root}/`));
 }
-// src/gate/analyzer/derived-input.ts
-var import_effective_rules8 = require("./core.js");
+var SCRIPT_FILE_MAX_BYTES = 256 * 1024;
+function readShellScriptFile(path) {
+  if (!isPersistentHeredocFilePath(path))
+    return null;
+  try {
+    const stats = import_node_fs.statSync(path, { throwIfNoEntry: false });
+    if (!stats?.isFile() || stats.size > SCRIPT_FILE_MAX_BYTES)
+      return null;
+    const content = import_node_fs.readFileSync(path);
+    return content.length > SCRIPT_FILE_MAX_BYTES || content.includes(0) ? null : { text: content.toString("utf8").replaceAll(`\r
+`, `
+`), bytes: content.length };
+  } catch {
+    return null;
+  }
+}
+// src/gate/analyzer/network.ts
+var import_transparent_wrappers4 = require("./core.js");
 var import_constants6 = require("./core-shell.js");
 var import_destructive12 = require("./core-shell.js");
-var import_model = require("./core-shell.js");
 var import_tokens8 = require("./core-shell.js");
+var REASON_CLOUD_METADATA = "This reaches a cloud metadata endpoint, which hands out instance credentials. Ask the user to run metadata requests manually if they are needed.";
+var REASON_UPLOAD_REMOTE = "This uploads data to a remote host, which can send local files or secrets off the machine. Send it to localhost instead, or ask the user to run the upload manually if it is needed.";
+var CLOUD_METADATA_HOST = /(?<![\w.-])(?:169\.254\.169\.254|169\.254\.170\.23|169\.254\.170\.2|100\.100\.100\.200|metadata\.google\.internal|metadata\.goog)(?![\w-]|\.[\w-])|(?<![\w:])fd00:ec2::(?:254|23)(?![\w:])/i;
+var COMMAND_LAUNCHERS = new Set(["xargs", "find"]);
+var optionRoles = (entries) => new Map(Object.entries(entries).flatMap(([role, names]) => names.map((name) => [name, role])));
+var UPLOAD_CLIENT_OPTIONS = new Map([
+  [
+    "curl",
+    optionRoles({
+      data: [
+        "-d",
+        "--data",
+        "--data-ascii",
+        "--data-binary",
+        "--data-raw",
+        "--data-urlencode",
+        "--json"
+      ],
+      upload: ["-F", "--form", "--form-string", "-T", "--upload-file"],
+      url: ["--url", "-x", "--proxy", "--preproxy"],
+      source: ["-K", "--config"],
+      local: ["--unix-socket", "--abstract-unix-socket"],
+      get: ["-G", "--get"],
+      value: [
+        ..."ACDEHPQUXYbcehmortuwyz".split("").map((letter) => `-${letter}`),
+        "--output",
+        "--output-dir",
+        "--header",
+        "--proxy-header",
+        "--request",
+        "--user-agent",
+        "--user",
+        "--proxy-user",
+        "--max-time",
+        "--connect-timeout",
+        "--write-out",
+        "--cookie",
+        "--cookie-jar",
+        "--referer",
+        "--retry",
+        "--retry-delay",
+        "--retry-max-time",
+        "--cert",
+        "--key",
+        "--cacert",
+        "--capath",
+        "--range",
+        "--resolve",
+        "--connect-to",
+        "--limit-rate",
+        "--oauth2-bearer",
+        "--dump-header",
+        "--continue-at",
+        "--time-cond",
+        "--interface",
+        "--max-filesize",
+        "--max-redirs",
+        "--noproxy",
+        "--url-query",
+        "--aws-sigv4",
+        "--variable",
+        "--stderr",
+        "--trace",
+        "--trace-ascii"
+      ]
+    })
+  ],
+  [
+    "wget",
+    optionRoles({
+      upload: ["--post-data", "--post-file", "--body-data", "--body-file"],
+      source: ["-i", "--input-file"],
+      value: [
+        ..."ABDIOPQRTUXaelotw".split("").map((letter) => `-${letter}`),
+        "--output-document",
+        "--output-file",
+        "--append-output",
+        "--header",
+        "--user-agent",
+        "--method",
+        "--timeout",
+        "--tries",
+        "--user",
+        "--password",
+        "--directory-prefix",
+        "--execute",
+        "--wait",
+        "--referer",
+        "--load-cookies",
+        "--save-cookies",
+        "--ca-certificate",
+        "--certificate",
+        "--private-key"
+      ]
+    })
+  ]
+]);
+var LOOPBACK_HOST = /^(?:localhost|[a-z\d-]+(?:\.[a-z\d-]+)*\.localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])$/;
+function analyzeNetworkCommandMatch(head, tokens) {
+  if (reachesCloudMetadata(head, tokens)) {
+    return import_destructive12.destructiveCommandMatch("network.cloud-metadata", REASON_CLOUD_METADATA);
+  }
+  return uploadsToRemoteHost(head, tokens) ? import_destructive12.destructiveCommandMatch("network.upload-remote", REASON_UPLOAD_REMOTE) : null;
+}
+function reachesCloudMetadata(head, tokens) {
+  const launchesRequest = COMMAND_LAUNCHERS.has(head) ? tokens.slice(1).some(isRequestCapableCommand) : isRequestCapableCommand(head);
+  return launchesRequest && tokens.some((token, index) => !isNoProxyValue(tokens[index - 1], token) && CLOUD_METADATA_HOST.test(token));
+}
+function isRequestCapableCommand(token) {
+  const command = commandName(token);
+  return import_constants6.REQUEST_CLIENT_COMMANDS.has(command) || import_transparent_wrappers4.isInterpreterCommand(command);
+}
+function isNoProxyValue(previous, token) {
+  return previous === "--noproxy" || token.startsWith("--noproxy=");
+}
+function uploadsToRemoteHost(head, tokens) {
+  const start = COMMAND_LAUNCHERS.has(head) ? tokens.findIndex((token, index) => index > 0 && UPLOAD_CLIENT_OPTIONS.has(commandName(token))) : 0;
+  const options = UPLOAD_CLIENT_OPTIONS.get(commandName(tokens[start] ?? head));
+  if (start < 0 || options === undefined)
+    return false;
+  const launched = tokens.slice(start + 1);
+  const end = launched.findIndex((token) => token === ";" || token === "+");
+  const argv = end < 0 || !COMMAND_LAUNCHERS.has(head) ? launched : launched.slice(0, end);
+  const roles = new Set;
+  const urls = [];
+  const record = (role, value) => {
+    roles.add(role);
+    if (role === "url" && value !== "")
+      urls.push(value);
+    if (role === "source")
+      urls.push("");
+  };
+  let index = 0;
+  let operandsOnly = false;
+  while (index < argv.length) {
+    const token = argv[index] ?? "";
+    index++;
+    if (operandsOnly || !token.startsWith("-") || token === "-") {
+      urls.push(token);
+      continue;
+    }
+    if (token === "--") {
+      operandsOnly = true;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      const equals = token.indexOf("=");
+      const role = options.get(equals < 0 ? token : token.slice(0, equals));
+      if (role === undefined)
+        continue;
+      const takesValue = role !== "get";
+      const value = equals >= 0 ? token.slice(equals + 1) : takesValue ? argv[index] ?? "" : "";
+      if (takesValue && equals < 0)
+        index++;
+      record(role, value);
+      continue;
+    }
+    const letters = token.slice(1).split("");
+    const valueAt = letters.findIndex((letter) => {
+      const role = options.get(`-${letter}`);
+      return role !== undefined && role !== "get";
+    });
+    if ((valueAt < 0 ? letters : letters.slice(0, valueAt)).some((letter) => options.get(`-${letter}`) === "get")) {
+      roles.add("get");
+    }
+    if (valueAt < 0)
+      continue;
+    const role = options.get(`-${token[valueAt + 1]}`) ?? "value";
+    const attached = token.slice(valueAt + 2);
+    if (attached === "")
+      index++;
+    record(role, attached === "" ? argv[index - 1] ?? "" : attached);
+  }
+  const sendsBody = roles.has("upload") || roles.has("data") && !roles.has("get");
+  return sendsBody && !roles.has("local") && !(urls.length > 0 && urls.every(isLoopbackUrl));
+}
+function commandName(token) {
+  return import_tokens8.normalizeCommandToken(import_tokens8.getBasename(token));
+}
+function isLoopbackUrl(url) {
+  const authority = url.replace(/^[a-z][a-z\d+.-]*:\/\//i, "").split(/[/?#]/)[0] ?? "";
+  const host = authority.slice(authority.lastIndexOf("@") + 1).toLowerCase();
+  const name = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+  return LOOPBACK_HOST.test(name ?? "");
+}
+// src/gate/analyzer/namespace.ts
+var import_destructive13 = require("./core-shell.js");
+var REASON_USER_NAMESPACE = "unshare creating a user namespace grants root inside it, a common step toward privilege escalation. Ask the user to run it manually if it is needed.";
+var USER_NAMESPACE_LONG_OPTION = /^--(?:user|map-root-user|map-current-user|map-auto|map-subids|map-(?:user|group)s?|owner|mount-binfmt|load-interp)(?:=|$)/;
+var USER_NAMESPACE_SHORT_FLAG = /[Urcl]/;
+var SHORT_VALUE_FLAG = /[RwSGl]/;
+var LONG_VALUE_OPTIONS = new Set([
+  "--propagation",
+  "--setgroups",
+  "--root",
+  "--wd",
+  "--setuid",
+  "--setgid",
+  "--map-user",
+  "--map-group",
+  "--map-users",
+  "--map-groups",
+  "--owner",
+  "--whitelist-env",
+  "--load-interp"
+]);
+function firstValueFlagIndex(cluster) {
+  const index = cluster.slice(1).search(SHORT_VALUE_FLAG);
+  return index === -1 ? cluster.length : index + 1;
+}
+function takesNextValue(token) {
+  return LONG_VALUE_OPTIONS.has(token) || /^-[^-]/.test(token) && firstValueFlagIndex(token) === token.length - 1;
+}
+function createsUserNamespace(option) {
+  return option.startsWith("--") ? USER_NAMESPACE_LONG_OPTION.test(option) : USER_NAMESPACE_SHORT_FLAG.test(option.slice(1, firstValueFlagIndex(option) + 1));
+}
+function analyzeNamespaceCommandMatch(head, tokens) {
+  if (head !== "unshare")
+    return null;
+  const operands = tokens.slice(1);
+  const isOptionValue = (index) => takesNextValue(operands[index - 1] ?? "");
+  const programIndex = operands.findIndex((token, index) => !isOptionValue(index) && (token === "--" || !token.startsWith("-")));
+  return operands.slice(0, programIndex === -1 ? undefined : programIndex).some((token, index) => !isOptionValue(index) && createsUserNamespace(token)) ? import_destructive13.destructiveCommandMatch("unshare.user-namespace", REASON_USER_NAMESPACE) : null;
+}
+// src/gate/analyzer/derived-input.ts
+var import_effective_rules8 = require("./core.js");
+var import_constants7 = require("./core-shell.js");
+var import_destructive14 = require("./core-shell.js");
+var import_model = require("./core-shell.js");
+var import_tokens9 = require("./core-shell.js");
 var import_git2 = require("./analyzer-core.js");
 var import_rules2 = require("./analyzer-core.js");
 var import_parallel2 = require("./analyzer-core.js");
@@ -4789,7 +5038,7 @@ function hasOptionLiteralPart(word) {
 }
 function analyzeDynamicCommandStructure(dialect, words, environment, topLevel, strict = false, policy) {
   const dynamicHead = import_model.isDynamicExecutable(dialect, words) || topLevel && dialect !== "powershell" && words[0]?.provenance === "variable";
-  const dynamicExecutableMatch = dynamicHead && import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-executable", strict) ? import_destructive12.destructiveCommandMatch("shell.dynamic-executable", REASON_DYNAMIC_EXECUTABLE) : null;
+  const dynamicExecutableMatch = dynamicHead && import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-executable", strict) ? import_destructive14.destructiveCommandMatch("shell.dynamic-executable", REASON_DYNAMIC_EXECUTABLE) : null;
   return import_effective_rules8.filterDestructiveCommandMatch(dynamicExecutableMatch, policy) ?? analyzeDynamicStructure(dialect, words, environment, strict, policy);
 }
 function analyzeDynamicStructure(dialect, words, environment, strict, policy) {
@@ -4798,29 +5047,29 @@ function analyzeDynamicStructure(dialect, words, environment, strict, policy) {
   const dynamicIndexes = words.flatMap((word, index) => hasCommandSubstitutionPart(word) ? [index] : []);
   if (dynamicIndexes.length === 0)
     return null;
-  const head = import_tokens8.normalizeCommandToken(words[0]?.text ?? "");
+  const head = import_tokens9.normalizeCommandToken(words[0]?.text ?? "");
   if (head === "git") {
     const gitWords = analyzedViewWords(dialect, words);
     const subcommandIndex = findGitSubcommandIndex(gitWords);
     if (import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => index <= subcommandIndex)) {
-      return import_effective_rules8.filterDestructiveCommandMatch(import_destructive12.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
+      return import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
     }
     if (import_effective_rules8.filterDestructiveCommandMatch(import_git2.analyzeGitMatch(gitWords, { environment }), policy))
       return null;
     const subcommand = words[subcommandIndex]?.text.toLowerCase();
     const dataBoundary = gitWords.findIndex((word, index) => index > subcommandIndex && analysisWordText(word) === "--");
     if (import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && subcommand && import_rules2.GIT_RULE_SUBCOMMANDS.has(subcommand) && dynamicIndexes.some((index) => index > subcommandIndex && (dataBoundary === -1 || index < dataBoundary))) {
-      return import_effective_rules8.filterDestructiveCommandMatch(import_destructive12.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
+      return import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
     }
     return null;
   }
   if (head === "find") {
-    return import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && hasDynamicFindStructure(words) ? import_effective_rules8.filterDestructiveCommandMatch(import_destructive12.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
+    return import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && hasDynamicFindStructure(words) ? import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
   }
   if (head === "rm") {
     const dataBoundary = words.findIndex((word, index) => index > 0 && analysisWordText(word) === "--");
     const trailingJudgedByRmRules = hasRecursiveForceFlags(words.map(analysisWordText));
-    return import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => (dataBoundary === -1 || index < dataBoundary) && (index < words.length - 1 || !trailingJudgedByRmRules)) ? import_effective_rules8.filterDestructiveCommandMatch(import_destructive12.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
+    return import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => (dataBoundary === -1 || index < dataBoundary) && (index < words.length - 1 || !trailingJudgedByRmRules)) ? import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
   }
   if (head === "xargs") {
     return analyzeDynamicChildStructure(dialect, words.slice(extractXargsChildCommandWithInfo(words.map(analysisWordText)).childStart), "xargs", environment, strict, policy);
@@ -4835,7 +5084,7 @@ function analyzeDynamicChildStructure(dialect, childWords, kind, environment, st
     return null;
   const child = normalizeChildCommandWords(childWords, environment);
   if (import_model.isDynamicExecutable(dialect, child)) {
-    const match = import_effective_rules8.filterDestructiveCommandMatch(import_destructive12.destructiveCommandMatch(`${kind}.shell-dynamic`, kind === "xargs" ? REASON_XARGS_SHELL : import_parallel2.REASON_PARALLEL_SHELL), policy);
+    const match = import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch(`${kind}.shell-dynamic`, kind === "xargs" ? REASON_XARGS_SHELL : import_parallel2.REASON_PARALLEL_SHELL), policy);
     if (match)
       return match;
   }
@@ -4843,7 +5092,7 @@ function analyzeDynamicChildStructure(dialect, childWords, kind, environment, st
   if (nestedStructure)
     return nestedStructure;
   if (child[0]?.text === "rm" && child.slice(1).some((word) => hasCommandSubstitutionPart(word) && hasOptionLiteralPart(word))) {
-    return import_effective_rules8.filterDestructiveCommandMatch(import_destructive12.destructiveCommandMatch(`${kind}.rm-recursive-force-dynamic`, kind === "xargs" ? REASON_XARGS_RM : import_parallel2.REASON_PARALLEL_RM), policy);
+    return import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch(`${kind}.rm-recursive-force-dynamic`, kind === "xargs" ? REASON_XARGS_RM : import_parallel2.REASON_PARALLEL_RM), policy);
   }
   return null;
 }
@@ -4858,7 +5107,7 @@ function findGitSubcommandIndex(words) {
   while (i < words.length) {
     const word = words[i];
     const token = word ? analysisWordText(word) : "";
-    if (import_constants6.GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
+    if (import_constants7.GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
       i += 2;
       continue;
     }

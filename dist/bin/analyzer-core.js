@@ -73,6 +73,7 @@ __export(exports_analyzer_core, {
   hasGitContextEnvOverride: () => hasGitContextEnvOverride,
   hasGitSshEnvAssignment: () => hasGitSshEnvAssignment,
   isGitContextEnvOverrideName: () => isGitContextEnvOverrideName,
+  isLiteralHeredoc: () => isLiteralHeredoc,
   isNonRelaxableLocalDiscard: () => isNonRelaxableLocalDiscard,
   isTrackedGitEnvName: () => isTrackedGitEnvName,
   isVerifiableLocalGeneratorSource: () => isVerifiableLocalGeneratorSource,
@@ -298,13 +299,17 @@ function bindLiteralPositionalParameters(words, script) {
   }
   return bound;
 }
+function isLiteralHeredoc(heredoc) {
+  return heredoc.quotedDelimiter || !/[$`\\]/.test(heredoc.body);
+}
 function extractShellStdinSource(words, redirections, hasPipelineInput, literalPipelineInput) {
   if (!import_tokens.parseShellArgv(words.map(import_command_words.analysisWordText)).readsStdinAsCommands)
     return NO_SOURCE;
   const input = redirections.filter((redirection) => (redirection.fd === undefined || redirection.fd === 0) && INPUT_REDIRECTIONS.has(redirection.operator)).at(-1);
   if (input) {
-    if (input.operator === "<<" || input.operator === "<<-")
-      return NO_SOURCE;
+    if (input.operator === "<<" || input.operator === "<<-") {
+      return input.heredoc && isLiteralHeredoc(input.heredoc) ? { kind: "literal", source: input.heredoc.body } : NO_SOURCE;
+    }
     if (input.operator !== "<<<" || input.target?.provenance !== "literal") {
       return DYNAMIC_SOURCE;
     }
@@ -1287,9 +1292,10 @@ function analyzeGitWorktree(tokens) {
   return null;
 }
 // src/gate/analyzer/analyze-command.ts
-var import_node_path4 = require("node:path");
+var import_node_path5 = require("node:path");
 var import_budget2 = require("./core.js");
 var import_canonicalization2 = require("./core.js");
+var import_analysis_context = require("./core.js");
 var import_effective_rules3 = require("./core.js");
 var import_transparent_wrappers4 = require("./core.js");
 var import_constants5 = require("./core-shell.js");
@@ -1307,6 +1313,7 @@ var import_remove_item = require("./analyzer.js");
 var import_reasons2 = require("./analyzer.js");
 
 // src/gate/analyzer/segment.ts
+var import_node_path4 = require("node:path");
 var import_budget = require("./core.js");
 var import_canonicalization = require("./core.js");
 var import_chdir2 = require("./core.js");
@@ -1323,6 +1330,8 @@ var import_command_words4 = require("./analyzer.js");
 var import_dangerous_text = require("./analyzer.js");
 var import_derived_input = require("./analyzer.js");
 var import_device = require("./analyzer.js");
+var import_namespace = require("./analyzer.js");
+var import_network = require("./analyzer.js");
 
 // src/gate/analyzer/git/index.ts
 var import_node_path3 = require("node:path");
@@ -1939,7 +1948,7 @@ function analyzeSegment(commandWords, depth, options) {
     }
   }
   const executable = words[0];
-  if (!child && executable && head.includes("/") && options.literalHeredocFiles?.size) {
+  if (!child && executable && head.includes("/")) {
     const executablePath = literalOrAssignedPath(executable, options, operandShellCwd);
     const scriptResult = executablePath === null ? null : analyzeTrackedHeredocScript(executablePath, nestedEffectiveCwd, envAssignments, options, trace, depth, false, true);
     if (scriptResult)
@@ -2029,15 +2038,31 @@ function analyzeSegment(commandWords, depth, options) {
       envAssignments
     });
   }
-  const filteredDeviceMatch = child ? null : import_effective_rules2.filterDestructiveCommandMatch(import_device.analyzeDeviceCommandMatch(normalizedHead, stripped), options.policy);
-  if (filteredDeviceMatch) {
+  const argvRuleCheck = child ? undefined : [
+    [
+      "analyzer/device.ts:analyzeDeviceCommandMatch",
+      import_device.analyzeDeviceCommandMatch(normalizedHead, stripped)
+    ],
+    [
+      "analyzer/network.ts:analyzeNetworkCommandMatch",
+      import_network.analyzeNetworkCommandMatch(normalizedHead, stripped)
+    ],
+    [
+      "analyzer/namespace.ts:analyzeNamespaceCommandMatch",
+      import_namespace.analyzeNamespaceCommandMatch(normalizedHead, stripped)
+    ]
+  ].map(([rule, match]) => ({
+    rule,
+    match: import_effective_rules2.filterDestructiveCommandMatch(match, options.policy)
+  })).find((check) => check.match);
+  if (argvRuleCheck?.match) {
     trace?.recordSegment({
       type: "rule-check",
-      rule: "analyzer/device.ts:analyzeDeviceCommandMatch",
+      rule: argvRuleCheck.rule,
       matched: true,
-      reason: filteredDeviceMatch.reason
+      reason: argvRuleCheck.match.reason
     });
-    return blockResultFromMatch(filteredDeviceMatch);
+    return blockResultFromMatch(argvRuleCheck.match);
   }
   const analyzerOptions = trace === normalizedOptions.trace ? normalizedOptions : { ...normalizedOptions, trace };
   const commandContext = {
@@ -2236,8 +2261,11 @@ function analyzeTrackedHeredocScript(source, effectiveCwd, envAssignments, optio
     return dynamicShellSourceResult(trace);
   const path = import_heredoc_files.resolveTrackedHeredocPath(source, effectiveCwd, options.environment.paths, options.budget);
   const body = path ? options.literalHeredocFiles?.get(path) : undefined;
-  if (body === undefined)
-    return failClosed ? dynamicShellSourceResult(trace) : null;
+  if (body === undefined && failClosed)
+    return dynamicShellSourceResult(trace);
+  if (body === undefined) {
+    return path ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath) : null;
+  }
   if (runsByPath && body.startsWith("#!") && !SHELL_SHEBANG_RE.test(body))
     return null;
   options.budget.charge("derivedTokens", 1);
@@ -2251,6 +2279,51 @@ function analyzeTrackedHeredocScript(source, effectiveCwd, envAssignments, optio
     return options.analyzeNested(body, { effectiveCwd, envAssignments });
   const result = nestedResultWithinLimits(() => options.analyzeNested(body, { effectiveCwd, envAssignments }));
   return result?.intent === "stop_and_explain" ? null : result;
+}
+var UNCERTAIN_RULE_ID_RE = /^(?:analysis|raw-text)\.|^(?!custom\.).*dynamic|^interpreter\.one-liner-paranoid$/;
+function analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath) {
+  const writtenPaths = [...options.writtenPaths ?? []];
+  if (writtenPaths.some((written) => path === written || path.startsWith(`${written}${import_node_path4.sep}`))) {
+    return null;
+  }
+  const scriptReads = options.scriptReads ?? {};
+  const scriptBudget = scriptReads.budget ??= import_budget.createBudget();
+  const analyze = (withoutUncertainCapabilities) => nestedResultWithinLimits(() => {
+    if (withoutUncertainCapabilities)
+      resetAllButScriptFiles(scriptBudget);
+    scriptBudget.charge("scriptFiles");
+    const script = import_heredoc_files.readShellScriptFile(path);
+    if (script === null)
+      return null;
+    if (runsByPath && script.text.startsWith("#!") && !SHELL_SHEBANG_RE.test(script.text)) {
+      return null;
+    }
+    if (!withoutUncertainCapabilities) {
+      trace?.recordSegment({ type: "script-file", path: source, bytes: script.bytes });
+    }
+    const result = options.analyzeNested(script.text, {
+      effectiveCwd,
+      envAssignments,
+      scriptBudget,
+      withoutUncertainCapabilities,
+      untraced: true
+    });
+    if (!result || result.scriptLocation)
+      return result;
+    const line = result.sourceOffset === undefined ? "" : `:${script.text.slice(0, result.sourceOffset).split(`
+`).length}`;
+    return { ...result, scriptLocation: `${source}${line}` };
+  });
+  const concrete = (result) => result && !UNCERTAIN_RULE_ID_RE.test(result.ruleId) ? result : null;
+  const result = analyze();
+  const hasUncertainCapabilities = options.strict || options.paranoidInterpreters;
+  return concrete(result) ?? (hasUncertainCapabilities && result ? concrete(analyze(true)) : null);
+}
+function resetAllButScriptFiles(budget) {
+  const scriptFiles = budget.counters.get("scriptFiles");
+  budget.counters.clear();
+  if (scriptFiles !== undefined)
+    budget.counters.set("scriptFiles", scriptFiles);
 }
 function nestedResultWithinLimits(analyze) {
   try {
@@ -2514,7 +2587,13 @@ function analyzeCommandInternal(command, depth, options, parsedProgram) {
   const originalCwd = options.cwd;
   const effectiveCwd = options.effectiveCwd !== undefined ? options.effectiveCwd : options.cwd;
   const shellGitContextState = import_shell_git_env4.createShellGitContextEnvState(options.environment.env, options.envAssignments);
-  return analyzeProgram(program, depth, { ...options, rootProgram: program }, originalCwd, [
+  const programOptions = {
+    ...options,
+    rootProgram: program,
+    writtenPaths: options.writtenPaths ?? new Set,
+    scriptReads: options.scriptReads ?? {}
+  };
+  return analyzeProgram(program, depth, programOptions, originalCwd, [
     {
       effectiveCwd,
       shellGitContextState,
@@ -2604,7 +2683,7 @@ function analyzeProgram(program, depth, options, originalCwd, initialStates) {
         const analyzedState = cloneAnalysisState(commandState);
         const result = analyzeCommandView(node, depth, options.trace ? { ...options, trace: withTraceSegment(options.trace, segmentIndex) } : options, originalCwd, analyzedState, isPipelineConnector(previousConnector), literalShellInput);
         if (result)
-          return { result, states };
+          return { result: { ...result, sourceOffset: node.span.start }, states };
         const functionBody = getCalledFunctionBody(node, analyzedState.functionDefinitions);
         if (functionBody) {
           options.budget.charge("derivedTokens", countCommandProgramWords(functionBody));
@@ -2800,6 +2879,7 @@ function analyzeCommandView(commandView, depth, inheritedOptions, originalCwd, s
       intent: "stop_and_explain"
     };
   }
+  recordWrittenPaths(commandView, state, options);
   invalidateLiteralHeredocFiles(commandView, state, "before-consumer", options.environment.paths, options.budget);
   const words = import_command_words5.analyzedViewWords(commandView.dialect, commandView.words);
   const segment = words.map(import_command_words5.analysisWordText);
@@ -2870,18 +2950,32 @@ function analyzeCommandView(commandView, depth, inheritedOptions, originalCwd, s
       const nestedEffectiveCwd = overrides && Object.hasOwn(overrides, "effectiveCwd") ? overrides.effectiveCwd : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
+        ...overrides?.withoutUncertainCapabilities ? import_analysis_context.resolveCommandAnalysisContext({
+          ...options,
+          effectiveCapabilities: {
+            ...options.effectiveCapabilities,
+            fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
+            paranoid_interpreters: {
+              ...options.effectiveCapabilities.paranoid_interpreters,
+              enabled: false
+            }
+          }
+        }) : {},
+        budget: overrides?.scriptBudget ?? options.budget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
         literalHeredocFiles: state.literalHeredocFiles,
         functionDefinitions: overrides?.functionDefinitions,
         worktreeMode: overrides?.worktreeMode ?? options.worktreeMode,
         shell: overrides?.shell ?? options.shell,
-        trace: options.trace ? withTraceSegment(options.trace, options.trace.currentSegmentIndex, true) : undefined
+        trace: options.trace && !overrides?.untraced ? withTraceSegment(options.trace, options.trace.currentSegmentIndex, true) : undefined
       });
       return nestedResult ? {
         reason: nestedResult.reason,
         ruleId: nestedResult.ruleId,
-        intent: nestedResult.intent
+        intent: nestedResult.intent,
+        sourceOffset: nestedResult.sourceOffset,
+        scriptLocation: nestedResult.scriptLocation
       } : null;
     }
   });
@@ -2909,6 +3003,53 @@ var FILE_NONTRUNCATING_WRITE_REDIRECTIONS = new Set([">>", "<>"]);
 var SHELL_ASSIGNMENT_WORD_RE = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 function onlyAssignsVariables(commandView) {
   return commandView.nested.length === 0 && commandView.redirections.length === 0 && commandView.words.length > 0 && commandView.words.every((word) => SHELL_ASSIGNMENT_WORD_RE.test(word.raw));
+}
+var FILE_WRITING_COMMANDS = new Set(["cp", "mv", "install", "ln", "sed", "curl", "wget", "tee"]);
+var DESTINATION_WRITERS = new Set(["cp", "mv", "install", "ln"]);
+var SED_IN_PLACE_RE = /^-[^-]*i|^--in-place/;
+var TARGET_DIRECTORY_RE = /^(?:-t|--target-directory=?)(.*)$/;
+function writtenOperands(words) {
+  const writerIndex = words.findIndex((word) => FILE_WRITING_COMMANDS.has(import_tokens6.getBasename(word.text)));
+  const writer = import_tokens6.getBasename(words[writerIndex]?.text ?? "");
+  const operands = words.slice(writerIndex + 1).filter((word) => word.provenance === "literal").map((word) => word.text);
+  if (writerIndex === -1)
+    return [];
+  if (writer === "sed")
+    return operands.some((text) => SED_IN_PLACE_RE.test(text)) ? operands : [];
+  if (!DESTINATION_WRITERS.has(writer))
+    return operands;
+  const targetIndex = operands.findIndex((text) => TARGET_DIRECTORY_RE.test(text));
+  const attachedTarget = operands[targetIndex]?.match(TARGET_DIRECTORY_RE)?.[1];
+  const separateTarget = targetIndex !== -1 && !attachedTarget;
+  const target = separateTarget ? operands[targetIndex + 1] : attachedTarget;
+  const paths = operands.filter((text, index) => !text.startsWith("-") && !(separateTarget && index === targetIndex + 1));
+  const destination = target ?? paths.at(-1);
+  if (destination === undefined)
+    return [];
+  const possibleDestinations = target === undefined ? paths.slice(1) : [target];
+  return [
+    ...possibleDestinations,
+    ...paths.map((source) => import_node_path5.join(destination, import_tokens6.getBasename(source)))
+  ];
+}
+function recordWrittenPaths(commandView, state, options) {
+  const writtenPaths = options.writtenPaths;
+  if (!writtenPaths)
+    return;
+  const targets = [
+    ...commandView.redirections.flatMap((redirection) => redirection.operator.includes(">") && redirection.target ? [redirection.target] : []).filter((word) => word.provenance === "literal").map((word) => word.text),
+    ...writtenOperands(commandView.words)
+  ];
+  const candidates = targets.flatMap((text) => [
+    text,
+    text.slice(text.indexOf("=") + 1),
+    import_tokens6.getBasename(text.split(/[?#]/)[0] ?? "")
+  ]);
+  for (const candidate of new Set(candidates.filter(Boolean))) {
+    const path = import_heredoc_files2.resolveTrackedHeredocPath(candidate, state.effectiveCwd, options.environment.paths, options.budget);
+    if (path)
+      writtenPaths.add(path);
+  }
 }
 function invalidateLiteralHeredocFiles(commandView, state, phase, paths, budget) {
   for (const redirection of commandView.redirections) {
@@ -2984,7 +3125,7 @@ function withCreatedDirectories(paths, created, budget) {
     return paths;
   const isCreated = (path) => {
     const canonical = import_canonicalization2.resolveExistingPath(path, paths, budget);
-    return [...created].some((leaf) => leaf === canonical || leaf.startsWith(`${canonical}${import_node_path4.sep}`));
+    return [...created].some((leaf) => leaf === canonical || leaf.startsWith(`${canonical}${import_node_path5.sep}`));
   };
   return {
     realpath: (path) => paths.realpath(path) ?? (isCreated(path) ? import_canonicalization2.resolveExistingPath(path, paths, budget) : null),
@@ -3010,18 +3151,18 @@ function trackCreatedDirectories(commandView, state, paths, budget, home) {
   const parents = options.some((option) => option === "--parents" || /^-v*p/.test(option));
   const cwd = state.effectiveCwd;
   for (const operand of args.slice(args[optionEnd] === "--" ? optionEnd + 1 : optionEnd)) {
-    if (operand.split(/[\\/]/).includes("..") || !import_node_path4.isAbsolute(operand) && !cwd)
+    if (operand.split(/[\\/]/).includes("..") || !import_node_path5.isAbsolute(operand) && !cwd)
       continue;
-    const leaf = import_canonicalization2.resolveExistingPath(import_node_path4.resolve(cwd ?? "", operand), paths, budget);
-    const creates = parents ? mkdirParentsCreates(leaf, paths) : paths.isDirectory(import_node_path4.dirname(leaf)) && isMissing(leaf, paths);
+    const leaf = import_canonicalization2.resolveExistingPath(import_node_path5.resolve(cwd ?? "", operand), paths, budget);
+    const creates = parents ? mkdirParentsCreates(leaf, paths) : paths.isDirectory(import_node_path5.dirname(leaf)) && isMissing(leaf, paths);
     if (creates)
       state.createdDirectories.add(leaf);
   }
 }
 function mkdirParentsCreates(path, paths) {
-  const root = import_node_path4.parse(path).root;
+  const root = import_node_path5.parse(path).root;
   const components = path.slice(root.length).split(/[\\/]+/).filter(Boolean);
-  const prefixAt = (index) => import_node_path4.join(root, ...components.slice(0, index + 1));
+  const prefixAt = (index) => import_node_path5.join(root, ...components.slice(0, index + 1));
   const firstNonDirectory = components.findIndex((_, index) => !paths.isDirectory(prefixAt(index)));
   return firstNonDirectory === -1 || isMissing(prefixAt(firstNonDirectory), paths);
 }
@@ -3086,9 +3227,6 @@ function isTrackableLiteralFileWord(word) {
 }
 function isBareCommandWord(word, value) {
   return word?.text === value && word.raw === value && word.provenance === "literal" && !word.quoted;
-}
-function isLiteralHeredoc(heredoc) {
-  return heredoc.quotedDelimiter || !/[$`\\]/.test(heredoc.body);
 }
 function getHeredocReason(commandView, standard) {
   const heredocs = commandView.redirections.filter((redirection) => redirection.operator === "<<" || redirection.operator === "<<-");
@@ -3383,7 +3521,7 @@ function recordStrictUnparseable(command, options) {
     options.trace?.recordSegment(step);
 }
 // src/gate/analyzer/parallel.ts
-var import_node_path5 = require("node:path");
+var import_node_path6 = require("node:path");
 var import_budget3 = require("./core.js");
 var import_chdir3 = require("./core.js");
 var import_tmpdir4 = require("./core.js");
@@ -3933,7 +4071,7 @@ function resolveParallelWorkdir(workdir, cwd, paths) {
   if (workdir === "..." || /^~|[{}$`*?[]/.test(workdir)) {
     return null;
   }
-  if (!cwd && !import_node_path5.isAbsolute(workdir)) {
+  if (!cwd && !import_node_path6.isAbsolute(workdir)) {
     return null;
   }
   try {

