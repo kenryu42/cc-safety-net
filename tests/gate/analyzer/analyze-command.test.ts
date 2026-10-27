@@ -1266,17 +1266,23 @@ describe('script files read from disk', () => {
     expect(at(`${derivedWorkNearCap}; sh near-limit.sh`)).toBeNull();
   });
 
+  const fastest = (command: string) =>
+    Math.min(
+      ...[0, 1, 2].map(() => {
+        const started = performance.now();
+        expect(at(command)).toBeNull();
+        return performance.now() - started;
+      }),
+    );
+
   test('a script that runs itself stays bounded and still reaches its upload', () => {
-    const fastest = (command: string) =>
-      Math.min(
-        ...[0, 1, 2].map(() => {
-          const started = performance.now();
-          expect(at(command)).toBeNull();
-          return performance.now() - started;
-        }),
-      );
     expect(fastest('sh thrice.sh') / fastest('sh once.sh')).toBeLessThan(24);
     expect(at('sh self.sh')).toMatchObject({ kind: 'deny', ruleId: 'network.upload-remote' });
+  });
+
+  test('running a self-calling script many times in one command stays bounded', () => {
+    const repeated = Array.from({ length: 16 }, () => 'sh thrice.sh').join('; ');
+    expect(fastest(repeated) / fastest('sh thrice.sh')).toBeLessThan(4);
   });
 
   test('an executable holding a NUL byte is not analyzed as a script', () => {

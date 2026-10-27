@@ -990,7 +990,8 @@ function analyzeTrackedHeredocScript(
   return result?.intent === 'stop_and_explain' ? null : result;
 }
 
-const UNCERTAIN_RULE_ID_RE = /^(?:analysis|raw-text)\.|^(?!custom\.).*dynamic/;
+const UNCERTAIN_RULE_ID_RE =
+  /^(?:analysis|raw-text)\.|^(?!custom\.).*dynamic|^interpreter\.one-liner-paranoid$/;
 
 function analyzeScriptFile(
   path: string,
@@ -1000,15 +1001,25 @@ function analyzeScriptFile(
   runsByPath: boolean,
 ): AnalyzeBlockResult | null {
   if (options.writtenPaths?.has(path)) return null;
-  const scriptBudget = options.scriptBudget ?? createBudget();
-  const result = nestedResultWithinLimits(() => {
-    scriptBudget.charge('scriptFiles');
-    const body = readShellScriptFile(path);
-    if (body === null) return null;
-    if (runsByPath && body.startsWith('#!') && !SHELL_SHEBANG_RE.test(body)) return null;
-    return options.analyzeNested(body, { effectiveCwd, envAssignments, scriptBudget });
-  });
-  return result && !UNCERTAIN_RULE_ID_RE.test(result.ruleId) ? result : null;
+  const scriptReads = options.scriptReads ?? {};
+  const scriptBudget = (scriptReads.budget ??= createBudget());
+  const analyze = (failClosed?: boolean) =>
+    nestedResultWithinLimits(() => {
+      scriptBudget.charge('scriptFiles');
+      const body = readShellScriptFile(path);
+      if (body === null) return null;
+      if (runsByPath && body.startsWith('#!') && !SHELL_SHEBANG_RE.test(body)) return null;
+      return options.analyzeNested(body, {
+        effectiveCwd,
+        envAssignments,
+        scriptBudget,
+        failClosed,
+      });
+    });
+  const concrete = (result: AnalyzeBlockResult | null) =>
+    result && !UNCERTAIN_RULE_ID_RE.test(result.ruleId) ? result : null;
+  const result = analyze();
+  return concrete(result) ?? (options.strict && result ? concrete(analyze(false)) : null);
 }
 
 function nestedResultWithinLimits(

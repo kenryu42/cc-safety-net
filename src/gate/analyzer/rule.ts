@@ -34,7 +34,7 @@ export type InternalOptions = AnalyzeInput &
     literalShellInput?: string;
     literalHeredocFiles?: ReadonlyMap<string, string>;
     writtenPaths?: ReadonlySet<string>;
-    scriptBudget?: Budget;
+    scriptReads?: { budget?: Budget };
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     wrapperNormalizationBudget?: { iterations: number };
     shellAssignments?: ReadonlyMap<string, string>;

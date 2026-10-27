@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join, parse as parsePath, resolve, sep } from 'node:path';
 import { AnalysisLimit, type Budget, LIMITS } from '@/core/budget';
 import { resolveExistingPath } from '@/core/paths/canonicalization';
+import { resolveCommandAnalysisContext } from '@/core/policy/analysis-context';
 import {
   destructiveCommandRuleIsEnabled,
   filterDestructiveCommandMatch,
@@ -71,7 +72,7 @@ export type InternalOptions = AnalyzeInput &
     budget: Budget;
     literalHeredocFiles?: ReadonlyMap<string, string>;
     writtenPaths?: Set<string>;
-    scriptBudget?: Budget;
+    scriptReads?: { budget?: Budget };
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     rootProgram?: CommandProgram;
   };
@@ -160,6 +161,7 @@ export function analyzeCommandInternal(
     ...options,
     rootProgram: program,
     writtenPaths: options.writtenPaths ?? new Set<string>(),
+    scriptReads: options.scriptReads ?? {},
   };
   return analyzeProgram(program, depth, programOptions, originalCwd, [
     {
@@ -832,8 +834,19 @@ function analyzeCommandView(
           : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
+        ...(overrides?.failClosed === undefined
+          ? {}
+          : resolveCommandAnalysisContext({
+              ...options,
+              effectiveCapabilities: {
+                ...options.effectiveCapabilities,
+                fail_closed: {
+                  ...options.effectiveCapabilities.fail_closed,
+                  enabled: overrides.failClosed,
+                },
+              },
+            })),
         budget: overrides?.scriptBudget ?? options.budget,
-        scriptBudget: overrides?.scriptBudget ?? options.scriptBudget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,
         literalHeredocFiles: state.literalHeredocFiles,
@@ -940,14 +953,14 @@ function recordWrittenPaths(
 ): void {
   const writtenPaths = options.writtenPaths;
   if (!writtenPaths) return;
-  const writesOperands = commandView.words.some((word) =>
+  const writerIndex = commandView.words.findIndex((word) =>
     FILE_WRITING_COMMANDS.has(getBasename(word.text)),
   );
   const targets = [
     ...commandView.redirections.flatMap((redirection) =>
       redirection.operator.includes('>') && redirection.target ? [redirection.target] : [],
     ),
-    ...(writesOperands ? commandView.words : []),
+    ...(writerIndex === -1 ? [] : commandView.words.slice(writerIndex + 1)),
   ].filter((word) => word.provenance === 'literal');
   const candidates = targets.flatMap((word) => [
     word.text,
