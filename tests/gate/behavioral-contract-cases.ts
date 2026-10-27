@@ -1967,6 +1967,27 @@ export function behavioralContractCases(paths: {
         reasonIncludes: 'heredoc',
       },
     })),
+    ...(['strict', 'paranoid'] as const).flatMap((level) =>
+      [
+        "bash <<'EOF'\nruby -rfileutils\nFileUtils.rm_rf Dir.home\nEOF",
+        "bash <<'EOF'\nperl\nuse File::Path; rmtree $ENV{HOME};\nEOF",
+      ].map((command) => ({
+        name: `fails closed on an interpreter reading the rest of a shell-run heredoc at ${level} safety: ${command}`,
+        command,
+        options: options({
+          cwd: paths.cwd,
+          strict: true,
+          paranoidRm: level === 'paranoid',
+          paranoidInterpreters: level === 'paranoid',
+        }),
+        expected: {
+          kind: 'block' as const,
+          ruleId: 'analysis.unsupported-heredoc',
+          intent: 'stop_and_explain' as const,
+          reasonIncludes: 'heredoc',
+        },
+      })),
+    ),
     ...atStandardAndStrict(
       [
         [

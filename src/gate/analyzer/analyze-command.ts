@@ -31,7 +31,7 @@ import type {
   PathResolver,
 } from '@/gate/analysis';
 import type { SemanticFactStore } from '@/gate/facts';
-import { SHELL_STDIN_INTERPRETERS } from '@/gate/guards/guard-walk';
+import { isCodeInterpreter, SHELL_STDIN_INTERPRETERS } from '@/gate/guards/guard-walk';
 import type { CommandTraceContext } from '@/gate/trace';
 import { analysisWordText, analyzedViewWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
@@ -1307,10 +1307,17 @@ function getHeredocReason(commandView: CommandView, standard: boolean): string |
     (redirection) => redirection !== heredoc && hasOutputProcessSubstitution(redirection.target),
   );
   const head = commandView.words[0];
+  const bodyNamesStdinReadingInterpreter = heredoc.heredoc.body
+    .split(/[\s;&|()<>'"`\\]+/)
+    .some((token) => {
+      const command = getBasename(token).toLowerCase();
+      return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);
+    });
   const shellRunsHeredocAsProgram =
     [...SHELL_STDIN_INTERPRETERS].some((shell) => isBareCommandWord(head, shell)) &&
     isLiteralHeredoc(heredoc.heredoc) &&
-    parseShellArgv(commandView.words.map(analysisWordText)).readsStdinAsCommands;
+    parseShellArgv(commandView.words.map(analysisWordText)).readsStdinAsCommands &&
+    (standard || !bodyNamesStdinReadingInterpreter);
   if (isBareCommandWord(head, 'cat') || shellRunsHeredocAsProgram) {
     return outputProcessSubstitution ? REASON_UNSUPPORTED_HEREDOC : undefined;
   }
