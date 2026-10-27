@@ -1,6 +1,6 @@
 {
   "name": "cc-safety-net",
-  "version": "2.6.19",
+  "version": "2.7.0",
   "description": "Block destructive commands and secret-file access before OpenClaw runs a tool.",
   "type": "module",
   "openclaw": {
