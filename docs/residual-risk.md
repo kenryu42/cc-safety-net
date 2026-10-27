@@ -161,8 +161,10 @@ Destructive content inside a file the analyzed command merely invokes, such as `
 `python tool.py`. Inline `-c` and `-e` code is analyzed. A shell script run by path (`sh`, `bash`,
 `source`, `.`, `./x`) is read from disk best effort, and only a concrete rule match in its body
 blocks: an uncertain result, an analysis limit, an unreadable or oversized file, or a path the same
-command may have written keeps the outer command's verdict, and analysis stops at the script's
-first result, so an early uncertain line hides later content. Interpreter files such as
+command may have written keeps the outer command's verdict. Analysis stops at the script's first
+result, so an early uncertain line hides later content. When a strict or paranoid run is uncertain,
+the script is analyzed again with standard's uncertainty rules, so a line only those modes find
+uncertain does not hide a later concrete match. Interpreter files such as
 `python tool.py` are not read. A file can also change between the check and the run. This is
 inherent residual risk for a static pre-execution text gate in every mode; the mitigation is
 OS-level enforcement or a sandbox.
