@@ -1,5 +1,7 @@
 - Before filing an issue, read `CONTRIBUTING.md` and follow its reporting rules.
 - Run focused tests during development, including the reproducing test for a behavior change.
+- Run `bun run check` unpiped. Its output is already sized for reading; `| head` or `| tail` hides
+  failures and replaces its exit code with the filter's.
 - After all implementation changes, run `bun run check`. This is the required final check for lint, code comments, formatting, typecheck, knip, duplication, and tests. Do not run its components separately as additional final checks. A change that touches only Markdown skips it, as the pre-push hook and CI do, unless it touches `skills/cc-safety-net/SKILL.md` or `README.md`: the build bundles the skill into `dist/`, and tests read both.
 - Ignore the dist folder; it gets auto-rebuilt by lefthook's pre-commit hook.
 - Keep implementation modular; put tests in `tests/` mirroring `src/`, not colocated in `src/`.
