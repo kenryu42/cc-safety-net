@@ -1,6 +1,6 @@
 # Build image for Anthropic's OSS Scanner (https://github.com/anthropics/oss-scanner).
 # The scanner builds this with the repository as the build context, then removes network access.
-FROM oven/bun:1.4.2
+FROM oven/bun:1.4.4
 
 ENV DEBIAN_FRONTEND=noninteractive \
     AGENT=1 \
