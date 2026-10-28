@@ -56,8 +56,7 @@ a probe to a PR branch or `main`.
 - After creating or removing a worktree or pushing from one, check `git config core.bare` in the
   main checkout. If it reads `true`, every git command fails with "must be run in a work tree";
   restore it with `git config core.bare false`.
-- Clean up when done: `git worktree remove <path>` and `git branch -D <branch>`. The safety net
-  blocks `git push origin --delete`, so ask the user to delete the remote branch.
+- Clean up when done: `git worktree remove <path>` and `git branch -D <branch>`.
 
 ## README
 
