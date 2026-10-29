@@ -261,6 +261,15 @@ export function extractShellScriptOperandSource(
 
 const EXEC_WRAPPER_ARGUMENT = /^(?:-.*|[+-]?\d+(?:\.\d+)?[smhd]?)$/;
 
+const EXEC_WRAPPER_VALUE_OPTIONS = new Set([
+  '-s',
+  '--signal',
+  '-k',
+  '--kill-after',
+  '-n',
+  '--adjustment',
+]);
+
 const STDIN_ALIASES = new Set(['/dev/stdin', '/dev/fd/0', '/proc/self/fd/0']);
 
 const REMOTE_FETCHERS = new Set([
@@ -303,10 +312,15 @@ function isRemoteFetcherAfterExecWrappers(names: readonly string[]): boolean {
   if (head === undefined) return false;
   if (REMOTE_FETCHERS.has(head)) return true;
   if (!isExecWrapper(head)) return false;
-  const childIndex = names.findIndex(
-    (name, index) => index > 0 && !EXEC_WRAPPER_ARGUMENT.test(name),
-  );
+  const childIndex = findExecWrapperChildIndex(names, 1);
   return childIndex !== -1 && isRemoteFetcherAfterExecWrappers(names.slice(childIndex));
+}
+
+function findExecWrapperChildIndex(names: readonly string[], index: number): number {
+  const name = names[index];
+  if (name === undefined) return -1;
+  if (EXEC_WRAPPER_VALUE_OPTIONS.has(name)) return findExecWrapperChildIndex(names, index + 2);
+  return EXEC_WRAPPER_ARGUMENT.test(name) ? findExecWrapperChildIndex(names, index + 1) : index;
 }
 
 export function isVerifiableLocalGeneratorSource(command: CommandView): boolean {
