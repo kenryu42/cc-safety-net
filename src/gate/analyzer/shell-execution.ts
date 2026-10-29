@@ -234,7 +234,11 @@ export function redirectsStdin(redirections: readonly CommandRedirection[]): boo
   return redirections.some(
     (redirection) =>
       (redirection.fd === undefined || redirection.fd === 0) &&
-      INPUT_REDIRECTIONS.has(redirection.operator),
+      INPUT_REDIRECTIONS.has(redirection.operator) &&
+      redirection.operator !== '<&' &&
+      (redirection.heredoc !== undefined
+        ? isLiteralHeredoc(redirection.heredoc)
+        : redirection.target?.provenance === 'literal'),
   );
 }
 
