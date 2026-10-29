@@ -230,6 +230,14 @@ export function extractShellStdinSource(
     : { kind: 'literal', source: literalPipelineInput };
 }
 
+export function redirectsStdin(redirections: readonly CommandRedirection[]): boolean {
+  return redirections.some(
+    (redirection) =>
+      (redirection.fd === undefined || redirection.fd === 0) &&
+      INPUT_REDIRECTIONS.has(redirection.operator),
+  );
+}
+
 export function extractShellScriptOperandSource(
   words: readonly CommandWord[],
   home?: string,

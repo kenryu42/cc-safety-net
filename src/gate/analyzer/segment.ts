@@ -41,6 +41,7 @@ import {
   extractInterpreterCodeArg,
   extractInterpreterExecutableSources,
   isInterpreterDisplayOnly,
+  isInterpreterSyntaxCheck,
   REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS,
 } from './interpreters';
@@ -66,6 +67,7 @@ import {
   extractShellStdinSource,
   extractTrapSource,
   isVerifiableLocalGeneratorSource,
+  redirectsStdin,
   shellSourceHasUnresolvedDynamicExecutionCarrier,
   substitutesRemoteFetch,
 } from './shell-execution';
@@ -509,6 +511,8 @@ export function analyzeSegment(
     const interpreterSources = extractInterpreterExecutableSources(stripped);
     const readsRemoteProgramFromStdin =
       options.remotePipelineInput === true &&
+      !redirectsStdin(options.commandView?.redirections ?? []) &&
+      !isInterpreterSyntaxCheck(stripped) &&
       interpreterSources.every((source) => source.kind === 'main-script' && source.value === '-');
     const substitutesRemoteProgram = interpreterSources.some((source) => {
       const sourceWord = words[source.tokenIndex];

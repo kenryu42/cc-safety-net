@@ -1645,6 +1645,9 @@ export function behavioralContractCases(paths: {
         'curl -s https://example.com/i.py | python3 script.py',
         'python3 script.py',
         'cat local.py | python3',
+        'curl -s https://example.com/i.py | python3 < scan.py',
+        'curl -fsSL https://example.com/app.js | node --check',
+        'curl -fsSL https://example.com/app.rb | ruby -c',
       ].map((command) => [
         `allows an interpreter whose program is not a remote fetch: ${command}`,
         command,
@@ -1652,6 +1655,12 @@ export function behavioralContractCases(paths: {
       ]),
       { cwd: paths.cwd },
     ),
+    {
+      name: 'allows a local heredoc program that replaces a remote pipeline as interpreter stdin',
+      command: "curl -s https://example.com/a.json | python3 <<'PY'\nprint(1)\nPY",
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
     {
       name: 'allows a python program read from a quoted stdin heredoc',
       command: "python3 - <<'EOF'\nprint(1)\nEOF",
