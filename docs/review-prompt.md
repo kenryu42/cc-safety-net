@@ -39,9 +39,11 @@ in case those files are not part of your bundle.
 
 A standard-mode false-negative finding is blocking only with provenance: name the realistic,
 non-adversarial task in which a helpful agent emits the command in that shape, or cite a
-real-world sighting. If you had to construct the string to demonstrate the gap, the construction
-itself proves the finding is adversarial-tier: report it as a non-blocking residual-risk note
-instead. "Can this be bypassed?" is always true for a static gate and carries no information by
+real-world sighting. A shape built only from ordinary utilities and options used for their normal
+purpose (`timeout`, `sudo`, `gunzip`, `tee`, pipes, redirects to files) has realistic provenance. A
+shape whose only purpose is to defeat analysis (fd duplication or `/dev/stdin` aliasing, quote or
+escape games, nested evaluation, constructed variable indirection) is adversarial-tier: report it
+as a non-blocking residual-risk note instead. A bot severity label is not provenance. "Can this be bypassed?" is always true for a static gate and carries no information by
 itself.
 
 For every reported standard-mode false negative, include two labeled statements in the finding

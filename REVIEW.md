@@ -10,7 +10,11 @@
 - Findings that require intentionally adversarial construction in standard mode should be classified as accepted residual risk or follow-up hardening unless the user explicitly expands the threat model.
 - Adjudicated bypass families live in `docs/residual-risk.md`; consult it before debating a finding. Matches are pre-adjudicated residual risk, and the productive response to a crafted bypass in a listed family is a strict or paranoid fail-closed fixture, not a standard-mode parser patch.
 - A standard-mode false-negative finding enters remediation only with plausible non-adversarial provenance: a realistic agent task or real-world sighting that produces the command shape. New behavioral-contract corpus entries come from field evidence, not reviewer construction.
-- Allow one review-driven remediation pass and one confirmation review per PR; findings from autoreview and from review bots count alike. Never start another review round after the confirmation review. Resolve what it finds without asking the maintainer: fix a regression against main (a deny that becomes an allow, or a new false positive on a command agents run); give a reviewer-constructed finding whose verdict matches main one positionless refusal when one exists within the cost threshold in `docs/residual-risk.md`, applied without another autoreview round because the PR's review bots cover it; otherwise record the finding as a known gap in the PR description and the work's plan, and ship. When a must-fix finding targets the same mechanism (the same scanner, walker, or matcher) as an earlier fix, the remedy is a positionless refusal of the shapes that mechanism cannot read, never a further refinement of it.
+- Severity labels from review bots ("Major", "P1") are not a classification. Classify every finding by the order under "Automated finding classification", whatever label it arrives with; findings from autoreview and from review bots count alike.
+- Review rounds continue only while they produce must-fix work. Fix every must-fix finding (a regression against main — a deny that becomes an allow, or a new false positive on a command agents run — a never-residual guarantee, or a standard-mode false negative with realistic provenance) in whatever round it appears, each with its failing test first. A round whose remaining findings are all reviewer-constructed, out-of-scope, or accepted residual ends review without asking the maintainer: record those findings as known gaps in the PR description and the work's plan, and ship.
+- Never refine a mechanism to close a reviewer-constructed finding. Its only remedy is one positionless refusal within the cost threshold in `docs/residual-risk.md`, applied without another autoreview round because the PR's review bots cover it, or a known gap.
+- When must-fix findings hit the same mechanism (the same scanner, walker, or matcher) in two rounds, the next remedy is a positionless refusal of the shapes that mechanism cannot read, never a further refinement of it.
+- When a PR reaches five fix commits after its first bot review, stop and ask the maintainer whether to continue or split the work.
 - Every finding must propose the smallest sufficient remediation, per the Scope Discipline section of `AGENTS.md`. A proposal that adds process automation, registries, attestations, or new validation frameworks is a suggestion for the maintainer — never merge-blocking, and never implemented in the same remediation pass without explicit user approval. Reviewers do not answer "how could this process be subverted?" with new machinery; unenforceable-process concerns are documented limitations, not findings.
 - When invoking isolated autoreview, pass `--prompt-file docs/review-prompt.md`; it inlines this threat model, the ranked review priorities, and the residual-risk families for the isolated reviewer.
 - Also pass `--prompt` with a concise task-specific overview: why the change exists, its intended behavior, its scope and ownership boundary, and any deliberately unchanged or generated code. When generated artifacts relocate unchanged source, say so explicitly and direct the reviewer to evaluate the generator and artifact contract instead of treating the relocated logic as newly introduced.
@@ -30,7 +34,12 @@ Classify findings in this order:
 3. A match for an existing `docs/residual-risk.md` family is
    **accepted-existing-residual** and does not create a new entry.
 4. A standard-mode false negative with realistic non-adversarial provenance or field evidence is
-   **must-fix**.
+   **must-fix**. Realistic provenance means the shape appears in the real-world command corpus,
+   audit logs, or published install or usage docs, or is composed only of ordinary utilities and
+   options an agent uses for their normal purpose (`timeout`, `sudo`, `gunzip`, `tee`, pipes,
+   redirects to files). A shape whose only purpose is to defeat analysis (fd duplication or
+   `/dev/stdin` aliasing, quote or escape games, nested evaluation, constructed variable
+   indirection) is reviewer-constructed.
 5. A reviewer-constructed finding without enough source or contract proof is
    **evidence-invalid**.
 6. Only a distinct, documented analysis or ownership boundary may become an
