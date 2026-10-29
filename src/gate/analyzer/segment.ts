@@ -523,19 +523,21 @@ export function analyzeSegment(
         substitutesRemoteFetch(sourceWord, options.commandView.nested, options.environment)
       );
     });
-    const runsDownloadedProgram = interpreterSources.some(
-      (source) =>
-        source.kind === 'main-script' &&
-        words[source.tokenIndex]?.provenance === 'literal' &&
-        options.downloadedPaths?.has(
-          resolveTrackedHeredocPath(
-            source.value,
-            nestedEffectiveCwd,
-            options.environment.paths,
-            options.budget,
-          ) ?? '',
-        ),
-    );
+    const runsDownloadedProgram =
+      !isInterpreterSyntaxCheck(stripped) &&
+      interpreterSources.some(
+        (source) =>
+          source.kind === 'main-script' &&
+          words[source.tokenIndex]?.provenance === 'literal' &&
+          options.downloadedPaths?.has(
+            resolveTrackedHeredocPath(
+              source.value,
+              nestedEffectiveCwd,
+              options.environment.paths,
+              options.budget,
+            ) ?? '',
+          ),
+      );
     if (
       !child &&
       (readsRemoteProgramFromStdin ||
