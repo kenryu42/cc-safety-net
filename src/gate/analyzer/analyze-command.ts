@@ -49,7 +49,11 @@ import {
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
 import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
-import { extractLiteralPrintfOutput, isLiteralHeredoc } from './shell-execution';
+import {
+  extractLiteralPrintfOutput,
+  isLiteralHeredoc,
+  isRemoteFetchCommand,
+} from './shell-execution';
 import {
   applyShellGitContextEnvSegment,
   cloneShellGitContextEnvState,
@@ -330,11 +334,17 @@ function analyzeProgram(
       ? options.trace.currentSegmentIndex
       : options.trace?.allocateSegment();
     const pipelineSource = program.nodes[nodeIndex - 2];
-    const literalShellInput =
+    const commandPipelineSource =
       isPipelineConnector(previousConnector) && pipelineSource?.kind === 'command'
-        ? (extractLiteralPrintfOutput(pipelineSource) ??
-          extractLiteralPowerShellPipelineOutput(pipelineSource))
+        ? pipelineSource
         : undefined;
+    const literalShellInput = commandPipelineSource
+      ? (extractLiteralPrintfOutput(commandPipelineSource) ??
+        extractLiteralPowerShellPipelineOutput(commandPipelineSource))
+      : undefined;
+    const remotePipelineInput =
+      commandPipelineSource !== undefined &&
+      isRemoteFetchCommand(commandPipelineSource, options.environment);
     const successStates: AnalysisState[] = [];
     const failureStates: AnalysisState[] = [];
     for (const state of executionStates) {
@@ -359,6 +369,7 @@ function analyzeProgram(
           analyzedState,
           isPipelineConnector(previousConnector),
           literalShellInput,
+          remotePipelineInput,
         );
         if (result) return { result: { ...result, sourceOffset: node.span.start }, states };
         const functionBody = getCalledFunctionBody(node, analyzedState.functionDefinitions);
@@ -695,6 +706,7 @@ function analyzeCommandView(
   state: AnalysisState,
   hasPipelineInput: boolean,
   literalShellInput: string | undefined,
+  remotePipelineInput: boolean,
 ): AnalyzeResult | null {
   const options = {
     ...inheritedOptions,
@@ -823,6 +835,7 @@ function analyzeCommandView(
     functionDefinitions: state.functionDefinitions,
     hasPipelineInput,
     literalShellInput,
+    remotePipelineInput,
     analyzeNested: (
       nestedCommand: string,
       overrides?: AnalyzeNestedOverrides,

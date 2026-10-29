@@ -268,13 +268,18 @@ export function substitutesRemoteFetch(
   return nested
     .filter((program) => program.span.start >= word.span.start && program.span.end <= word.span.end)
     .flatMap(projectCommandViews)
-    .some((view) => {
-      const head = stripWrapperWords(view.words, environment).words[0];
-      return (
-        head !== undefined &&
-        REMOTE_FETCHERS.has(getBasename(normalizeCommandToken(analysisWordText(head))))
-      );
-    });
+    .some((view) => isRemoteFetchCommand(view, environment));
+}
+
+export function isRemoteFetchCommand(
+  command: CommandView,
+  environment: EnvironmentContext,
+): boolean {
+  const head = stripWrapperWords(command.words, environment).words[0];
+  return (
+    head !== undefined &&
+    REMOTE_FETCHERS.has(getBasename(normalizeCommandToken(analysisWordText(head))))
+  );
 }
 
 export function isVerifiableLocalGeneratorSource(command: CommandView): boolean {

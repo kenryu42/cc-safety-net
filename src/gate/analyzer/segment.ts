@@ -506,10 +506,24 @@ export function analyzeSegment(
   }
 
   if (isInterpreterCommand(normalizedHead) && !embedded) {
+    const interpreterSources = extractInterpreterExecutableSources(stripped);
+    const readsRemoteProgramFromStdin =
+      options.remotePipelineInput === true &&
+      interpreterSources.every((source) => source.kind === 'main-script' && source.value === '-');
+    const substitutesRemoteProgram = interpreterSources.some((source) => {
+      const sourceWord = words[source.tokenIndex];
+      return (
+        source.kind !== 'module-file' &&
+        sourceWord !== undefined &&
+        options.commandView !== undefined &&
+        substitutesRemoteFetch(sourceWord, options.commandView.nested, options.environment)
+      );
+    });
     if (
       !child &&
-      options.strict &&
-      hasDynamicExecutableSource(extractInterpreterExecutableSources(stripped), words)
+      (readsRemoteProgramFromStdin ||
+        substitutesRemoteProgram ||
+        (options.strict && hasDynamicExecutableSource(interpreterSources, words)))
     ) {
       return dynamicShellSourceResult(trace);
     }
