@@ -485,7 +485,9 @@ function extractNodeLongLoader(token: string): { attached: boolean; value: strin
 
 export function isInterpreterSyntaxCheck(tokens: readonly string[]): boolean {
   const flags = SYNTAX_CHECK_FLAGS.get(normalizeInterpreter(tokens[0] ?? ''));
-  const programIndex = tokens.indexOf('-', 1);
+  const programIndex = tokens.findIndex(
+    (token, index) => index > 0 && (token === '-' || !token.startsWith('-')),
+  );
   return (
     flags !== undefined &&
     tokens
