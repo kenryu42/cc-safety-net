@@ -79,6 +79,7 @@ export type InternalOptions = AnalyzeInput &
     budget: Budget;
     literalHeredocFiles?: ReadonlyMap<string, string>;
     writtenPaths?: Set<string>;
+    downloadedPaths?: Set<string>;
     scriptReads?: { budget?: Budget };
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     rootProgram?: CommandProgram;
@@ -168,6 +169,7 @@ export function analyzeCommandInternal(
     ...options,
     rootProgram: program,
     writtenPaths: options.writtenPaths ?? new Set<string>(),
+    downloadedPaths: options.downloadedPaths ?? new Set<string>(),
     scriptReads: options.scriptReads ?? {},
   };
   return analyzeProgram(program, depth, programOptions, originalCwd, [
@@ -769,6 +771,7 @@ function analyzeCommandView(
     };
   }
   recordWrittenPaths(commandView, state, options);
+  recordDownloadedPaths(commandView, state, options);
   invalidateLiteralHeredocFiles(
     commandView,
     state,
@@ -1062,6 +1065,50 @@ function recordWrittenPaths(
       options.budget,
     );
     if (path) writtenPaths.add(path);
+  }
+}
+
+const DOWNLOAD_OUTPUT_OPTION = new Map([
+  ['curl', /^(?:-[^-o]*o|--output(?:=|$))(.*)/],
+  ['wget', /^(?:-[^-O]*O|--output-document(?:=|$))(.*)/],
+]);
+
+function downloadOutputOperands(words: readonly CommandWord[]): string[] {
+  const fetcherIndex = words.findIndex((word) =>
+    DOWNLOAD_OUTPUT_OPTION.has(getBasename(word.text)),
+  );
+  const option = DOWNLOAD_OUTPUT_OPTION.get(getBasename(words[fetcherIndex]?.text ?? ''));
+  return words.slice(fetcherIndex + 1).flatMap((word, index, args) => {
+    const attached = word.provenance === 'literal' ? option?.exec(word.text)?.[1] : undefined;
+    const next = args[index + 1];
+    if (attached) return [attached];
+    return attached === '' && next?.provenance === 'literal' ? [next.text] : [];
+  });
+}
+
+function recordDownloadedPaths(
+  commandView: CommandView,
+  state: AnalysisState,
+  options: InternalOptions,
+): void {
+  const fetches = isRemoteFetchCommand(commandView, options.environment);
+  const outputs = [
+    ...commandView.redirections
+      .filter(isTruncatingFileRedirection)
+      .flatMap((redirection) =>
+        redirection.target?.provenance === 'literal' ? [redirection.target.text] : [],
+      ),
+    ...(fetches ? downloadOutputOperands(commandView.words) : []),
+  ];
+  for (const output of outputs.filter((text) => text !== '-')) {
+    const path = resolveTrackedHeredocPath(
+      output,
+      state.effectiveCwd,
+      options.environment.paths,
+      options.budget,
+    );
+    if (path && fetches) options.downloadedPaths?.add(path);
+    if (path && !fetches) options.downloadedPaths?.delete(path);
   }
 }
 

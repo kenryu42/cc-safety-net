@@ -523,10 +523,24 @@ export function analyzeSegment(
         substitutesRemoteFetch(sourceWord, options.commandView.nested, options.environment)
       );
     });
+    const runsDownloadedProgram = interpreterSources.some(
+      (source) =>
+        source.kind === 'main-script' &&
+        words[source.tokenIndex]?.provenance === 'literal' &&
+        options.downloadedPaths?.has(
+          resolveTrackedHeredocPath(
+            source.value,
+            nestedEffectiveCwd,
+            options.environment.paths,
+            options.budget,
+          ) ?? '',
+        ),
+    );
     if (
       !child &&
       (readsRemoteProgramFromStdin ||
         substitutesRemoteProgram ||
+        runsDownloadedProgram ||
         (options.strict && hasDynamicExecutableSource(interpreterSources, words)))
     ) {
       return dynamicShellSourceResult(trace);
@@ -989,7 +1003,9 @@ function analyzeTrackedHeredocScript(
     options.budget,
   );
   const body = path ? options.literalHeredocFiles?.get(path) : undefined;
-  if (body === undefined && failClosed) return dynamicShellSourceResult(trace);
+  if (body === undefined && (failClosed || (path && options.downloadedPaths?.has(path)))) {
+    return dynamicShellSourceResult(trace);
+  }
   if (body === undefined) {
     return path
       ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath)
