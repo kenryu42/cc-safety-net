@@ -44,6 +44,8 @@ import {
 } from './interpreters';
 import { analyzePowerShellCommandViewMatch } from './powershell/remove-item';
 import {
+  dynamicShellSourceMatch,
+  REASON_DYNAMIC_SHELL_SOURCE,
   REASON_RECURSION_LIMIT,
   REASON_STRICT_UNPARSEABLE,
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
@@ -53,6 +55,8 @@ import {
   extractLiteralPrintfOutput,
   isLiteralHeredoc,
   isRemoteFetchCommand,
+  isRemoteFetcherName,
+  substitutesRemoteFetch,
 } from './shell-execution';
 import {
   applyShellGitContextEnvSegment,
@@ -641,6 +645,31 @@ function analyzeNestedPrograms(
 }
 
 function getLiteralPowerShellEvaluationSource(commandView: CommandView): string | undefined {
+  const args = getPowerShellEvaluationArgs(commandView);
+  const source = args?.[0];
+  return args?.length === 1 && source?.quoted && source.provenance === 'literal'
+    ? source.text
+    : undefined;
+}
+
+function evaluatesRemotePowerShellContent(
+  commandView: CommandView,
+  remotePipelineInput: boolean,
+  environment: EnvironmentContext,
+): boolean {
+  const args = getPowerShellEvaluationArgs(commandView);
+  if (!args) return false;
+  const source = args.map((word) => word.raw).join(' ');
+  return (
+    remotePipelineInput ||
+    args.some((word) => substitutesRemoteFetch(word, commandView.nested, environment)) ||
+    (source.startsWith('(') &&
+      (isRemoteFetcherName(/^\(+([^\s()]+)/.exec(source)?.[1] ?? '', 'powershell') ||
+        /\.Download(?:String|Data)\(/i.test(source)))
+  );
+}
+
+function getPowerShellEvaluationArgs(commandView: CommandView): CommandWord[] | undefined {
   const invoked =
     commandView.words[0]?.provenance === 'literal' &&
     !commandView.words[0].quoted &&
@@ -657,17 +686,12 @@ function getLiteralPowerShellEvaluationSource(commandView: CommandView): string 
   }
 
   const args = commandView.words.slice(commandIndex + 1);
-  const sourceIndex =
-    args[0] &&
+  return args[0] &&
     !args[0].quoted &&
     args[0].raw === args[0].text &&
     ['-c', '-command'].includes(args[0].text.toLowerCase())
-      ? 1
-      : 0;
-  const source = args[sourceIndex];
-  return args.length === sourceIndex + 1 && source?.quoted && source.provenance === 'literal'
-    ? source.text
-    : undefined;
+    ? args.slice(1)
+    : args;
 }
 
 function countCommandProgramWords(program: CommandProgram): number {
@@ -770,6 +794,10 @@ function analyzeCommandView(
       reason: match?.reason,
     });
     if (match) return resultFromCommandMatch(segmentStr, match);
+    if (evaluatesRemotePowerShellContent(commandView, remotePipelineInput, options.environment)) {
+      options.trace?.recordSegment({ type: 'error', message: REASON_DYNAMIC_SHELL_SOURCE });
+      return resultFromCommandMatch(segmentStr, dynamicShellSourceMatch());
+    }
   }
 
   const redirectMatch = filterDestructiveCommandMatch(

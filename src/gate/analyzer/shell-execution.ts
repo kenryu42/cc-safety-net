@@ -286,23 +286,34 @@ export function substitutesRemoteFetch(
     .some((view) => isRemoteFetchCommand(view, environment));
 }
 
+const POWERSHELL_REMOTE_FETCHERS = new Set([
+  'irm',
+  'iwr',
+  'invoke-restmethod',
+  'invoke-webrequest',
+]);
+
+export function isRemoteFetcherName(name: string, dialect: CommandView['dialect']): boolean {
+  const command = normalizeCommandToken(name);
+  return (
+    REMOTE_FETCHERS.has(command) ||
+    (dialect === 'powershell' && POWERSHELL_REMOTE_FETCHERS.has(command))
+  );
+}
+
 export function isRemoteFetchCommand(
   command: CommandView,
   environment: EnvironmentContext,
 ): boolean {
-  const names = stripWrapperWords(command.words, environment).words.map((word) =>
-    analysisWordText(word).toLowerCase(),
-  );
-  return isRemoteFetcherAfterExecWrappers(names);
-}
-
-function isRemoteFetcherAfterExecWrappers(names: readonly string[]): boolean {
+  const names = stripWrapperWords(command.words, environment).words.map(analysisWordText);
   const head = names[0];
   if (head === undefined) return false;
-  if (REMOTE_FETCHERS.has(normalizeCommandToken(head))) return true;
+  if (isRemoteFetcherName(head, command.dialect)) return true;
   return (
     isExecWrapper(normalizeCommandToken(head)) &&
-    names.slice(1).some((name) => !isRelativePath(name) && REMOTE_FETCHERS.has(getBasename(name)))
+    names
+      .slice(1)
+      .some((name) => !isRelativePath(name) && isRemoteFetcherName(name, command.dialect))
   );
 }
 
