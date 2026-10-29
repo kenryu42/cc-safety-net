@@ -234,7 +234,9 @@ function analyzeProgram(
       isPipelineConnector(previousConnector) && upstreamRemoteFetch;
     upstreamRemoteFetch =
       remotePipelineInput ||
-      (node.kind === 'command' && isRemoteFetchCommand(node, options.environment));
+      (node.kind === 'command' &&
+        (isRemoteFetchCommand(node, options.environment) ||
+          (node.dialect === 'powershell' && mentionsPowerShellRemoteFetch(node.words))));
     const nextNode = program.nodes[nodeIndex + 1];
     const nextConnector = nextNode?.kind === 'connector' ? nextNode.operator : undefined;
     const isolated = isAnalysisNodeIsolated(
@@ -659,13 +661,22 @@ function evaluatesRemotePowerShellContent(
 ): boolean {
   const args = getPowerShellEvaluationArgs(commandView);
   if (!args) return false;
-  const source = args.map((word) => word.raw).join(' ');
   return (
     remotePipelineInput ||
     args.some((word) => substitutesRemoteFetch(word, commandView.nested, environment)) ||
-    (source.startsWith('(') &&
-      (isRemoteFetcherName(/^\(+([^\s()]+)/.exec(source)?.[1] ?? '', 'powershell') ||
-        /\.Download(?:String|Data)\(/i.test(source)))
+    mentionsPowerShellRemoteFetch(args)
+  );
+}
+
+function mentionsPowerShellRemoteFetch(words: readonly CommandWord[]): boolean {
+  return words.some(
+    (word) =>
+      /\.Download(?:String|Data)\(/i.test(word.raw) ||
+      (!word.quoted &&
+        isRemoteFetcherName(
+          /^(?:\$?\(|[&.\s])*([^\s()]*)/.exec(word.raw)?.[1] ?? '',
+          'powershell',
+        )),
   );
 }
 

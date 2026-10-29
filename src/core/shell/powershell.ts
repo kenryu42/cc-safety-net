@@ -47,6 +47,8 @@ const AUTO_POWERSHELL_HEADS = new Set([
   'move-item',
   'foreach-object',
   'where-object',
+  'iex',
+  'invoke-expression',
 ]);
 
 const AUTO_POWERSHELL_PATH_ALIASES = new Set(['gc', 'cat', 'type', 'cp', 'mv', 'rm']);
