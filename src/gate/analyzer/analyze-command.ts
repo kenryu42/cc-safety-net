@@ -342,9 +342,11 @@ function analyzeProgram(
       ? (extractLiteralPrintfOutput(commandPipelineSource) ??
         extractLiteralPowerShellPipelineOutput(commandPipelineSource))
       : undefined;
-    const remotePipelineInput =
-      commandPipelineSource !== undefined &&
-      isRemoteFetchCommand(commandPipelineSource, options.environment);
+    const remotePipelineInput = pipelineCarriesRemoteFetch(
+      program.nodes,
+      nodeIndex,
+      options.environment,
+    );
     const successStates: AnalysisState[] = [];
     const failureStates: AnalysisState[] = [];
     for (const state of executionStates) {
@@ -502,6 +504,21 @@ function powerShellBraceStateIsIsolated(program: CommandProgram, nodeIndex: numb
   if (head === 'write-output' || head === 'function' || head === 'start-job') return true;
   if (getPowerShellScriptBlockAssignmentName(header)) return true;
   return header.source.replaceAll(/\s/g, '').toLowerCase() === 'if($false)';
+}
+
+function pipelineCarriesRemoteFetch(
+  nodes: CommandProgram['nodes'],
+  nodeIndex: number,
+  environment: EnvironmentContext,
+): boolean {
+  const connector = nodes[nodeIndex - 1];
+  const source = nodes[nodeIndex - 2];
+  if (connector?.kind !== 'connector' || !isPipelineConnector(connector.operator)) return false;
+  if (source?.kind !== 'command') return false;
+  return (
+    isRemoteFetchCommand(source, environment) ||
+    pipelineCarriesRemoteFetch(nodes, nodeIndex - 2, environment)
+  );
 }
 
 function isPipelineConnector(connector: string | undefined): boolean {

@@ -24,6 +24,10 @@ const EXEC_WRAPPERS = new Set([
   'timeout',
 ]);
 
+export function isExecWrapper(command: string): boolean {
+  return EXEC_WRAPPERS.has(command);
+}
+
 interface TransparentWrapperUnwrap {
   wrapper: string;
   tokens: string[];
