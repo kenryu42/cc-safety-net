@@ -259,6 +259,8 @@ export function extractShellScriptOperandSource(
   return expanded === null ? DYNAMIC_SOURCE : { kind: 'literal', source: expanded };
 }
 
+const EXEC_WRAPPER_ARGUMENT = /^(?:-.*|[+-]?\d+(?:\.\d+)?[smhd]?)$/;
+
 const STDIN_ALIASES = new Set(['/dev/stdin', '/dev/fd/0', '/proc/self/fd/0']);
 
 const REMOTE_FETCHERS = new Set([
@@ -293,12 +295,18 @@ export function isRemoteFetchCommand(
   const names = stripWrapperWords(command.words, environment).words.map((word) =>
     normalizeCommandToken(analysisWordText(word)),
   );
+  return isRemoteFetcherAfterExecWrappers(names);
+}
+
+function isRemoteFetcherAfterExecWrappers(names: readonly string[]): boolean {
   const head = names[0];
-  return (
-    head !== undefined &&
-    (REMOTE_FETCHERS.has(head) ||
-      (isExecWrapper(head) && names.slice(1).some((name) => REMOTE_FETCHERS.has(name))))
+  if (head === undefined) return false;
+  if (REMOTE_FETCHERS.has(head)) return true;
+  if (!isExecWrapper(head)) return false;
+  const childIndex = names.findIndex(
+    (name, index) => index > 0 && !EXEC_WRAPPER_ARGUMENT.test(name),
   );
+  return childIndex !== -1 && isRemoteFetcherAfterExecWrappers(names.slice(childIndex));
 }
 
 export function isVerifiableLocalGeneratorSource(command: CommandView): boolean {
