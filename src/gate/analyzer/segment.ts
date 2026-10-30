@@ -41,6 +41,7 @@ import {
   extractInterpreterCodeArg,
   extractInterpreterExecutableSources,
   isInterpreterDisplayOnly,
+  isInterpreterSyntaxCheck,
   REASON_INTERPRETER_BLOCKED,
   REASON_INTERPRETER_DANGEROUS,
 } from './interpreters';
@@ -66,6 +67,7 @@ import {
   extractShellStdinSource,
   extractTrapSource,
   isVerifiableLocalGeneratorSource,
+  redirectsStdin,
   shellSourceHasUnresolvedDynamicExecutionCarrier,
   substitutesRemoteFetch,
 } from './shell-execution';
@@ -506,10 +508,42 @@ export function analyzeSegment(
   }
 
   if (isInterpreterCommand(normalizedHead) && !embedded) {
+    const interpreterSources = extractInterpreterExecutableSources(stripped);
+    const readsRemoteProgramFromStdin =
+      options.remotePipelineInput === true &&
+      !redirectsStdin(options.commandView?.redirections ?? []) &&
+      !isInterpreterSyntaxCheck(stripped) &&
+      interpreterSources.every((source) => source.kind === 'main-script' && source.value === '-');
+    const substitutesRemoteProgram = interpreterSources.some((source) => {
+      const sourceWord = words[source.tokenIndex];
+      return (
+        source.kind !== 'module-file' &&
+        sourceWord !== undefined &&
+        options.commandView !== undefined &&
+        substitutesRemoteFetch(sourceWord, options.commandView.nested, options.environment)
+      );
+    });
+    const runsDownloadedProgram =
+      !isInterpreterSyntaxCheck(stripped) &&
+      interpreterSources.some(
+        (source) =>
+          source.kind === 'main-script' &&
+          words[source.tokenIndex]?.provenance === 'literal' &&
+          options.downloadedPaths?.has(
+            resolveTrackedHeredocPath(
+              source.value,
+              nestedEffectiveCwd,
+              options.environment.paths,
+              options.budget,
+            ) ?? '',
+          ),
+      );
     if (
       !child &&
-      options.strict &&
-      hasDynamicExecutableSource(extractInterpreterExecutableSources(stripped), words)
+      (readsRemoteProgramFromStdin ||
+        substitutesRemoteProgram ||
+        runsDownloadedProgram ||
+        (options.strict && hasDynamicExecutableSource(interpreterSources, words)))
     ) {
       return dynamicShellSourceResult(trace);
     }
@@ -971,7 +1005,9 @@ function analyzeTrackedHeredocScript(
     options.budget,
   );
   const body = path ? options.literalHeredocFiles?.get(path) : undefined;
-  if (body === undefined && failClosed) return dynamicShellSourceResult(trace);
+  if (body === undefined && (failClosed || (path && options.downloadedPaths?.has(path)))) {
+    return dynamicShellSourceResult(trace);
+  }
   if (body === undefined) {
     return path
       ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath)

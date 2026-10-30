@@ -18,6 +18,11 @@ const CODE_FLAGS = new Map([
 
 const NODE_PRINT_FLAGS = new Set(['-p', '--print']);
 
+const SYNTAX_CHECK_FLAGS = new Map([
+  ['node', new Set(['-c', '--check'])],
+  ['ruby', new Set(['-c'])],
+]);
+
 const CLUSTERED_CODE_FLAGS = new Map([
   ['python', new Set(['c'])],
   ['node', new Set(['e'])],
@@ -476,6 +481,19 @@ function extractNodeLongLoader(token: string): { attached: boolean; value: strin
     }
   }
   return undefined;
+}
+
+export function isInterpreterSyntaxCheck(tokens: readonly string[]): boolean {
+  const flags = SYNTAX_CHECK_FLAGS.get(normalizeInterpreter(tokens[0] ?? ''));
+  const programIndex = tokens.findIndex(
+    (token, index) => index > 0 && (token === '-' || !token.startsWith('-')),
+  );
+  return (
+    flags !== undefined &&
+    tokens
+      .slice(1, programIndex === -1 ? undefined : programIndex)
+      .some((token) => flags.has(token))
+  );
 }
 
 export function isInterpreterDisplayOnly(command: string, code: string): boolean {

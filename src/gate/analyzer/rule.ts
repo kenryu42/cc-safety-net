@@ -32,8 +32,10 @@ export type InternalOptions = AnalyzeInput &
     budget: Budget;
     hasPipelineInput?: boolean;
     literalShellInput?: string;
+    remotePipelineInput?: boolean;
     literalHeredocFiles?: ReadonlyMap<string, string>;
     writtenPaths?: ReadonlySet<string>;
+    downloadedPaths?: ReadonlySet<string>;
     scriptReads?: { budget?: Budget };
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     wrapperNormalizationBudget?: { iterations: number };

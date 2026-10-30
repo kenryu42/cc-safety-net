@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { lstatSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from './git/metadata';
 import {
@@ -38,7 +39,8 @@ export type Environment = Readonly<{
 export const processPathResolver: PathResolver = {
   realpath: (path) => {
     try {
-      return realpathSync(path);
+      const resolved = realpathSync(path);
+      return isAbsolute(resolved) ? resolved : null;
     } catch {
       return null;
     }

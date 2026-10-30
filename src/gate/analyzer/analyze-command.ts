@@ -44,12 +44,20 @@ import {
 } from './interpreters';
 import { analyzePowerShellCommandViewMatch } from './powershell/remove-item';
 import {
+  dynamicShellSourceMatch,
+  REASON_DYNAMIC_SHELL_SOURCE,
   REASON_RECURSION_LIMIT,
   REASON_STRICT_UNPARSEABLE,
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
 import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
-import { extractLiteralPrintfOutput, isLiteralHeredoc } from './shell-execution';
+import {
+  extractLiteralPrintfOutput,
+  isLiteralHeredoc,
+  isRemoteFetchCommand,
+  isRemoteFetcherName,
+  substitutesRemoteFetch,
+} from './shell-execution';
 import {
   applyShellGitContextEnvSegment,
   cloneShellGitContextEnvState,
@@ -71,6 +79,7 @@ export type InternalOptions = AnalyzeInput &
     budget: Budget;
     literalHeredocFiles?: ReadonlyMap<string, string>;
     writtenPaths?: Set<string>;
+    downloadedPaths?: Set<string>;
     scriptReads?: { budget?: Budget };
     functionDefinitions?: ReadonlyMap<string, CommandProgram>;
     rootProgram?: CommandProgram;
@@ -160,6 +169,7 @@ export function analyzeCommandInternal(
     ...options,
     rootProgram: program,
     writtenPaths: options.writtenPaths ?? new Set<string>(),
+    downloadedPaths: options.downloadedPaths ?? new Set<string>(),
     scriptReads: options.scriptReads ?? {},
   };
   return analyzeProgram(program, depth, programOptions, originalCwd, [
@@ -216,11 +226,19 @@ function analyzeProgram(
   let conditionalStates: ConditionalAnalysisStates | undefined;
   let previousConnector: string | undefined;
   let pipelineOutcome: ControlFlowOutcome | undefined;
+  let upstreamRemoteFetch = false;
   for (const [nodeIndex, node] of program.nodes.entries()) {
     if (node.kind === 'connector') {
       previousConnector = node.operator;
       continue;
     }
+    const remotePipelineInput: boolean =
+      isPipelineConnector(previousConnector) && upstreamRemoteFetch;
+    upstreamRemoteFetch =
+      remotePipelineInput ||
+      (node.kind === 'command' &&
+        (isRemoteFetchCommand(node, options.environment) ||
+          (node.dialect === 'powershell' && mentionsPowerShellRemoteFetch(node.words))));
     const nextNode = program.nodes[nodeIndex + 1];
     const nextConnector = nextNode?.kind === 'connector' ? nextNode.operator : undefined;
     const isolated = isAnalysisNodeIsolated(
@@ -330,11 +348,14 @@ function analyzeProgram(
       ? options.trace.currentSegmentIndex
       : options.trace?.allocateSegment();
     const pipelineSource = program.nodes[nodeIndex - 2];
-    const literalShellInput =
+    const commandPipelineSource =
       isPipelineConnector(previousConnector) && pipelineSource?.kind === 'command'
-        ? (extractLiteralPrintfOutput(pipelineSource) ??
-          extractLiteralPowerShellPipelineOutput(pipelineSource))
+        ? pipelineSource
         : undefined;
+    const literalShellInput = commandPipelineSource
+      ? (extractLiteralPrintfOutput(commandPipelineSource) ??
+        extractLiteralPowerShellPipelineOutput(commandPipelineSource))
+      : undefined;
     const successStates: AnalysisState[] = [];
     const failureStates: AnalysisState[] = [];
     for (const state of executionStates) {
@@ -359,6 +380,7 @@ function analyzeProgram(
           analyzedState,
           isPipelineConnector(previousConnector),
           literalShellInput,
+          remotePipelineInput,
         );
         if (result) return { result: { ...result, sourceOffset: node.span.start }, states };
         const functionBody = getCalledFunctionBody(node, analyzedState.functionDefinitions);
@@ -627,6 +649,40 @@ function analyzeNestedPrograms(
 }
 
 function getLiteralPowerShellEvaluationSource(commandView: CommandView): string | undefined {
+  const args = getPowerShellEvaluationArgs(commandView);
+  const source = args?.[0];
+  return args?.length === 1 && source?.quoted && source.provenance === 'literal'
+    ? source.text
+    : undefined;
+}
+
+function evaluatesRemotePowerShellContent(
+  commandView: CommandView,
+  remotePipelineInput: boolean,
+  environment: EnvironmentContext,
+): boolean {
+  const args = getPowerShellEvaluationArgs(commandView);
+  if (!args) return false;
+  return (
+    remotePipelineInput ||
+    args.some((word) => substitutesRemoteFetch(word, commandView.nested, environment)) ||
+    mentionsPowerShellRemoteFetch(args)
+  );
+}
+
+function mentionsPowerShellRemoteFetch(words: readonly CommandWord[]): boolean {
+  return words.some(
+    (word) =>
+      /\.Download(?:String|Data)\(/i.test(word.raw) ||
+      (!word.quoted &&
+        isRemoteFetcherName(
+          /^(?:\$?\(|[&.\s])*([^\s()]*)/.exec(word.raw)?.[1] ?? '',
+          'powershell',
+        )),
+  );
+}
+
+function getPowerShellEvaluationArgs(commandView: CommandView): CommandWord[] | undefined {
   const invoked =
     commandView.words[0]?.provenance === 'literal' &&
     !commandView.words[0].quoted &&
@@ -643,17 +699,12 @@ function getLiteralPowerShellEvaluationSource(commandView: CommandView): string 
   }
 
   const args = commandView.words.slice(commandIndex + 1);
-  const sourceIndex =
-    args[0] &&
+  return args[0] &&
     !args[0].quoted &&
     args[0].raw === args[0].text &&
     ['-c', '-command'].includes(args[0].text.toLowerCase())
-      ? 1
-      : 0;
-  const source = args[sourceIndex];
-  return args.length === sourceIndex + 1 && source?.quoted && source.provenance === 'literal'
-    ? source.text
-    : undefined;
+    ? args.slice(1)
+    : args;
 }
 
 function countCommandProgramWords(program: CommandProgram): number {
@@ -695,6 +746,7 @@ function analyzeCommandView(
   state: AnalysisState,
   hasPipelineInput: boolean,
   literalShellInput: string | undefined,
+  remotePipelineInput: boolean,
 ): AnalyzeResult | null {
   const options = {
     ...inheritedOptions,
@@ -719,6 +771,7 @@ function analyzeCommandView(
     };
   }
   recordWrittenPaths(commandView, state, options);
+  recordDownloadedPaths(commandView, state, options);
   invalidateLiteralHeredocFiles(
     commandView,
     state,
@@ -755,6 +808,10 @@ function analyzeCommandView(
       reason: match?.reason,
     });
     if (match) return resultFromCommandMatch(segmentStr, match);
+    if (evaluatesRemotePowerShellContent(commandView, remotePipelineInput, options.environment)) {
+      options.trace?.recordSegment({ type: 'error', message: REASON_DYNAMIC_SHELL_SOURCE });
+      return resultFromCommandMatch(segmentStr, dynamicShellSourceMatch());
+    }
   }
 
   const redirectMatch = filterDestructiveCommandMatch(
@@ -823,6 +880,7 @@ function analyzeCommandView(
     functionDefinitions: state.functionDefinitions,
     hasPipelineInput,
     literalShellInput,
+    remotePipelineInput,
     analyzeNested: (
       nestedCommand: string,
       overrides?: AnalyzeNestedOverrides,
@@ -1007,6 +1065,50 @@ function recordWrittenPaths(
       options.budget,
     );
     if (path) writtenPaths.add(path);
+  }
+}
+
+const DOWNLOAD_OUTPUT_OPTION = new Map([
+  ['curl', /^(?:-[^-o]*o|--output(?:=|$))(.*)/],
+  ['wget', /^(?:-[^-O]*O|--output-document(?:=|$))(.*)/],
+]);
+
+function downloadOutputOperands(words: readonly CommandWord[]): string[] {
+  const fetcherIndex = words.findIndex((word) =>
+    DOWNLOAD_OUTPUT_OPTION.has(getBasename(word.text)),
+  );
+  const option = DOWNLOAD_OUTPUT_OPTION.get(getBasename(words[fetcherIndex]?.text ?? ''));
+  return words.slice(fetcherIndex + 1).flatMap((word, index, args) => {
+    const attached = word.provenance === 'literal' ? option?.exec(word.text)?.[1] : undefined;
+    const next = args[index + 1];
+    if (attached) return [attached];
+    return attached === '' && next?.provenance === 'literal' ? [next.text] : [];
+  });
+}
+
+function recordDownloadedPaths(
+  commandView: CommandView,
+  state: AnalysisState,
+  options: InternalOptions,
+): void {
+  const fetches = isRemoteFetchCommand(commandView, options.environment);
+  const outputs = [
+    ...commandView.redirections
+      .filter(isTruncatingFileRedirection)
+      .flatMap((redirection) =>
+        redirection.target?.provenance === 'literal' ? [redirection.target.text] : [],
+      ),
+    ...(fetches ? downloadOutputOperands(commandView.words) : []),
+  ];
+  for (const output of outputs.filter((text) => text !== '-')) {
+    const path = resolveTrackedHeredocPath(
+      output,
+      state.effectiveCwd,
+      options.environment.paths,
+      options.budget,
+    );
+    if (path && fetches) options.downloadedPaths?.add(path);
+    if (path && !fetches) options.downloadedPaths?.delete(path);
   }
 }
 

@@ -13,7 +13,7 @@ import type { EnvironmentContext } from '@/gate/analysis';
 import { analysisWordText, isLiteralExecutionSourceWord } from './command-words';
 import { expandHomeTildeWord, expandKnownVariableWord } from './shell-git-env';
 import { isShellSyntaxCheck } from './shell-wrappers';
-import { isStandardCommandWrapper } from './transparent-wrappers';
+import { isExecWrapper, isStandardCommandWrapper } from './transparent-wrappers';
 import { parseEnvAssignment, stripWrapperWords } from './wrapper-prelude';
 
 type ShellExecutionSource =
@@ -230,6 +230,19 @@ export function extractShellStdinSource(
     : { kind: 'literal', source: literalPipelineInput };
 }
 
+export function redirectsStdin(redirections: readonly CommandRedirection[]): boolean {
+  return redirections.some(
+    (redirection) =>
+      (redirection.fd === undefined || redirection.fd === 0) &&
+      INPUT_REDIRECTIONS.has(redirection.operator) &&
+      redirection.operator !== '<&' &&
+      (redirection.heredoc !== undefined
+        ? isLiteralHeredoc(redirection.heredoc)
+        : redirection.target?.provenance === 'literal' &&
+          !STDIN_ALIASES.has(redirection.target.text)),
+  );
+}
+
 export function extractShellScriptOperandSource(
   words: readonly CommandWord[],
   home?: string,
@@ -245,6 +258,8 @@ export function extractShellScriptOperandSource(
   const expanded = word ? expandKnownVariableWord(word, shellAssignments) : null;
   return expanded === null ? DYNAMIC_SOURCE : { kind: 'literal', source: expanded };
 }
+
+const STDIN_ALIASES = new Set(['/dev/stdin', '/dev/fd/0', '/proc/self/fd/0']);
 
 const REMOTE_FETCHERS = new Set([
   'curl',
@@ -268,13 +283,42 @@ export function substitutesRemoteFetch(
   return nested
     .filter((program) => program.span.start >= word.span.start && program.span.end <= word.span.end)
     .flatMap(projectCommandViews)
-    .some((view) => {
-      const head = stripWrapperWords(view.words, environment).words[0];
-      return (
-        head !== undefined &&
-        REMOTE_FETCHERS.has(getBasename(normalizeCommandToken(analysisWordText(head))))
-      );
-    });
+    .some((view) => isRemoteFetchCommand(view, environment));
+}
+
+const POWERSHELL_REMOTE_FETCHERS = new Set([
+  'irm',
+  'iwr',
+  'invoke-restmethod',
+  'invoke-webrequest',
+]);
+
+export function isRemoteFetcherName(name: string, dialect: CommandView['dialect']): boolean {
+  const command = normalizeCommandToken(name);
+  return (
+    REMOTE_FETCHERS.has(command) ||
+    (dialect === 'powershell' && POWERSHELL_REMOTE_FETCHERS.has(command))
+  );
+}
+
+export function isRemoteFetchCommand(
+  command: CommandView,
+  environment: EnvironmentContext,
+): boolean {
+  const names = stripWrapperWords(command.words, environment).words.map(analysisWordText);
+  const head = names[0];
+  if (head === undefined) return false;
+  if (isRemoteFetcherName(head, command.dialect)) return true;
+  return (
+    isExecWrapper(normalizeCommandToken(head)) &&
+    names
+      .slice(1)
+      .some((name) => !isRelativePath(name) && isRemoteFetcherName(name, command.dialect))
+  );
+}
+
+function isRelativePath(name: string): boolean {
+  return name.includes('/') && !name.startsWith('/');
 }
 
 export function isVerifiableLocalGeneratorSource(command: CommandView): boolean {
