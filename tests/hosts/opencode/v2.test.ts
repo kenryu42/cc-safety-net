@@ -147,10 +147,10 @@ test('v2 records effective cwd', async () => {
 
 test('v2 analyzes a ~ workdir in the home directory, not <project>/~', async () => {
   mkdirSync(join(fixture.project, '~'));
-  const result = await callTool(host(), 'shell', { command: 'cat .ssh/config', workdir: '~' });
+  const result = await callTool(host(), 'shell', { command: 'rm -rf build', workdir: '~' });
   expect(result.returned).toBeInstanceOf(Tool.Error);
   expect(result.returned instanceof Tool.Error ? result.returned.message : '').toContain(
-    'secret.home.ssh',
+    'rm.recursive-force-home-cwd',
   );
   expect(result.entries[0]?.entry).toMatchObject({ cwd: fixture.home, decision: 'deny' });
 });

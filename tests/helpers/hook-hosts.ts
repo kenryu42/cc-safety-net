@@ -230,9 +230,10 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'a tool cwd that does not exist': REQUESTED_UNUSABLE,
   'a blank tool cwd': MALFORMED,
   'a tool cwd that is not a string': MALFORMED,
-  'a recursive delete from a home dir_path inside the session cwd': {
-    document: 'none',
-    audit: 'allow',
+  'a recursive delete whose dir_path is the home directory': {
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'rm.recursive-force-home-cwd',
   },
   'a recursive delete whose dir_path is below the home session cwd': {
     document: 'deny',
@@ -242,7 +243,7 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
   'a dir_path outside the session cwd': {
     document: 'deny',
     audit: 'deny',
-    ruleId: 'secret.home.ssh',
+    ruleId: 'rm.recursive-force-home-cwd',
   },
   'a dir_path that does not exist': REQUESTED_UNUSABLE,
   'an empty dir_path': { document: 'none', audit: 'allow' },
@@ -716,7 +717,7 @@ const HOST_SPECS: readonly HostSpec[] = [
     build: claudeShaped('BeforeTool'),
     extraRows: (fixture) => [
       {
-        name: 'a recursive delete from a home dir_path inside the session cwd',
+        name: 'a recursive delete whose dir_path is the home directory',
         stdin: geminiPayload(fixture.root, 'rm -rf build', 'home'),
       },
       {
@@ -725,7 +726,7 @@ const HOST_SPECS: readonly HostSpec[] = [
       },
       {
         name: 'a dir_path outside the session cwd',
-        stdin: geminiPayload(fixture.project, 'cat .ssh/config', '../home'),
+        stdin: geminiPayload(fixture.project, 'rm -rf build', '../home'),
       },
       {
         name: 'a dir_path that does not exist',

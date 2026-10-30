@@ -18,7 +18,6 @@ const ANALYZER_FAILURE = 'injected analyzer failure';
 const EXECUTION_FAILURE = 'injected execution failure';
 const HOME_DELETE_RULE = 'Rule: powershell.remove-item-recursive-force-root-or-home';
 const HOME_CWD_DELETE_RULE = 'Rule: rm.recursive-force-home-cwd';
-const HOME_SSH_RULE = 'Rule: secret.home.ssh';
 const MALFORMED_RULE = 'Rule: tool-call.malformed';
 const FAILED_CLOSED_RULE = 'Rule: analysis.failed-closed';
 const cwdReason = (directory: 'session' | 'requested') =>
@@ -80,12 +79,12 @@ const ROWS: readonly Row[] = [
     lines: 1,
   },
   {
-    name: 'a relative read from a workdir in the home directory',
+    name: 'the same deletion from a workdir in the home directory',
     execution: tool('bash', (fixture: HookFixture) => ({
-      command: 'cat .ssh/config',
+      command: 'rm -rf build',
       workdir: fixture.home,
     })),
-    contains: HOME_SSH_RULE,
+    contains: HOME_CWD_DELETE_RULE,
     blocked: true,
     lines: 1,
   },

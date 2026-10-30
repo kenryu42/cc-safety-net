@@ -268,7 +268,9 @@ export function classifyRecursiveDeleteTarget(
   if (anchoredCwd) {
     if (
       !options.skipHomeCwd &&
-      isCwdHomeForRmPolicy(anchoredCwd, ctx.environment.home, ctx.environment.paths, ctx.budget)
+      [anchoredCwd, ctx.resolvedCwd ?? anchoredCwd].some((cwd) =>
+        isCwdHomeForRmPolicy(cwd, ctx.environment.home, ctx.environment.paths, ctx.budget),
+      )
     ) {
       return { kind: 'home_cwd_target' };
     }

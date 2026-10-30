@@ -351,11 +351,7 @@ describe('git metadata for the execution and configuration directories', () => {
 describe('a tool the user declared as a command tool', () => {
   const home = join(fixtureRoot, 'home');
   mkdirSync(join(home, '.ssh'), { recursive: true });
-  const isolated = {
-    ...environment,
-    home: realpathSync(home),
-    env: new Map([...environment.env, ['HOME', realpathSync(home)]]),
-  };
+  const isolated = { ...environment, home: realpathSync(home) };
   const declared = policySnapshot({
     commandTools: [
       { name: 'ops_bash' },
@@ -407,8 +403,8 @@ describe('a tool the user declared as a command tool', () => {
 
   test('a cwd argument in the home directory is the working directory analyzed', () => {
     expect(
-      verdict(evaluate(unknown('ops_run_background', { command: 'cat .ssh/config', cwd: home }))),
-    ).toBe('secret.home.ssh');
+      verdict(evaluate(unknown('ops_run_background', { command: 'rm -rf build', cwd: home }))),
+    ).toBe('rm.recursive-force-home-cwd');
   });
 
   test('two working directory arguments that disagree are denied', () => {
@@ -444,11 +440,9 @@ describe('a tool the user declared as a command tool', () => {
   test('a declared cwd argument name is the only key read', () => {
     expect(
       verdict(
-        evaluate(
-          unknown('ops_explicit', { command: 'cat .ssh/config', dir: home, workdir: project }),
-        ),
+        evaluate(unknown('ops_explicit', { command: 'rm -rf build', dir: home, workdir: project })),
       ),
-    ).toBe('secret.home.ssh');
+    ).toBe('rm.recursive-force-home-cwd');
   });
 
   test('a declaration named like a built-in shell tool changes nothing', () => {
@@ -492,15 +486,21 @@ describe('a host working directory outside the session workspace', () => {
       [workspace, 'directory'],
       [join(workspace, 'sub'), 'directory'],
       [outside, 'directory'],
+      [join(base, 'home'), 'directory'],
     ]),
   });
-  const fromWorkdir = (shell: 'posix' | 'powershell', command: string, workdir = base) =>
+  const fromWorkdir = (
+    shell: 'posix' | 'powershell',
+    command: string,
+    workdir = base,
+    sessionCwd = workspace,
+  ) =>
     portedEvaluateGuard(
       createToolInvocation(
         shell === 'posix' ? 'bash' : 'pwsh',
         { command, workdir },
         { kind: 'command', shell },
-        { configCwd: workspace, executionCwd: workdir },
+        { configCwd: sessionCwd, executionCwd: workdir },
         command,
       ),
       { environment: synthetic, dependencies: { loadPolicySnapshot: () => readySnapshot } },
@@ -516,6 +516,13 @@ describe('a host working directory outside the session workspace', () => {
     expect(fromWorkdir('posix', 'rm -rf outside')).toMatchObject({
       kind: 'deny',
       ruleId: 'rm.recursive-force-outside-cwd',
+    });
+  });
+
+  test('a deletion from a home workdir inside a session that contains home is denied', () => {
+    expect(fromWorkdir('posix', 'rm -rf build', join(base, 'home'), base)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'rm.recursive-force-home-cwd',
     });
   });
 
