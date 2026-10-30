@@ -3484,6 +3484,7 @@ function withTerminalPeriod(value) {
 // src/core/environment.ts
 var import_node_child_process2 = require("node:child_process");
 var import_node_fs4 = require("node:fs");
+var import_node_path9 = require("node:path");
 var import_node_os = require("node:os");
 
 // src/core/git/metadata.ts
@@ -3540,7 +3541,8 @@ function comparePath(path) {
 var processPathResolver = {
   realpath: (path) => {
     try {
-      return import_node_fs4.realpathSync(path);
+      const resolved = import_node_fs4.realpathSync(path);
+      return import_node_path9.isAbsolute(resolved) ? resolved : null;
     } catch {
       return null;
     }

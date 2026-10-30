@@ -98,6 +98,7 @@ __export(exports_analyzer, {
   findExecRmDeletesFoundPaths: () => findExecRmDeletesFoundPaths,
   findHasDelete: () => findHasDelete,
   firstArgumentHasName: () => firstArgumentHasName,
+  firstRecursiveDeleteMatch: () => firstRecursiveDeleteMatch,
   fixedAt: () => fixedAt,
   getFindExecCommand: () => getFindExecCommand,
   getFindPrimaryArity: () => getFindPrimaryArity,
@@ -118,8 +119,10 @@ __export(exports_analyzer, {
   isDataOnlyQuotedAssignment: () => isDataOnlyQuotedAssignment,
   isDeviceCommand: () => isDeviceCommand,
   isEcmaWhitespace: () => isEcmaWhitespace,
+  isExecWrapper: () => isExecWrapper,
   isFindExecPrimary: () => isFindExecPrimary,
   isInterpreterDisplayOnly: () => isInterpreterDisplayOnly,
+  isInterpreterSyntaxCheck: () => isInterpreterSyntaxCheck,
   isJsLineTerminator: () => isJsLineTerminator,
   isLiteralExecutionSourceWord: () => isLiteralExecutionSourceWord,
   isPersistentHeredocFilePath: () => isPersistentHeredocFilePath,
@@ -1183,6 +1186,9 @@ var EXEC_WRAPPERS = new Set([
   "time",
   "timeout"
 ]);
+function isExecWrapper(command) {
+  return EXEC_WRAPPERS.has(command);
+}
 function unwrapTransparentWrapper(tokens, policy) {
   const head = tokens[0];
   if (!head || !isTransparentWrapper(import_tokens2.getBasename(head), policy)) {
@@ -2053,6 +2059,32 @@ function matchRecursiveDeleteClassification(classification, ctx, policy, table) 
   }
   return import_destructive4.destructiveCommandMatch(rule.id, rule.reason);
 }
+function firstRecursiveDeleteMatch(target, ctx, policy, table, options = {}) {
+  return orderedTargetClassifications(target, ctx, options).map((classification) => import_effective_rules.filterDestructiveCommandMatch(matchRecursiveDeleteClassification(classification, ctx, policy, table), policy)).find((match) => match !== null) ?? null;
+}
+function orderedTargetClassifications(target, ctx, options) {
+  const primary = classifyRecursiveDeleteTarget(target, ctx, options);
+  if (primary.kind === "cwd_self_target") {
+    return [primary, classifyRecursiveDeleteTarget(target, ctx, { ...options, skipCwdSelf: true })];
+  }
+  if (primary.kind !== "home_cwd_target")
+    return [primary];
+  const targetSpecific = classifyRecursiveDeleteTarget(target, ctx, {
+    ...options,
+    skipHomeCwd: true
+  });
+  if (targetSpecific.kind !== "cwd_self_target")
+    return [primary, targetSpecific];
+  return [
+    primary,
+    targetSpecific,
+    classifyRecursiveDeleteTarget(target, ctx, {
+      ...options,
+      skipHomeCwd: true,
+      skipCwdSelf: true
+    })
+  ];
+}
 function deleteTargetWordFacts(word) {
   const expansion = import_posix.expandPosixLiteralBraceWord(word, BRACE_EXPANSION_LIMIT, BRACE_EXPANSION_LIMIT, BRACE_EXPANDED_LENGTH_LIMIT);
   return {
@@ -2136,7 +2168,7 @@ function classifyRecursiveDeleteTarget(target, ctx, options = {}) {
   }
   const anchoredCwd = ctx.anchoredCwd;
   if (anchoredCwd) {
-    if (!options.skipHomeCwd && isCwdHomeForRmPolicy(anchoredCwd, ctx.environment.home, ctx.environment.paths, ctx.budget)) {
+    if (!options.skipHomeCwd && [anchoredCwd, ctx.resolvedCwd ?? anchoredCwd].some((cwd) => isCwdHomeForRmPolicy(cwd, ctx.environment.home, ctx.environment.paths, ctx.budget))) {
       return { kind: "home_cwd_target" };
     }
     if (!options.skipCwdSelf && [ctx.resolvedCwd ?? anchoredCwd, anchoredCwd].some((self) => isCwdSelfTarget(target, ctx.resolvedCwd ?? anchoredCwd, ctx.environment.paths, ctx.budget, self))) {
@@ -2919,6 +2951,10 @@ var CODE_FLAGS = new Map([
   ["perl", new Set(["-e", "-E"])]
 ]);
 var NODE_PRINT_FLAGS = new Set(["-p", "--print"]);
+var SYNTAX_CHECK_FLAGS = new Map([
+  ["node", new Set(["-c", "--check"])],
+  ["ruby", new Set(["-c"])]
+]);
 var CLUSTERED_CODE_FLAGS = new Map([
   ["python", new Set(["c"])],
   ["node", new Set(["e"])],
@@ -3277,6 +3313,11 @@ function extractNodeLongLoader(token) {
     }
   }
   return;
+}
+function isInterpreterSyntaxCheck(tokens) {
+  const flags = SYNTAX_CHECK_FLAGS.get(normalizeInterpreter(tokens[0] ?? ""));
+  const programIndex = tokens.findIndex((token, index) => index > 0 && (token === "-" || !token.startsWith("-")));
+  return flags !== undefined && tokens.slice(1, programIndex === -1 ? undefined : programIndex).some((token) => flags.has(token));
 }
 function isInterpreterDisplayOnly(command, code) {
   return normalizeInterpreter(command) === "node" && /^\s*console\.(?:log|info|warn|error)\(\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*')\s*\)\s*;?\s*$/.test(code);
@@ -4132,7 +4173,6 @@ function analyzerCapBreach(cause, command, trace) {
 var import_tmpdir2 = require("./core.js");
 
 // src/gate/analyzer/cmd.ts
-var import_effective_rules5 = require("./core.js");
 var import_destructive9 = require("./core-shell.js");
 var import_git_metadata_protection4 = require("./gate.js");
 
@@ -4219,7 +4259,7 @@ function analyzePowerShellSegment(segment, hasPipelineInput, ctx, policy) {
     return import_destructive8.destructiveCommandMatch("powershell.remove-item-recursive-force-dynamic-target", REASON_REMOVE_ITEM_DYNAMIC_TARGET);
   }
   for (const target of parsed.targets) {
-    const match = matchRecursiveDeleteClassification(classifyRecursiveDeleteTarget(powerShellTargetForPolicy(target.text), ctx), ctx, policy, REMOVE_ITEM_RULES);
+    const match = firstRecursiveDeleteMatch(powerShellTargetForPolicy(target.text), ctx, policy, REMOVE_ITEM_RULES);
     if (match)
       return match;
   }
@@ -4413,7 +4453,7 @@ function analyzeCmdMatch(words, options) {
   return pieceMatch ?? (unverifiableRecursiveDelete ? dynamicShellSourceMatch() : null);
 }
 function recursiveDeleteTargetMatch(tokens, ctx, policy) {
-  return tokens.slice(1).filter((token) => !token.startsWith("/")).reduce((match, token) => match ?? import_effective_rules5.filterDestructiveCommandMatch(matchRecursiveDeleteClassification(classifyRecursiveDeleteTarget(powerShellTargetForPolicy(token.replaceAll('"', "")).replace(CMD_MATCH_ALL_FINAL_SEGMENT, "$1*"), ctx), ctx, policy, CMD_DELETE_RULES), policy), null);
+  return tokens.slice(1).filter((token) => !token.startsWith("/")).reduce((match, token) => match ?? firstRecursiveDeleteMatch(powerShellTargetForPolicy(token.replaceAll('"', "")).replace(CMD_MATCH_ALL_FINAL_SEGMENT, "$1*"), ctx, policy, CMD_DELETE_RULES), null);
 }
 
 // src/gate/analyzer/rule.ts
@@ -4422,7 +4462,7 @@ var import_parallel = require("./analyzer-core.js");
 
 // src/gate/analyzer/rm.ts
 var import_canonicalization3 = require("./core.js");
-var import_effective_rules6 = require("./core.js");
+var import_effective_rules5 = require("./core.js");
 var import_destructive10 = require("./core-shell.js");
 var import_git_metadata_protection5 = require("./gate.js");
 var REASON_RM_RF = "rm -rf outside cwd is blocked. Retry deleting only explicit paths inside the current directory; escalate for anything outside it.";
@@ -4454,7 +4494,7 @@ function analyzeRmMatch(words, options) {
   for (const target of targets) {
     const facts = deleteTargetWordFacts(target.word);
     if (recursive && facts.unsafeBraceExpansion) {
-      const match = import_effective_rules6.filterDestructiveCommandMatch(matchRecursiveDeleteClassification({ kind: "outside_anchored_cwd" }, ctx, options.policy, RM_RULES), options.policy);
+      const match = import_effective_rules5.filterDestructiveCommandMatch(matchRecursiveDeleteClassification({ kind: "outside_anchored_cwd" }, ctx, options.policy, RM_RULES), options.policy);
       if (match)
         return match;
       continue;
@@ -4470,38 +4510,12 @@ function analyzeRmMatch(words, options) {
       }
       if (!recursive)
         continue;
-      for (const classification of orderedTargetClassifications(nativeTarget, ctx, classificationOptions)) {
-        const candidate = matchRecursiveDeleteClassification(classification, ctx, options.policy, RM_RULES);
-        const match = import_effective_rules6.filterDestructiveCommandMatch(candidate, options.policy);
-        if (match)
-          return match;
-      }
+      const match = firstRecursiveDeleteMatch(nativeTarget, ctx, options.policy, RM_RULES, classificationOptions);
+      if (match)
+        return match;
     }
   }
   return null;
-}
-function orderedTargetClassifications(target, ctx, options) {
-  const primary = classifyRecursiveDeleteTarget(target, ctx, options);
-  if (primary.kind === "cwd_self_target") {
-    return [primary, classifyRecursiveDeleteTarget(target, ctx, { ...options, skipCwdSelf: true })];
-  }
-  if (primary.kind !== "home_cwd_target")
-    return [primary];
-  const targetSpecific = classifyRecursiveDeleteTarget(target, ctx, {
-    ...options,
-    skipHomeCwd: true
-  });
-  if (targetSpecific.kind !== "cwd_self_target")
-    return [primary, targetSpecific];
-  return [
-    primary,
-    targetSpecific,
-    classifyRecursiveDeleteTarget(target, ctx, {
-      ...options,
-      skipHomeCwd: true,
-      skipCwdSelf: true
-    })
-  ];
 }
 function extractTargets(words) {
   const targets = [];
@@ -4526,7 +4540,7 @@ function extractTargets(words) {
 }
 
 // src/gate/analyzer/rsync.ts
-var import_effective_rules7 = require("./core.js");
+var import_effective_rules6 = require("./core.js");
 var import_destructive11 = require("./core-shell.js");
 var import_git_metadata_protection6 = require("./gate.js");
 var REASON_RSYNC_DELETE = "rsync --delete permanently removes destination files missing from the source. Mirror only into explicit paths inside the current directory or under /tmp, /var/tmp, or $TMPDIR.";
@@ -4643,7 +4657,7 @@ function analyzeRsyncMatch(words, context) {
   }
   if (hasOnlyScopedDeleteTargets(destinations, context))
     return null;
-  return import_effective_rules7.filterDestructiveCommandMatch(import_destructive11.destructiveCommandMatch("rsync.delete", REASON_RSYNC_DELETE), context.policy);
+  return import_effective_rules6.filterDestructiveCommandMatch(import_destructive11.destructiveCommandMatch("rsync.delete", REASON_RSYNC_DELETE), context.policy);
 }
 function isRemoteOperand(text) {
   return !/[$`]/.test(text) && /^[^/]*:/.test(text);
@@ -5020,7 +5034,7 @@ function analyzeNamespaceCommandMatch(head, tokens) {
   return operands.slice(0, programIndex === -1 ? undefined : programIndex).some((token, index) => !isOptionValue(index) && createsUserNamespace(token)) ? import_destructive13.destructiveCommandMatch("unshare.user-namespace", REASON_USER_NAMESPACE) : null;
 }
 // src/gate/analyzer/derived-input.ts
-var import_effective_rules8 = require("./core.js");
+var import_effective_rules7 = require("./core.js");
 var import_constants7 = require("./core-shell.js");
 var import_destructive14 = require("./core-shell.js");
 var import_model = require("./core-shell.js");
@@ -5038,8 +5052,8 @@ function hasOptionLiteralPart(word) {
 }
 function analyzeDynamicCommandStructure(dialect, words, environment, topLevel, strict = false, policy) {
   const dynamicHead = import_model.isDynamicExecutable(dialect, words) || topLevel && dialect !== "powershell" && words[0]?.provenance === "variable";
-  const dynamicExecutableMatch = dynamicHead && import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-executable", strict) ? import_destructive14.destructiveCommandMatch("shell.dynamic-executable", REASON_DYNAMIC_EXECUTABLE) : null;
-  return import_effective_rules8.filterDestructiveCommandMatch(dynamicExecutableMatch, policy) ?? analyzeDynamicStructure(dialect, words, environment, strict, policy);
+  const dynamicExecutableMatch = dynamicHead && import_effective_rules7.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-executable", strict) ? import_destructive14.destructiveCommandMatch("shell.dynamic-executable", REASON_DYNAMIC_EXECUTABLE) : null;
+  return import_effective_rules7.filterDestructiveCommandMatch(dynamicExecutableMatch, policy) ?? analyzeDynamicStructure(dialect, words, environment, strict, policy);
 }
 function analyzeDynamicStructure(dialect, words, environment, strict, policy) {
   if (words.length < 2)
@@ -5051,25 +5065,25 @@ function analyzeDynamicStructure(dialect, words, environment, strict, policy) {
   if (head === "git") {
     const gitWords = analyzedViewWords(dialect, words);
     const subcommandIndex = findGitSubcommandIndex(gitWords);
-    if (import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => index <= subcommandIndex)) {
-      return import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
+    if (import_effective_rules7.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => index <= subcommandIndex)) {
+      return import_effective_rules7.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
     }
-    if (import_effective_rules8.filterDestructiveCommandMatch(import_git2.analyzeGitMatch(gitWords, { environment }), policy))
+    if (import_effective_rules7.filterDestructiveCommandMatch(import_git2.analyzeGitMatch(gitWords, { environment }), policy))
       return null;
     const subcommand = words[subcommandIndex]?.text.toLowerCase();
     const dataBoundary = gitWords.findIndex((word, index) => index > subcommandIndex && analysisWordText(word) === "--");
-    if (import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && subcommand && import_rules2.GIT_RULE_SUBCOMMANDS.has(subcommand) && dynamicIndexes.some((index) => index > subcommandIndex && (dataBoundary === -1 || index < dataBoundary))) {
-      return import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
+    if (import_effective_rules7.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && subcommand && import_rules2.GIT_RULE_SUBCOMMANDS.has(subcommand) && dynamicIndexes.some((index) => index > subcommandIndex && (dataBoundary === -1 || index < dataBoundary))) {
+      return import_effective_rules7.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy);
     }
     return null;
   }
   if (head === "find") {
-    return import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && hasDynamicFindStructure(words) ? import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
+    return import_effective_rules7.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && hasDynamicFindStructure(words) ? import_effective_rules7.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
   }
   if (head === "rm") {
     const dataBoundary = words.findIndex((word, index) => index > 0 && analysisWordText(word) === "--");
     const trailingJudgedByRmRules = hasRecursiveForceFlags(words.map(analysisWordText));
-    return import_effective_rules8.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => (dataBoundary === -1 || index < dataBoundary) && (index < words.length - 1 || !trailingJudgedByRmRules)) ? import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
+    return import_effective_rules7.destructiveCommandRuleIsEnabled(policy, "shell.dynamic-structure", strict) && dynamicIndexes.some((index) => (dataBoundary === -1 || index < dataBoundary) && (index < words.length - 1 || !trailingJudgedByRmRules)) ? import_effective_rules7.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch("shell.dynamic-structure", REASON_DYNAMIC_STRUCTURE), policy) : null;
   }
   if (head === "xargs") {
     return analyzeDynamicChildStructure(dialect, words.slice(extractXargsChildCommandWithInfo(words.map(analysisWordText)).childStart), "xargs", environment, strict, policy);
@@ -5084,7 +5098,7 @@ function analyzeDynamicChildStructure(dialect, childWords, kind, environment, st
     return null;
   const child = normalizeChildCommandWords(childWords, environment);
   if (import_model.isDynamicExecutable(dialect, child)) {
-    const match = import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch(`${kind}.shell-dynamic`, kind === "xargs" ? REASON_XARGS_SHELL : import_parallel2.REASON_PARALLEL_SHELL), policy);
+    const match = import_effective_rules7.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch(`${kind}.shell-dynamic`, kind === "xargs" ? REASON_XARGS_SHELL : import_parallel2.REASON_PARALLEL_SHELL), policy);
     if (match)
       return match;
   }
@@ -5092,7 +5106,7 @@ function analyzeDynamicChildStructure(dialect, childWords, kind, environment, st
   if (nestedStructure)
     return nestedStructure;
   if (child[0]?.text === "rm" && child.slice(1).some((word) => hasCommandSubstitutionPart(word) && hasOptionLiteralPart(word))) {
-    return import_effective_rules8.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch(`${kind}.rm-recursive-force-dynamic`, kind === "xargs" ? REASON_XARGS_RM : import_parallel2.REASON_PARALLEL_RM), policy);
+    return import_effective_rules7.filterDestructiveCommandMatch(import_destructive14.destructiveCommandMatch(`${kind}.rm-recursive-force-dynamic`, kind === "xargs" ? REASON_XARGS_RM : import_parallel2.REASON_PARALLEL_RM), policy);
   }
   return null;
 }

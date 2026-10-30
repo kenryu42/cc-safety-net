@@ -3451,7 +3451,8 @@ function evaluateGuard(hostInvocation, options) {
     return { ...malformedToolCallEvaluation(command), ...reported };
   }
   const analysis = callDependency("command-analysis", command, () => import_analyzer.analyzeOrCapBreach(() => dependencies.analyzeCommand(invocation.command, {
-    cwd: invocation.context.executionCwd,
+    cwd: invocation.context.configCwd,
+    effectiveCwd: invocation.context.executionCwd,
     shell: invocation.route.shell,
     policySnapshot: snapshot,
     environment: options.environment,

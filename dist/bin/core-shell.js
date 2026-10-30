@@ -3467,7 +3467,9 @@ var AUTO_POWERSHELL_HEADS = new Set([
   "copy-item",
   "move-item",
   "foreach-object",
-  "where-object"
+  "where-object",
+  "iex",
+  "invoke-expression"
 ]);
 var AUTO_POWERSHELL_PATH_ALIASES = new Set(["gc", "cat", "type", "cp", "mv", "rm"]);
 var AUTO_POWERSHELL_PARAMETERS = ["-rec", "-for", "-path", "-literalpath", "-whatif"];
