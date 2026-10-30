@@ -14,10 +14,9 @@ import {
   REASON_GIT_METADATA_PROTECTION,
 } from '@/gate/guards/git-metadata-protection';
 import {
-  classifyRecursiveDeleteTarget,
   createRecursiveDeleteTargetContext,
+  firstRecursiveDeleteMatch,
   isDangerousRootOrHomeTarget,
-  matchRecursiveDeleteClassification,
   type RecursiveDeleteRuleTable,
   type RecursiveDeleteTargetContext,
 } from '../recursive-delete-targets';
@@ -206,8 +205,8 @@ function analyzePowerShellSegment(
   }
 
   for (const target of parsed.targets) {
-    const match = matchRecursiveDeleteClassification(
-      classifyRecursiveDeleteTarget(powerShellTargetForPolicy(target.text), ctx),
+    const match = firstRecursiveDeleteMatch(
+      powerShellTargetForPolicy(target.text),
       ctx,
       policy,
       REMOVE_ITEM_RULES,

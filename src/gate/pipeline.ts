@@ -291,7 +291,8 @@ export function evaluateGuard(
         dependencies.analyzeCommand(
           invocation.command as string,
           {
-            cwd: invocation.context.executionCwd,
+            cwd: invocation.context.configCwd,
+            effectiveCwd: invocation.context.executionCwd,
             shell: invocation.route.shell,
             policySnapshot: snapshot,
             environment: options.environment,

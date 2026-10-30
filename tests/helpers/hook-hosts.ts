@@ -236,8 +236,9 @@ const OUTCOMES: Readonly<Record<string, HookOutcome>> = {
     ruleId: 'rm.recursive-force-home-cwd',
   },
   'a recursive delete whose dir_path is below the home session cwd': {
-    document: 'none',
-    audit: 'allow',
+    document: 'deny',
+    audit: 'deny',
+    ruleId: 'rm.recursive-force-home-cwd',
   },
   'a dir_path outside the session cwd': {
     document: 'deny',

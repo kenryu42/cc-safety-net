@@ -17,6 +17,7 @@ import { expandAllowPathHome, getAllowPathHomeConflictError } from '@/core/polic
 import {
   type DestructiveCommandRulePolicy,
   destructiveCommandRuleIsEnabled,
+  filterDestructiveCommandMatch,
 } from '@/core/policy/effective-rules';
 import type { EffectivePolicy } from '@/core/policy/types';
 import { type DestructiveCommandRuleId, destructiveCommandMatch } from '@/core/rules/destructive';
@@ -113,6 +114,52 @@ export function matchRecursiveDeleteClassification(
     return null;
   }
   return destructiveCommandMatch(rule.id, rule.reason);
+}
+
+export function firstRecursiveDeleteMatch(
+  target: string,
+  ctx: RecursiveDeleteTargetContext,
+  policy: DestructiveCommandRulePolicy | undefined,
+  table: RecursiveDeleteRuleTable,
+  options: RecursiveDeleteTargetClassificationOptions = {},
+): DestructiveCommandRuleMatch | null {
+  return (
+    orderedTargetClassifications(target, ctx, options)
+      .map((classification) =>
+        filterDestructiveCommandMatch(
+          matchRecursiveDeleteClassification(classification, ctx, policy, table),
+          policy,
+        ),
+      )
+      .find((match) => match !== null) ?? null
+  );
+}
+
+function orderedTargetClassifications(
+  target: string,
+  ctx: RecursiveDeleteTargetContext,
+  options: RecursiveDeleteTargetClassificationOptions,
+): RecursiveDeleteTargetClassification[] {
+  const primary = classifyRecursiveDeleteTarget(target, ctx, options);
+  if (primary.kind === 'cwd_self_target') {
+    return [primary, classifyRecursiveDeleteTarget(target, ctx, { ...options, skipCwdSelf: true })];
+  }
+  if (primary.kind !== 'home_cwd_target') return [primary];
+
+  const targetSpecific = classifyRecursiveDeleteTarget(target, ctx, {
+    ...options,
+    skipHomeCwd: true,
+  });
+  if (targetSpecific.kind !== 'cwd_self_target') return [primary, targetSpecific];
+  return [
+    primary,
+    targetSpecific,
+    classifyRecursiveDeleteTarget(target, ctx, {
+      ...options,
+      skipHomeCwd: true,
+      skipCwdSelf: true,
+    }),
+  ];
 }
 
 export interface DeleteTargetWordFacts {
@@ -268,7 +315,9 @@ export function classifyRecursiveDeleteTarget(
   if (anchoredCwd) {
     if (
       !options.skipHomeCwd &&
-      isCwdHomeForRmPolicy(anchoredCwd, ctx.environment.home, ctx.environment.paths, ctx.budget)
+      [anchoredCwd, ctx.resolvedCwd ?? anchoredCwd].some((cwd) =>
+        isCwdHomeForRmPolicy(cwd, ctx.environment.home, ctx.environment.paths, ctx.budget),
+      )
     ) {
       return { kind: 'home_cwd_target' };
     }
