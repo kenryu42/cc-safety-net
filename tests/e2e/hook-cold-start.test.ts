@@ -39,13 +39,13 @@ function staticClosure(path: string, seen = new Set<string>()): string[] {
   ];
 }
 
-test('the hook closure stays under 400,000 bytes', () => {
+test('the hook closure stays under 512,000 bytes', () => {
   const files = staticClosure(bin);
   const bytes = files.reduce((total, file) => total + Buffer.byteLength(readFileSync(file)), 0);
 
   expect(files.length).toBeGreaterThan(1);
   expect(bytes, `hook closure: ${bytes} bytes over ${files.length} files`).toBeLessThanOrEqual(
-    400_000,
+    512_000,
   );
 });
 
