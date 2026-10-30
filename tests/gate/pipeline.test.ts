@@ -494,6 +494,7 @@ describe('a host working directory outside the session workspace', () => {
     command: string,
     workdir = base,
     sessionCwd = workspace,
+    snapshot = readySnapshot,
   ) =>
     portedEvaluateGuard(
       createToolInvocation(
@@ -503,7 +504,7 @@ describe('a host working directory outside the session workspace', () => {
         { configCwd: sessionCwd, executionCwd: workdir },
         command,
       ),
-      { environment: synthetic, dependencies: { loadPolicySnapshot: () => readySnapshot } },
+      { environment: synthetic, dependencies: { loadPolicySnapshot: () => snapshot } },
     ).decision;
 
   test('a pwsh deletion of a folder beside the workspace is still outside the workspace', () => {
@@ -525,6 +526,24 @@ describe('a host working directory outside the session workspace', () => {
       ruleId: 'rm.recursive-force-home-cwd',
     });
   });
+
+  test.each([
+    [
+      'powershell.remove-item-recursive-force',
+      `Remove-Item -LiteralPath "${outside}" -Recurse -Force`,
+    ],
+    ['cmd.recursive-delete', 'cmd /c rd /s /q ..\\outside'],
+  ] as const)(
+    'a deletion beside the workspace from a home workdir with %s-home-cwd off is outside the workspace',
+    (rulePrefix, command) => {
+      const homeCwdOff = policySnapshot({
+        destructiveCommandRuleOverrides: { [`${rulePrefix}-home-cwd`]: 'off' },
+      });
+      expect(
+        fromWorkdir('powershell', command, join(base, 'home'), workspace, homeCwdOff),
+      ).toMatchObject({ kind: 'deny', ruleId: `${rulePrefix}-outside-cwd` });
+    },
+  );
 
   test('a deletion inside a workdir below the workspace is still allowed', () => {
     expect(fromWorkdir('posix', 'rm -rf build', join(workspace, 'sub'))).toStrictEqual({

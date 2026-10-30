@@ -1,4 +1,3 @@
-import { filterDestructiveCommandMatch } from '@/core/policy/effective-rules';
 import { destructiveCommandMatch } from '@/core/rules/destructive';
 import type { DestructiveCommandRuleMatch } from '@/core/rules/types';
 import type { CommandWord } from '@/core/shell/model';
@@ -7,9 +6,8 @@ import { analysisWordText } from './command-words';
 import { powerShellTargetForPolicy } from './powershell/remove-item';
 import { dynamicShellSourceMatch } from './reasons';
 import {
-  classifyRecursiveDeleteTarget,
   createRecursiveDeleteTargetContext,
-  matchRecursiveDeleteClassification,
+  firstRecursiveDeleteMatch,
   type RecursiveDeleteRuleTable,
   type RecursiveDeleteTargetContext,
 } from './recursive-delete-targets';
@@ -141,20 +139,14 @@ function recursiveDeleteTargetMatch(
     .reduce<DestructiveCommandRuleMatch | null>(
       (match, token) =>
         match ??
-        filterDestructiveCommandMatch(
-          matchRecursiveDeleteClassification(
-            classifyRecursiveDeleteTarget(
-              powerShellTargetForPolicy(token.replaceAll('"', '')).replace(
-                CMD_MATCH_ALL_FINAL_SEGMENT,
-                '$1*',
-              ),
-              ctx,
-            ),
-            ctx,
-            policy,
-            CMD_DELETE_RULES,
+        firstRecursiveDeleteMatch(
+          powerShellTargetForPolicy(token.replaceAll('"', '')).replace(
+            CMD_MATCH_ALL_FINAL_SEGMENT,
+            '$1*',
           ),
+          ctx,
           policy,
+          CMD_DELETE_RULES,
         ),
       null,
     );

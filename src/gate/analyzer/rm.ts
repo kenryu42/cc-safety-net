@@ -13,14 +13,11 @@ import {
 } from '@/gate/guards/git-metadata-protection';
 import { analysisWordText } from './command-words';
 import {
-  classifyRecursiveDeleteTarget,
   createRecursiveDeleteTargetContext,
   deleteTargetWordFacts,
+  firstRecursiveDeleteMatch,
   matchRecursiveDeleteClassification,
   type RecursiveDeleteRuleTable,
-  type RecursiveDeleteTargetClassification,
-  type RecursiveDeleteTargetClassificationOptions,
-  type RecursiveDeleteTargetContext,
   type RecursiveDeleteTargetOptions,
 } from './recursive-delete-targets';
 import { hasRecursiveOption } from './rm-flags';
@@ -104,51 +101,18 @@ export function analyzeRmMatch(
         return destructiveCommandMatch('rm.git-metadata', REASON_GIT_METADATA_PROTECTION);
       }
       if (!recursive) continue;
-      for (const classification of orderedTargetClassifications(
+      const match = firstRecursiveDeleteMatch(
         nativeTarget,
         ctx,
+        options.policy,
+        RM_RULES,
         classificationOptions,
-      )) {
-        const candidate = matchRecursiveDeleteClassification(
-          classification,
-          ctx,
-          options.policy,
-          RM_RULES,
-        );
-        const match = filterDestructiveCommandMatch(candidate, options.policy);
-        if (match) return match;
-      }
+      );
+      if (match) return match;
     }
   }
 
   return null;
-}
-
-function orderedTargetClassifications(
-  target: string,
-  ctx: RecursiveDeleteTargetContext,
-  options: RecursiveDeleteTargetClassificationOptions,
-): RecursiveDeleteTargetClassification[] {
-  const primary = classifyRecursiveDeleteTarget(target, ctx, options);
-  if (primary.kind === 'cwd_self_target') {
-    return [primary, classifyRecursiveDeleteTarget(target, ctx, { ...options, skipCwdSelf: true })];
-  }
-  if (primary.kind !== 'home_cwd_target') return [primary];
-
-  const targetSpecific = classifyRecursiveDeleteTarget(target, ctx, {
-    ...options,
-    skipHomeCwd: true,
-  });
-  if (targetSpecific.kind !== 'cwd_self_target') return [primary, targetSpecific];
-  return [
-    primary,
-    targetSpecific,
-    classifyRecursiveDeleteTarget(target, ctx, {
-      ...options,
-      skipHomeCwd: true,
-      skipCwdSelf: true,
-    }),
-  ];
 }
 
 function extractTargets(words: readonly CommandWord[]): { text: string; word: CommandWord }[] {
