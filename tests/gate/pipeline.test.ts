@@ -2,9 +2,9 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir as systemTemp } from 'node:os';
-import { join, sep } from 'node:path';
+import { join, parse, sep } from 'node:path';
 import { AnalysisLimit } from '@/core/budget';
-import { createProcessEnvironment } from '@/core/environment';
+import { createProcessEnvironment, createTestEnvironment } from '@/core/environment';
 import { createCwdDenial, createMalformedToolCallDenial } from '@/core/denial';
 import { getUserPolicyPath } from '@/core/policy/paths';
 import { StructuralShellSyntaxLimitError as PortedStructuralLimit } from '@/gate/guards/semantic-facts';
@@ -351,7 +351,11 @@ describe('git metadata for the execution and configuration directories', () => {
 describe('a tool the user declared as a command tool', () => {
   const home = join(fixtureRoot, 'home');
   mkdirSync(join(home, '.ssh'), { recursive: true });
-  const isolated = { ...environment, home: realpathSync(home) };
+  const isolated = {
+    ...environment,
+    home: realpathSync(home),
+    env: new Map([...environment.env, ['HOME', realpathSync(home)]]),
+  };
   const declared = policySnapshot({
     commandTools: [
       { name: 'ops_bash' },
@@ -403,8 +407,8 @@ describe('a tool the user declared as a command tool', () => {
 
   test('a cwd argument in the home directory is the working directory analyzed', () => {
     expect(
-      verdict(evaluate(unknown('ops_run_background', { command: 'rm -rf build', cwd: home }))),
-    ).toBe('rm.recursive-force-home-cwd');
+      verdict(evaluate(unknown('ops_run_background', { command: 'cat .ssh/config', cwd: home }))),
+    ).toBe('secret.home.ssh');
   });
 
   test('two working directory arguments that disagree are denied', () => {
@@ -440,9 +444,11 @@ describe('a tool the user declared as a command tool', () => {
   test('a declared cwd argument name is the only key read', () => {
     expect(
       verdict(
-        evaluate(unknown('ops_explicit', { command: 'rm -rf build', dir: home, workdir: project })),
+        evaluate(
+          unknown('ops_explicit', { command: 'cat .ssh/config', dir: home, workdir: project }),
+        ),
       ),
-    ).toBe('rm.recursive-force-home-cwd');
+    ).toBe('secret.home.ssh');
   });
 
   test('a declaration named like a built-in shell tool changes nothing', () => {
@@ -471,6 +477,51 @@ describe('a tool the user declared as a command tool', () => {
       promotedInvocation: expect.objectContaining({
         context: { configCwd: plain, executionCwd: realpathSync(project) },
       }),
+    });
+  });
+});
+
+describe('a host working directory outside the session workspace', () => {
+  const base = join(parse(fixtureRoot).root, 'ccsn-workdir-anchor');
+  const workspace = join(base, 'workspace');
+  const outside = join(base, 'outside');
+  const synthetic = createTestEnvironment({
+    home: join(base, 'home'),
+    entries: new Map([
+      [base, 'directory'],
+      [workspace, 'directory'],
+      [join(workspace, 'sub'), 'directory'],
+      [outside, 'directory'],
+    ]),
+  });
+  const fromWorkdir = (shell: 'posix' | 'powershell', command: string, workdir = base) =>
+    portedEvaluateGuard(
+      createToolInvocation(
+        shell === 'posix' ? 'bash' : 'pwsh',
+        { command, workdir },
+        { kind: 'command', shell },
+        { configCwd: workspace, executionCwd: workdir },
+        command,
+      ),
+      { environment: synthetic, dependencies: { loadPolicySnapshot: () => readySnapshot } },
+    ).decision;
+
+  test('a pwsh deletion of a folder beside the workspace is still outside the workspace', () => {
+    expect(
+      fromWorkdir('powershell', `Remove-Item -LiteralPath "${outside}" -Recurse -Force`),
+    ).toMatchObject({ kind: 'deny', ruleId: 'powershell.remove-item-recursive-force-outside-cwd' });
+  });
+
+  test('a bash deletion of a folder beside the workspace is still outside the workspace', () => {
+    expect(fromWorkdir('posix', 'rm -rf outside')).toMatchObject({
+      kind: 'deny',
+      ruleId: 'rm.recursive-force-outside-cwd',
+    });
+  });
+
+  test('a deletion inside a workdir below the workspace is still allowed', () => {
+    expect(fromWorkdir('posix', 'rm -rf build', join(workspace, 'sub'))).toStrictEqual({
+      kind: 'allow',
     });
   });
 });
