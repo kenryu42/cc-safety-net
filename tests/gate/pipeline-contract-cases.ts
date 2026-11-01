@@ -139,6 +139,23 @@ export function pipelineContractCases(paths: {
       cwd: 'workspace' as const,
       expected: secretBlock('secret.basename.npmrc'),
     })),
+    ...[
+      'env -S cat ls .env',
+      "env -S 'cat' ls .env",
+      "env -S 'sh -c' 'cat .env'",
+      `env -S 'python3 -c' "open('.env')"`,
+    ].map((command) => ({
+      name: `denies a .env read split across an env -S string and the words after it: ${command}`,
+      ...bash(command),
+      cwd: 'workspace' as const,
+      expected: secretBlock('secret.basename.env'),
+    })),
+    {
+      name: 'denies an npmrc read by a shell named in an env -S string',
+      ...bash("env -S 'bash -c' 'cat ~/.npmrc'"),
+      cwd: 'workspace',
+      expected: secretBlock('secret.basename.npmrc'),
+    },
     {
       name: 'denies AWS credentials read behind an env unset option',
       ...bash("env -u X bash -c 'cat ~/.aws/credentials'"),

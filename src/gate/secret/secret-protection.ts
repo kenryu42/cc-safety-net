@@ -22,6 +22,7 @@ import { closingParenthesis, firstArgumentHasName } from '@/gate/analyzer/interp
 import { readPowerShellScript } from '@/gate/analyzer/powershell-wrapper';
 import {
   parseEnvAssignment,
+  reconstructEnvSplitWords,
   stripWrappers,
   stripWrappersWithInfo,
 } from '@/gate/analyzer/wrapper-prelude';
@@ -424,13 +425,23 @@ function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentCon
     tokens.push(projectSensitiveShellText(token.text, environment));
   }
 
-  const stripped = stripWrappers(tokens, environment);
-  if (stripped.length === 0) return false;
+  const stripped = strippedEffectiveArgv(tokens, environment);
+  if (stripped === null || stripped.length === 0) return false;
   const command = basename(stripped[0] ?? '').toLowerCase();
   if (facts.invocation.route.kind === 'unknown') {
     return syntax.program.dialect === 'powershell' && (command === 'ls' || command === 'stat');
   }
   return isMetadataOnlyArgv(command, stripped.slice(1));
+}
+
+function strippedEffectiveArgv(
+  tokens: readonly string[],
+  environment: EnvironmentContext,
+): readonly string[] | null {
+  const prelude = stripWrappersWithInfo(tokens, environment);
+  if (prelude.envSplitValues === undefined) return prelude.tokens;
+  const splitArgv = reconstructEnvSplitWords(prelude.envSplitValues, prelude.tokens);
+  return splitArgv === null ? null : strippedEffectiveArgv(splitArgv, environment);
 }
 
 function isMetadataOnlyArgv(command: string, args: readonly string[]): boolean {
@@ -712,7 +723,11 @@ function extractSegmentPathTargets(
   }
   const prelude = stripWrappersWithInfo(tokens, environment, segmentCwd);
   const cwd = typeof prelude.cwd === 'string' ? prelude.cwd : segmentCwd;
-  const here = (target: string) => ({ target, cwd });
+  const redirectionTargets = new Set(tokens.filter((_, index) => shellWords?.has(index)));
+  const here = (target: string) => ({
+    target,
+    cwd: redirectionTargets.has(target) ? segmentCwd : cwd,
+  });
   const stripped = prelude.tokens;
   const envSplitValues = prelude.envSplitValues ?? [];
   const preludeTargets = [
@@ -727,17 +742,32 @@ function extractSegmentPathTargets(
       .flatMap((token) => extractOperandPathCandidates('', token))
       .map(atSegment),
     ...[...prelude.envAssignments.values()].filter((value) => value !== '').map(here),
-    ...envSplitValues.flatMap(
-      (value) => walkShellText(value, store, options, environment, cwd, budget) ?? [here(value)],
-    ),
   ];
-  if (stripped.length === 0) return preludeTargets;
   if (envSplitValues.length > 0) {
+    const splitArgv = reconstructEnvSplitWords(envSplitValues, stripped);
+    if (splitArgv !== null) {
+      return [
+        ...preludeTargets,
+        ...extractSegmentPathTargets(
+          splitArgv,
+          store,
+          options,
+          environment,
+          segmentCwd,
+          budget,
+          new Set([...(shellWords ?? [])].map((index) => index + splitArgv.length - tokens.length)),
+        ),
+      ];
+    }
     return [
       ...preludeTargets,
+      ...envSplitValues.flatMap(
+        (value) => walkShellText(value, store, options, environment, cwd, budget) ?? [here(value)],
+      ),
       ...stripped.flatMap((token) => extractOperandPathCandidates('', token)).map(here),
     ];
   }
+  if (stripped.length === 0) return preludeTargets;
 
   const executable = stripped[0] ?? '';
   const command = basename(executable).toLowerCase();
@@ -819,7 +849,6 @@ function extractSegmentPathTargets(
     ];
   }
   if (command === 'mkdir' || command === 'touch') {
-    const redirectionTargets = new Set(tokens.filter((_, index) => shellWords?.has(index)));
     const createsOperands =
       options.segmentMayFeedReader !== true &&
       !(command === 'touch' && post.some((token) => /^(?:--r|-[^-]*r)/.test(token)));
