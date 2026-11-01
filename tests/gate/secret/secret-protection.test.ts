@@ -2199,13 +2199,13 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       },
       ...['>|', '2>|'].map((operator) => ({
         name: `a ${operator} redirection opens at the shell cwd, not the env -C directory`,
-        command: `env -C /tmp cat ${operator} private/notes.txt`,
+        command: `env -C .. cat ${operator} private/notes.txt`,
         expected: { target: 'private/notes.txt', ruleId: 'secret.deny-path' },
         config: { denyPaths: [join(repo, 'private', 'notes.txt')] },
       })),
       {
         name: 'a command operand resolves in the env -C directory',
-        command: 'env -C /tmp tee private/notes.txt',
+        command: 'env -C .. tee private/notes.txt',
         expected: null,
         config: { denyPaths: [join(repo, 'private', 'notes.txt')] },
       },
