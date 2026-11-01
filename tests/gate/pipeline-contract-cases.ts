@@ -150,6 +150,14 @@ export function pipelineContractCases(paths: {
       cwd: 'workspace' as const,
       expected: secretBlock('secret.basename.env'),
     })),
+    ...[`printf 'open(".env")' | env -S python3 -`, `printf 'cat .env' | env -S 'sh -s'`].map(
+      (command) => ({
+        name: `denies a .env read by a stdin script whose interpreter is in an env -S string: ${command}`,
+        ...bash(command),
+        cwd: 'workspace' as const,
+        expected: secretBlock('secret.basename.env'),
+      }),
+    ),
     {
       name: 'denies an npmrc read by a shell named in an env -S string',
       ...bash("env -S 'bash -c' 'cat ~/.npmrc'"),

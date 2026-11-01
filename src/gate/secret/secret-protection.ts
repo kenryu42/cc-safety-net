@@ -434,6 +434,13 @@ function isMetadataOnlyCommand(facts: SemanticFacts, environment: EnvironmentCon
   return isMetadataOnlyArgv(command, stripped.slice(1));
 }
 
+function effectiveArgv(
+  tokens: readonly string[],
+  environment: EnvironmentContext,
+): readonly string[] {
+  return strippedEffectiveArgv(tokens, environment) ?? stripWrappers(tokens, environment);
+}
+
 function strippedEffectiveArgv(
   tokens: readonly string[],
   environment: EnvironmentContext,
@@ -566,7 +573,7 @@ function extractCommandPathTargets(
       const scriptOptions = withPipeAhead(pipeAhead);
       if (scriptOptions.commandHoldsPipe) pipedWords.push(...tokens);
       programs.push(
-        basename(withoutTimeout(stripWrappers(tokens, environment))[0] ?? '').toLowerCase(),
+        basename(withoutTimeout(effectiveArgv(tokens, environment))[0] ?? '').toLowerCase(),
       );
       targets.push(
         ...extractSegmentPathTargets(
@@ -714,7 +721,7 @@ function extractSegmentPathTargets(
   }
   if (shellWords?.size) {
     const argv = tokens.filter((_, index) => !shellWords.has(index));
-    if (JQ_COMMANDS.has(basename(stripWrappers(argv, environment)[0] ?? '').toLowerCase())) {
+    if (JQ_COMMANDS.has(basename(effectiveArgv(argv, environment)[0] ?? '').toLowerCase())) {
       return [
         ...tokens.filter((_, index) => shellWords.has(index)).map(atSegment),
         ...extractSegmentPathTargets(argv, store, options, environment, segmentCwd, budget),
@@ -974,7 +981,7 @@ function extractPipeCarrierPathTargets(
   cwd: string,
   budget: Budget,
 ): SecretCandidate[] {
-  const stripped = stripWrappers(producer, environment);
+  const stripped = effectiveArgv(producer, environment);
   if (xargsReadsPipeInputAsPath(consumer, store, options, environment, cwd, budget)) {
     const namesListedByMetadataProducer = isMetadataOnlyArgv(
       basename(stripped[0] ?? '').toLowerCase(),
@@ -1008,7 +1015,7 @@ function rewalkInterpreterHeredocAsShell(
   cwd: string,
   budget: Budget,
 ): SecretCandidate[] {
-  const stripped = stripWrappers(consumer, environment);
+  const stripped = effectiveArgv(consumer, environment);
   if (!isCodeInterpreter(basename(stripped[0] ?? '').toLowerCase())) return [];
   return walkShellText(body, store, options, environment, cwd, budget) ?? [{ target: body, cwd }];
 }
@@ -1117,7 +1124,7 @@ function xargsReadsPipeInputAsPath(
   cwd: string,
   budget: Budget,
 ): boolean {
-  const stripped = stripWrappers(tokens, environment);
+  const stripped = effectiveArgv(tokens, environment);
   if (stripped.length === 0 || basename(stripped[0] ?? '').toLowerCase() !== 'xargs') {
     return false;
   }
@@ -1145,7 +1152,7 @@ function getStdinScriptInterpreter(
   tokens: readonly string[],
   environment: EnvironmentContext,
 ): string | null {
-  const stripped = stripWrappers(tokens, environment);
+  const stripped = effectiveArgv(tokens, environment);
   if (stripped.length === 0) return null;
 
   const command = basename(stripped[0] ?? '').toLowerCase();
