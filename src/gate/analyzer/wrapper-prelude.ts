@@ -439,7 +439,7 @@ export interface EnvStrippingResult {
 }
 
 export function stripWrappers(
-  tokens: string[],
+  tokens: readonly string[],
   environment: EnvironmentContext,
   cwd?: string | null,
 ): string[] {
@@ -493,7 +493,7 @@ export function stripWrappersForPathScan(
 }
 
 export function stripWrappersWithInfo(
-  tokens: string[],
+  tokens: readonly string[],
   environment: EnvironmentContext,
   cwd?: string | null,
   inheritedEnvAssignments?: ReadonlyMap<string, string>,

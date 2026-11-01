@@ -649,14 +649,14 @@ describe('the carriers a candidate path can arrive through', () => {
         expected: null,
       },
       {
-        name: 'a wrapper option before the piped interpreter hides it; the pipe carrier stops there',
+        name: 'a wrapper option before the piped interpreter is skipped to reach it',
         command: 'printf \'open(".env")\' | sudo -u root python3 -',
-        expected: null,
+        expected: env('.env'),
       },
       {
-        name: 'a valueless wrapper flag hides the piped interpreter the same way',
+        name: 'a valueless wrapper flag before the piped interpreter is skipped the same way',
         command: 'printf \'open(".env")\' | command -p python3 -',
-        expected: null,
+        expected: env('.env'),
       },
       {
         name: 'an explicit stdin operand executes the piped Python source',
@@ -3763,6 +3763,21 @@ describe('the policy layer over the built-in catalog', () => {
           command,
         ).toStrictEqual({ target: path, ruleId: 'secret.deny-path' });
       }
+    }
+  });
+
+  test('an env assignment after env options is decided as its value, allow entries included', () => {
+    const npmrc = shellPath(repo, 'config', '.npmrc');
+    const other = shellPath(repo, 'other', '.npmrc');
+    const allowNpmrc = { denyPaths: [], allowPaths: [npmrc] };
+    for (const prefix of ['env', 'env -i', `env -i HOME=${shellPath(userHome)}`]) {
+      const command = `${prefix} npm_config_userconfig=${npmrc} node x.js`;
+      expect(secretIn(command, UNSET, allowNpmrc), command).toBeNull();
+      const unapproved = `${prefix} npm_config_userconfig=${other} node x.js`;
+      expect(secretIn(unapproved, UNSET, allowNpmrc), unapproved).toStrictEqual({
+        target: other,
+        ruleId: 'secret.basename.npmrc',
+      });
     }
   });
 
