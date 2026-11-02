@@ -1479,6 +1479,7 @@ var import_tokens5 = require("./core-shell.js");
 var import_awk = require("./analyzer.js");
 var import_interpreters = require("./analyzer.js");
 var import_powershell_wrapper = require("./analyzer.js");
+var import_wrapper_prelude5 = require("./analyzer.js");
 var import_xargs = require("./analyzer.js");
 var REASON_SECRET_PROTECTION = "Access to a sensitive path is not allowed.";
 var NON_PATH_OPERAND_COMMANDS = new Set(["echo", "printf"]);
@@ -1705,14 +1706,24 @@ function isMetadataOnlyCommand(facts, environment) {
       continue;
     tokens.push(projectSensitiveShellText(token.text, environment));
   }
-  const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
-  if (stripped.length === 0)
+  const stripped = strippedEffectiveArgv(tokens, environment);
+  if (stripped === null || stripped.length === 0)
     return false;
   const command = basename2(stripped[0] ?? "").toLowerCase();
   if (facts.invocation.route.kind === "unknown") {
     return syntax.program.dialect === "powershell" && (command === "ls" || command === "stat");
   }
   return isMetadataOnlyArgv(command, stripped.slice(1));
+}
+function effectiveArgv(tokens, environment) {
+  return strippedEffectiveArgv(tokens, environment) ?? import_wrapper_prelude5.stripWrappers(tokens, environment);
+}
+function strippedEffectiveArgv(tokens, environment) {
+  const prelude = import_wrapper_prelude5.stripWrappersWithInfo(tokens, environment);
+  if (prelude.envSplitValues === undefined)
+    return prelude.tokens;
+  const splitArgv = import_wrapper_prelude5.reconstructEnvSplitWords(prelude.envSplitValues, prelude.tokens);
+  return splitArgv === null ? null : strippedEffectiveArgv(splitArgv, environment);
 }
 function isMetadataOnlyArgv(command, args) {
   if (command === "ls" || command === "stat")
@@ -1797,7 +1808,7 @@ function extractCommandPathTargets(syntax, store, options, environment, cwd, bud
       const scriptOptions = withPipeAhead(pipeAhead);
       if (scriptOptions.commandHoldsPipe)
         pipedWords.push(...tokens);
-      programs.push(basename2(withoutTimeout(stripLeadingWrappersAndEnvAssignments(tokens))[0] ?? "").toLowerCase());
+      programs.push(basename2(withoutTimeout(effectiveArgv(tokens, environment))[0] ?? "").toLowerCase());
       targets.push(...extractSegmentPathTargets(tokens, store, holdsProcessSubstitution || boundary === "|" || boundary === "|&" ? { ...scriptOptions, segmentMayFeedReader: true } : scriptOptions, environment, state.cwd, budget, shellWords));
       if (pipeProducer !== null) {
         targets.push(...extractPipeCarrierPathTargets(pipeProducer, tokens, store, scriptOptions, environment, state.cwd, budget));
@@ -1840,47 +1851,72 @@ function walkShellText(text, store, options, environment, cwd, budget, powershel
     throw new StructuralShellSyntaxLimitError;
   return syntax.status === "complete" ? extractCommandPathTargets(syntax, store, options, environment, cwd, budget, powershell) : null;
 }
-function extractSegmentPathTargets(tokens, store, options, environment, cwd, budget, shellWords) {
-  const here = (target) => ({ target, cwd });
+function extractSegmentPathTargets(tokens, store, options, environment, segmentCwd, budget, shellWords) {
+  const atSegment = (target) => ({ target, cwd: segmentCwd });
   const reservedPrefix = tokens.findIndex((token) => !SHELL_RESERVED_WORDS.has(token));
   if (options.skipMetadataOnlySegments === true && reservedPrefix > 0) {
-    return extractSegmentPathTargets(tokens.slice(reservedPrefix), store, options, environment, cwd, budget, new Set([...shellWords ?? []].map((index) => index - reservedPrefix)));
+    return extractSegmentPathTargets(tokens.slice(reservedPrefix), store, options, environment, segmentCwd, budget, new Set([...shellWords ?? []].map((index) => index - reservedPrefix)));
   }
   const loopVariable = tokens[1] ?? "";
   if (options.skipMetadataOnlySegments === true && tokens[0] === "for" && tokens[2] === "in" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(loopVariable)) {
-    return tokens.slice(3).flatMap((token) => extractOperandPathCandidates("for", token)).map((target) => ({ ...here(target), loopVariable }));
+    return tokens.slice(3).flatMap((token) => extractOperandPathCandidates("for", token)).map((target) => ({ ...atSegment(target), loopVariable }));
   }
   if (shellWords?.size) {
     const argv = tokens.filter((_, index) => !shellWords.has(index));
-    if (JQ_COMMANDS.has(basename2(stripLeadingWrappersAndEnvAssignments(argv)[0] ?? "").toLowerCase())) {
+    if (JQ_COMMANDS.has(basename2(effectiveArgv(argv, environment)[0] ?? "").toLowerCase())) {
       return [
-        ...tokens.filter((_, index) => shellWords.has(index)).map(here),
-        ...extractSegmentPathTargets(argv, store, options, environment, cwd, budget)
+        ...tokens.filter((_, index) => shellWords.has(index)).map(atSegment),
+        ...extractSegmentPathTargets(argv, store, options, environment, segmentCwd, budget)
       ];
     }
   }
-  const assignmentValues = extractLeadingAssignmentValues(tokens).map(here);
-  const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
+  const prelude = import_wrapper_prelude5.stripWrappersWithInfo(tokens, environment, segmentCwd);
+  const cwd = typeof prelude.cwd === "string" ? prelude.cwd : segmentCwd;
+  const redirectionTargets = new Set(tokens.filter((_, index) => shellWords?.has(index)));
+  const here = (target) => ({
+    target,
+    cwd: redirectionTargets.has(target) ? segmentCwd : cwd
+  });
+  const stripped = prelude.tokens;
+  const envSplitValues = prelude.envSplitValues ?? [];
+  const preludeTargets = [
+    ...tokens.slice(0, tokens.length - stripped.length).filter((token) => !isWrapperToken(token) && import_wrapper_prelude5.parseEnvAssignment(token) === null && !envSplitValues.includes(token)).flatMap((token) => extractOperandPathCandidates("", token)).map(atSegment),
+    ...[...prelude.envAssignments.values()].filter((value) => value !== "").map(here)
+  ];
+  if (envSplitValues.length > 0) {
+    const splitArgv = import_wrapper_prelude5.reconstructEnvSplitWords(envSplitValues, stripped);
+    if (splitArgv !== null) {
+      return [
+        ...preludeTargets,
+        ...extractSegmentPathTargets(splitArgv, store, options, environment, segmentCwd, budget, new Set([...shellWords ?? []].map((index) => index + splitArgv.length - tokens.length)))
+      ];
+    }
+    return [
+      ...preludeTargets,
+      ...envSplitValues.flatMap((value) => walkShellText(value, store, options, environment, cwd, budget) ?? [here(value)]),
+      ...stripped.flatMap((token) => extractOperandPathCandidates("", token)).map(here)
+    ];
+  }
   if (stripped.length === 0)
-    return assignmentValues;
+    return preludeTargets;
   const executable = stripped[0] ?? "";
   const command = basename2(executable).toLowerCase();
   const post = stripped.slice(1);
   const outputMayFeedReader = options.segmentMayFeedReader === true || options.commandHoldsPipe === true || options.displayOperandsAreCapturedOutput === true;
   const metadataOutputMayFeedReader = outputMayFeedReader && NAME_LISTING_METADATA_COMMANDS.has(command);
   if (options.skipMetadataOnlySegments === true && !metadataOutputMayFeedReader && isMetadataOnlyArgv(command, post)) {
-    return assignmentValues;
+    return preludeTargets;
   }
   const explainTargets = extractSafetyNetExplainPathTargets(executable, command, post);
   if (explainTargets) {
-    return [...assignmentValues, ...explainTargets.map(here)];
+    return [...preludeTargets, ...explainTargets.map(here)];
   }
   if (NON_PATH_OPERAND_COMMANDS.has(command)) {
-    return options.displayOperandsAreCapturedOutput === true ? [...assignmentValues, ...extractDisplayCommandOperands(tokens).map(here)] : assignmentValues;
+    return options.displayOperandsAreCapturedOutput === true ? [...preludeTargets, ...extractDisplayCommandOperands(stripped).map(here)] : preludeTargets;
   }
   if (command === "eval") {
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...walkShellText(post.join(" "), store, options, environment, cwd, budget) ?? post.map(here)
     ];
   }
@@ -1889,45 +1925,44 @@ function extractSegmentPathTargets(tokens, store, options, environment, cwd, bud
     budget.charge("derivedTokens", stripped.length);
   const powerShellTargets = powerShellScript === undefined ? null : walkShellText(powerShellScript, store, options, environment, cwd, budget, true);
   if (powerShellTargets?.length)
-    return [...assignmentValues, ...powerShellTargets];
+    return [...preludeTargets, ...powerShellTargets];
   if (command === "export") {
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...post.flatMap((token) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(token) ? [token.slice(token.indexOf("=") + 1)] : extractOperandPathCandidates(command, token)).map(here)
     ];
   }
   if (command === "git") {
-    return [...assignmentValues, ...extractGitOperandPathTargets(post).map(here)];
+    return [...preludeTargets, ...extractGitOperandPathTargets(post).map(here)];
   }
   if (command === "gh") {
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...extractTextFlagOperandCandidates(command, post, GH_TEXT_FLAGS).map(here)
     ];
   }
   if (JQ_COMMANDS.has(command)) {
-    return [...assignmentValues, ...extractJqPathTargets(post).map(here)];
+    return [...preludeTargets, ...extractJqPathTargets(post).map(here)];
   }
   if (PATTERN_FIRST_COMMANDS.has(command)) {
-    return [...assignmentValues, ...extractPatternCommandTargets(post).map(here)];
+    return [...preludeTargets, ...extractPatternCommandTargets(post).map(here)];
   }
   if (PATH_ROOT_COMMANDS.has(command)) {
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...extractFindCommandTargets(post, store, options, environment, cwd, budget).map(here)
     ];
   }
   if (command === "mkdir" || command === "touch") {
-    const redirectionTargets = new Set(tokens.filter((_, index) => shellWords?.has(index)));
     const createsOperands = options.segmentMayFeedReader !== true && !(command === "touch" && post.some((token) => /^(?:--r|-[^-]*r)/.test(token)));
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...post.flatMap((token) => extractOperandPathCandidates(command, token).map((target) => createsOperands && !token.startsWith("-") && !redirectionTargets.has(token) ? { ...here(target), isCreatedPath: true } : here(target)))
     ];
   }
   if (import_constants.AWK_INTERPRETERS.has(command)) {
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...post.flatMap((token) => extractOperandPathCandidates("awk", token)).map(here),
       ...post.flatMap((token) => extractAwkSystemCommandTargets(token, store, options, environment, cwd, budget)),
       ...post.flatMap(extractAwkGetlineRedirectTargets).map(here)
@@ -1935,7 +1970,7 @@ function extractSegmentPathTargets(tokens, store, options, environment, cwd, bud
   }
   if (command === "curl") {
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...post.filter((token, index) => attachedCurlUploadOperand(token) === null && curlOperandUploadFlag(post[index - 1]) === null).flatMap((token) => extractOperandPathCandidates(command, token)).map(here),
       ...extractCurlUploadPathTargets(post).map(here)
     ];
@@ -1948,14 +1983,14 @@ function extractSegmentPathTargets(tokens, store, options, environment, cwd, bud
         throw new StructuralShellSyntaxLimitError;
       if (syntax.status === "complete") {
         return [
-          ...assignmentValues,
+          ...preludeTargets,
           ...extractCommandPathTargets(syntax, store, options, environment, cwd, budget),
           ...post.slice(shellArgv.commandIndex).filter((token) => !token.startsWith("-")).map(here)
         ];
       }
     }
     return [
-      ...assignmentValues,
+      ...preludeTargets,
       ...extractInterpreterPathTargets(command, post, store, options, environment, cwd, budget)
     ];
   }
@@ -1964,7 +1999,7 @@ function extractSegmentPathTargets(tokens, store, options, environment, cwd, bud
   const readsOnlyCertificate = command === "openssl" && post[0] === "x509";
   const certificateOutput = outputMayFeedReader ? { certificateOutputMayFeedReader: true } : {};
   return [
-    ...assignmentValues,
+    ...preludeTargets,
     ...post.flatMap((token, index) => extractOperandPathCandidates(command, token).map((target) => writesTailscaleCertFiles && optionValue("(?:cert|key)-file", index) ? { ...here(target), isCreatedPath: true, ...certificateOutput } : readsOnlyCertificate && optionValue("in", index) ? { ...here(target), isCertificateInput: true, ...certificateOutput } : here(target)))
   ];
 }
@@ -1997,29 +2032,26 @@ function extractSafetyNetExplainPathTargets(executable, command, tokens) {
   return targets;
 }
 function extractPipeCarrierPathTargets(producer, consumer, store, options, environment, cwd, budget) {
+  const stripped = effectiveArgv(producer, environment);
   if (xargsReadsPipeInputAsPath(consumer, store, options, environment, cwd, budget)) {
-    const stripped = stripLeadingWrappersAndEnvAssignments(producer);
     const namesListedByMetadataProducer = isMetadataOnlyArgv(basename2(stripped[0] ?? "").toLowerCase(), stripped.slice(1)) ? stripped.slice(1).filter((token) => !token.startsWith("-")) : [];
-    return [...extractDisplayCommandOperands(producer), ...namesListedByMetadataProducer].map((target) => ({ target, cwd }));
+    return [...extractDisplayCommandOperands(stripped), ...namesListedByMetadataProducer].map((target) => ({ target, cwd }));
   }
-  return extractStdinScriptPathTargets(consumer, extractDisplayCommandBodies(producer), store, options, environment, cwd, budget, () => []);
+  return extractStdinScriptPathTargets(consumer, extractDisplayCommandBodies(stripped), store, options, environment, cwd, budget, () => []);
 }
 function rewalkInterpreterHeredocAsShell(consumer, body, store, options, environment, cwd, budget) {
-  const stripped = stripLeadingWrappersAndEnvAssignments(consumer);
+  const stripped = effectiveArgv(consumer, environment);
   if (!isCodeInterpreter(basename2(stripped[0] ?? "").toLowerCase()))
     return [];
   return walkShellText(body, store, options, environment, cwd, budget) ?? [{ target: body, cwd }];
 }
 function extractStdinScriptPathTargets(consumer, bodies, store, options, environment, cwd, budget, rewalkNonScriptHeredocBody) {
-  const interpreter = getStdinScriptInterpreter(consumer);
+  const interpreter = getStdinScriptInterpreter(consumer, environment);
   if (interpreter === null)
     return bodies.flatMap(rewalkNonScriptHeredocBody);
   return bodies.flatMap((body) => SHELL_STDIN_INTERPRETERS.has(interpreter) ? extractCommandPathTargets(store.getShellSyntax(body), store, options, environment, cwd, budget) : extractInlineCodePathTargets(interpreter, body, store, options, environment, cwd, budget));
 }
-function extractDisplayCommandOperands(tokens) {
-  const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
-  if (stripped.length === 0)
-    return [];
+function extractDisplayCommandOperands(stripped) {
   const command = basename2(stripped[0] ?? "").toLowerCase();
   if (!NON_PATH_OPERAND_COMMANDS.has(command))
     return [];
@@ -2029,10 +2061,7 @@ function extractDisplayCommandOperands(tokens) {
   }
   return stripped.slice(1);
 }
-function extractDisplayCommandBodies(tokens) {
-  const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
-  if (stripped.length === 0)
-    return [];
+function extractDisplayCommandBodies(stripped) {
   const command = basename2(stripped[0] ?? "").toLowerCase();
   const args = stripped.slice(1);
   if (command === "echo") {
@@ -2072,7 +2101,7 @@ function decodePrintfEscapes(value) {
 `).replace(/\\t/g, "\t").replace(/\\r/g, "\r");
 }
 function xargsReadsPipeInputAsPath(tokens, store, options, environment, cwd, budget) {
-  const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
+  const stripped = effectiveArgv(tokens, environment);
   if (stripped.length === 0 || basename2(stripped[0] ?? "").toLowerCase() !== "xargs") {
     return false;
   }
@@ -2088,8 +2117,8 @@ function xargsReadsPipeInputAsPath(tokens, store, options, environment, cwd, bud
   const childTokens = replacementToken === null ? [...xargsChildTokens, PIPE_INPUT_PATH_MARKER] : xargsChildTokens.map((token) => token.split(replacementToken).join(PIPE_INPUT_PATH_MARKER));
   return extractSegmentPathTargets(childTokens, store, options, environment, cwd, budget).some((candidate) => candidate.target.includes(PIPE_INPUT_PATH_MARKER));
 }
-function getStdinScriptInterpreter(tokens) {
-  const stripped = stripLeadingWrappersAndEnvAssignments(tokens);
+function getStdinScriptInterpreter(tokens, environment) {
+  const stripped = effectiveArgv(tokens, environment);
   if (stripped.length === 0)
     return null;
   const command = basename2(stripped[0] ?? "").toLowerCase();
@@ -2122,22 +2151,6 @@ function interpreterReadsStdinScript(command, tokens) {
 }
 function normalizeInterpreterName(command) {
   return /^python\d/.test(command) ? "python" : command;
-}
-function extractLeadingAssignmentValues(tokens) {
-  const values = [];
-  for (const token of tokens) {
-    if (isWrapperToken(token)) {
-      continue;
-    }
-    const assignment = /^[A-Za-z_][A-Za-z0-9_]*=(.*)$/.exec(token);
-    if (assignment === null) {
-      break;
-    }
-    if (assignment[1] !== undefined && assignment[1] !== "") {
-      values.push(assignment[1]);
-    }
-  }
-  return values;
 }
 var POWERSHELL_HOME_PREFIX = /^(?:\$\{home\}|\$\{env:(?:userprofile|home)\}|~)(?=[\\/])/i;
 function rewritePowerShellHomePrefix(token, powershell) {
@@ -2903,10 +2916,6 @@ function extractPatternCommandTargets(tokens) {
   const dropFirstPositional = !patternFromOption && !patternlessMode;
   const positionalFiles = dropFirstPositional ? positionals.slice(1) : positionals;
   return [...optionFileTargets, ...positionalFiles];
-}
-function stripLeadingWrappersAndEnvAssignments(tokens) {
-  const firstCommandIndex = tokens.findIndex((token) => !isWrapperToken(token) && !/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token));
-  return firstCommandIndex === -1 ? [] : tokens.slice(firstCommandIndex);
 }
 function isWrapperToken(token) {
   return token === "env" || token === "command" || token === "builtin" || token === "sudo";
