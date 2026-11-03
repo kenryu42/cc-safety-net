@@ -54,6 +54,7 @@ function removeItemCases(): readonly RemoveItemCase[] {
     { label: 'workspace, paranoid', cwd: workspace, paranoid: true },
     { label: 'workspace, strict with metadata', cwd: workspace, strict: true, metadata: true },
     { label: 'home as cwd', cwd: home, strict: true },
+    { label: 'home as cwd, standard', cwd: home },
     { label: 'no cwd', strict: true },
     {
       label: 'pipeline rule disabled by policy',
@@ -253,6 +254,11 @@ describe('powershell Remove-Item', () => {
       {
         label: 'home as cwd',
         source: 'Remove-Item -Recurse -Force Documents',
+        id: 'powershell.remove-item-recursive-force-home-cwd',
+      },
+      {
+        label: 'home as cwd, standard',
+        source: 'Remove-Item -Recurse -Force $target',
         id: 'powershell.remove-item-recursive-force-home-cwd',
       },
       {

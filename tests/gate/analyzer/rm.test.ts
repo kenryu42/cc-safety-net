@@ -292,6 +292,7 @@ describe('rm rule set', () => {
       readonly id: string | null;
     }[] = [
       { label: 'home is the cwd', source: 'rm -rf src', id: 'rm.recursive-force-home-cwd' },
+      { label: 'home is the cwd', source: 'rm -rf "$X"', id: 'rm.recursive-force-home-cwd' },
       { label: 'home is the cwd', source: 'rm -rf *', id: 'rm.recursive-force-root-or-home' },
       { label: 'home is the cwd', source: 'rm -rf /tmp/scratch-dir', id: null },
       { label: 'no cwd at all', source: 'rm -rf src', id: 'rm.recursive-force-outside-cwd' },
