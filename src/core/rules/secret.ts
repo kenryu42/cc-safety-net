@@ -221,7 +221,7 @@ export const SECRET_CODING_CLI_RULES = [
     id: 'secret.cli.codex.config',
     category: 'Coding CLI config',
     label: 'Codex config',
-    paths: ['~/.codex/config.toml', '~/.codex/<name>.config.toml'],
+    paths: ['~/.codex/config.toml', '~/.codex/<name>.config.toml', '<project>/.codex/config.toml'],
   },
   {
     id: 'secret.cli.gemini',

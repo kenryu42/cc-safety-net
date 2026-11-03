@@ -2502,10 +2502,12 @@ function matchesCodingCliPath(
             environment,
             budget,
           );
-          const name = comparable(normalized).split('/').at(-1) ?? '';
+          const segments = comparable(normalized).split('/');
+          const name = segments.at(-1) ?? '';
           return (
             matchesFileInRoot(normalized, root, ['config.toml']) ||
-            (name.endsWith('.config.toml') && matchesFileInRoot(normalized, root, [name]))
+            (name.endsWith('.config.toml') && matchesFileInRoot(normalized, root, [name])) ||
+            (segments.at(-2) === '.codex' && name === 'config.toml')
           );
         }
         case 'secret.cli.gemini':
