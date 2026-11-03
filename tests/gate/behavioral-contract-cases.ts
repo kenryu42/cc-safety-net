@@ -1200,6 +1200,17 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'blocks a cmd recursive delete of a wildcard target from the platform home directory',
+      command: 'cmd /c del /s /q *.log',
+      options: options({ cwd: paths.home }),
+      expected: {
+        kind: 'block',
+        ruleId: 'cmd.recursive-delete-home-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'home directory',
+      },
+    },
+    {
       name: 'does not apply PowerShell removal rules in posix mode',
       command: 'Remove-Item . -Recurse -Force',
       options: options({ cwd: paths.cwd, shell: 'posix' }),
