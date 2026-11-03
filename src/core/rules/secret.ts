@@ -195,6 +195,7 @@ export const SECRET_CODING_CLI_RULES = [
       '~/.claude/settings.json',
       '~/.claude/settings.local.json',
       '~/.claude.json',
+      '<project>/.claude/settings.json',
       '<project>/.claude/settings.local.json',
       '<project>/.mcp.json',
     ],
@@ -220,7 +221,7 @@ export const SECRET_CODING_CLI_RULES = [
     id: 'secret.cli.codex.config',
     category: 'Coding CLI config',
     label: 'Codex config',
-    paths: ['~/.codex/config.toml', '~/.codex/<name>.config.toml'],
+    paths: ['~/.codex/config.toml', '~/.codex/<name>.config.toml', '<project>/.codex/config.toml'],
   },
   {
     id: 'secret.cli.gemini',
