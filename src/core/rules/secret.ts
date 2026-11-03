@@ -195,6 +195,7 @@ export const SECRET_CODING_CLI_RULES = [
       '~/.claude/settings.json',
       '~/.claude/settings.local.json',
       '~/.claude.json',
+      '<project>/.claude/settings.json',
       '<project>/.claude/settings.local.json',
       '<project>/.mcp.json',
     ],

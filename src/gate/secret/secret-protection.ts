@@ -2470,7 +2470,8 @@ function matchesCodingCliPath(
               ['settings.json', 'settings.local.json'],
             ) ||
             matchesExactPath(normalized, '~/.claude.json', cwd, environment, budget) ||
-            (segments.at(-1) === 'settings.local.json' && segments.at(-2) === '.claude') ||
+            (segments.at(-2) === '.claude' &&
+              ['settings.json', 'settings.local.json'].includes(segments.at(-1) ?? '')) ||
             segments.at(-1) === '.mcp.json'
           );
         }
