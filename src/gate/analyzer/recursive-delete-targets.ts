@@ -304,7 +304,12 @@ export function classifyRecursiveDeleteTarget(
   }
 
   if (dynamic) {
-    return { kind: 'dynamic_target' };
+    const shellCwd = ctx.resolvedCwd ?? ctx.anchoredCwd;
+    return !options.skipHomeCwd &&
+      shellCwd !== null &&
+      isCwdHomeForRmPolicy(shellCwd, ctx.environment.home, ctx.environment.paths, ctx.budget)
+      ? { kind: 'home_cwd_target' }
+      : { kind: 'dynamic_target' };
   }
 
   if (isAllowedPathTarget(target, ctx, targetIsLiteral)) {

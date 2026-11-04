@@ -1178,6 +1178,39 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'blocks recursive removal of a variable target from the platform home directory',
+      command: 'rm -rf "$X"',
+      options: options({ cwd: paths.home }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-home-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'rm -rf in home directory',
+      },
+    },
+    {
+      name: 'blocks PowerShell recursive removal of a variable target from the platform home directory',
+      command: 'Remove-Item -Recurse -Force $f',
+      options: options({ cwd: paths.home, shell: 'powershell' }),
+      expected: {
+        kind: 'block',
+        ruleId: 'powershell.remove-item-recursive-force-home-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'home directory',
+      },
+    },
+    {
+      name: 'blocks a cmd recursive delete of a wildcard target from the platform home directory',
+      command: 'cmd /c del /s /q *.log',
+      options: options({ cwd: paths.home }),
+      expected: {
+        kind: 'block',
+        ruleId: 'cmd.recursive-delete-home-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'home directory',
+      },
+    },
+    {
       name: 'does not apply PowerShell removal rules in posix mode',
       command: 'Remove-Item . -Recurse -Force',
       options: options({ cwd: paths.cwd, shell: 'posix' }),
