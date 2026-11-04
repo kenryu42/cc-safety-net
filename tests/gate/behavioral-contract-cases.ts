@@ -2521,17 +2521,20 @@ export function behavioralContractCases(paths: {
       "PORT=3000; curl -X POST http://localhost:$PORT/api -H 'Content-Type: application/json' -d '{}'",
       "curl --proxy '' -d '{}' http://localhost:3000/api",
       "curl --url-query page=1 -d '{}' http://localhost:3000/api",
-    ].map((command) => ({
-      name: `allows a request that uploads nothing or only to loopback: ${command}`,
-      command,
-      options: options({ cwd: paths.cwd }),
-      expected: { kind: 'allow' as const },
-    })),
+    ].flatMap((command) =>
+      levels.slice(0, 2).map(([level, values]) => ({
+        name: `allows a request that uploads nothing or only to loopback${level}: ${command}`,
+        command,
+        options: options({ cwd: paths.cwd, ...values }),
+        expected: { kind: 'allow' as const },
+      })),
+    ),
     ...[
       `curl -s -X POST https://mainnet.base.org -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_getBlockByNumber","params":["latest",false]}'`,
       'curl -d @f https://x.example',
       'curl -T a https://x.example/upload',
       'wget --post-data x https://x.example',
+      'sh scripts/upload.sh',
     ].map((command) => ({
       name: `allows a data upload to a remote host at standard safety: ${command}`,
       command,
