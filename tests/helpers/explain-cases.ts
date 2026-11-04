@@ -78,6 +78,7 @@ export const EXPLAIN_CASES: readonly ExplainCase[] = [
   {
     slug: '23-script-file',
     command: 'sh scripts/evil.sh',
+    env: { CC_SAFETY_NET_LEVEL: 'strict' },
     files: {
       'project/scripts/evil.sh': [
         'echo leaked-marker-one',

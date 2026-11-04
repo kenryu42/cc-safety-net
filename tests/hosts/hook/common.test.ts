@@ -179,6 +179,7 @@ test('a denial for a script read from disk names its file and line, never its te
   const row: Row = {
     name: 'script',
     input: (current) => shellPayload(current, 'sh scripts/evil.sh'),
+    env: { CC_SAFETY_NET_LEVEL: 'strict' },
     lines: 1,
   };
 

@@ -1245,8 +1245,11 @@ describe('script files read from disk', () => {
   });
 
   test('a script over the size cap is not read', () => {
-    expect(at('sh upload.sh')).toMatchObject({ kind: 'deny', ruleId: 'network.upload-remote' });
-    expect(at('sh large-upload.sh')).toBeNull();
+    expect(at('sh upload.sh', strict)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'network.upload-remote',
+    });
+    expect(at('sh large-upload.sh', strict)).toBeNull();
   });
 
   test('a long benign script is allowed at every level', () => {
@@ -1279,7 +1282,10 @@ describe('script files read from disk', () => {
 
   test('a script that runs itself stays bounded and still reaches its upload', () => {
     expect(fastest('sh thrice.sh') / fastest('sh once.sh')).toBeLessThan(24);
-    expect(at('sh self.sh')).toMatchObject({ kind: 'deny', ruleId: 'network.upload-remote' });
+    expect(at('sh self.sh', strict)).toMatchObject({
+      kind: 'deny',
+      ruleId: 'network.upload-remote',
+    });
   });
 
   test('running a self-calling script many times in one command stays bounded', () => {
@@ -1288,7 +1294,7 @@ describe('script files read from disk', () => {
   });
 
   test('a script run by another script is named by its own file and line', () => {
-    const reason = at('sh runs-located.sh')?.reason;
+    const reason = at('sh runs-located.sh', strict)?.reason;
     expect(reason).toStartWith('located.sh:2: This uploads data to a remote host');
     expect(reason).not.toContain('runs-located.sh');
   });

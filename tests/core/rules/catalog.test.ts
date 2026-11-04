@@ -46,6 +46,7 @@ describe('rule catalogs', () => {
       ['powershell.remove-item-pipeline-dynamic-target', 'fail_closed'],
       ['cmd.recursive-delete-dynamic-target', 'fail_closed'],
       ['cmd.recursive-delete-paranoid', 'paranoid_rm'],
+      ['network.upload-remote', 'fail_closed'],
       ['interpreter.one-liner-paranoid', 'paranoid_interpreters'],
       ['shell.dynamic-structure', 'fail_closed'],
       ['shell.dynamic-executable', 'fail_closed'],
