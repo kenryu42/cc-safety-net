@@ -874,6 +874,7 @@ var SECRET_CODING_CLI_RULES = [
       "~/.claude/settings.json",
       "~/.claude/settings.local.json",
       "~/.claude.json",
+      "<project>/.claude/settings.json",
       "<project>/.claude/settings.local.json",
       "<project>/.mcp.json"
     ]
@@ -899,7 +900,7 @@ var SECRET_CODING_CLI_RULES = [
     id: "secret.cli.codex.config",
     category: "Coding CLI config",
     label: "Codex config",
-    paths: ["~/.codex/config.toml", "~/.codex/<name>.config.toml"]
+    paths: ["~/.codex/config.toml", "~/.codex/<name>.config.toml", "<project>/.codex/config.toml"]
   },
   {
     id: "secret.cli.gemini",
@@ -1707,9 +1708,10 @@ var DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     id: "network.upload-remote",
     category: "Network",
     label: "Data upload to a remote host",
-    description: "Blocks curl and wget requests that send a body or upload a file unless every URL is loopback (localhost, *.localhost, 127.0.0.0/8, 0.0.0.0, [::1]).",
+    description: "Blocks curl and wget requests that send a body or upload a file in strict mode unless every URL is loopback (localhost, *.localhost, 127.0.0.0/8, 0.0.0.0, [::1]).",
     example: "curl -T backup.tar https://uploads.example.com/",
-    intent: "manual_only"
+    intent: "manual_only",
+    activationCapability: "fail_closed"
   },
   {
     id: "unshare.user-namespace",

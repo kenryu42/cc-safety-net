@@ -46,6 +46,7 @@ __export(exports_analyzer_core, {
   REASON_PARALLEL_RM: () => REASON_PARALLEL_RM,
   REASON_PARALLEL_SHELL: () => REASON_PARALLEL_SHELL,
   SWITCH_SHORT_OPTS_WITH_VALUE: () => SWITCH_SHORT_OPTS_WITH_VALUE,
+  UNCERTAIN_RULE_ID_RE: () => UNCERTAIN_RULE_ID_RE,
   analyzeChildCommand: () => analyzeChildCommand,
   analyzeCommandInternal: () => analyzeCommandInternal,
   analyzeGitDetailed: () => analyzeGitDetailed,
@@ -2563,6 +2564,30 @@ var import_shell_wrappers3 = require("./analyzer.js");
 var import_wrapper_prelude3 = require("./analyzer.js");
 var REASON_UNQUOTED_HEREDOC = "Unquoted heredoc input is not supported safely. Quote the delimiter or ask the user to verify.";
 var REASON_UNSUPPORTED_HEREDOC = "This heredoc form or stdin consumer is not supported safely. Use a quoted heredoc with a supported consumer (cat, tee, git apply, git commit, gh pr create, gh issue create), or ask the user to verify.";
+function withoutUncertainCapabilities(options) {
+  const context = import_analysis_context.resolveCommandAnalysisContext({
+    ...options,
+    effectiveCapabilities: {
+      ...options.effectiveCapabilities,
+      fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
+      paranoid_interpreters: {
+        ...options.effectiveCapabilities.paranoid_interpreters,
+        enabled: false
+      }
+    }
+  });
+  const certainRulesKeepTheirActivation = Object.fromEntries(Object.entries(context.policy.effectiveDestructiveCommandRules).map(([id, state]) => [
+    id,
+    UNCERTAIN_RULE_ID_RE.test(id) ? state : options.policy.effectiveDestructiveCommandRules[id] ?? state
+  ]));
+  return {
+    ...context,
+    policy: Object.freeze({
+      ...context.policy,
+      effectiveDestructiveCommandRules: Object.freeze(certainRulesKeepTheirActivation)
+    })
+  };
+}
 function analyzeCommandInternal(command, depth, options, parsedProgram) {
   if (depth >= import_budget2.LIMITS.recursionDepth.cap) {
     options.trace?.recordSegment({ type: "error", message: import_reasons2.REASON_RECURSION_LIMIT });
@@ -3007,17 +3032,7 @@ function analyzeCommandView(commandView, depth, inheritedOptions, originalCwd, s
       const nestedEffectiveCwd = overrides && Object.hasOwn(overrides, "effectiveCwd") ? overrides.effectiveCwd : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
-        ...overrides?.withoutUncertainCapabilities ? import_analysis_context.resolveCommandAnalysisContext({
-          ...options,
-          effectiveCapabilities: {
-            ...options.effectiveCapabilities,
-            fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
-            paranoid_interpreters: {
-              ...options.effectiveCapabilities.paranoid_interpreters,
-              enabled: false
-            }
-          }
-        }) : {},
+        ...overrides?.withoutUncertainCapabilities ? withoutUncertainCapabilities(options) : {},
         budget: overrides?.scriptBudget ?? options.budget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,

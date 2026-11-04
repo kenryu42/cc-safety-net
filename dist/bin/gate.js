@@ -3025,7 +3025,7 @@ function matchesCodingCliPath(normalized, cwd, config, environment, budget) {
         return matchesFileInRoot(normalized, codingCliRoot(environment.env.get("CLAUDE_CONFIG_DIR"), "~/.claude", cwd, environment, budget), [".credentials.json"]);
       case "secret.cli.claude-code.config": {
         const segments = comparable(normalized).split("/");
-        return matchesFileInRoot(normalized, codingCliRoot(environment.env.get("CLAUDE_CONFIG_DIR"), "~/.claude", cwd, environment, budget), ["settings.json", "settings.local.json"]) || matchesExactPath(normalized, "~/.claude.json", cwd, environment, budget) || segments.at(-1) === "settings.local.json" && segments.at(-2) === ".claude" || segments.at(-1) === ".mcp.json";
+        return matchesFileInRoot(normalized, codingCliRoot(environment.env.get("CLAUDE_CONFIG_DIR"), "~/.claude", cwd, environment, budget), ["settings.json", "settings.local.json"]) || matchesExactPath(normalized, "~/.claude.json", cwd, environment, budget) || segments.at(-2) === ".claude" && ["settings.json", "settings.local.json"].includes(segments.at(-1) ?? "") || segments.at(-1) === ".mcp.json";
       }
       case "secret.cli.antigravity":
         return matchesFileInRoot(normalized, normalizeCandidatePath("~/.gemini/config", cwd, environment, budget), ["hooks.json", "mcp_config.json"]);
@@ -3035,8 +3035,9 @@ function matchesCodingCliPath(normalized, cwd, config, environment, budget) {
       }
       case "secret.cli.codex.config": {
         const root = codingCliRoot(environment.env.get("CODEX_HOME"), "~/.codex", cwd, environment, budget);
-        const name = comparable(normalized).split("/").at(-1) ?? "";
-        return matchesFileInRoot(normalized, root, ["config.toml"]) || name.endsWith(".config.toml") && matchesFileInRoot(normalized, root, [name]);
+        const segments = comparable(normalized).split("/");
+        const name = segments.at(-1) ?? "";
+        return matchesFileInRoot(normalized, root, ["config.toml"]) || name.endsWith(".config.toml") && matchesFileInRoot(normalized, root, [name]) || segments.at(-2) === ".codex" && name === "config.toml";
       }
       case "secret.cli.gemini":
         return matchesFileInRoot(normalized, appendPath(codingCliRoot(environment.env.get("GEMINI_CLI_HOME"), "~", cwd, environment, budget), ".gemini"), [
