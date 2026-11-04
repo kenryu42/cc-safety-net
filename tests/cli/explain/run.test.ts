@@ -200,6 +200,7 @@ const PINS: Record<string, Facts> = {
   '23-script-file': {
     result: 'blocked',
     ruleId: 'network.upload-remote',
+    activation: 'network.upload-remote',
     segment: 'sh scripts/evil.sh',
     parseInput: 'sh scripts/evil.sh',
     steps: ['parse'],

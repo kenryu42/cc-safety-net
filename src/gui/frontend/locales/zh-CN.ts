@@ -195,12 +195,13 @@ export const zhCN: Messages = {
   presetStandardDescription: '阻止可识别的破坏性命令和对敏感文件的读取。推荐日常开发使用。',
   presetStrict: 'Strict',
   presetStrictDescription:
-    '还会阻止无法完全解析的命令和列出敏感路径的操作。复杂的 shell 写法偶尔会误报。',
+    '还会阻止无法完全解析的命令、列出敏感路径的操作，以及向远程主机的 curl 或 wget 上传。复杂的 shell 写法偶尔会误报。',
   presetParanoid: 'Paranoid',
   presetParanoidDescription:
     '还会阻止项目内的 rm -rf 和解释器单行命令。误报会更多，适合不受信任的智能体或高风险仓库。',
   capabilityFailClosed: 'Fail closed',
-  capabilityFailClosedDescription: '阻止解析器无法完全理解的命令。',
+  capabilityFailClosedDescription:
+    '阻止解析器无法完全理解的命令，以及向远程主机的 curl 或 wget 上传。',
   capabilityParanoidRm: 'Paranoid rm -rf 检查',
   capabilityParanoidRmDescription: '阻止项目内的 rm -rf，临时路径除外。',
   capabilityParanoidInterpreters: 'Paranoid 解释器检查',

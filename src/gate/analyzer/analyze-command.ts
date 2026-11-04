@@ -50,7 +50,7 @@ import {
   REASON_STRICT_UNPARSEABLE,
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
-import { analyzeSegment, resolveCwdAfterCommandView } from './segment';
+import { analyzeSegment, resolveCwdAfterCommandView, UNCERTAIN_RULE_ID_RE } from './segment';
 import {
   extractLiteralPrintfOutput,
   isLiteralHeredoc,
@@ -89,6 +89,35 @@ const REASON_UNQUOTED_HEREDOC =
   'Unquoted heredoc input is not supported safely. Quote the delimiter or ask the user to verify.';
 const REASON_UNSUPPORTED_HEREDOC =
   'This heredoc form or stdin consumer is not supported safely. Use a quoted heredoc with a supported consumer (cat, tee, git apply, git commit, gh pr create, gh issue create), or ask the user to verify.';
+
+function withoutUncertainCapabilities(options: InternalOptions) {
+  const context = resolveCommandAnalysisContext({
+    ...options,
+    effectiveCapabilities: {
+      ...options.effectiveCapabilities,
+      fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
+      paranoid_interpreters: {
+        ...options.effectiveCapabilities.paranoid_interpreters,
+        enabled: false,
+      },
+    },
+  });
+  const certainRulesKeepTheirActivation = Object.fromEntries(
+    Object.entries(context.policy.effectiveDestructiveCommandRules).map(([id, state]) => [
+      id,
+      UNCERTAIN_RULE_ID_RE.test(id)
+        ? state
+        : (options.policy.effectiveDestructiveCommandRules[id] ?? state),
+    ]),
+  );
+  return {
+    ...context,
+    policy: Object.freeze({
+      ...context.policy,
+      effectiveDestructiveCommandRules: Object.freeze(certainRulesKeepTheirActivation),
+    }),
+  };
+}
 
 export function analyzeCommandInternal(
   command: string,
@@ -891,19 +920,7 @@ function analyzeCommandView(
           : state.effectiveCwd;
       const nestedResult = analyzeCommandInternal(nestedCommand, depth + 1, {
         ...options,
-        ...(overrides?.withoutUncertainCapabilities
-          ? resolveCommandAnalysisContext({
-              ...options,
-              effectiveCapabilities: {
-                ...options.effectiveCapabilities,
-                fail_closed: { ...options.effectiveCapabilities.fail_closed, enabled: false },
-                paranoid_interpreters: {
-                  ...options.effectiveCapabilities.paranoid_interpreters,
-                  enabled: false,
-                },
-              },
-            })
-          : {}),
+        ...(overrides?.withoutUncertainCapabilities ? withoutUncertainCapabilities(options) : {}),
         budget: overrides?.scriptBudget ?? options.budget,
         effectiveCwd: nestedEffectiveCwd,
         envAssignments: overrides?.envAssignments ?? segmentEnvAssignments,

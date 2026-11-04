@@ -205,12 +205,13 @@ export const en = {
     'Blocks recognizable destructive commands and reading sensitive files. Recommended for normal coding.',
   presetStrict: 'Strict',
   presetStrictDescription:
-    'Also blocks commands it cannot fully parse and listing sensitive paths. Occasional false positives on advanced shell.',
+    'Also blocks commands it cannot fully parse, listing sensitive paths, and curl or wget uploads to remote hosts. Occasional false positives on advanced shell.',
   presetParanoid: 'Paranoid',
   presetParanoidDescription:
     'Also blocks rm -rf inside your project and interpreter one-liners. Expect more false positives. Use it for untrusted agents or high-stakes repos.',
   capabilityFailClosed: 'Fail closed',
-  capabilityFailClosedDescription: 'Block commands the parser cannot fully understand.',
+  capabilityFailClosedDescription:
+    'Block commands the parser cannot fully understand and curl or wget uploads to remote hosts.',
   capabilityParanoidRm: 'Paranoid rm -rf checks',
   capabilityParanoidRmDescription: 'Block rm -rf inside the project, except temp paths.',
   capabilityParanoidInterpreters: 'Paranoid interpreters',

@@ -204,12 +204,13 @@ export const ja: Messages = {
     '認識できる破壊的コマンドと機密ファイルの読み取りをブロックします。通常の開発におすすめです。',
   presetStrict: 'Strict',
   presetStrictDescription:
-    '完全には解析できないコマンドと機密パスの一覧表示もブロックします。高度なシェル操作でときどき誤検知があります。',
+    '完全には解析できないコマンド、機密パスの一覧表示、リモートホストへの curl や wget のアップロードもブロックします。高度なシェル操作でときどき誤検知があります。',
   presetParanoid: 'Paranoid',
   presetParanoidDescription:
     'プロジェクト内の rm -rf とインタープリターの 1 行コードもブロックします。誤検知が増えるため、信頼できないエージェントや重要なリポジトリに使ってください。',
   capabilityFailClosed: 'フェイルクローズ',
-  capabilityFailClosedDescription: 'パーサーが完全に理解できないコマンドをブロックします。',
+  capabilityFailClosedDescription:
+    'パーサーが完全に理解できないコマンドと、リモートホストへの curl や wget のアップロードをブロックします。',
   capabilityParanoidRm: 'rm -rf の Paranoid チェック',
   capabilityParanoidRmDescription: '一時パスを除き、プロジェクト内の rm -rf をブロックします。',
   capabilityParanoidInterpreters: 'インタープリターの Paranoid チェック',

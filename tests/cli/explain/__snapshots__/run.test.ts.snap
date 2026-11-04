@@ -2051,16 +2051,6 @@ CONFIG
 "
 `;
 
-exports[`explain reports an analysis budget breach as bounded output 21-structural-limit: json 1`] = `
-"{"error":"Structural command analysis limit exceeded."}
-"
-`;
-
-exports[`explain reports an analysis budget breach as bounded output 22-path-limit: json 1`] = `
-"{"error":"Path canonicalization work limit exceeded."}
-"
-`;
-
 exports[`explain renders the same trace from both bins 23-script-file: json 1`] = `
 "{
   "trace": {
@@ -2095,32 +2085,43 @@ exports[`explain renders the same trace from both bins 23-script-file: json 1`] 
   "ruleId": "network.upload-remote",
   "configSource": null,
   "configValid": true,
-  "effectiveLevel": "standard",
+  "effectiveLevel": "strict",
   "selectedPreset": "standard",
   "effectiveCapabilities": {
     "fail_closed": {
-      "enabled": false,
-      "source": "preset",
+      "enabled": true,
+      "source": "environment",
       "sources": [
-        "policy safety.level=standard"
+        "policy safety.level=standard",
+        "env CC_SAFETY_NET_LEVEL=strict"
       ]
     },
     "paranoid_rm": {
       "enabled": false,
-      "source": "preset",
+      "source": "environment",
       "sources": [
-        "policy safety.level=standard"
+        "policy safety.level=standard",
+        "env CC_SAFETY_NET_LEVEL=strict"
       ]
     },
     "paranoid_interpreters": {
       "enabled": false,
-      "source": "preset",
+      "source": "environment",
       "sources": [
-        "policy safety.level=standard"
+        "policy safety.level=standard",
+        "env CC_SAFETY_NET_LEVEL=strict"
       ]
     }
   },
-  "destructiveCommandRuleOverrides": {}
+  "destructiveCommandRuleOverrides": {},
+  "ruleActivation": {
+    "id": "network.upload-remote",
+    "enabled": true,
+    "inheritedEnabled": true,
+    "changesInherited": false,
+    "source": "environment",
+    "activationCapability": "fail_closed"
+  }
 }
 "
 `;
@@ -2149,7 +2150,18 @@ RESULT
 CONFIG
   Path: none
   Safety preset: standard
-  Effective capabilities: standard
+  Effective capabilities: strict
   Rule customizations: 0
+  Rule activation: network.upload-remote — on via environment
+"
+`;
+
+exports[`explain reports an analysis budget breach as bounded output 21-structural-limit: json 1`] = `
+"{"error":"Structural command analysis limit exceeded."}
+"
+`;
+
+exports[`explain reports an analysis budget breach as bounded output 22-path-limit: json 1`] = `
+"{"error":"Path canonicalization work limit exceeded."}
 "
 `;

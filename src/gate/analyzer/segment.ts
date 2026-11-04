@@ -1029,7 +1029,7 @@ function analyzeTrackedHeredocScript(
   return result?.intent === 'stop_and_explain' ? null : result;
 }
 
-const UNCERTAIN_RULE_ID_RE =
+export const UNCERTAIN_RULE_ID_RE =
   /^(?:analysis|raw-text)\.|^(?!custom\.).*dynamic|^interpreter\.one-liner-paranoid$/;
 
 function analyzeScriptFile(
