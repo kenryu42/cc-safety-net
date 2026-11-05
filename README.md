@@ -30,7 +30,7 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
 ## Sponsors
 
 <p align="center">
-  <a href="https://crazyrouter.com/?utm_source=github&utm_medium=sponsorship&utm_campaign=cc_safety_net&utm_content=readme">
+  <a href="https://ccsafetynet.com/go/crazyrouter?from=readme">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/crazyrouter-logo-dark.png">
       <source media="(prefers-color-scheme: light)" srcset="./.github/assets/crazyrouter-logo-light.png">
