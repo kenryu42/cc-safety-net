@@ -27,6 +27,18 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
 > [!NOTE]
 > **[Full documentation →](https://ccsafetynet.com/docs)** covers installation, configuration, reference material, guides, and the security model. This README is the short version.
 
+## Sponsors
+
+<p align="center">
+  <a href="https://crazyrouter.com/?utm_source=github&utm_medium=sponsorship&utm_campaign=cc_safety_net&utm_content=readme">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/crazyrouter-logo-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="./.github/assets/crazyrouter-logo-light.png">
+      <img alt="Crazyrouter" src="./.github/assets/crazyrouter-logo-light.png" height="40">
+    </picture>
+  </a>
+</p>
+
 ## How it works
 
 <p align="center">
