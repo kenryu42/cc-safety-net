@@ -98,6 +98,7 @@ __export(exports_core_shell, {
   readHeredocDelimiter: () => readHeredocDelimiter,
   readPolicyDirectoryEntries: () => readPolicyDirectoryEntries,
   readPolicyFile: () => readPolicyFile,
+  readPowerShellHereStringHeader: () => readPowerShellHereStringHeader,
   removeEmptyPolicyDirectory: () => removeEmptyPolicyDirectory,
   removePolicyDirectory: () => removePolicyDirectory,
   removePolicyFile: () => removePolicyFile,
@@ -1944,8 +1945,17 @@ function isDynamicExecutable(dialect, words) {
     return words[0]?.provenance === "command-substitution";
   }
   const executableIndex = words[0]?.text === "&" || words[0]?.text === "." ? 1 : 0;
-  const provenance = words[executableIndex]?.provenance;
-  return provenance !== undefined && provenance !== "literal";
+  const executable = words[executableIndex];
+  return executable !== undefined && (executable.provenance !== "literal" || executableIndex === 0 && isPowerShellHereString(executable));
+}
+var POWERSHELL_HERE_STRING_HEADER = /^@(['"])[ \t]*(?:\r\n|[\r\n])/;
+function readPowerShellHereStringHeader(source, index) {
+  const header = POWERSHELL_HERE_STRING_HEADER.exec(source.slice(index));
+  const quote = header?.[1];
+  return header && quote ? { quote, bodyStart: index + header[0].length } : null;
+}
+function isPowerShellHereString(word) {
+  return readPowerShellHereStringHeader(word.raw, 0) !== null;
 }
 var ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
 function isBareCallPrefix(word, text) {
@@ -3759,24 +3769,28 @@ function readPowerShellWord(source, start, end, limits, depth) {
       i = consumeSubexpression(i);
       continue;
     }
-    if (char === "'") {
+    const opening = readQuoteOpening(source, i, i === start);
+    if (opening?.quote === "'") {
       quoted = true;
-      i++;
+      i = opening.bodyStart;
       let closed = false;
       while (i < source.length) {
-        if (source[i] === "'" && source[i + 1] === "'") {
+        if (!opening.hereString && source[i] === "'" && source[i + 1] === "'") {
           text += "'";
           i += 2;
           continue;
         }
-        if (source[i] === "'") {
+        const closing = quoteClosingLength(source, i, opening);
+        if (closing > 0) {
           closed = true;
-          i++;
+          i += closing;
           break;
         }
         text += source[i] ?? "";
         i++;
       }
+      if (opening.hereString)
+        text = text.replace(/(?:\r\n|[\r\n])$/, "");
       if (!closed) {
         issues.push({
           code: "unclosed-single-quote",
@@ -3785,9 +3799,9 @@ function readPowerShellWord(source, start, end, limits, depth) {
       }
       continue;
     }
-    if (char === '"') {
+    if (opening?.quote === '"') {
       quoted = true;
-      i++;
+      i = opening.bodyStart;
       let closed = false;
       while (i < end) {
         const inner = source[i];
@@ -3796,9 +3810,10 @@ function readPowerShellWord(source, start, end, limits, depth) {
           i += 2;
           continue;
         }
-        if (inner === '"') {
+        const closing = quoteClosingLength(source, i, opening);
+        if (closing > 0) {
           closed = true;
-          i++;
+          i += closing;
           break;
         }
         if (source.startsWith("$(", i)) {
@@ -3811,6 +3826,8 @@ function readPowerShellWord(source, start, end, limits, depth) {
         text += inner ?? "";
         i++;
       }
+      if (opening.hereString)
+        text = text.replace(/(?:\r\n|[\r\n])$/, "");
       if (!closed) {
         issues.push({
           code: "unclosed-double-quote",
@@ -3835,6 +3852,20 @@ function readPowerShellWord(source, start, end, limits, depth) {
     words: nestedWords,
     limited
   };
+}
+function readQuoteOpening(source, index, wordStart) {
+  const char = source[index];
+  if (char === "'" || char === '"')
+    return { quote: char, bodyStart: index + 1, hereString: false };
+  const header = wordStart ? readPowerShellHereStringHeader(source, index) : null;
+  return header ? { ...header, hereString: true } : undefined;
+}
+function quoteClosingLength(source, index, opening) {
+  if (!opening.hereString)
+    return source[index] === opening.quote ? 1 : 0;
+  const atLineStart = index === opening.bodyStart || source[index - 1] === `
+` || source[index - 1] === "\r";
+  return atLineStart && source.startsWith(`${opening.quote}@`, index) ? 2 : 0;
 }
 function readPowerShellSubexpression(source, start, end, limits, depth) {
   const close = findPowerShellSubexpressionEnd(source, start + 2, end);
@@ -3928,16 +3959,17 @@ function countProgramWords(program) {
 }
 function derivePowerShellWordParts(source, start, end) {
   const collector = createCommandWordParts(source);
+  const hereString = readPowerShellHereStringHeader(source, start);
   let literalStart = start;
   let single = false;
-  let i = start;
+  let i = hereString?.bodyStart ?? start;
   while (i < end) {
     const char = source[i];
     if (char === "`") {
       i += 2;
       continue;
     }
-    if (char === "'") {
+    if (char === "'" && !hereString) {
       if (single && source[i + 1] === "'") {
         i += 2;
         continue;

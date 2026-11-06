@@ -149,7 +149,8 @@ var READ_EVENTS = new WeakMap;
 function readGuardSyntax(source, program) {
   const suppressed = program.status === "complete" ? new Set(collectDataSinkHeredocSpans(program)) : new Set;
   const masked = maskSpans(source, suppressed);
-  if (import_tokens.hasUnclosedQuotes(masked))
+  const unclosedQuote = program.dialect === "powershell" ? program.issues.some((issue) => issue.code.includes("quote")) : import_tokens.hasUnclosedQuotes(masked);
+  if (unclosedQuote)
     return freezeSyntax("unclosed-quote", masked, program);
   const flags = {
     invalid: false,
@@ -465,8 +466,11 @@ function readText(text, context) {
   return events;
 }
 function readWord(word, view, context, keepGlobText) {
+  const hereString = context.powershell ? import_model.readPowerShellHereStringHeader(word.raw, 0) : null;
+  if (hereString && word.provenance === "literal")
+    return [wordEvent(word.text)];
   const events = [];
-  const state = { single: false, double: false };
+  const state = { single: false, double: hereString !== null };
   let pending = "";
   let glob = false;
   const flush = () => {
@@ -476,7 +480,7 @@ function readWord(word, view, context, keepGlobText) {
     pending = "";
     glob = false;
   };
-  for (const part of word.parts) {
+  for (const part of hereString ? expandableHereStringBodyParts(word, hereString.bodyStart) : word.parts) {
     if (part.provenance !== "command-substitution" && part.provenance !== "arithmetic") {
       for (const run of scanWordText(part.raw, state, context.flags, context.powershell)) {
         if (typeof run === "string") {
@@ -523,6 +527,15 @@ function readWord(word, view, context, keepGlobText) {
   }
   flush();
   return events;
+}
+function expandableHereStringBodyParts(word, bodyStart) {
+  const bodyEnd = word.raw.length - (/(?:\r\n|[\r\n])"@$/.exec(word.raw)?.[0].length ?? 0);
+  return word.parts.flatMap((part) => {
+    if (part.provenance === "command-substitution")
+      return [part];
+    const raw = word.raw.slice(Math.max(part.span.start - word.span.start, bodyStart), Math.min(part.span.end - word.span.start, bodyEnd));
+    return raw === "" ? [] : [{ ...part, raw: raw.replace(/["']/g, "`$&") }];
+  });
 }
 function scanWordText(raw, state, flags, powershell) {
   const runs = [];

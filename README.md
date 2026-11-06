@@ -1,8 +1,8 @@
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/cc-safety-net-header-logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/cc-safety-net-header-logo-light.svg">
-    <img alt="CC Safety Net" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/cc-safety-net-header-logo-light.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/cc-safety-net-header-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/cc-safety-net-header-logo-light.svg">
+    <img alt="CC Safety Net" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/cc-safety-net-header-logo-light.svg">
   </picture>
 </h1>
 
@@ -27,13 +27,21 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
 > [!NOTE]
 > **[Full documentation →](https://ccsafetynet.com/docs)** covers installation, configuration, reference material, guides, and the security model. This README is the short version.
 
+## Sponsors
+
+<p align="center">
+  <a href="https://ccsafetynet.com/go/crazyrouter?from=readme"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/crazyrouter-logo-dark.png"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/crazyrouter-logo-light.png"><img alt="Crazyrouter" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/crazyrouter-logo-light.png" height="32"></picture></a>
+  <br>
+  <sub><a href="https://ccsafetynet.com/go/crazyrouter?from=readme">One API for 300+ AI models, OpenAI&#8209;compatible.</a></sub>
+</p>
+
 ## How it works
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/how-it-works-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/how-it-works-light.svg">
-    <img alt="An AI coding agent tries to run a command or open a file. CC Safety Net checks what it would actually do before it runs. Safe calls such as git status run normally; dangerous ones such as git reset --hard never run, and the agent is told why." src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/how-it-works-light.svg" width="720">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/how-it-works-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/how-it-works-light.svg">
+    <img alt="An AI coding agent tries to run a command or open a file. CC Safety Net checks what it would actually do before it runs. Safe calls such as git status run normally; dangerous ones such as git reset --hard never run, and the agent is told why." src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/how-it-works-light.svg" width="720">
   </picture>
 </p>
 
@@ -43,28 +51,28 @@ CC Safety Net supports these coding agent CLIs on Windows, macOS, and Linux.
 
 <table align="center">
   <tr>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/amp-code"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/amp-dark.svg"><img alt="Amp Code" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/amp-light.svg" height="32"></picture><br>Amp Code</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/antigravity-cli"><img alt="Antigravity CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/antigravity-cli.png" height="32"><br>Antigravity CLI</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/claude-code"><img alt="Claude Code" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/claude-code.svg" height="32"><br>Claude Code</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/codex"><img alt="Codex" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/codex.svg" height="32"><br>Codex</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/amp-code"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/amp-dark.svg"><img alt="Amp Code" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/amp-light.svg" height="32"></picture><br>Amp Code</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/antigravity-cli"><img alt="Antigravity CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/antigravity-cli.png" height="32"><br>Antigravity CLI</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/claude-code"><img alt="Claude Code" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/claude-code.svg" height="32"><br>Claude Code</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/codex"><img alt="Codex" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/codex.svg" height="32"><br>Codex</a></td>
   </tr>
   <tr>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/cursor"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/cursor-dark.svg"><img alt="Cursor" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/cursor-light.svg" height="32"></picture><br>Cursor</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/deepseek-harness"><img alt="DeepSeek Harness" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/deepseek.svg" height="32"><br>DeepSeek Harness</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/devin-cli"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/devin-dark.svg"><img alt="Devin CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/devin-light.svg" height="32"></picture><br>Devin CLI</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/factory-droid"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/droid-dark.svg"><img alt="Factory Droid" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/droid-light.svg" height="32"></picture><br>Factory Droid</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/cursor"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/cursor-dark.svg"><img alt="Cursor" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/cursor-light.svg" height="32"></picture><br>Cursor</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/deepseek-harness"><img alt="DeepSeek Harness" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/deepseek.svg" height="32"><br>DeepSeek Harness</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/devin-cli"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/devin-dark.svg"><img alt="Devin CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/devin-light.svg" height="32"></picture><br>Devin CLI</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/factory-droid"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/droid-dark.svg"><img alt="Factory Droid" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/droid-light.svg" height="32"></picture><br>Factory Droid</a></td>
   </tr>
   <tr>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/gemini-cli"><img alt="Gemini CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/gemini-cli.svg" height="32"><br>Gemini CLI</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/github-copilot-cli"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/copilot-cli-dark.svg"><img alt="GitHub Copilot CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/copilot-cli-light.svg" height="32"></picture><br>GitHub Copilot CLI</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/grok-build"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/grok-build-dark.svg"><img alt="Grok Build" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/grok-build-light.svg" height="32"></picture><br>Grok Build</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/hermes-agent"><img alt="Hermes Agent" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/hermes.png" height="32"><br>Hermes Agent</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/gemini-cli"><img alt="Gemini CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/gemini-cli.svg" height="32"><br>Gemini CLI</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/github-copilot-cli"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/copilot-cli-dark.svg"><img alt="GitHub Copilot CLI" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/copilot-cli-light.svg" height="32"></picture><br>GitHub Copilot CLI</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/grok-build"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/grok-build-dark.svg"><img alt="Grok Build" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/grok-build-light.svg" height="32"></picture><br>Grok Build</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/hermes-agent"><img alt="Hermes Agent" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/hermes.png" height="32"><br>Hermes Agent</a></td>
   </tr>
   <tr>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/kimi-code"><img alt="Kimi Code" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/kimi-cli.png" height="32"><br>Kimi Code</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/openclaw"><img alt="OpenClaw" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/openclaw.png" height="32"><br>OpenClaw</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/opencode"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/opencode-dark.svg"><img alt="OpenCode" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/opencode-light.svg" height="32"></picture><br>OpenCode</a></td>
-    <td align="center"><a href="https://ccsafetynet.com/docs/installation/pi"><img alt="Pi" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.3/.github/assets/pi.svg" height="32"><br>Pi</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/kimi-code"><img alt="Kimi Code" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/kimi-cli.png" height="32"><br>Kimi Code</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/openclaw"><img alt="OpenClaw" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/openclaw.png" height="32"><br>OpenClaw</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/opencode"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/opencode-dark.svg"><img alt="OpenCode" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/opencode-light.svg" height="32"></picture><br>OpenCode</a></td>
+    <td align="center"><a href="https://ccsafetynet.com/docs/installation/pi"><img alt="Pi" src="https://raw.githubusercontent.com/kenryu42/cc-safety-net/v2.7.4/.github/assets/pi.svg" height="32"><br>Pi</a></td>
   </tr>
 </table>
 
@@ -91,7 +99,7 @@ Update with `npx -y cc-safety-net@latest update` and uninstall with `npx -y cc-s
 
 ## Development
 
-See [CONTRIBUTING.md](https://github.com/kenryu42/cc-safety-net/blob/v2.7.3/CONTRIBUTING.md) to report a bug or request a feature.
+See [CONTRIBUTING.md](https://github.com/kenryu42/cc-safety-net/blob/v2.7.4/CONTRIBUTING.md) to report a bug or request a feature.
 
 ## License
 
