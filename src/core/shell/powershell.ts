@@ -12,6 +12,7 @@ import {
   createCommandWordParts,
   createCommandWord,
   createParsedCommandWord,
+  readPowerShellHereStringHeader,
   type WordProvenance,
 } from './model';
 
@@ -374,24 +375,27 @@ function readPowerShellWord(
       i = consumeSubexpression(i);
       continue;
     }
-    if (char === "'") {
+    const opening = readQuoteOpening(source, i, i === start);
+    if (opening?.quote === "'") {
       quoted = true;
-      i++;
+      i = opening.bodyStart;
       let closed = false;
       while (i < source.length) {
-        if (source[i] === "'" && source[i + 1] === "'") {
+        if (!opening.hereString && source[i] === "'" && source[i + 1] === "'") {
           text += "'";
           i += 2;
           continue;
         }
-        if (source[i] === "'") {
+        const closing = quoteClosingLength(source, i, opening);
+        if (closing > 0) {
           closed = true;
-          i++;
+          i += closing;
           break;
         }
         text += source[i] ?? '';
         i++;
       }
+      if (opening.hereString) text = text.replace(/\r?\n$/, '');
       if (!closed) {
         issues.push({
           code: 'unclosed-single-quote',
@@ -400,9 +404,9 @@ function readPowerShellWord(
       }
       continue;
     }
-    if (char === '"') {
+    if (opening?.quote === '"') {
       quoted = true;
-      i++;
+      i = opening.bodyStart;
       let closed = false;
       while (i < end) {
         const inner = source[i];
@@ -411,9 +415,10 @@ function readPowerShellWord(
           i += 2;
           continue;
         }
-        if (inner === '"') {
+        const closing = quoteClosingLength(source, i, opening);
+        if (closing > 0) {
           closed = true;
-          i++;
+          i += closing;
           break;
         }
         if (source.startsWith('$(', i)) {
@@ -426,6 +431,7 @@ function readPowerShellWord(
         text += inner ?? '';
         i++;
       }
+      if (opening.hereString) text = text.replace(/\r?\n$/, '');
       if (!closed) {
         issues.push({
           code: 'unclosed-double-quote',
@@ -457,6 +463,23 @@ function readPowerShellWord(
     words: nestedWords,
     limited,
   };
+}
+
+function readQuoteOpening(source: string, index: number, wordStart: boolean) {
+  const char = source[index];
+  if (char === "'" || char === '"') return { quote: char, bodyStart: index + 1, hereString: false };
+  const header = wordStart ? readPowerShellHereStringHeader(source, index) : null;
+  return header ? { ...header, hereString: true } : undefined;
+}
+
+function quoteClosingLength(
+  source: string,
+  index: number,
+  opening: NonNullable<ReturnType<typeof readQuoteOpening>>,
+): number {
+  if (!opening.hereString) return source[index] === opening.quote ? 1 : 0;
+  const atLineStart = index === opening.bodyStart || source[index - 1] === '\n';
+  return atLineStart && source.startsWith(`${opening.quote}@`, index) ? 2 : 0;
 }
 
 function readPowerShellSubexpression(

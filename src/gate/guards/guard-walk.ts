@@ -8,6 +8,7 @@ import {
   type CommandView,
   type CommandWord,
   getCalledCommandName,
+  isPowerShellHereString,
 } from '@/core/shell/model';
 import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse';
 import { scanParameterExpansion } from '@/core/shell/posix';
@@ -142,7 +143,11 @@ export function readGuardSyntax(source: string, program: CommandProgram): GuardS
       ? new Set(collectDataSinkHeredocSpans(program))
       : new Set<CommandSpan>();
   const masked = maskSpans(source, suppressed);
-  if (hasUnclosedQuotes(masked)) return freezeSyntax('unclosed-quote', masked, program);
+  const unclosedQuote =
+    program.dialect === 'powershell'
+      ? program.issues.some((issue) => issue.code.includes('quote'))
+      : hasUnclosedQuotes(masked);
+  if (unclosedQuote) return freezeSyntax('unclosed-quote', masked, program);
   const flags: ReadFlags = {
     invalid: false,
     limited: false,
@@ -573,6 +578,7 @@ function readWord(
   context: ReadContext,
   keepGlobText: boolean,
 ): GuardEvent[] {
+  if (context.powershell && isPowerShellHereString(word)) return [wordEvent(word.text)];
   const events: GuardEvent[] = [];
   const state: QuoteState = { single: false, double: false };
   let pending = '';

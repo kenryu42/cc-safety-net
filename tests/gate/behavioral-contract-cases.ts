@@ -2779,6 +2779,24 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'blocks a PowerShell removal that follows a here-string holding an apostrophe',
+      command: "@'\ndon't\n'@; Remove-Item -Recurse -Force C:\\",
+      options: options({ cwd: paths.cwd, shell: 'powershell' }),
+      expected: nestedRemoveItemRootBlock,
+    },
+    {
+      name: 'blocks a PowerShell removal that a here-string feeds to Invoke-Expression',
+      command: "Invoke-Expression @'\nRemove-Item -Recurse -Force C:\\\n'@",
+      options: options({ cwd: paths.cwd, shell: 'powershell' }),
+      expected: nestedRemoveItemRootBlock,
+    },
+    {
+      name: 'allows a PowerShell here-string whose text mentions a destructive command',
+      command: "@'\nclean:\n\trm -rf bin obj\n'@ | Set-Content Makefile",
+      options: options({ cwd: paths.cwd, shell: 'powershell' }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks PowerShell removal outside the workspace',
       command: 'Remove-Item ../outside -Recurse -Force',
       options: options({ cwd: paths.cwd, shell: 'powershell' }),
