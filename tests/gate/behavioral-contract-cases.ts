@@ -2797,6 +2797,18 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'blocks a PowerShell removal after a here-string closed by a lone carriage return',
+      command: "Write-Output @'\nbody\r'@\rRemove-Item -Recurse -Force C:\\\r<#\n'@ # comment #>\n",
+      options: options({ cwd: paths.cwd, shell: 'powershell' }),
+      expected: nestedRemoveItemRootBlock,
+    },
+    {
+      name: 'allows invoking a command named by a literal PowerShell here-string at strict safety',
+      command: "& @'\nGet-Date\n'@",
+      options: options({ cwd: paths.cwd, shell: 'powershell', strict: true }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks PowerShell removal outside the workspace',
       command: 'Remove-Item ../outside -Recurse -Force',
       options: options({ cwd: paths.cwd, shell: 'powershell' }),

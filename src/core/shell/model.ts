@@ -78,11 +78,12 @@ export function isDynamicExecutable(
   const executable = words[executableIndex];
   return (
     executable !== undefined &&
-    (executable.provenance !== 'literal' || isPowerShellHereString(executable))
+    (executable.provenance !== 'literal' ||
+      (executableIndex === 0 && isPowerShellHereString(executable)))
   );
 }
 
-const POWERSHELL_HERE_STRING_HEADER = /^@(['"])[ \t]*\r?\n/;
+const POWERSHELL_HERE_STRING_HEADER = /^@(['"])[ \t]*(?:\r\n|[\r\n])/;
 
 export function readPowerShellHereStringHeader(source: string, index: number) {
   const header = POWERSHELL_HERE_STRING_HEADER.exec(source.slice(index));
@@ -90,7 +91,7 @@ export function readPowerShellHereStringHeader(source: string, index: number) {
   return header && quote ? { quote, bodyStart: index + header[0].length } : null;
 }
 
-export function isPowerShellHereString(word: CommandWord): boolean {
+function isPowerShellHereString(word: CommandWord): boolean {
   return readPowerShellHereStringHeader(word.raw, 0) !== null;
 }
 

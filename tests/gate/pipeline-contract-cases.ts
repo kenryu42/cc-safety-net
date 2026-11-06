@@ -131,6 +131,12 @@ export function pipelineContractCases(paths: {
       expected: secretBlock('secret.ext-pattern.key'),
     },
     {
+      name: 'denies reading an SSH config named by an expandable PowerShell here-string',
+      ...powerShell('Get-Content @"\n$env:USERPROFILE\\.ssh\\config\n"@'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.home.ssh'),
+    },
+    {
       name: 'denies reading a key file after a PowerShell string ending in a backslash',
       ...powerShell('Get-Content "C:\\tmp\\" ; Get-Content id.key'),
       cwd: 'workspace',

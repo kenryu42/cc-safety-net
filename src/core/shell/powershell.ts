@@ -395,7 +395,7 @@ function readPowerShellWord(
         text += source[i] ?? '';
         i++;
       }
-      if (opening.hereString) text = text.replace(/\r?\n$/, '');
+      if (opening.hereString) text = text.replace(/(?:\r\n|[\r\n])$/, '');
       if (!closed) {
         issues.push({
           code: 'unclosed-single-quote',
@@ -431,7 +431,7 @@ function readPowerShellWord(
         text += inner ?? '';
         i++;
       }
-      if (opening.hereString) text = text.replace(/\r?\n$/, '');
+      if (opening.hereString) text = text.replace(/(?:\r\n|[\r\n])$/, '');
       if (!closed) {
         issues.push({
           code: 'unclosed-double-quote',
@@ -478,7 +478,8 @@ function quoteClosingLength(
   opening: NonNullable<ReturnType<typeof readQuoteOpening>>,
 ): number {
   if (!opening.hereString) return source[index] === opening.quote ? 1 : 0;
-  const atLineStart = index === opening.bodyStart || source[index - 1] === '\n';
+  const atLineStart =
+    index === opening.bodyStart || source[index - 1] === '\n' || source[index - 1] === '\r';
   return atLineStart && source.startsWith(`${opening.quote}@`, index) ? 2 : 0;
 }
 
@@ -585,17 +586,18 @@ function countProgramWords(program: CommandProgram): number {
 
 function derivePowerShellWordParts(source: string, start: number, end: number): CommandWordPart[] {
   const collector = createCommandWordParts(source);
+  const hereString = readPowerShellHereStringHeader(source, start);
   let literalStart = start;
   let single = false;
 
-  let i = start;
+  let i = hereString?.bodyStart ?? start;
   while (i < end) {
     const char = source[i];
     if (char === '`') {
       i += 2;
       continue;
     }
-    if (char === "'") {
+    if (char === "'" && !hereString) {
       if (single && source[i + 1] === "'") {
         i += 2;
         continue;
