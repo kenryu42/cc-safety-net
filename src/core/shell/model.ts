@@ -75,8 +75,24 @@ export function isDynamicExecutable(
     return words[0]?.provenance === 'command-substitution';
   }
   const executableIndex = words[0]?.text === '&' || words[0]?.text === '.' ? 1 : 0;
-  const provenance = words[executableIndex]?.provenance;
-  return provenance !== undefined && provenance !== 'literal';
+  const executable = words[executableIndex];
+  return (
+    executable !== undefined &&
+    (executable.provenance !== 'literal' ||
+      (executableIndex === 0 && isPowerShellHereString(executable)))
+  );
+}
+
+const POWERSHELL_HERE_STRING_HEADER = /^@(['"])[ \t]*(?:\r\n|[\r\n])/;
+
+export function readPowerShellHereStringHeader(source: string, index: number) {
+  const header = POWERSHELL_HERE_STRING_HEADER.exec(source.slice(index));
+  const quote = header?.[1];
+  return header && quote ? { quote, bodyStart: index + header[0].length } : null;
+}
+
+function isPowerShellHereString(word: CommandWord): boolean {
+  return readPowerShellHereStringHeader(word.raw, 0) !== null;
 }
 
 const ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;

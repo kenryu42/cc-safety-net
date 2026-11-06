@@ -7,7 +7,9 @@ import {
   type CommandSpan,
   type CommandView,
   type CommandWord,
+  type CommandWordPart,
   getCalledCommandName,
+  readPowerShellHereStringHeader,
 } from '@/core/shell/model';
 import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse';
 import { scanParameterExpansion } from '@/core/shell/posix';
@@ -142,7 +144,11 @@ export function readGuardSyntax(source: string, program: CommandProgram): GuardS
       ? new Set(collectDataSinkHeredocSpans(program))
       : new Set<CommandSpan>();
   const masked = maskSpans(source, suppressed);
-  if (hasUnclosedQuotes(masked)) return freezeSyntax('unclosed-quote', masked, program);
+  const unclosedQuote =
+    program.dialect === 'powershell'
+      ? program.issues.some((issue) => issue.code.includes('quote'))
+      : hasUnclosedQuotes(masked);
+  if (unclosedQuote) return freezeSyntax('unclosed-quote', masked, program);
   const flags: ReadFlags = {
     invalid: false,
     limited: false,
@@ -573,8 +579,10 @@ function readWord(
   context: ReadContext,
   keepGlobText: boolean,
 ): GuardEvent[] {
+  const hereString = context.powershell ? readPowerShellHereStringHeader(word.raw, 0) : null;
+  if (hereString && word.provenance === 'literal') return [wordEvent(word.text)];
   const events: GuardEvent[] = [];
-  const state: QuoteState = { single: false, double: false };
+  const state: QuoteState = { single: false, double: hereString !== null };
   let pending = '';
   let glob = false;
   const flush = () => {
@@ -589,7 +597,9 @@ function readWord(
     glob = false;
   };
 
-  for (const part of word.parts) {
+  for (const part of hereString
+    ? expandableHereStringBodyParts(word, hereString.bodyStart)
+    : word.parts) {
     if (part.provenance !== 'command-substitution' && part.provenance !== 'arithmetic') {
       for (const run of scanWordText(part.raw, state, context.flags, context.powershell)) {
         if (typeof run === 'string') {
@@ -667,6 +677,18 @@ function readWord(
   }
   flush();
   return events;
+}
+
+function expandableHereStringBodyParts(word: CommandWord, bodyStart: number): CommandWordPart[] {
+  const bodyEnd = word.raw.length - (/(?:\r\n|[\r\n])"@$/.exec(word.raw)?.[0].length ?? 0);
+  return word.parts.flatMap((part) => {
+    if (part.provenance === 'command-substitution') return [part];
+    const raw = word.raw.slice(
+      Math.max(part.span.start - word.span.start, bodyStart),
+      Math.min(part.span.end - word.span.start, bodyEnd),
+    );
+    return raw === '' ? [] : [{ ...part, raw: raw.replace(/["']/g, '`$&') }];
+  });
 }
 
 function scanWordText(
