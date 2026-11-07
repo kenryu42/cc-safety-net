@@ -24,7 +24,7 @@ import {
 import { analysisWordText, textCommandWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
 import { substitutionAddsExecutableSource } from './dynamic-input';
-import { getFindPrimaryArity, isFindExecPrimary } from './find';
+import { parseFindArguments } from './find';
 import { extractGitSubcommandAndRest } from './git/parse';
 import { GIT_RULE_SUBCOMMANDS } from './git/rules';
 import { extractInterpreterExecutableSources } from './interpreters';
@@ -640,66 +640,31 @@ function analyzeDynamicParallelFind(
   tokens: readonly string[],
   context: ParallelAnalyzeContext,
 ): DynamicParallelFindAnalysis {
+  const parsed = parseFindArguments(tokens);
   const analysis: DynamicParallelFindAnalysis = {
     customResult: null,
-    executedSource: !tokens.some(hasParallelPlaceholder),
+    executedSource:
+      !tokens.some(hasParallelPlaceholder) ||
+      [...parsed.startingPoints, ...parsed.expression.map((part) => part.index)].some((index) =>
+        hasParallelPlaceholder(tokens[index] ?? ''),
+      ),
     rmOptions: false,
   };
-  let inExpression = false;
-  let expressionDataArgs = 0;
-  let execTokens: string[] | null = null;
-  const analyzeExec = () => {
-    if (!execTokens?.some(hasParallelPlaceholder)) return;
-    for (const childCommand of normalizeChildCommands(execTokens, context)) {
-      analysis.executedSource ||= parallelInputCanChangeExecutedSource(
-        childCommand.tokens,
-        childCommand.head,
-      );
-      analysis.rmOptions ||=
-        (childCommand.head === 'rm' && parallelInputCanChangeRmOptions(childCommand.tokens)) ||
-        (childCommand.head === 'xargs' && nestedRmInputCanChangeOptions(childCommand.tokens));
-      analysis.customResult ??= matchParallelStdinPolicyRule(childCommand.tokens, true, context);
-    }
-  };
-
-  for (const token of tokens.slice(1)) {
-    if (!inExpression && !token.startsWith('-') && token !== '!' && token !== '(') {
-      analysis.executedSource ||= hasParallelPlaceholder(token);
-      continue;
-    }
-    inExpression = true;
-
-    if (execTokens) {
-      if (token === ';' || token === '+') {
-        analyzeExec();
-        execTokens = null;
-        continue;
-      }
-      execTokens.push(token);
-      continue;
-    }
-
-    if (expressionDataArgs > 0) {
-      expressionDataArgs--;
-      continue;
-    }
-
-    if (isFindExecPrimary(token)) {
-      execTokens = [];
-      analysis.executedSource ||= hasParallelPlaceholder(token);
-      continue;
-    }
-
-    const arity = getFindPrimaryArity(token);
-    if (arity > 0) {
-      expressionDataArgs = arity;
-      analysis.executedSource ||= hasParallelPlaceholder(token);
-      continue;
-    }
-
-    analysis.executedSource ||= hasParallelPlaceholder(token);
+  const execCommands = parsed.expression.flatMap((part) =>
+    part.kind === 'exec' && part.command.some(hasParallelPlaceholder) ? [part.command] : [],
+  );
+  for (const childCommand of execCommands.flatMap((command) => [
+    ...normalizeChildCommands(command, context),
+  ])) {
+    analysis.executedSource ||= parallelInputCanChangeExecutedSource(
+      childCommand.tokens,
+      childCommand.head,
+    );
+    analysis.rmOptions ||=
+      (childCommand.head === 'rm' && parallelInputCanChangeRmOptions(childCommand.tokens)) ||
+      (childCommand.head === 'xargs' && nestedRmInputCanChangeOptions(childCommand.tokens));
+    analysis.customResult ??= matchParallelStdinPolicyRule(childCommand.tokens, true, context);
   }
-  analyzeExec();
   return analysis;
 }
 

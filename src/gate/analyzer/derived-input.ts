@@ -14,7 +14,7 @@ import {
   isLiteralExecutionSourceWord,
   textCommandWords,
 } from './command-words';
-import { getFindPrimaryArity, isFindExecPrimary } from './find';
+import { parseFindArguments } from './find';
 import { analyzeGitMatch } from './git';
 import { GIT_RULE_SUBCOMMANDS } from './git/rules';
 import { extractParallelChildStart, REASON_PARALLEL_RM, REASON_PARALLEL_SHELL } from './parallel';
@@ -230,51 +230,30 @@ function findGitSubcommandIndex(words: readonly CommandWord[]): number {
 }
 
 function hasDynamicFindStructure(words: readonly CommandWord[]): boolean {
-  let expressionStarted = false;
-  let valuesRemaining = 0;
-  let childStart = false;
-  let inChild = false;
-
-  for (let i = 1; i < words.length; i++) {
-    const word = words[i];
-    if (!word) continue;
-    const dynamic = hasCommandSubstitutionPart(word);
-
-    if (valuesRemaining > 0) {
-      valuesRemaining--;
-      continue;
-    }
-
-    if (inChild) {
-      if (word.text === ';' || word.text === '+') {
-        inChild = false;
-        expressionStarted = true;
-        childStart = false;
-        continue;
-      }
-      if (dynamic && (childStart || hasOptionLiteralPart(word))) return true;
-      childStart = false;
-      continue;
-    }
-
-    if (!expressionStarted && !word.text.startsWith('-')) {
-      if (dynamic && (i > 1 || hasOptionLiteralPart(word))) return true;
-      continue;
-    }
-
-    expressionStarted = true;
-    if (dynamic) return true;
-    const arity = getFindPrimaryArity(word.text);
-    if (arity > 0) {
-      valuesRemaining = arity;
-      continue;
-    }
-    if (isFindExecPrimary(word.text)) {
-      inChild = true;
-      childStart = true;
-    }
-  }
-  return false;
+  const parsed = parseFindArguments(words.map((word) => word.text));
+  const dynamicAt = (index: number) => {
+    const word = words[index];
+    return word !== undefined && hasCommandSubstitutionPart(word);
+  };
+  const optionLiteralAt = (index: number) => {
+    const word = words[index];
+    return word !== undefined && hasOptionLiteralPart(word);
+  };
+  return (
+    parsed.startingPoints.some(
+      (index) => dynamicAt(index) && (index > 1 || optionLiteralAt(index)),
+    ) ||
+    parsed.expression.some((part) => {
+      if (dynamicAt(part.index)) return true;
+      if (part.kind === 'primary') return false;
+      const commandStart = part.index + 1;
+      return part.command.some(
+        (_, offset) =>
+          dynamicAt(commandStart + offset) &&
+          (offset === 0 || optionLiteralAt(commandStart + offset)),
+      );
+    })
+  );
 }
 
 export function hasDynamicExecutableSource(

@@ -169,7 +169,7 @@ function findPolicyConfigMutationTargetInSegment(
   }
 
   if (command === 'find') {
-    const deletesDirectly = findHasDelete(stripped, 1);
+    const deletesDirectly = findHasDelete(stripped);
     if (deletesDirectly || findExecRmDeletesFoundPaths(stripped, environment)) {
       const target = (
         getFindStartingPoints(textCommandWords(stripped)) ?? textCommandWords(['.'])

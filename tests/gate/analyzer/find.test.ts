@@ -205,35 +205,27 @@ describe('find primaries', () => {
   });
 
   test('-delete is found only as an action, never as an option value or inside -exec', () => {
-    expect(findHasDelete(['find', '.', '-delete'], 1)).toBeTrue();
-    expect(findHasDelete(['find', '-name', '-delete'], 1)).toBeFalse();
-    expect(findHasDelete(['find', '-exec', 'rm', '-delete', ';'], 1)).toBeFalse();
+    expect(findHasDelete(['find', '.', '-delete'])).toBeTrue();
+    expect(findHasDelete(['find', '-name', '-delete'])).toBeFalse();
+    expect(findHasDelete(['find', '-exec', 'rm', '-delete', ';'])).toBeFalse();
     expect(getFindPrimaryArity('-newerat')).toBe(1);
     expect(getFindPrimaryArity('-fprintf')).toBe(2);
     expect(getFindPrimaryArity('-print')).toBe(0);
   });
 
   test('a scan for -delete skips the operands each primary owns', () => {
-    const rows: readonly {
-      readonly tokens: readonly string[];
-      readonly start: number;
-      readonly deletes: boolean;
-    }[] = [
-      {
-        tokens: ['find', '.', '-type', 'f', '-exec', 'rm', '{}', '+', '-delete'],
-        start: 1,
-        deletes: true,
-      },
-      { tokens: ['find', '.', '-fprintf', 'out', 'fmt', '-delete'], start: 1, deletes: true },
-      { tokens: ['find', '.', '-newermt', 'yesterday', '-delete'], start: 1, deletes: true },
-      { tokens: ['-delete'], start: 0, deletes: true },
-      { tokens: [], start: 0, deletes: false },
-      { tokens: ['find', '.', '-delete'], start: 3, deletes: false },
-      { tokens: ['find', '.', '-gid', '-delete', '-print'], start: 1, deletes: false },
-      { tokens: ['find', '.', '-exec', 'echo', '-delete', '+'], start: 1, deletes: false },
+    const rows: readonly { readonly tokens: readonly string[]; readonly deletes: boolean }[] = [
+      { tokens: ['find', '.', '-type', 'f', '-exec', 'rm', '{}', '+', '-delete'], deletes: true },
+      { tokens: ['find', '.', '-fprintf', 'out', 'fmt', '-delete'], deletes: true },
+      { tokens: ['find', '.', '-newermt', 'yesterday', '-delete'], deletes: true },
+      { tokens: ['find', '-delete'], deletes: true },
+      { tokens: [], deletes: false },
+      { tokens: ['find', '.'], deletes: false },
+      { tokens: ['find', '.', '-gid', '-delete', '-print'], deletes: false },
+      { tokens: ['find', '.', '-exec', 'echo', '-delete', '+'], deletes: false },
     ];
     for (const row of rows) {
-      expect(findHasDelete(row.tokens, row.start), row.tokens.join(' ')).toBe(row.deletes);
+      expect(findHasDelete(row.tokens), row.tokens.join(' ')).toBe(row.deletes);
     }
   });
 
@@ -243,6 +235,7 @@ describe('find primaries', () => {
       { source: 'find logs -delete', points: ['logs'] },
       { source: 'find . -name "*.log"', points: ['.'] },
       { source: 'find /tmp/a /tmp/b -delete', points: ['/tmp/a', '/tmp/b'] },
+      { source: 'find "" / -delete', points: ['', '/'] },
       { source: 'find -delete', points: null },
       { source: 'find', points: null },
       { source: 'find ! -name x -delete', points: null },

@@ -1541,6 +1541,35 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'blocks find exec rm of root listed after an empty starting point',
+      command: 'find "" / -exec rm {} \\;',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'guard.policy-config',
+        intent: 'hard_stop',
+        reasonIncludes: 'contains the protected policy config',
+      },
+    },
+    {
+      name: 'allows a find exec plus that does not follow {} as an argument before a substitution at strict safety',
+      command: 'find . -exec echo + $(x) \\;',
+      options: options({ cwd: paths.cwd, strict: true }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows parallel find input in an exec whose plus does not follow {}',
+      command: 'printf x | parallel find . -exec echo + -rf {} \\;',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'allows xargs input embedded in a find starting point after -H',
+      command: 'printf x | xargs -I{} find -H a{} -name x',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows xargs with a non-destructive child',
       command: 'printf x | xargs echo',
       options: options({ cwd: paths.cwd }),

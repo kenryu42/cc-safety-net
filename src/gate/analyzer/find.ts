@@ -96,7 +96,7 @@ export function analyzeFindMatch(
   const catastrophicMatch = findCatastrophicDeleteMatch(words, tokens, context);
   if (catastrophicMatch) return catastrophicMatch;
 
-  if (findHasDelete(tokens, 1) && !hasOnlyScopedFindStartingPoints(words, tokens, context)) {
+  if (findHasDelete(tokens) && !hasOnlyScopedFindStartingPoints(words, tokens, context)) {
     const match = filterDestructiveCommandMatch(
       destructiveCommandMatch('find.delete', REASON_FIND_DELETE),
       context.policy,
@@ -106,31 +106,18 @@ export function analyzeFindMatch(
 
   const budget = context.budget ?? createBudget();
 
-  let i = 0;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    const arity = getFindPrimaryArity(token ?? '');
-    if (arity > 0) {
-      i += arity + 1;
-      continue;
-    }
-    if (!isFindExecPrimary(token)) {
-      i++;
-      continue;
-    }
-
-    budget.charge('derivedTokens', tokens.length - i - 1);
-    const execCommand = getFindExecCommand(tokens, i);
-    i = execCommand.nextIndex;
-    const directMatch = analyzeFindExecCommand(execCommand.tokens, context.environment);
+  for (const part of parseFindArguments(tokens).expression) {
+    if (part.kind !== 'exec') continue;
+    budget.charge('derivedTokens', tokens.length - part.index - 1);
+    const directMatch = analyzeFindExecCommand(part.command, context.environment);
     if (directMatch) {
       const match = filterDestructiveCommandMatch(directMatch, context.policy);
       if (match) return match;
     }
 
-    const directoryRelative = token === '-execdir' || token === '-okdir';
+    const directoryRelative = tokens[part.index] === '-execdir' || tokens[part.index] === '-okdir';
     const nestedMatch =
-      context.analyzeTokens?.(execCommand.tokens, directoryRelative ? null : context.cwd) ?? null;
+      context.analyzeTokens?.(part.command, directoryRelative ? null : context.cwd) ?? null;
     const match = nestedMatch?.id.startsWith('custom.')
       ? nestedMatch
       : filterDestructiveCommandMatch(nestedMatch, context.policy);
@@ -145,7 +132,7 @@ function findCatastrophicDeleteMatch(
   tokens: readonly string[],
   context: AnalyzeFindContext,
 ): DestructiveCommandRuleMatch | null {
-  const deletesDirectly = findHasDelete(tokens, 1);
+  const deletesDirectly = findHasDelete(tokens);
   if (!deletesDirectly && !findExecRmDeletesFoundPaths(tokens, context.environment)) return null;
 
   const targets = getFindStartingPoints(words) ?? textCommandWords(['.']);
@@ -205,18 +192,15 @@ function nameFilterExcludesGitMetadata(
   const tokens = words.map(analysisWordText);
   const patterns: RegExp[] = [];
   let actionSeen = false;
-  const lastStartingPoint = getFindStartingPoints(words)?.at(-1);
-  let index = lastStartingPoint ? words.indexOf(lastStartingPoint) + 1 : 1;
-  while (index < tokens.length) {
-    const token = tokens[index] ?? '';
-    if (isFindExecPrimary(token)) {
-      const command = getFindExecCommand(tokens, index);
-      const stripped = stripWrappersForPathScan([...command.tokens], environment);
+  for (const part of parseFindArguments(tokens).expression) {
+    const token = tokens[part.index] ?? '';
+    if (part.kind === 'exec') {
+      const stripped = stripWrappersForPathScan([...part.command], environment);
       const recursesIntoMatchedDirectories = hasRecursiveOption(stripped);
       const execRunsUnanalyzedShell = SHELL_WRAPPERS.has(
         getBasename(stripped[0] ?? '').toLowerCase(),
       );
-      const derivesPathFromMatch = command.tokens.some((arg) => arg !== '{}' && arg.includes('{}'));
+      const derivesPathFromMatch = part.command.some((arg) => arg !== '{}' && arg.includes('{}'));
       const execdirFixedPathEscapesCwdAnalysis =
         (token === '-execdir' || token === '-okdir') &&
         stripped.slice(1).some((arg) => arg !== '{}' && !arg.startsWith('-'));
@@ -229,25 +213,21 @@ function nameFilterExcludesGitMetadata(
         return false;
       }
       actionSeen = true;
-      index = command.nextIndex;
       continue;
     }
     if (token === '-delete') {
       actionSeen = true;
-      index++;
       continue;
     }
     if (token === '-name' || token === '-iname') {
-      const pattern = words[index + 1];
+      const pattern = words[part.index + 1];
       const translatableLiteralGlob =
         pattern?.provenance === 'literal' && !/[[\\]/.test(pattern.text);
       if (!translatableLiteralGlob) return false;
       if (!actionSeen) patterns.push(findNamePatternRegExp(pattern.text, token === '-iname'));
-      index += 2;
       continue;
     }
     if (!FIND_PRIMARIES_THAT_NEVER_WIDEN.has(token)) return false;
-    index += 1 + getFindPrimaryArity(token);
   }
   return (
     patterns.length > 0 &&
@@ -281,23 +261,16 @@ export function findExecRmDeletesFoundPaths(
   tokens: readonly string[],
   environment: EnvironmentContext,
 ): boolean {
-  let index = 0;
-  while (index < tokens.length) {
-    if (!isFindExecPrimary(tokens[index])) {
-      index++;
-      continue;
-    }
-    const command = getFindExecCommand(tokens, index);
-    const stripped = stripWrappersForPathScan([...command.tokens], environment);
+  return parseFindArguments(tokens).expression.some((part) => {
+    if (part.kind !== 'exec') return false;
+    const stripped = stripWrappersForPathScan([...part.command], environment);
     const head = getBasename(stripped[0] ?? '').toLowerCase();
     const shellBodyMentionsRmAfterUnquoting =
       SHELL_WRAPPERS.has(head) &&
       RM_AS_ANY_WORD.test((extractDashCArg(stripped) ?? '').replace(/["'\\]/g, ''));
     const removes = head === 'rm' || head === 'rmdir' || shellBodyMentionsRmAfterUnquoting;
-    if (removes && stripped.some((token) => token.includes('{}'))) return true;
-    index = command.nextIndex;
-  }
-  return false;
+    return removes && stripped.some((token) => token.includes('{}'));
+  });
 }
 
 function findSelectsHooksByName(tokens: readonly string[]): boolean {
@@ -318,22 +291,9 @@ function hasOnlyScopedFindStartingPoints(
 }
 
 export function getFindStartingPoints(words: readonly CommandWord[]): CommandWord[] | null {
-  const tokenAt = (index: number) => {
-    const word = words[index];
-    return word ? analysisWordText(word) : undefined;
-  };
-  let index = 1;
-  while (tokenAt(index) === '-H' || tokenAt(index) === '-P') index++;
-  if (tokenAt(index) === '--') index++;
-
-  const targets: CommandWord[] = [];
-  while (index < words.length) {
-    const token = tokenAt(index);
-    const word = words[index];
-    if (!token || !word || token.startsWith('-') || ['!', '(', ')'].includes(token)) break;
-    targets.push(word);
-    index++;
-  }
+  const targets = parseFindArguments(words.map(analysisWordText)).startingPoints.flatMap(
+    (index) => words[index] ?? [],
+  );
   return targets.length > 0 ? targets : null;
 }
 
@@ -359,6 +319,7 @@ function analyzeFindExecCommand(
   return null;
 }
 
+/** @internal */
 export function getFindExecCommand(
   tokens: readonly string[],
   execIndex: number,
@@ -378,41 +339,53 @@ export function getFindExecCommand(
   };
 }
 
-export function findHasDelete(tokens: readonly string[], start: number): boolean {
-  let i = start;
-
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token) {
-      i++;
-      continue;
-    }
-
-    if (isFindExecPrimary(token)) {
-      i = getFindExecCommand(tokens, i).nextIndex;
-      continue;
-    }
-
-    const arity = getFindPrimaryArity(token);
-    if (arity > 0) {
-      i += arity + 1;
-      continue;
-    }
-
-    if (token === '-delete') {
-      return true;
-    }
-
-    i++;
-  }
-
-  return false;
+export function findHasDelete(tokens: readonly string[]): boolean {
+  return parseFindArguments(tokens).expression.some(
+    (part) => part.kind === 'primary' && tokens[part.index] === '-delete',
+  );
 }
 
+type FindExpressionPart =
+  | { readonly kind: 'primary'; readonly index: number }
+  | { readonly kind: 'exec'; readonly index: number; readonly command: readonly string[] };
+
+const FIND_LEADING_OPTIONS = new Set(['-H', '-P']);
+const FIND_EXPRESSION_OPENERS = new Set(['!', '(', ')']);
+
+export function parseFindArguments(tokens: readonly string[]) {
+  let index = 1;
+  while (FIND_LEADING_OPTIONS.has(tokens[index] ?? '')) index++;
+  if (tokens[index] === '--') index++;
+
+  const startingPoints: number[] = [];
+  while (index < tokens.length) {
+    const token = tokens[index] ?? '';
+    if (token.startsWith('-') || FIND_EXPRESSION_OPENERS.has(token)) break;
+    startingPoints.push(index);
+    index++;
+  }
+
+  const expression: FindExpressionPart[] = [];
+  while (index < tokens.length) {
+    const token = tokens[index] ?? '';
+    if (isFindExecPrimary(token)) {
+      const execCommand = getFindExecCommand(tokens, index);
+      expression.push({ kind: 'exec', index, command: execCommand.tokens });
+      index = execCommand.nextIndex;
+      continue;
+    }
+    expression.push({ kind: 'primary', index });
+    index += 1 + getFindPrimaryArity(token);
+  }
+  return { startingPoints, expression };
+}
+
+/** @internal */
 export function getFindPrimaryArity(token: string): number {
   return FIND_PRIMARY_ARITY.get(token) ?? (/^-newer[A-Za-z]{2}$/.test(token) ? 1 : 0);
 }
 
+/** @internal */
 export function isFindExecPrimary(token: string | undefined): boolean {
   return token !== undefined && FIND_EXEC_PRIMARIES.has(token);
 }

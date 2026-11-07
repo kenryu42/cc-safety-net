@@ -17,7 +17,7 @@ import {
 import { analysisWordText, textCommandWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
 import { solveDynamicInput, substitutionAddsExecutableSource } from './dynamic-input';
-import { getFindExecCommand, getFindPrimaryArity, isFindExecPrimary } from './find';
+import { parseFindArguments } from './find';
 import { extractGitSubcommandAndRest } from './git/parse';
 import { GIT_RULE_SUBCOMMANDS } from './git/rules';
 import { getInterpreterExecutableSourceSelectors, parseInterpreterArgv } from './interpreters';
@@ -459,65 +459,31 @@ function findInputCanChangeExecutedSource(
 ): boolean {
   if (replacementToken === null) return true;
 
-  let inExpression = false;
-  let expressionDataArgs = 0;
-
-  for (let index = 1; index < childTokens.length; index++) {
-    const token = childTokens[index] ?? '';
-    if (!inExpression && !token.startsWith('-') && token !== '!' && token !== '(') {
-      if (token.indexOf(replacementToken) === 0) {
-        return true;
-      }
-      continue;
-    }
-    inExpression = true;
-
-    if (expressionDataArgs > 0) {
-      expressionDataArgs--;
-      continue;
-    }
-
-    if (isFindExecPrimary(token)) {
-      const execCommand = getFindExecCommand(childTokens, index);
-      index = execCommand.nextIndex - 1;
-      for (const childCommand of normalizeChildCommands(execCommand.tokens, {
-        environment,
-        cwd: undefined,
-      })) {
-        const dynamicInput = xargsInputIsDynamic(
-          childCommand.tokens,
-          replacementToken,
-          childCommand.wrapperEnvAssignments,
-        );
-        if (
-          (childCommand.head === 'rm' &&
-            replacementCanChangeRmOptions(childCommand.tokens, replacementToken)) ||
-          xargsInputCanChangeExecutedSource(
-            childCommand.tokens,
-            childCommand.head,
-            replacementToken,
-            childCommand.wrapperEnvAssignments,
-            dynamicInput,
-            environment,
-          )
-        ) {
-          return true;
-        }
-      }
-      continue;
-    }
-
-    const arity = getFindPrimaryArity(token);
-    if (arity > 0) {
-      expressionDataArgs = arity;
-      if (token.includes(replacementToken)) return true;
-      continue;
-    }
-
-    if (token.includes(replacementToken)) return true;
-  }
-
-  return false;
+  const parsed = parseFindArguments(childTokens);
+  return (
+    parsed.startingPoints.some((index) => childTokens[index]?.startsWith(replacementToken)) ||
+    parsed.expression.some((part) =>
+      part.kind === 'primary'
+        ? (childTokens[part.index] ?? '').includes(replacementToken)
+        : normalizeChildCommands(part.command, { environment, cwd: undefined }).some(
+            (childCommand) =>
+              (childCommand.head === 'rm' &&
+                replacementCanChangeRmOptions(childCommand.tokens, replacementToken)) ||
+              xargsInputCanChangeExecutedSource(
+                childCommand.tokens,
+                childCommand.head,
+                replacementToken,
+                childCommand.wrapperEnvAssignments,
+                xargsInputIsDynamic(
+                  childCommand.tokens,
+                  replacementToken,
+                  childCommand.wrapperEnvAssignments,
+                ),
+                environment,
+              ),
+          ),
+    )
+  );
 }
 
 interface XargsParseResult {
