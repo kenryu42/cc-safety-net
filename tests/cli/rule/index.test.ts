@@ -1010,18 +1010,19 @@ describe('tool', () => {
         command_tools: ['ops_bash', { name: 'ops_run_background', cwd: 'cwd' }],
       }),
       [`${P}/rule.json`]: rulesConfig([], {
-        command_tools: ['team_shell', { name: 'phone_shell', cwd: false }],
+        command_tools: ['team_shell', { name: 'team_run' }, { name: 'phone_shell', cwd: false }],
       }),
     });
     expect(outcome.stderr).toBe('');
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toBe(
       [
-        'Command tools (4):',
+        'Command tools (5):',
         '  - [user] ops_bash',
         '  - [user] ops_run_background',
         '      Cwd argument: cwd',
         '  - [project] team_shell',
+        '  - [project] team_run',
         '  - [project] phone_shell',
         '      Cwd argument: none',
         '',
