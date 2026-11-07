@@ -114,7 +114,9 @@ export function printCommandToolsList(
       ? [`[${entry.scope}] ${entry.tool}`]
       : [
           `[${entry.scope}] ${entry.tool.name}`,
-          ...(entry.tool.cwd === undefined ? [] : [`  Cwd argument: ${entry.tool.cwd}`]),
+          ...(entry.tool.cwd === undefined
+            ? []
+            : [`  Cwd argument: ${entry.tool.cwd === false ? 'none' : entry.tool.cwd}`]),
         ],
   );
 }

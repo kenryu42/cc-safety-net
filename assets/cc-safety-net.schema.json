@@ -95,9 +95,17 @@
                 "description": "Exact tool name."
               },
               "cwd": {
-                "type": "string",
-                "pattern": "^[^\\s\\p{Cc}]{1,256}$",
-                "description": "Name of the argument that holds the working directory."
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[^\\s\\p{Cc}]{1,256}$",
+                    "description": "Name of the argument that holds the working directory."
+                  },
+                  {
+                    "const": false,
+                    "description": "The tool has no working directory on this machine, such as one that runs commands on a remote host: no argument is read and commands are checked against the session directory."
+                  }
+                ]
               }
             },
             "required": ["name"]

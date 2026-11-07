@@ -51,6 +51,7 @@ interface RuleFlags {
   example: boolean;
   ref?: string;
   cwdArg?: string;
+  noCwdArg: boolean;
   only: string[];
   help: boolean;
   positionals: string[];
@@ -258,6 +259,7 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
         cleanup: ['--cleanup'],
         deleteSource: ['--delete-source'],
         example: ['--example'],
+        noCwdArg: ['--no-cwd-arg'],
       },
       values: { ref: ['--ref'], cwdArg: ['--cwd-arg'] },
       lists: { only: ['--only'] },
@@ -312,6 +314,12 @@ function validateRuleFlags(flags: RuleFlags): void {
   }
   if (flags.cwdArg !== undefined && toolAction !== 'add') {
     flags.errors.push(unknownRuleOption(optionOwner, '--cwd-arg'));
+  }
+  if (flags.noCwdArg && toolAction !== 'add') {
+    flags.errors.push(unknownRuleOption(optionOwner, '--no-cwd-arg'));
+  }
+  if (flags.noCwdArg && flags.cwdArg !== undefined && toolAction === 'add') {
+    flags.errors.push('rule tool add takes --cwd-arg or --no-cwd-arg, not both');
   }
   if (subcommand === 'tool' && flags.global) {
     flags.errors.push(unknownRuleOption(subcommand, '--global'));
@@ -485,8 +493,9 @@ function runRuleToolCommand(environment: Environment, flags: RuleFlags, cwd: str
     for (const error of loaded.result.errors) console.error(error);
     return 1;
   }
+  const cwdArg = flags.noCwdArg ? (false as const) : flags.cwdArg;
   const nextTools = names.reduce((tools, name) => {
-    const entry = flags.cwdArg === undefined ? name : { name, cwd: flags.cwdArg };
+    const entry = cwdArg === undefined ? name : { name, cwd: cwdArg };
     const isNamed = (tool: CommandToolEntry) =>
       (typeof tool === 'string' ? tool : tool.name) === name;
     if (action === 'remove') return tools.filter((tool) => !isNamed(tool));
@@ -499,7 +508,7 @@ function runRuleToolCommand(environment: Environment, flags: RuleFlags, cwd: str
   for (const name of names) {
     console.log(
       action === 'add'
-        ? `Added command tool: ${name}${flags.cwdArg === undefined ? '' : ` (cwd argument: ${flags.cwdArg})`}`
+        ? `Added command tool: ${name}${cwdArg === undefined ? '' : cwdArg === false ? ' (no cwd argument)' : ` (cwd argument: ${cwdArg})`}`
         : `Removed command tool: ${name}`,
     );
   }

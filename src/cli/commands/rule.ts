@@ -37,7 +37,7 @@ export const ruleCommand = {
     { usage: 'wrapper remove <command>', description: 'Remove a transparent command wrapper' },
     { usage: 'wrapper list', description: 'List transparent command wrappers' },
     {
-      usage: 'tool add <name...> [--cwd-arg <name>] [--project]',
+      usage: 'tool add <name...> [--cwd-arg <name> | --no-cwd-arg] [--project]',
       description: 'Analyze community shell tools (user scope by default)',
     },
     { usage: 'tool remove <name...> [--project]', description: 'Stop analyzing declared tools' },
@@ -57,6 +57,10 @@ export const ruleCommand = {
       argument: '<name>',
       description: 'Name the working-directory argument with rule tool add',
     },
+    {
+      flags: '--no-cwd-arg',
+      description: 'Read no working-directory argument with rule tool add, for a remote tool',
+    },
     ...ruleAddOptions.slice(0, 2),
     { flags: '-h, --help', description: 'Show this help' },
   ],
@@ -66,6 +70,7 @@ export const ruleCommand = {
     'cc-safety-net rule wrapper add rtk',
     'cc-safety-net rule tool add ops_bash',
     'cc-safety-net rule tool add ops_run_background --cwd-arg cwd --project',
+    'cc-safety-net rule tool add phone_shell --no-cwd-arg',
     ...ruleAddExamples,
     'cc-safety-net rule update',
     'cc-safety-net rule migrate --cleanup',

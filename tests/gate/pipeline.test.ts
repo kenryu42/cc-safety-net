@@ -357,6 +357,7 @@ describe('a tool the user declared as a command tool', () => {
       { name: 'ops_bash' },
       { name: 'ops_run_background' },
       { name: 'ops_explicit', cwd: 'dir' },
+      { name: 'phone_shell', cwd: false },
       { name: 'Bash', cwd: 'dir' },
     ],
   });
@@ -443,6 +444,23 @@ describe('a tool the user declared as a command tool', () => {
         evaluate(unknown('ops_explicit', { command: 'rm -rf build', dir: home, workdir: project })),
       ),
     ).toBe('rm.recursive-force-home-cwd');
+  });
+
+  test('a tool declared without a cwd argument reads none and runs from the workspace', () => {
+    const evaluation = evaluate(
+      unknown('phone_shell', { command: 'rm -rf build', cwd: '/sdcard/Download', workdir: 7 }),
+    );
+    expect([evaluation.stage, verdict(evaluation)]).toEqual(['command-analysis', 'allow']);
+    expect(evaluation.promotedInvocation?.context).toEqual({
+      configCwd: plain,
+      executionCwd: plain,
+    });
+  });
+
+  test('a tool declared without a cwd argument still has its command analyzed', () => {
+    expect(
+      verdict(evaluate(unknown('phone_shell', { command: 'rm -rf /sdcard/DCIM', cwd: home }))),
+    ).toBe('rm.recursive-force-outside-cwd');
   });
 
   test('a declaration named like a built-in shell tool changes nothing', () => {

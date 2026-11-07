@@ -38,7 +38,8 @@ describe('the published JSON Schema asset', () => {
     expect([
       nameEntry.pattern,
       objectEntry.properties.name.pattern,
-      objectEntry.properties.cwd.pattern,
+      objectEntry.properties.cwd.anyOf[0].pattern,
     ]).toEqual(Array(3).fill(COMMAND_TOOL_NAME_PATTERN.source));
+    expect(objectEntry.properties.cwd.anyOf[1].const).toBe(false);
   });
 });
