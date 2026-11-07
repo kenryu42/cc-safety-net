@@ -286,8 +286,12 @@ function hasOnlyScopedFindStartingPoints(
   context: AnalyzeFindContext,
 ): boolean {
   if (
+    tokens.includes('-L') ||
+    tokens.includes('-f') ||
     tokens.includes('-follow') ||
-    tokens.some((token) => FIND_LEADING_OPTION.test(token) && /[Lf]/.test(token))
+    parseFindArguments(tokens).leadingOptions.some((index) =>
+      /^-[HLPEXdsx]*[Lf]/.test(tokens[index] ?? ''),
+    )
   )
     return false;
   const targets = getFindStartingPoints(words);

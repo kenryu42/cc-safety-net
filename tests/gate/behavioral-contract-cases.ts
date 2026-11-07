@@ -1027,6 +1027,12 @@ export function behavioralContractCases(paths: {
       },
     })),
     {
+      name: 'allows find delete of a workspace subdirectory whose exec child takes a grouped option',
+      command: 'find build -type f -exec grep -xL keep {} \\; -delete',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks printf input that rewrites a grouped find option through xargs',
       command: 'printf delete | xargs -Ix find -x',
       options: options({ cwd: paths.cwd }),
