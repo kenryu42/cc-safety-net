@@ -626,7 +626,11 @@ const ROWS: readonly Row[] = [
       }),
       [PROJECT_RULES]: json({
         version: 1,
-        command_tools: [{ name: 'shared_tool', cwd: 'other' }, 'project_tool'],
+        command_tools: [
+          { name: 'shared_tool', cwd: 'other' },
+          'project_tool',
+          { name: 'phone_shell', cwd: false },
+        ],
       }),
     },
     check: (snapshot) => {
@@ -635,6 +639,7 @@ const ROWS: readonly Row[] = [
         { name: 'ops_bash' },
         { name: 'shared_tool', cwd: 'dir' },
         { name: 'project_tool' },
+        { name: 'phone_shell', cwd: false },
       ]);
     },
   },

@@ -13,7 +13,7 @@ export interface TestPolicyInput {
   version?: number;
   rules?: readonly CustomRule[];
   transparent_wrappers?: readonly string[];
-  commandTools?: readonly { name: string; cwd?: string }[];
+  commandTools?: readonly { name: string; cwd?: string | false }[];
   safety?: PolicySafety;
   worktreeMode?: boolean;
   destructiveCommandProtectionEnabled?: boolean;

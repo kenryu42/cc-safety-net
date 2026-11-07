@@ -21,9 +21,9 @@ export type RulesConfig = {
   command_tools?: CommandToolEntry[];
 };
 
-export type CommandToolEntry = string | { name: string; cwd?: string };
+export type CommandToolEntry = string | CommandToolDeclaration;
 
-export type CommandToolDeclaration = { name: string; cwd?: string };
+export type CommandToolDeclaration = { name: string; cwd?: string | false };
 
 export const DEFAULT_CONFIG: RulesConfig = {
   version: 1,
@@ -344,12 +344,12 @@ function commandToolIssues(tools: unknown): Issue[] {
               `must be a tool name: ${COMMAND_TOOL_NAME_RULE}`,
             ),
           ]),
-      ...(tool.cwd === undefined || isCommandToolName(tool.cwd)
+      ...(tool.cwd === undefined || tool.cwd === false || isCommandToolName(tool.cwd)
         ? []
         : [
             typed(
               ['command_tools', index, 'cwd'],
-              `must be an argument name: ${COMMAND_TOOL_NAME_RULE}`,
+              `must be an argument name or false: ${COMMAND_TOOL_NAME_RULE}`,
             ),
           ]),
     ];
