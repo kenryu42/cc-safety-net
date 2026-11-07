@@ -118,6 +118,12 @@ export function behavioralContractCases(paths: {
         expected,
       })),
     );
+  const policyConfigBlock: BehavioralContractCase['expected'] = {
+    kind: 'block',
+    ruleId: 'guard.policy-config',
+    intent: 'hard_stop',
+    reasonIncludes: 'contains the protected policy config',
+  };
   const homeRemovalBlock: BehavioralContractCase['expected'] = {
     kind: 'block',
     ruleId: 'rm.recursive-force-root-or-home',
@@ -986,6 +992,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows find delete of a workspace subdirectory after a leading option',
+      command: 'find -x build -type f -delete',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks find delete of a workspace subdirectory under paranoid rm',
       command: 'find build -type f -delete',
       options: options({ cwd: paths.cwd, paranoidRm: true }),
@@ -1544,13 +1556,14 @@ export function behavioralContractCases(paths: {
       name: 'blocks find exec rm of root listed after an empty starting point',
       command: 'find "" / -exec rm {} \\;',
       options: options({ cwd: paths.cwd }),
-      expected: {
-        kind: 'block',
-        ruleId: 'guard.policy-config',
-        intent: 'hard_stop',
-        reasonIncludes: 'contains the protected policy config',
-      },
+      expected: policyConfigBlock,
     },
+    ...['-L', '-D tree', '-D tree -L', '-O3', '-x', '-Ed', '-f', '-f . -f'].map((leading) => ({
+      name: `blocks find exec rm of root after the leading option ${leading}`,
+      command: `find ${leading} / -exec rm {} \\;`,
+      options: options({ cwd: paths.cwd }),
+      expected: policyConfigBlock,
+    })),
     {
       name: 'allows a find exec plus that does not follow {} as an argument before a substitution at strict safety',
       command: 'find . -exec echo + $(x) \\;',

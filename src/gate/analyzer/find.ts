@@ -349,15 +349,19 @@ type FindExpressionPart =
   | { readonly kind: 'primary'; readonly index: number }
   | { readonly kind: 'exec'; readonly index: number; readonly command: readonly string[] };
 
-const FIND_LEADING_OPTIONS = new Set(['-H', '-P']);
+const FIND_LEADING_OPTION = /^-(?:[HLPEXdsx]+f?|[fD]|O\d*)$/;
 const FIND_EXPRESSION_OPENERS = new Set(['!', '(', ')']);
 
 export function parseFindArguments(tokens: readonly string[]) {
+  const startingPoints: number[] = [];
   let index = 1;
-  while (FIND_LEADING_OPTIONS.has(tokens[index] ?? '')) index++;
+  while (FIND_LEADING_OPTION.test(tokens[index] ?? '')) {
+    const takesOperand = /[fD]$/.test(tokens[index] ?? '');
+    if (takesOperand && index + 1 < tokens.length) startingPoints.push(index + 1);
+    index += takesOperand ? 2 : 1;
+  }
   if (tokens[index] === '--') index++;
 
-  const startingPoints: number[] = [];
   while (index < tokens.length) {
     const token = tokens[index] ?? '';
     if (token.startsWith('-') || FIND_EXPRESSION_OPENERS.has(token)) break;
