@@ -992,6 +992,29 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'blocks find delete with no starting point after a -D debug option',
+      command: 'find -D tree -delete',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'find.delete',
+        intent: 'scope_down',
+        reasonIncludes: 'Use -print first',
+        segment: 'find -D tree -delete',
+      },
+    },
+    {
+      name: 'blocks xargs input that can rewrite a leading find option',
+      command: 'printf L | xargs -IH find -H build -type f -delete',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'xargs.shell-dynamic',
+        intent: 'scope_down',
+        reasonIncludes: 'arbitrary executable command source',
+      },
+    },
+    {
       name: 'allows find delete of a workspace subdirectory after a leading option',
       command: 'find -x build -type f -delete',
       options: options({ cwd: paths.cwd }),

@@ -240,6 +240,7 @@ function hasDynamicFindStructure(words: readonly CommandWord[]): boolean {
     return word !== undefined && hasOptionLiteralPart(word);
   };
   return (
+    parsed.leadingOptions.some(dynamicAt) ||
     parsed.startingPoints.some(
       (index) => dynamicAt(index) && (index > 1 || optionLiteralAt(index)),
     ) ||

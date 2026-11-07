@@ -353,14 +353,18 @@ const FIND_LEADING_OPTION = /^-(?:[HLPEXdsx]+f?|[fD]|O\d*)$/;
 const FIND_EXPRESSION_OPENERS = new Set(['!', '(', ')']);
 
 export function parseFindArguments(tokens: readonly string[]) {
+  const leadingOptions: number[] = [];
   const startingPoints: number[] = [];
   let index = 1;
   while (FIND_LEADING_OPTION.test(tokens[index] ?? '')) {
-    const takesOperand = /[fD]$/.test(tokens[index] ?? '');
-    if (takesOperand && index + 1 < tokens.length) startingPoints.push(index + 1);
-    index += takesOperand ? 2 : 1;
+    const option = tokens[index] ?? '';
+    leadingOptions.push(index);
+    index++;
+    if (index >= tokens.length || !/[fD]$/.test(option)) continue;
+    (option.endsWith('f') ? startingPoints : leadingOptions).push(index);
+    index++;
   }
-  if (tokens[index] === '--') index++;
+  if (tokens[index] === '--') leadingOptions.push(index++);
 
   while (index < tokens.length) {
     const token = tokens[index] ?? '';
@@ -381,7 +385,7 @@ export function parseFindArguments(tokens: readonly string[]) {
     expression.push({ kind: 'primary', index });
     index += 1 + getFindPrimaryArity(token);
   }
-  return { startingPoints, expression };
+  return { leadingOptions, startingPoints, expression };
 }
 
 /** @internal */

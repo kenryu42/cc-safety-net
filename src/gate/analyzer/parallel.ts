@@ -645,9 +645,11 @@ function analyzeDynamicParallelFind(
     customResult: null,
     executedSource:
       !tokens.some(hasParallelPlaceholder) ||
-      [...parsed.startingPoints, ...parsed.expression.map((part) => part.index)].some((index) =>
-        hasParallelPlaceholder(tokens[index] ?? ''),
-      ),
+      [
+        ...parsed.leadingOptions,
+        ...parsed.startingPoints,
+        ...parsed.expression.map((part) => part.index),
+      ].some((index) => hasParallelPlaceholder(tokens[index] ?? '')),
     rmOptions: false,
   };
   const execCommands = parsed.expression.flatMap((part) =>

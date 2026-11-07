@@ -461,6 +461,7 @@ function findInputCanChangeExecutedSource(
 
   const parsed = parseFindArguments(childTokens);
   return (
+    parsed.leadingOptions.some((index) => childTokens[index]?.includes(replacementToken)) ||
     parsed.startingPoints.some((index) => childTokens[index]?.startsWith(replacementToken)) ||
     parsed.expression.some((part) =>
       part.kind === 'primary'
