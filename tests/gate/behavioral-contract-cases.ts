@@ -1014,6 +1014,29 @@ export function behavioralContractCases(paths: {
         reasonIncludes: 'arbitrary executable command source',
       },
     },
+    ...['-xL', '-xf'].map((leading) => ({
+      name: `blocks find delete of a workspace subdirectory after the grouped option ${leading}`,
+      command: `find ${leading} build -type f -delete`,
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block' as const,
+        ruleId: 'find.delete',
+        intent: 'scope_down' as const,
+        reasonIncludes: 'Use -print first',
+        segment: `find ${leading} build -type f -delete`,
+      },
+    })),
+    {
+      name: 'blocks printf input that rewrites a grouped find option through xargs',
+      command: 'printf delete | xargs -Ix find -x',
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'xargs.shell-dynamic',
+        intent: 'scope_down',
+        reasonIncludes: 'arbitrary executable command source',
+      },
+    },
     {
       name: 'allows find delete of a workspace subdirectory after a leading option',
       command: 'find -x build -type f -delete',

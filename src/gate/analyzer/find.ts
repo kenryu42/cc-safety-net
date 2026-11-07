@@ -285,7 +285,11 @@ function hasOnlyScopedFindStartingPoints(
   tokens: readonly string[],
   context: AnalyzeFindContext,
 ): boolean {
-  if (tokens.includes('-L') || tokens.includes('-f') || tokens.includes('-follow')) return false;
+  if (
+    tokens.includes('-follow') ||
+    tokens.some((token) => FIND_LEADING_OPTION.test(token) && /[Lf]/.test(token))
+  )
+    return false;
   const targets = getFindStartingPoints(words);
   return targets !== null && hasOnlyScopedDeleteTargets(targets, context);
 }
