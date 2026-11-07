@@ -96,6 +96,13 @@ rules governs all code: machinery exists to stop a demonstrated failure, not an 
   do not store fields whose values are forced constants or derivable from other fields.
 - Prefer a documented process over code that enforces the process. Enforcement code is justified
   only after the documented process has demonstrably failed at least once.
+- Consolidating duplicated logic onto an existing implementation is a reduction, not new
+  machinery; it needs no demonstrated failure, only the refactor protocol (unchanged contract
+  corpus, `explain` diff against `main`). If unifying the copies changes any verdict, it is not a
+  refactor: stop and ask before choosing a behavior.
+- A bypass or false negative you construct yourself is not evidence. Before changing a verdict,
+  check `docs/residual-risk.md`: fix only with field evidence or a mistake a helpful agent would
+  plausibly make; otherwise report it and stop.
 - When remediating review findings, implement the smallest fix per finding. A finding is never a
   mandate to build a framework; if the fix seems to require one, stop and ask.
 
