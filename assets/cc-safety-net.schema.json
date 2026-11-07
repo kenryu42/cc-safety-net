@@ -103,7 +103,7 @@
                   },
                   {
                     "const": false,
-                    "description": "The tool has no working directory on this machine, such as one that runs commands on a remote host: no working-directory argument is read and commands are checked against the session directory. The OpenCode and Cursor integrations still check their own 'workdir' and 'working_directory' arguments first."
+                    "description": "The tool has no working directory on this machine, such as one that runs commands on a remote host: no working-directory argument is read and commands are checked against the session directory."
                   }
                 ]
               }

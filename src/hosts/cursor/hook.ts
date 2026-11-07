@@ -1,6 +1,7 @@
 import type { IntegrationDenial } from '@/core/denial';
 import type { Environment } from '@/core/environment';
 import { normalizeUriDrivePath } from '@/core/paths/canonicalization';
+import { isDeclaredWithoutCwdArgument } from '@/core/policy/scope-policy';
 import {
   cwdProblem,
   firstTrustedRoot,
@@ -98,7 +99,11 @@ function resolveCursorContext(
   if (toolInput === null || typeof toolInput !== 'object' || Array.isArray(toolInput)) {
     return { configCwd: base, executionCwd: base };
   }
-  if (!Object.hasOwn(toolInput, 'working_directory')) {
+  if (
+    !Object.hasOwn(toolInput, 'working_directory') ||
+    (getCursorToolRoute(toolName).kind === 'unknown' &&
+      isDeclaredWithoutCwdArgument(environment, base, toolName))
+  ) {
     return { configCwd: base, executionCwd: base };
   }
 

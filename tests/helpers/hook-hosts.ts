@@ -438,6 +438,18 @@ export function createHookFixture(prefix: string): HookFixture {
   };
 }
 
+export function declareRemoteAndPlainCommandTools(fixture: HookFixture) {
+  const rules = join(fixture.home, '.cc-safety-net', 'rules');
+  mkdirSync(rules, { recursive: true });
+  writeFileSync(
+    join(rules, 'rule.json'),
+    JSON.stringify({
+      version: 1,
+      command_tools: [{ name: 'phone_shell', cwd: false }, 'ops_shell'],
+    }),
+  );
+}
+
 export function hostEnv(fixture: HookFixture, auditHome: string) {
   return {
     HOME: fixture.home,

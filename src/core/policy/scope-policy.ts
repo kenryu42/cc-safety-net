@@ -36,6 +36,16 @@ interface ScopePolicy {
   canValidateOverrides: boolean;
 }
 
+export function isDeclaredWithoutCwdArgument(
+  environment: Environment,
+  cwd: string,
+  toolName: string,
+): boolean {
+  return loadRulesPolicy(environment, { cwd }).command_tools.some(
+    (tool) => tool.name === toolName && tool.cwd === false,
+  );
+}
+
 export function loadRulesPolicy(
   environment: Environment,
   options: RulesPolicyOptions,

@@ -11,6 +11,7 @@ import {
 } from '@/core/denial';
 import { createProcessEnvironment } from '@/core/environment';
 import { shouldRecordAllowedCommands } from '@/core/policy/env';
+import { isDeclaredWithoutCwdArgument } from '@/core/policy/scope-policy';
 import {
   getCommandFromToolInput,
   getNonCommandToolInputKind,
@@ -136,6 +137,7 @@ export function evaluateOpenCodeTool({
     configCwd,
     toolInput,
     expandHomeWorkdir ? environment.home : undefined,
+    () => route.kind === 'unknown' && isDeclaredWithoutCwdArgument(environment, configCwd, tool),
   );
   if (executionCwd === null) {
     throwPreflightDenial(createMalformedToolCallDenial({ command, toolName: tool }), tool);
@@ -208,9 +210,10 @@ function resolveOpenCodeExecutionCwd(
   configCwd: string,
   toolInput: unknown,
   workdirHome: string | undefined,
+  ignoresWorkdir: () => boolean,
 ): string | CwdDenial | null {
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return configCwd;
-  if (!Object.hasOwn(toolInput, 'workdir')) return configCwd;
+  if (!Object.hasOwn(toolInput, 'workdir') || ignoresWorkdir()) return configCwd;
 
   const workdir = (toolInput as Record<string, unknown>).workdir;
   if (typeof workdir !== 'string' || workdir.trim() === '') return null;
