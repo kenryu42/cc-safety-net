@@ -2992,6 +2992,11 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: ssh('~/.ssh/config'),
       },
       {
+        name: 'a clobbering redirect target right after -i',
+        command: 'ssh -i >| ~/.ssh/config ./key host.example uptime',
+        expected: ssh('~/.ssh/config'),
+      },
+      {
         name: 'a configured deny path on the identity file',
         command: 'ssh -i ~/.ssh/deploy_key host.example',
         config: { denyPaths: [`${userHome}/.ssh/deploy_key`] },

@@ -937,7 +937,7 @@ function extractSegmentPathTargets(
           ? { ...here(target), isCreatedPath: true as const, ...certificateOutput }
           : readsOnlyCertificate && optionValue('in', index)
             ? { ...here(target), isCertificateInput: true as const, ...certificateOutput }
-            : identityFileIndexes.has(index)
+            : identityFileIndexes.has(index) && !redirectionTargets.has(token)
               ? { ...here(target), isIdentityFile: true as const }
               : here(target),
       ),
