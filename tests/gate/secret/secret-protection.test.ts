@@ -2992,6 +2992,11 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: ssh('~/.ssh/config'),
       },
       {
+        name: 'a bare dash destination ends the ssh options',
+        command: 'ssh - cp -i ~/.ssh/id_rsa /tmp/key-copy',
+        expected: ssh('~/.ssh/id_rsa'),
+      },
+      {
         name: 'a clobbering redirect target right after -i',
         command: 'ssh -i >| ~/.ssh/config ./key host.example uptime',
         expected: ssh('~/.ssh/config'),

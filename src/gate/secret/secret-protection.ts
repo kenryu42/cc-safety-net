@@ -949,7 +949,7 @@ function sshIdentityFileIndexes(args: readonly string[]): Set<number> {
   const indexes = new Set<number>();
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? '';
-    if (arg === '--' || !arg.startsWith('-')) return indexes;
+    if (arg === '--' || !/^-./.test(arg)) return indexes;
     const valueFlag = arg.slice(1).search(SSH_VALUE_FLAG);
     if (valueFlag !== arg.length - 2) continue;
     if (arg.endsWith('i')) indexes.add(index + 1);
