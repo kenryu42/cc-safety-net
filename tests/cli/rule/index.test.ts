@@ -130,7 +130,9 @@ describe('help', () => {
   test('`rule tool --help` lists all three actions instead of picking one', async () => {
     const outcome = await rule(['tool', '--help']);
     expect(outcome.exitCode).toBe(0);
-    expect(outcome.stdout).toContain('tool add <name...> [--cwd-arg <name>] [--project]');
+    expect(outcome.stdout).toContain(
+      'tool add <name...> [--cwd-arg <name> | --no-cwd-arg] [--project]',
+    );
     expect(outcome.stdout).toContain('tool remove <name...> [--project]');
     expect(outcome.stdout).toContain('tool list');
   }, 60_000);
@@ -140,7 +142,7 @@ describe('help', () => {
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout.split('\n')[0]).toBe('cc-safety-net rule tool');
     expect(outcome.stdout).toContain(
-      '  cc-safety-net rule tool add <name...> [--cwd-arg <name>] [--project]',
+      '  cc-safety-net rule tool add <name...> [--cwd-arg <name> | --no-cwd-arg] [--project]',
     );
   }, 60_000);
 
@@ -198,6 +200,14 @@ const usageErrors: [readonly string[], string][] = [
     'Unknown option for rule tool remove: --cwd-arg',
   ],
   [['tool', 'add', 'ops_bash', '--cwd-arg'], '--cwd-arg requires a value'],
+  [
+    ['tool', 'remove', 'ops_bash', '--no-cwd-arg'],
+    'Unknown option for rule tool remove: --no-cwd-arg',
+  ],
+  [
+    ['tool', 'add', 'ops_bash', '--cwd-arg', 'dir', '--no-cwd-arg'],
+    'rule tool add takes --cwd-arg or --no-cwd-arg, not both',
+  ],
   [['add', 'team', '--project'], 'Unknown option for rule add: --project'],
   [['wrapper', 'add', 'rtk', '--cwd-arg', 'dir'], 'Unknown option for rule wrapper: --cwd-arg'],
   [['tool', 'add', 'bash'], shellToolRefusal('bash')],
@@ -891,6 +901,18 @@ describe('tool', () => {
     );
   }, 60_000);
 
+  test('--no-cwd-arg records that the tool has no working-directory argument', async () => {
+    const outcome = await rule(['tool', 'add', 'phone_shell', '--no-cwd-arg']);
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      `Added command tool: phone_shell (no cwd argument)\nScope: user (${USER_CONFIG})\n`,
+    );
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: [{ name: 'phone_shell', cwd: false }] }),
+    );
+  }, 60_000);
+
   test('add declares every tool named in one command', async () => {
     const outcome = await rule(['tool', 'add', 'ops_bash', 'ops_run_background', 'ops_bash']);
     expect(outcome.stderr).toBe('');
@@ -987,17 +1009,22 @@ describe('tool', () => {
       [`${U}/rule.json`]: rulesConfig([], {
         command_tools: ['ops_bash', { name: 'ops_run_background', cwd: 'cwd' }],
       }),
-      [`${P}/rule.json`]: rulesConfig([], { command_tools: ['team_shell'] }),
+      [`${P}/rule.json`]: rulesConfig([], {
+        command_tools: ['team_shell', { name: 'team_run' }, { name: 'phone_shell', cwd: false }],
+      }),
     });
     expect(outcome.stderr).toBe('');
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toBe(
       [
-        'Command tools (3):',
+        'Command tools (5):',
         '  - [user] ops_bash',
         '  - [user] ops_run_background',
         '      Cwd argument: cwd',
         '  - [project] team_shell',
+        '  - [project] team_run',
+        '  - [project] phone_shell',
+        '      Cwd argument: none',
         '',
       ].join('\n'),
     );

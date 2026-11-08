@@ -9,7 +9,11 @@ import {
 } from '@/hosts/opencode/plugin';
 import { withEnv } from '../../helpers';
 import { readAuditEntries } from '../../helpers/hook-capture';
-import { createHookFixture, type HookFixture } from '../../helpers/hook-hosts';
+import {
+  createHookFixture,
+  declareRemoteAndPlainCommandTools,
+  type HookFixture,
+} from '../../helpers/hook-hosts';
 import { auditHomeFor, captureInProcessCall, describeDifferential } from '../../helpers/in-process';
 
 const SESSION = 'opencode-1';
@@ -313,4 +317,25 @@ test('a homeDir input steers the shipped audit tree and the environment steers t
   expect(ported.entries.map((line) => line.entry.ruleId)).toEqual(['git.push-force']);
   expect(readAuditEntries(auditHomeFor(fixture))).toHaveLength(1);
   expect(readAuditEntries(homeDir)).toStrictEqual([]);
+});
+
+test('a tool declared without a cwd argument is not refused for a remote workdir', async () => {
+  declareRemoteAndPlainCommandTools(fixture);
+  const call = (tool: string, command: string) =>
+    captureInProcessCall(fixture, {}, () =>
+      callToolExecuteBefore({
+        name: tool,
+        tool,
+        args: () => ({ command, workdir: '/sdcard/Download' }),
+        blocked: false,
+        lines: 0,
+      }),
+    );
+  const listed = await call('phone_shell', 'ls');
+  const deleted = await call('phone_shell', 'rm -rf /sdcard/DCIM');
+  const plain = await call('ops_shell', 'ls');
+
+  expect(listed.thrown).toBeUndefined();
+  expect(deleted.thrown).toContain('Rule: rm.recursive-force-outside-cwd');
+  expect(plain.thrown).toContain(cwdReason('requested'));
 });

@@ -4,7 +4,7 @@ import { getRulesConfigValidation } from '@/core/policy/rules-config';
 const TOOL_NAME_ERROR =
   'must be a tool name: non-empty, at most 256 characters, no whitespace or control characters';
 const ARGUMENT_NAME_ERROR =
-  'must be an argument name: non-empty, at most 256 characters, no whitespace or control characters';
+  'must be an argument name or false: non-empty, at most 256 characters, no whitespace or control characters';
 
 describe('rules config diagnostics', () => {
   test('whitespace-only sources are rejected as empty', () => {
@@ -80,6 +80,7 @@ describe('rules config diagnostics', () => {
           'x'.repeat(257),
           { cwd: 'workdir' },
           { name: 'ops_run', cwd: 'work dir' },
+          { name: 'ops_true', cwd: true },
         ],
       },
       [
@@ -90,6 +91,7 @@ describe('rules config diagnostics', () => {
         `command_tools[4]: ${TOOL_NAME_ERROR}`,
         `command_tools[5].name: ${TOOL_NAME_ERROR}`,
         `command_tools[6].cwd: ${ARGUMENT_NAME_ERROR}`,
+        `command_tools[7].cwd: ${ARGUMENT_NAME_ERROR}`,
       ],
       [],
     ],
@@ -100,13 +102,14 @@ describe('rules config diagnostics', () => {
       [],
     ],
     [
-      'MCP-style names, 256-character names, and a cwd argument name are accepted',
+      'MCP-style names, 256-character names, a cwd argument name and no cwd argument are accepted',
       {
         version: 1,
         command_tools: [
           'mcp__server__tool',
           'x'.repeat(256),
           { name: 'ops_run_background', cwd: 'cwd' },
+          { name: 'phone_shell', cwd: false },
         ],
       },
       [],

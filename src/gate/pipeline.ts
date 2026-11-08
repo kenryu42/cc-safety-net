@@ -370,12 +370,14 @@ export function evaluateGuard(
 function promoteDeclaredCommandTool(
   invocation: ToolInvocation,
   command: string,
-  cwdArgument: string | undefined,
+  cwdArgument: string | false | undefined,
   paths: PathResolver,
 ): ToolInvocation | GuardEvaluation {
+  const cwdArguments =
+    cwdArgument === false ? [] : cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS;
   const requestedCwds = [
     ...new Set(
-      (cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS).flatMap((key) => {
+      cwdArguments.flatMap((key) => {
         const descriptor = Object.getOwnPropertyDescriptor(invocation.input, key);
         return descriptor ? [descriptor.value] : [];
       }),
