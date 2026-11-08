@@ -11,6 +11,7 @@ import {
   realpathSync,
   renameSync,
   rmdirSync,
+  type Stats,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -102,12 +103,7 @@ export function readPolicyFile(target: PolicyFilesystemTarget): string | null {
       if (!before.isFile()) throw new PolicyFilesystemError(target.scope.label);
       const content = readFileSync(descriptor, 'utf-8');
       const after = lstatSync(target.path);
-      if (
-        !after.isFile() ||
-        after.isSymbolicLink() ||
-        before.dev !== after.dev ||
-        before.ino !== after.ino
-      ) {
+      if (!after.isFile() || after.isSymbolicLink() || !isSameFile(before, after)) {
         throw new PolicyFilesystemError(target.scope.label);
       }
       validateTarget(target);
@@ -145,7 +141,7 @@ export function writePolicyFileAtomic(
         return after;
       });
       validateTarget(target);
-      validateAdjacentTemp(target, tempPath, temp.dev, temp.ino);
+      validateAdjacentTemp(target, tempPath, temp);
       renameSync(tempPath, target.path);
       afterRename?.(target.path);
       validateTarget(target);
@@ -350,20 +346,24 @@ function getCanonicalRootOrThrow(scope: PolicyFilesystemScope): string {
   return root;
 }
 
-function validateAdjacentTemp(
-  target: PolicyFilesystemTarget,
-  tempPath: string,
-  device: number,
-  inode: number,
-): void {
+function validateAdjacentTemp(target: PolicyFilesystemTarget, tempPath: string, temp: Stats): void {
   const stat = lstatSync(tempPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.dev !== device || stat.ino !== inode) {
+  if (!stat.isFile() || stat.isSymbolicLink() || !isSameFile(temp, stat)) {
     throw new PolicyFilesystemError(target.scope.label);
   }
   assertCanonicalContainment(
     getCanonicalRootOrThrow(target.scope),
     realpathSync(tempPath),
     target.scope.label,
+  );
+}
+
+const windowsHandleAndPathStatsReportDifferentVolumeSerials = process.platform === 'win32';
+
+function isSameFile(handleStat: Stats, pathStat: Stats): boolean {
+  return (
+    handleStat.ino === pathStat.ino &&
+    (windowsHandleAndPathStatsReportDifferentVolumeSerials || handleStat.dev === pathStat.dev)
   );
 }
 

@@ -254,6 +254,20 @@ export async function verifyPackage(): Promise<void> {
       throw new Error('Packed CLI did not fail closed on an over-limit source config');
     }
     rmSync(sourceLimitConfig);
+    run(
+      ['node', cli, 'rule', 'tool', 'add', 'ops_bash'],
+      directory,
+      [0],
+      undefined,
+      packageVerificationEnv,
+    );
+    if (
+      !run(['node', cli, 'rule', 'tool', 'list'], directory, [0], undefined, packageVerificationEnv)
+        .stdout.toString()
+        .includes('[user] ops_bash')
+    ) {
+      throw new Error('Packed CLI did not read back the user policy it wrote');
+    }
     for (const args of [['--version'], ['--help']]) {
       run(['node', cli, ...args], directory);
     }
