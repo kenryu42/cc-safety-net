@@ -468,7 +468,7 @@ function readPolicyFile(target) {
         throw new PolicyFilesystemError(target.scope.label);
       const content = import_node_fs.readFileSync(descriptor, "utf-8");
       const after = import_node_fs.lstatSync(target.path);
-      if (!after.isFile() || after.isSymbolicLink() || before.dev !== after.dev || before.ino !== after.ino) {
+      if (!after.isFile() || after.isSymbolicLink() || !isSameFile(before, after)) {
         throw new PolicyFilesystemError(target.scope.label);
       }
       validateTarget(target);
@@ -495,7 +495,7 @@ function writePolicyFileAtomic(target, content, mode = 384, afterRename) {
       return after;
     });
     validateTarget(target);
-    validateAdjacentTemp(target, tempPath, temp.dev, temp.ino);
+    validateAdjacentTemp(target, tempPath, temp);
     import_node_fs.renameSync(tempPath, target.path);
     afterRename?.(target.path);
     validateTarget(target);
@@ -687,12 +687,16 @@ function getCanonicalRootOrThrow(scope) {
     throw new PolicyFilesystemError(scope.label);
   return root;
 }
-function validateAdjacentTemp(target, tempPath, device, inode) {
+function validateAdjacentTemp(target, tempPath, temp) {
   const stat = import_node_fs.lstatSync(tempPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.dev !== device || stat.ino !== inode) {
+  if (!stat.isFile() || stat.isSymbolicLink() || !isSameFile(temp, stat)) {
     throw new PolicyFilesystemError(target.scope.label);
   }
   assertCanonicalContainment(getCanonicalRootOrThrow(target.scope), import_node_fs.realpathSync(tempPath), target.scope.label);
+}
+var windowsHandleAndPathStatsReportDifferentVolumeSerials = process.platform === "win32";
+function isSameFile(handleStat, pathStat) {
+  return handleStat.ino === pathStat.ino && (windowsHandleAndPathStatsReportDifferentVolumeSerials || handleStat.dev === pathStat.dev);
 }
 function assertCanonicalContainment(canonicalRoot, canonicalPath, label) {
   const remainder = import_node_path.relative(canonicalRoot, canonicalPath);
@@ -2563,7 +2567,7 @@ function readSubstitution(source, start, end, limits, parseState, depth) {
   const closing = opening.closing;
   const arithmetic = closing === "))";
   const backtick = closing === "`";
-  const process = source[start] === "<" || source[start] === ">";
+  const process2 = source[start] === "<" || source[start] === ">";
   const close = findSubstitutionEnd(source, start + openLength, end, closing);
   const innerEnd = close === -1 ? end : close;
   const next = close === -1 ? end : close + closing.length;
@@ -2621,7 +2625,7 @@ function readSubstitution(source, start, end, limits, parseState, depth) {
       message: `${source.slice(start, start + openLength)} substitution is not closed`
     }
   ] : [];
-  const contextIssue = (backtick || process) && containsHeredoc(inner.nodes) ? [
+  const contextIssue = (backtick || process2) && containsHeredoc(inner.nodes) ? [
     {
       code: "unsupported-heredoc-context",
       message: "heredocs are supported only in ordinary commands and $(...) substitutions"
@@ -3101,9 +3105,9 @@ function derivePosixWordParts(source, start, end) {
     }
     const arithmetic = source.startsWith("$((", i);
     const command = source.startsWith("$(", i) && !arithmetic;
-    const process = !double && (source.startsWith("<(", i) || source.startsWith(">(", i));
+    const process2 = !double && (source.startsWith("<(", i) || source.startsWith(">(", i));
     const backtick = char === "`";
-    if (arithmetic || command || process || backtick) {
+    if (arithmetic || command || process2 || backtick) {
       const openLength = arithmetic ? 3 : backtick ? 1 : 2;
       const closing = arithmetic ? "))" : backtick ? "`" : ")";
       const close = findSubstitutionEnd(source, i + openLength, end, closing);
