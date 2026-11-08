@@ -290,7 +290,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.7.4";
+var AUDIT_LOG_VERSION = "2.7.5";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -1219,6 +1219,7 @@ async function runCopilotCliHook() {
 
 // src/hosts/cursor/hook.ts
 var import_canonicalization3 = require("./core.js");
+var import_scope_policy = require("./core.js");
 var import_intake7 = require("./gate.js");
 var CURSOR_COMMAND_TOOLS = new Map([["Shell", "auto"]]);
 function getCursorToolRoute(toolName) {
@@ -1275,7 +1276,7 @@ function resolveCursorContext(input, toolInput, toolName, outputDeny, environmen
   if (toolInput === null || typeof toolInput !== "object" || Array.isArray(toolInput)) {
     return { configCwd: base, executionCwd: base };
   }
-  if (!Object.hasOwn(toolInput, "working_directory")) {
+  if (!Object.hasOwn(toolInput, "working_directory") || getCursorToolRoute(toolName).kind === "unknown" && import_scope_policy.isDeclaredWithoutCwdArgument(environment, base, toolName)) {
     return { configCwd: base, executionCwd: base };
   }
   const requestedWorkingDirectory = toolInput.working_directory;

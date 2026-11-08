@@ -3527,8 +3527,9 @@ function evaluateGuard(hostInvocation, options) {
   };
 }
 function promoteDeclaredCommandTool(invocation, command, cwdArgument, paths) {
+  const cwdArguments = cwdArgument === false ? [] : cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS;
   const requestedCwds = [
-    ...new Set((cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS).flatMap((key) => {
+    ...new Set(cwdArguments.flatMap((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(invocation.input, key);
       return descriptor ? [descriptor.value] : [];
     }))

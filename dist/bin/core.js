@@ -134,6 +134,7 @@ __export(exports_core, {
   gitDirectoryRedirects: () => gitDirectoryRedirects,
   hasUnsafeTmpdirWordSplitting: () => hasUnsafeTmpdirWordSplitting,
   isBlockIntent: () => isBlockIntent,
+  isDeclaredWithoutCwdArgument: () => isDeclaredWithoutCwdArgument,
   isGitConfigEnvName: () => isGitConfigEnvName,
   isGitDirectory: () => isGitDirectory,
   isGitHubRef: () => isGitHubRef,
@@ -1320,8 +1321,8 @@ function commandToolIssues(tools) {
       ...isCommandToolName(tool.name) ? [] : [
         typed(["command_tools", index, "name"], `must be a tool name: ${COMMAND_TOOL_NAME_RULE}`)
       ],
-      ...tool.cwd === undefined || isCommandToolName(tool.cwd) ? [] : [
-        typed(["command_tools", index, "cwd"], `must be an argument name: ${COMMAND_TOOL_NAME_RULE}`)
+      ...tool.cwd === undefined || tool.cwd === false || isCommandToolName(tool.cwd) ? [] : [
+        typed(["command_tools", index, "cwd"], `must be an argument name or false: ${COMMAND_TOOL_NAME_RULE}`)
       ]
     ];
     return issues.length > 0 ? issues : firstClaim(tool.name, index);
@@ -3136,6 +3137,9 @@ function isRecord3(value) {
 }
 
 // src/core/policy/scope-policy.ts
+function isDeclaredWithoutCwdArgument(environment, cwd, toolName) {
+  return loadRulesPolicy(environment, { cwd }).command_tools.some((tool) => tool.name === toolName && tool.cwd === false);
+}
 function loadRulesPolicy(environment, options) {
   const paths = getPolicyPaths(environment, options);
   let sameConfigPath;
