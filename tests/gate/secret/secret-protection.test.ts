@@ -2949,6 +2949,57 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     ]);
   });
 
+  test('the ssh -i identity file is relaxed only in standard mode', () => {
+    checkCarriers([
+      {
+        name: 'the field shape: a deploy key authenticates a remote date check',
+        command:
+          'ssh -i "$HOME/.ssh/plant_camera_key" -o BatchMode=yes -o ConnectTimeout=10 deploy@203.0.113.7 \'date -u +%FT%TZ\'',
+        expected: ssh(`${userHome}/.ssh/plant_camera_key`),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'an identity file after options that take values',
+        command: 'ssh -p 2222 -l deploy -i ~/.ssh/id_ed25519 host.example uptime',
+        expected: ssh('~/.ssh/id_ed25519'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'an identity file clustered after a flag',
+        command: 'ssh -vi ~/.ssh/id_ed25519 host.example',
+        expected: ssh('~/.ssh/id_ed25519'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'an identity file outside the home SSH directory',
+        command: 'ssh -i id_rsa host.example',
+        expected: { target: 'id_rsa', ruleId: 'secret.basename.id-rsa' },
+        relaxedInStandard: true,
+      },
+      {
+        name: 'the identity file read back by the remote command',
+        command: 'ssh -i ~/.ssh/deploy_key host.example cat ~/.ssh/deploy_key',
+        expected: ssh('~/.ssh/deploy_key'),
+      },
+      {
+        name: 'a -i that belongs to the remote command',
+        command: 'ssh host.example sed -i ~/.ssh/authorized_keys',
+        expected: ssh('~/.ssh/authorized_keys'),
+      },
+      {
+        name: 'the value of an option that takes one is not an identity file',
+        command: 'ssh -F ~/.ssh/config -i ~/.ssh/deploy_key host.example',
+        expected: ssh('~/.ssh/config'),
+      },
+      {
+        name: 'a configured deny path on the identity file',
+        command: 'ssh -i ~/.ssh/deploy_key host.example',
+        config: { denyPaths: [`${userHome}/.ssh/deploy_key`] },
+        expected: { target: '~/.ssh/deploy_key', ruleId: 'secret.deny-path' },
+      },
+    ]);
+  });
+
   test('tailscale cert outputs and the openssl x509 input are relaxed only in standard mode', () => {
     const pem = (target: string): Verdict => ({ target, ruleId: 'secret.ext.pem' });
     checkCarriers([
