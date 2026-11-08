@@ -146,6 +146,8 @@ jobs:
             node: 24
           - os: windows-latest
             node: 24
+          - os: windows-latest
+            node: 22.12.0
           - os: macos-latest
             node: 24
     runs-on: ${{ matrix.os }}
