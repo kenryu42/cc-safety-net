@@ -1606,7 +1606,11 @@ var SEARCH_VALUELESS_LONG = new Set([
   "hidden"
 ]);
 var NAME_LISTING_METADATA_COMMANDS = new Set(["wc", ...PATTERN_FIRST_COMMANDS]);
-var SSH_VALUE_FLAG = /[BbcDEeFIiJLlmOoPpQRSWw]/;
+var IDENTITY_FILE_VALUE_FLAGS = new Map([
+  ["ssh", /[BbcDEeFIiJLlmOoPpQRSWw]/],
+  ["scp", /[cDFiJloPSX]/],
+  ["sftp", /[BbcDFiJloPRSsX]/]
+]);
 var CERTIFICATE_PIPE_PROGRAMS = new Set(["cd", "grep", "head", "openssl", "tail", "tailscale"]);
 var WC_COUNT_OPTION = /^(?:-[lwcm]+|--(?:lines|words|bytes|chars))$/;
 var GH_TEXT_FLAGS = new Set(["--search", "-S", "--title", "-t", "--body", "-b", "--jq", "-q"]);
@@ -2013,20 +2017,24 @@ function extractSegmentPathTargets(tokens, store, options, environment, segmentC
   const optionValue = (option, index) => new RegExp(`^--?${option}=`).test(post[index] ?? "") || new RegExp(`^--?${option}$`).test(post[index - 1] ?? "");
   const writesTailscaleCertFiles = runsTailscaleCert(stripped);
   const readsOnlyCertificate = command === "openssl" && post[0] === "x509";
-  const identityFileIndexes = command === "ssh" ? sshIdentityFileIndexes(post) : new Set;
+  const identityFileValueFlags = IDENTITY_FILE_VALUE_FLAGS.get(command);
+  const identityFileIndexes = identityFileValueFlags === undefined ? new Set : sshIdentityFileIndexes(command, post, identityFileValueFlags);
   const certificateOutput = outputMayFeedReader ? { certificateOutputMayFeedReader: true } : {};
   return [
     ...preludeTargets,
     ...post.flatMap((token, index) => extractOperandPathCandidates(command, token).map((target) => writesTailscaleCertFiles && optionValue("(?:cert|key)-file", index) ? { ...here(target), isCreatedPath: true, ...certificateOutput } : readsOnlyCertificate && optionValue("in", index) ? { ...here(target), isCertificateInput: true, ...certificateOutput } : identityFileIndexes.has(index) && !redirectionTargets.has(token) ? { ...here(target), isIdentityFile: true } : here(target)))
   ];
 }
-function sshIdentityFileIndexes(args) {
+function sshIdentityFileIndexes(command, args, valueFlags) {
   const indexes = new Set;
+  const handsIdentityToProgram = command !== "ssh" && args.some((arg) => /^-./.test(arg) && arg[arg.slice(1).search(valueFlags) + 1] === "S");
+  if (handsIdentityToProgram)
+    return indexes;
   for (let index = 0;index < args.length; index += 1) {
     const arg = args[index] ?? "";
     if (arg === "--" || !/^-./.test(arg))
       return indexes;
-    const valueFlag = arg.slice(1).search(SSH_VALUE_FLAG);
+    const valueFlag = arg.slice(1).search(valueFlags);
     if (valueFlag !== arg.length - 2)
       continue;
     if (arg.endsWith("i"))
