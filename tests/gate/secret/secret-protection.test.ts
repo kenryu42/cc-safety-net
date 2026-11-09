@@ -3056,6 +3056,17 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         command: 'sftp -qS ./wrap -i ~/.ssh/id_rsa deploy@host.example',
         expected: ssh('~/.ssh/id_rsa'),
       },
+      {
+        name: 'scp hands the identity file to an attached -S program',
+        command: 'scp -S./wrap -i ~/.ssh/id_rsa deploy@host.example:x .',
+        expected: ssh('~/.ssh/id_rsa'),
+      },
+      {
+        name: 'an S inside an attached -o value is not an -S option',
+        command: 'scp -oStrictHostKeyChecking=no -i ~/.ssh/id_ed25519 deploy@host.example:x .',
+        expected: ssh('~/.ssh/id_ed25519'),
+        relaxedInStandard: true,
+      },
     ]);
   });
 
