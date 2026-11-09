@@ -1606,6 +1606,7 @@ var SEARCH_VALUELESS_LONG = new Set([
   "hidden"
 ]);
 var NAME_LISTING_METADATA_COMMANDS = new Set(["wc", ...PATTERN_FIRST_COMMANDS]);
+var SSH_VALUE_FLAG = /[BbcDEeFIiJLlmOoPpQRSWw]/;
 var CERTIFICATE_PIPE_PROGRAMS = new Set(["cd", "grep", "head", "openssl", "tail", "tailscale"]);
 var WC_COUNT_OPTION = /^(?:-[lwcm]+|--(?:lines|words|bytes|chars))$/;
 var GH_TEXT_FLAGS = new Set(["--search", "-S", "--title", "-t", "--body", "-b", "--jq", "-q"]);
@@ -1656,6 +1657,8 @@ function findSensitivePolicyPathTarget(candidates, config, configCwd, environmen
       continue;
     const ruleId = isSensitivePath(target, candidate.cwd, config, environment, budget);
     if (ruleId) {
+      if (activeDefaultTargets !== undefined && candidate.isIdentityFile === true)
+        continue;
       const standardModeFileNameRule = activeDefaultTargets !== undefined && !ruleId.startsWith("secret.home.") && !ruleId.startsWith("secret.cli.");
       const matchedDirectory = standardModeFileNameRule && environment.paths.isDirectory(candidateAbsolutePath(target, candidate.cwd, environment, budget));
       if (matchedDirectory)
@@ -2010,11 +2013,27 @@ function extractSegmentPathTargets(tokens, store, options, environment, segmentC
   const optionValue = (option, index) => new RegExp(`^--?${option}=`).test(post[index] ?? "") || new RegExp(`^--?${option}$`).test(post[index - 1] ?? "");
   const writesTailscaleCertFiles = runsTailscaleCert(stripped);
   const readsOnlyCertificate = command === "openssl" && post[0] === "x509";
+  const identityFileIndexes = command === "ssh" ? sshIdentityFileIndexes(post) : new Set;
   const certificateOutput = outputMayFeedReader ? { certificateOutputMayFeedReader: true } : {};
   return [
     ...preludeTargets,
-    ...post.flatMap((token, index) => extractOperandPathCandidates(command, token).map((target) => writesTailscaleCertFiles && optionValue("(?:cert|key)-file", index) ? { ...here(target), isCreatedPath: true, ...certificateOutput } : readsOnlyCertificate && optionValue("in", index) ? { ...here(target), isCertificateInput: true, ...certificateOutput } : here(target)))
+    ...post.flatMap((token, index) => extractOperandPathCandidates(command, token).map((target) => writesTailscaleCertFiles && optionValue("(?:cert|key)-file", index) ? { ...here(target), isCreatedPath: true, ...certificateOutput } : readsOnlyCertificate && optionValue("in", index) ? { ...here(target), isCertificateInput: true, ...certificateOutput } : identityFileIndexes.has(index) && !redirectionTargets.has(token) ? { ...here(target), isIdentityFile: true } : here(target)))
   ];
+}
+function sshIdentityFileIndexes(args) {
+  const indexes = new Set;
+  for (let index = 0;index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--" || !/^-./.test(arg))
+      return indexes;
+    const valueFlag = arg.slice(1).search(SSH_VALUE_FLAG);
+    if (valueFlag !== arg.length - 2)
+      continue;
+    if (arg.endsWith("i"))
+      indexes.add(index + 1);
+    index += 1;
+  }
+  return indexes;
 }
 function withoutTimeout(argv) {
   return basename2(argv[0] ?? "").toLowerCase() === "timeout" ? argv.slice(2) : argv;
