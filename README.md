@@ -33,6 +33,7 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
   <a href="https://ccsafetynet.com/go/crazyrouter?from=readme"><picture><source media="(prefers-color-scheme: dark)" srcset="./.github/assets/crazyrouter-logo-dark.png"><source media="(prefers-color-scheme: light)" srcset="./.github/assets/crazyrouter-logo-light.png"><img alt="Crazyrouter" src="./.github/assets/crazyrouter-logo-light.png" height="32"></picture></a>
   <br>
   <sub><a href="https://ccsafetynet.com/go/crazyrouter?from=readme">One API for 300+ AI models, OpenAI&#8209;compatible.</a></sub>
+  <img src="https://ccsafetynet.com/go/crazyrouter/view?from=readme" alt="" width="1" height="1">
 </p>
 
 ## How it works
