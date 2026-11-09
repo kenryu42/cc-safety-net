@@ -161,6 +161,7 @@ const SEARCH_VALUELESS_LONG = new Set([
   'hidden',
 ]);
 const NAME_LISTING_METADATA_COMMANDS = new Set(['wc', ...PATTERN_FIRST_COMMANDS]);
+const SSH_VALUE_FLAG = /[BbcDEeFIiJLlmOoPpQRSWw]/;
 const CERTIFICATE_PIPE_PROGRAMS = new Set(['cd', 'grep', 'head', 'openssl', 'tail', 'tailscale']);
 const WC_COUNT_OPTION = /^(?:-[lwcm]+|--(?:lines|words|bytes|chars))$/;
 const GH_TEXT_FLAGS = new Set(['--search', '-S', '--title', '-t', '--body', '-b', '--jq', '-q']);
@@ -215,6 +216,7 @@ type SecretCandidate = {
   readonly isRedirectionWriteTarget?: true;
   readonly isCreatedPath?: true;
   readonly isCertificateInput?: true;
+  readonly isIdentityFile?: true;
   readonly certificateOutputMayFeedReader?: true;
   readonly literalRole?: 'data' | 'write';
   readonly loopVariable?: string;
@@ -289,6 +291,7 @@ function findSensitivePolicyPathTarget(
     if (activeDefaultTargets && !activeDefaultTargets.has(target)) continue;
     const ruleId = isSensitivePath(target, candidate.cwd, config, environment, budget);
     if (ruleId) {
+      if (activeDefaultTargets !== undefined && candidate.isIdentityFile === true) continue;
       const standardModeFileNameRule =
         activeDefaultTargets !== undefined &&
         !ruleId.startsWith('secret.home.') &&
@@ -922,6 +925,7 @@ function extractSegmentPathTargets(
     new RegExp(`^--?${option}$`).test(post[index - 1] ?? '');
   const writesTailscaleCertFiles = runsTailscaleCert(stripped);
   const readsOnlyCertificate = command === 'openssl' && post[0] === 'x509';
+  const identityFileIndexes = command === 'ssh' ? sshIdentityFileIndexes(post) : new Set<number>();
   const certificateOutput = outputMayFeedReader
     ? { certificateOutputMayFeedReader: true as const }
     : {};
@@ -933,10 +937,25 @@ function extractSegmentPathTargets(
           ? { ...here(target), isCreatedPath: true as const, ...certificateOutput }
           : readsOnlyCertificate && optionValue('in', index)
             ? { ...here(target), isCertificateInput: true as const, ...certificateOutput }
-            : here(target),
+            : identityFileIndexes.has(index) && !redirectionTargets.has(token)
+              ? { ...here(target), isIdentityFile: true as const }
+              : here(target),
       ),
     ),
   ];
+}
+
+function sshIdentityFileIndexes(args: readonly string[]): Set<number> {
+  const indexes = new Set<number>();
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? '';
+    if (arg === '--' || !/^-./.test(arg)) return indexes;
+    const valueFlag = arg.slice(1).search(SSH_VALUE_FLAG);
+    if (valueFlag !== arg.length - 2) continue;
+    if (arg.endsWith('i')) indexes.add(index + 1);
+    index += 1;
+  }
+  return indexes;
 }
 
 function withoutTimeout(argv: readonly string[]): readonly string[] {
