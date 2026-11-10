@@ -490,6 +490,7 @@ describe('core/shell/parse', () => {
       ['Get-ChildItem ~\\OneDrive -Recurse', 'powershell'],
       ['mytool $env:USERPROFILE\\proj', 'powershell'],
       ['Get-ChildItem -Path:C:\\proj', 'powershell'],
+      ['mytool -p:OutputPath=C:\\proj', 'powershell'],
       ['S=C:\\tmp\\scratch; bash $S/make-fixture.sh', 'posix'],
       ["printf '%s\\n' 'C:\\Users\\O'\\''Brien'", 'posix'],
       ['', 'posix'],
