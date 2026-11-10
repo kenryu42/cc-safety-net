@@ -144,6 +144,30 @@ export function pipelineContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'denies reading a .env attached to a PowerShell parameter with a colon',
+      ...powerShell('Get-Content -Path:C:\\proj\\.env'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.basename.env'),
+    },
+    {
+      name: 'denies reading an SSH key attached to a PowerShell parameter with a colon',
+      ...powerShell('Get-Content -LiteralPath:~\\.ssh\\id_rsa'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.home.ssh'),
+    },
+    {
+      name: 'denies listing a .env attached to a parameter with a colon in auto mode',
+      ...autoShell('Get-ChildItem -Path:C:\\proj\\.env'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.basename.env'),
+    },
+    {
+      name: 'allows reading an ordinary file attached to a PowerShell parameter with a colon',
+      ...powerShell('Get-Content -Path:C:\\proj\\notes.txt'),
+      cwd: 'workspace',
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a PowerShell here-string of source code piped to python',
       ...powerShell("@'\ns = 'var x = originalArmy.Key;'\n'@ | python -"),
       cwd: 'workspace',

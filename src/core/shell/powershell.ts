@@ -56,7 +56,7 @@ const AUTO_POWERSHELL_PATH_ALIASES = new Set(['gc', 'cat', 'type', 'cp', 'mv', '
 const AUTO_POWERSHELL_PARAMETERS = ['-rec', '-for', '-path', '-literalpath', '-whatif'];
 const POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
 const POWERSHELL_SEPARATED_VARIABLE = /^(?:\$\{?\w+\}?|~)\\./;
-const WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~|\$env:\w+)\\|^-[^=]*=[a-z]:\\/i;
+const WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~|\$env:\w+)\\|^-[^=:]*[=:][a-z]:\\/i;
 
 export function shouldUsePowerShellParser(source: string, limits: CommandParserLimits): boolean {
   const candidate = source.toLowerCase().replaceAll('`', '');

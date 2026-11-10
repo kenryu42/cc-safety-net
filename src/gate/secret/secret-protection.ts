@@ -564,7 +564,13 @@ function extractCommandPathTargets(
   ];
 
   const map = (text: string) =>
-    projectSensitiveShellText(rewritePowerShellHomePrefix(text, powershell), environment);
+    projectSensitiveShellText(
+      rewritePowerShellHomePrefix(
+        powershell ? text.replace(POWERSHELL_PARAMETER_NAME, '') : text,
+        powershell,
+      ),
+      environment,
+    );
   const holdsProcessSubstitution = /[<>=]\(/.test(syntax.source);
   const holdsCoprocess = /\bcoproc\b|\|&/.test(syntax.source);
   const pipedWords: string[] = [];
@@ -1225,6 +1231,7 @@ function normalizeInterpreterName(command: string): string {
 }
 
 const POWERSHELL_HOME_PREFIX = /^(?:\$\{home\}|\$\{env:(?:userprofile|home)\}|~)(?=[\\/])/i;
+const POWERSHELL_PARAMETER_NAME = /^-[a-z][\w-]*:(?=.)/i;
 
 function rewritePowerShellHomePrefix(token: string, powershell: boolean): string {
   if (!powershell || !POWERSHELL_HOME_PREFIX.test(token)) return token;
