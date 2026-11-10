@@ -36,6 +36,8 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
   <img src="https://ccsafetynet.com/go/crazyrouter/view?from=readme" alt="" width="1" height="1">
 </p>
 
+<p align="center"><sub><a href="https://ccsafetynet.com/sponsor">Interested in sponsoring? →</a></sub></p>
+
 ## How it works
 
 <p align="center">
