@@ -209,3 +209,43 @@ test('explain never shows the text of a script read from disk', () => {
     expect(output).not.toContain(text);
   }
 });
+
+describe('an unquoted Windows drive path keeps its backslashes', () => {
+  const UNQUOTED_NATIVE_PATH = 'Get-ChildItem C:\\Users\\bob -Recurse';
+
+  test('explain shows the PowerShell words it analyzed', () => {
+    const result = compareSides(fixture(), UNQUOTED_NATIVE_PATH, { shell: 'powershell' });
+    expect(
+      (result.trace as { steps: { segments?: string[][] }[] }).steps[0]?.segments,
+    ).toStrictEqual([['Get-ChildItem', 'C:\\Users\\bob', '-Recurse']]);
+  });
+
+  test('the auto dialect matches a custom rule that names the path', () => {
+    const result = compareSides(fixture(), UNQUOTED_NATIVE_PATH, {
+      policySnapshot: policySnapshot({
+        rules: [
+          {
+            name: 'native-path',
+            command: 'Get-ChildItem',
+            block_args: ['C:\\Users\\bob'],
+            reason: 'native path',
+          },
+        ],
+      }),
+    });
+    expect(result.ruleId).toBe('custom.native-path');
+  });
+
+  test('the auto dialect denies a recursive delete of the path', () => {
+    expect(compareSides(fixture(), 'rm -rf C:\\Users\\bob').result).toBe('blocked');
+  });
+
+  test.skipIf(process.platform !== 'win32').each(['rm -rf', 'Get-ChildItem -Recurse'])(
+    'the auto dialect still allows %s on a project folder named by its native path',
+    (head) => {
+      const side = fixture({ 'project/build/out.txt': 'built\n' });
+      const result = compareSides(side, `${head} ${join(side.project, 'build')}`);
+      expect(result.result).toBe('allowed');
+    },
+  );
+});

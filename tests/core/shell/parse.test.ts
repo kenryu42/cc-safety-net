@@ -483,6 +483,9 @@ describe('core/shell/parse', () => {
       ['$records | ForEach-Object { $_.key }', 'powershell'],
       ["$records | Where-Object { $_.key -eq 'a' }", 'powershell'],
       ['git commit -m "use ForEach-Object { $_.key }"', 'posix'],
+      ['Get-ChildItem C:\\Users\\bob -Recurse', 'powershell'],
+      ['mytool --root C:\\proj', 'powershell'],
+      ['rm -rf C:\\', 'powershell'],
       ['', 'posix'],
     ] as const;
     for (const [source, dialect] of rows) {
