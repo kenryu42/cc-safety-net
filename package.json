@@ -116,6 +116,7 @@
   },
   "overrides": {
     "@opentelemetry/core": "2.8.0",
+    "effect": "4.0.0-rc.112",
     "glob": "^14.0.3",
     "ip-address": "^10.7.4",
     "js-yaml": "^4.3.1",
