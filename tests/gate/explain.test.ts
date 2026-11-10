@@ -209,3 +209,63 @@ test('explain never shows the text of a script read from disk', () => {
     expect(output).not.toContain(text);
   }
 });
+
+describe.skipIf(process.platform !== 'win32')('issue 337 Windows probe', () => {
+  const rules = policySnapshot({
+    rules: [
+      {
+        name: 'native-path',
+        command: 'Get-ChildItem',
+        block_args: ['C:\\Users\\bob'],
+        reason: 'native path',
+      },
+      {
+        name: 'collapsed-path',
+        command: 'Get-ChildItem',
+        block_args: ['C:Usersbob'],
+        reason: 'collapsed path',
+      },
+    ],
+  });
+  const UNQUOTED_NATIVE_PATH = 'Get-ChildItem C:\\Users\\bob -Recurse';
+  const parsedSegments = (result: Record<string, unknown>) =>
+    (result.trace as { steps: { segments?: string[][] }[] }).steps[0]?.segments;
+
+  test('the PowerShell dialect already matches a rule on the native path', () => {
+    const result = compareSides(fixture(), UNQUOTED_NATIVE_PATH, {
+      shell: 'powershell',
+      policySnapshot: rules,
+    });
+    expect(result.ruleId).toBe('custom.native-path');
+  });
+
+  test('the POSIX dialect reads the backslashes as escapes', () => {
+    const result = compareSides(fixture(), UNQUOTED_NATIVE_PATH, {
+      shell: 'posix',
+      policySnapshot: rules,
+    });
+    expect(result.ruleId).toBe('custom.collapsed-path');
+  });
+
+  test('the PowerShell dialect shows the native path in the parse step', () => {
+    const result = compareSides(fixture(), UNQUOTED_NATIVE_PATH, { shell: 'powershell' });
+    expect(parsedSegments(result)).toStrictEqual([['Get-ChildItem', 'C:\\Users\\bob', '-Recurse']]);
+  });
+
+  test('the auto dialect matches a rule on the native path', () => {
+    const result = compareSides(fixture(), UNQUOTED_NATIVE_PATH, { policySnapshot: rules });
+    expect(result.ruleId).toBe('custom.native-path');
+  });
+
+  test.each(['Get-ChildItem', 'Select-String KEY', 'cat', 'type', 'mytool'])(
+    'the auto dialect denies %s reading a .env named by its native path',
+    (head) => {
+      const side = fixture({ 'project/.env': 'KEY=value\n' });
+      const result = compareSides(side, `${head} ${join(side.project, '.env')}`);
+      expect({ result: result.result, ruleId: result.ruleId }).toStrictEqual({
+        result: 'blocked',
+        ruleId: 'secret.basename.env',
+      });
+    },
+  );
+});
