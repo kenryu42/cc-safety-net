@@ -84,6 +84,7 @@ __export(exports_gate, {
   resolveContainedCwd: () => resolveContainedCwd,
   resolveStandardHookContext: () => resolveStandardHookContext,
   safetyNetSubcommandIndex: () => safetyNetSubcommandIndex,
+  splitPowerShellAttachedParameter: () => splitPowerShellAttachedParameter,
   walkGuardSyntax: () => walkGuardSyntax
 });
 module.exports = __toCommonJS(exports_gate);
@@ -255,6 +256,11 @@ function readGuardTokens(syntax) {
       return [{ kind: "redirection", target: event.target }];
     return [];
   });
+}
+var POWERSHELL_ATTACHED_PARAMETER = /^(-[a-z][\w-]*):(.+)$/is;
+function splitPowerShellAttachedParameter(token) {
+  const attached = POWERSHELL_ATTACHED_PARAMETER.exec(token);
+  return attached?.[1] && attached[2] ? [attached[1], attached[2]] : [token];
 }
 function expandTrackedShellVariables(text, variables) {
   return text.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(:?[-+])([^}]*)\}/g, (match, name, operator, word) => {
@@ -923,7 +929,7 @@ function findProtectedPathMutationInCommand(syntax, cwd, environment, budget, sc
   if (syntax.status !== "complete")
     return scanner.findMalformedTarget(syntax.source);
   return walkGuardSyntax(syntax, cwd, environment, budget, {
-    segment: (tokens, state) => scanner.findSegmentTarget(tokens, state),
+    segment: (tokens, state) => scanner.findSegmentTarget(tokens, state) ?? (syntax.program.dialect === "powershell" ? scanner.findSegmentTarget(tokens.flatMap(splitPowerShellAttachedParameter), state) : null),
     redirection: (redirection, state) => redirection.role === "file-write" && scanner.isRedirectionTarget(expandTrackedShellVariables(redirection.target, state.variables), state) ? redirection.target : null
   });
 }
@@ -1829,7 +1835,12 @@ function extractCommandPathTargets(syntax, store, options, environment, cwd, bud
       if (scriptOptions.commandHoldsPipe)
         pipedWords.push(...tokens);
       programs.push(basename2(withoutTimeout(effectiveArgv(tokens, environment))[0] ?? "").toLowerCase());
-      targets.push(...extractSegmentPathTargets(tokens, store, holdsProcessSubstitution || boundary === "|" || boundary === "|&" ? { ...scriptOptions, segmentMayFeedReader: true } : scriptOptions, environment, state.cwd, budget, shellWords));
+      const segmentOptions = holdsProcessSubstitution || boundary === "|" || boundary === "|&" ? { ...scriptOptions, segmentMayFeedReader: true } : scriptOptions;
+      targets.push(...extractSegmentPathTargets(tokens, store, segmentOptions, environment, state.cwd, budget, shellWords));
+      const spaceSeparated = powershell ? tokens.flatMap((token) => splitPowerShellAttachedParameter(token).map((part) => rewritePowerShellHomePrefix(part, powershell))) : tokens;
+      if (spaceSeparated.length > tokens.length) {
+        targets.push(...extractSegmentPathTargets(spaceSeparated, store, segmentOptions, environment, state.cwd, budget));
+      }
       if (pipeProducer !== null) {
         targets.push(...extractPipeCarrierPathTargets(pipeProducer, tokens, store, scriptOptions, environment, state.cwd, budget));
       }

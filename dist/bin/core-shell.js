@@ -3491,6 +3491,7 @@ var AUTO_POWERSHELL_PATH_ALIASES = new Set(["gc", "cat", "type", "cp", "mv", "rm
 var AUTO_POWERSHELL_PARAMETERS = ["-rec", "-for", "-path", "-literalpath", "-whatif"];
 var POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
 var POWERSHELL_SEPARATED_VARIABLE = /^(?:\$\{?\w+\}?|~)\\./;
+var WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~|\$env:\w+)\\|^-[^=]*[=:][a-z]:\\/i;
 function shouldUsePowerShellParser(source, limits) {
   const candidate = source.toLowerCase().replaceAll("`", "");
   if (![...AUTO_POWERSHELL_HEADS].some((head) => candidate.includes(head)) && !(candidate.includes("rm") && AUTO_POWERSHELL_PARAMETERS.some((word) => candidate.includes(word))) && !candidate.includes("<#") && !hasPathExpressionSignal(candidate)) {
@@ -3513,9 +3514,12 @@ function hasPosixHeredoc(program) {
 function hasPathExpressionSignal(candidate) {
   if (candidate.includes("$env:"))
     return true;
-  return candidate.includes("\\") && (candidate.includes("$") || candidate.includes("~"));
+  return candidate.includes("\\") && (candidate.includes("$") || candidate.includes("~") || candidate.includes(":\\"));
 }
-function isPowerShellSelectorCommand(words) {
+function isPowerShellSelectorCommand(command) {
+  if (command.some((word) => !word.quoted && WINDOWS_NATIVE_PATH.test(word.text)))
+    return true;
+  const words = command.map((word) => word.text);
   const headIndex = words[0] === "&" || words[0] === "." ? 1 : 0;
   const head = words[headIndex]?.toLowerCase();
   if (head && AUTO_POWERSHELL_HEADS.has(head))
@@ -4034,7 +4038,7 @@ function selectorCommandsFromProgram(program) {
       [
         ...node.words,
         ...node.redirections.flatMap((redirection) => redirection.target ? [redirection.target] : [])
-      ].sort((left, right) => left.span.start - right.span.start).filter((word) => word.text !== "" && word.raw !== ",").map((word) => word.text),
+      ].sort((left, right) => left.span.start - right.span.start).filter((word) => word.text !== "" && word.raw !== ","),
       ...node.nested.flatMap(selectorCommandsFromProgram)
     ];
   });
