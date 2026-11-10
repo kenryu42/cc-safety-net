@@ -486,6 +486,8 @@ describe('core/shell/parse', () => {
       ['Get-ChildItem C:\\Users\\bob -Recurse', 'powershell'],
       ['mytool --root C:\\proj', 'powershell'],
       ['rm -rf C:\\', 'powershell'],
+      ['mytool --config=C:\\proj\\settings.json', 'powershell'],
+      ['Get-ChildItem ~\\OneDrive -Recurse', 'powershell'],
       ['', 'posix'],
     ] as const;
     for (const [source, dialect] of rows) {

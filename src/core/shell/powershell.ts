@@ -56,7 +56,7 @@ const AUTO_POWERSHELL_PATH_ALIASES = new Set(['gc', 'cat', 'type', 'cp', 'mv', '
 const AUTO_POWERSHELL_PARAMETERS = ['-rec', '-for', '-path', '-literalpath', '-whatif'];
 const POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
 const POWERSHELL_SEPARATED_VARIABLE = /^(?:\$\{?\w+\}?|~)\\./;
-const WINDOWS_DRIVE_PATH = /^[a-z]:\\/i;
+const WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~)\\|=[a-z]:\\/i;
 
 export function shouldUsePowerShellParser(source: string, limits: CommandParserLimits): boolean {
   const candidate = source.toLowerCase().replaceAll('`', '');
@@ -97,7 +97,7 @@ function hasPathExpressionSignal(candidate: string): boolean {
 }
 
 function isPowerShellSelectorCommand(words: readonly string[]): boolean {
-  if (words.some((word) => WINDOWS_DRIVE_PATH.test(word))) return true;
+  if (words.some((word) => WINDOWS_NATIVE_PATH.test(word))) return true;
   const headIndex = words[0] === '&' || words[0] === '.' ? 1 : 0;
   const head = words[headIndex]?.toLowerCase();
   if (head && AUTO_POWERSHELL_HEADS.has(head)) return true;

@@ -119,6 +119,18 @@ export function pipelineContractCases(paths: {
       expected: secretBlock('secret.basename.env'),
     },
     {
+      name: 'denies passing a .env named by a Windows path attached to an option in auto mode',
+      ...autoShell('docker run --env-file=C:\\proj\\.env img'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.basename.env'),
+    },
+    {
+      name: 'denies listing a .env named by a tilde and backslashes in auto mode',
+      ...autoShell('Get-ChildItem ~\\OneDrive\\.env'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.basename.env'),
+    },
+    {
       name: 'allows a PowerShell here-string of source code piped to python',
       ...powerShell("@'\ns = 'var x = originalArmy.Key;'\n'@ | python -"),
       cwd: 'workspace',
