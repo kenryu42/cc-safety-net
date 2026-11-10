@@ -278,4 +278,21 @@ describe.skipIf(process.platform !== 'win32')('issue 337 Windows probe', () => {
   test.each(RECURSIVE_DELETES)('the auto dialect denies %s', (command) => {
     expect(compareSides(fixture(), command).result).toBe('blocked');
   });
+
+  test.each([
+    'rm -rf',
+    'Remove-Item -Recurse -Force',
+    'Get-ChildItem -Recurse',
+    'Get-Content',
+    'cat',
+    'git status --',
+    'mytool',
+  ])('the auto dialect still allows %s on a project path named natively', (head) => {
+    const side = fixture({ 'project/build/out.txt': 'built\n' });
+    const result = compareSides(side, `${head} ${join(side.project, 'build')}`);
+    expect({ result: result.result, ruleId: result.ruleId }).toStrictEqual({
+      result: 'allowed',
+      ruleId: undefined,
+    });
+  });
 });
