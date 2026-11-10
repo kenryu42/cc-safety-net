@@ -268,4 +268,14 @@ describe.skipIf(process.platform !== 'win32')('issue 337 Windows probe', () => {
       });
     },
   );
+
+  const RECURSIVE_DELETES = ['rm -rf C:\\Users\\bob', 'rm -rf C:\\', 'rm -r -fo C:\\Users\\bob'];
+
+  test.each(RECURSIVE_DELETES)('the PowerShell dialect already denies %s', (command) => {
+    expect(compareSides(fixture(), command, { shell: 'powershell' }).result).toBe('blocked');
+  });
+
+  test.each(RECURSIVE_DELETES)('the auto dialect denies %s', (command) => {
+    expect(compareSides(fixture(), command).result).toBe('blocked');
+  });
 });
