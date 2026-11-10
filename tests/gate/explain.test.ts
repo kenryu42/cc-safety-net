@@ -236,8 +236,11 @@ describe('an unquoted Windows drive path keeps its backslashes', () => {
     expect(result.ruleId).toBe('custom.native-path');
   });
 
-  test('the auto dialect denies a recursive delete of the path', () => {
-    expect(compareSides(fixture(), 'rm -rf C:\\Users\\bob').result).toBe('blocked');
+  test('a PowerShell guess that a POSIX reading blocks still shows the blocking command', () => {
+    const result = compareSides(fixture(), 'Get-Content x; cat <(rm -rf ~)');
+    expect(
+      (result.trace as { steps: { segments?: string[][] }[] }).steps[0]?.segments,
+    ).toContainEqual(['rm', '-rf', '~']);
   });
 
   test.skipIf(process.platform !== 'win32').each(['rm -rf', 'Get-ChildItem -Recurse'])(

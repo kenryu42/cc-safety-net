@@ -137,6 +137,13 @@ export function pipelineContractCases(paths: {
       expected: secretBlock('secret.basename.env'),
     },
     {
+      name: 'allows printing a quoted Windows path holding an apostrophe in strict auto mode',
+      ...autoShell("printf '%s\\n' 'C:\\Users\\O'\\''Brien'"),
+      cwd: 'workspace',
+      level: 'strict',
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a PowerShell here-string of source code piped to python',
       ...powerShell("@'\ns = 'var x = originalArmy.Key;'\n'@ | python -"),
       cwd: 'workspace',
