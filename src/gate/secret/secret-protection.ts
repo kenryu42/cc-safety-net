@@ -583,27 +583,38 @@ function extractCommandPathTargets(
       programs.push(
         basename(withoutTimeout(effectiveArgv(tokens, environment))[0] ?? '').toLowerCase(),
       );
+      const segmentOptions =
+        holdsProcessSubstitution || boundary === '|' || boundary === '|&'
+          ? { ...scriptOptions, segmentMayFeedReader: true }
+          : scriptOptions;
       targets.push(
         ...extractSegmentPathTargets(
           tokens,
           store,
-          holdsProcessSubstitution || boundary === '|' || boundary === '|&'
-            ? { ...scriptOptions, segmentMayFeedReader: true }
-            : scriptOptions,
+          segmentOptions,
           environment,
           state.cwd,
           budget,
           shellWords,
         ),
       );
-      if (powershell) {
+      const spaceSeparated = powershell
+        ? tokens.flatMap((token) =>
+            splitPowerShellAttachedParameter(token).map((part) =>
+              rewritePowerShellHomePrefix(part, powershell),
+            ),
+          )
+        : tokens;
+      if (spaceSeparated.length > tokens.length) {
         targets.push(
-          ...tokens
-            .flatMap((token) => splitPowerShellAttachedParameter(token).slice(1))
-            .map((value) => ({
-              target: rewritePowerShellHomePrefix(value, powershell),
-              cwd: state.cwd,
-            })),
+          ...extractSegmentPathTargets(
+            spaceSeparated,
+            store,
+            segmentOptions,
+            environment,
+            state.cwd,
+            budget,
+          ),
         );
       }
       if (pipeProducer !== null) {

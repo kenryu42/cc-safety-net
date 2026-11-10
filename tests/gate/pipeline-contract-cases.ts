@@ -186,6 +186,12 @@ export function pipelineContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows echoing a .env name attached to a PowerShell parameter with a colon',
+      ...powerShell("echo -InputObject:'.env'"),
+      cwd: 'workspace',
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'allows a PowerShell here-string of source code piped to python',
       ...powerShell("@'\ns = 'var x = originalArmy.Key;'\n'@ | python -"),
       cwd: 'workspace',
