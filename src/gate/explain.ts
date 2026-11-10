@@ -111,7 +111,7 @@ export function explainCommand(
 
   if (program.status === 'limited') throw new StructuralShellSyntaxLimitError();
   const displayProgram =
-    program.dialect === 'powershell' ? parseCommand(command, 'posix') : program;
+    shell === 'auto' && program.dialect === 'powershell' ? parseCommand(command, 'posix') : program;
   const segments = projectSegmentWords(displayProgram);
   const recorder = createCommandTraceRecorder();
   const trace = createCommandTraceContext(recorder);

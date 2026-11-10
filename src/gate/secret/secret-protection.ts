@@ -34,6 +34,7 @@ import {
   isCodeInterpreter,
   readGuardTokens,
   SHELL_STDIN_INTERPRETERS,
+  splitPowerShellAttachedParameter,
   walkGuardSyntax,
 } from '@/gate/guards/guard-walk';
 import { safetyNetSubcommandIndex } from '@/gate/guards/safety-net-invocation';
@@ -582,19 +583,40 @@ function extractCommandPathTargets(
       programs.push(
         basename(withoutTimeout(effectiveArgv(tokens, environment))[0] ?? '').toLowerCase(),
       );
+      const segmentOptions =
+        holdsProcessSubstitution || boundary === '|' || boundary === '|&'
+          ? { ...scriptOptions, segmentMayFeedReader: true }
+          : scriptOptions;
       targets.push(
         ...extractSegmentPathTargets(
           tokens,
           store,
-          holdsProcessSubstitution || boundary === '|' || boundary === '|&'
-            ? { ...scriptOptions, segmentMayFeedReader: true }
-            : scriptOptions,
+          segmentOptions,
           environment,
           state.cwd,
           budget,
           shellWords,
         ),
       );
+      const spaceSeparated = powershell
+        ? tokens.flatMap((token) =>
+            splitPowerShellAttachedParameter(token).map((part) =>
+              rewritePowerShellHomePrefix(part, powershell),
+            ),
+          )
+        : tokens;
+      if (spaceSeparated.length > tokens.length) {
+        targets.push(
+          ...extractSegmentPathTargets(
+            spaceSeparated,
+            store,
+            segmentOptions,
+            environment,
+            state.cwd,
+            budget,
+          ),
+        );
+      }
       if (pipeProducer !== null) {
         targets.push(
           ...extractPipeCarrierPathTargets(

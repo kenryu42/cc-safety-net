@@ -273,6 +273,13 @@ export function readGuardTokens(syntax: GuardSyntax): readonly GuardToken[] {
   });
 }
 
+const POWERSHELL_ATTACHED_PARAMETER = /^(-[a-z][\w-]*):(.+)$/is;
+
+export function splitPowerShellAttachedParameter(token: string): string[] {
+  const attached = POWERSHELL_ATTACHED_PARAMETER.exec(token);
+  return attached?.[1] && attached[2] ? [attached[1], attached[2]] : [token];
+}
+
 export function expandTrackedShellVariables(
   text: string,
   variables: ReadonlyMap<string, string>,

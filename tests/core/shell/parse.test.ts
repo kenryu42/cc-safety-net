@@ -483,6 +483,16 @@ describe('core/shell/parse', () => {
       ['$records | ForEach-Object { $_.key }', 'powershell'],
       ["$records | Where-Object { $_.key -eq 'a' }", 'powershell'],
       ['git commit -m "use ForEach-Object { $_.key }"', 'posix'],
+      ['Get-ChildItem C:\\Users\\bob -Recurse', 'powershell'],
+      ['mytool --root C:\\proj', 'powershell'],
+      ['rm -rf C:\\', 'powershell'],
+      ['mytool --config=C:\\proj\\settings.json', 'powershell'],
+      ['Get-ChildItem ~\\OneDrive -Recurse', 'powershell'],
+      ['mytool $env:USERPROFILE\\proj', 'powershell'],
+      ['Get-ChildItem -Path:C:\\proj', 'powershell'],
+      ['mytool -p:OutputPath=C:\\proj', 'powershell'],
+      ['S=C:\\tmp\\scratch; bash $S/make-fixture.sh', 'posix'],
+      ["printf '%s\\n' 'C:\\Users\\O'\\''Brien'", 'posix'],
       ['', 'posix'],
     ] as const;
     for (const [source, dialect] of rows) {

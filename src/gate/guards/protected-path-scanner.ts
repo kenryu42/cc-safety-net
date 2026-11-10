@@ -4,6 +4,7 @@ import {
   expandTrackedShellVariables,
   type GuardSyntax,
   type ProtectedPathShellState,
+  splitPowerShellAttachedParameter,
   walkGuardSyntax,
 } from './guard-walk';
 import { StructuralShellSyntaxLimitError } from './semantic-facts';
@@ -26,7 +27,11 @@ export function findProtectedPathMutationInCommand(
   if (syntax.status === 'structural-limit') throw new StructuralShellSyntaxLimitError();
   if (syntax.status !== 'complete') return scanner.findMalformedTarget(syntax.source);
   return walkGuardSyntax(syntax, cwd, environment, budget, {
-    segment: (tokens, state) => scanner.findSegmentTarget(tokens, state),
+    segment: (tokens, state) =>
+      scanner.findSegmentTarget(tokens, state) ??
+      (syntax.program.dialect === 'powershell'
+        ? scanner.findSegmentTarget(tokens.flatMap(splitPowerShellAttachedParameter), state)
+        : null),
     redirection: (redirection, state) =>
       redirection.role === 'file-write' &&
       scanner.isRedirectionTarget(

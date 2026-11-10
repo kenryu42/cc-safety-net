@@ -56,6 +56,7 @@ const AUTO_POWERSHELL_PATH_ALIASES = new Set(['gc', 'cat', 'type', 'cp', 'mv', '
 const AUTO_POWERSHELL_PARAMETERS = ['-rec', '-for', '-path', '-literalpath', '-whatif'];
 const POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
 const POWERSHELL_SEPARATED_VARIABLE = /^(?:\$\{?\w+\}?|~)\\./;
+const WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~|\$env:\w+)\\|^-[^=]*[=:][a-z]:\\/i;
 
 export function shouldUsePowerShellParser(source: string, limits: CommandParserLimits): boolean {
   const candidate = source.toLowerCase().replaceAll('`', '');
@@ -89,10 +90,15 @@ function hasPosixHeredoc(program: CommandProgram): boolean {
 
 function hasPathExpressionSignal(candidate: string): boolean {
   if (candidate.includes('$env:')) return true;
-  return candidate.includes('\\') && (candidate.includes('$') || candidate.includes('~'));
+  return (
+    candidate.includes('\\') &&
+    (candidate.includes('$') || candidate.includes('~') || candidate.includes(':\\'))
+  );
 }
 
-function isPowerShellSelectorCommand(words: readonly string[]): boolean {
+function isPowerShellSelectorCommand(command: readonly CommandWord[]): boolean {
+  if (command.some((word) => !word.quoted && WINDOWS_NATIVE_PATH.test(word.text))) return true;
+  const words = command.map((word) => word.text);
   const headIndex = words[0] === '&' || words[0] === '.' ? 1 : 0;
   const head = words[headIndex]?.toLowerCase();
   if (head && AUTO_POWERSHELL_HEADS.has(head)) return true;
@@ -650,7 +656,7 @@ function depthLimitIssue(limit: number): CommandIssue {
   };
 }
 
-function selectorCommandsFromProgram(program: CommandProgram): string[][] {
+function selectorCommandsFromProgram(program: CommandProgram): CommandWord[][] {
   return program.nodes.flatMap((node) => {
     if (node.kind === 'group') return selectorCommandsFromProgram(node.body);
     if (node.kind !== 'command') return [];
@@ -662,8 +668,7 @@ function selectorCommandsFromProgram(program: CommandProgram): string[][] {
         ),
       ]
         .sort((left, right) => left.span.start - right.span.start)
-        .filter((word) => word.text !== '' && word.raw !== ',')
-        .map((word) => word.text),
+        .filter((word) => word.text !== '' && word.raw !== ','),
       ...node.nested.flatMap(selectorCommandsFromProgram),
     ];
   });
