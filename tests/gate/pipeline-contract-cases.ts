@@ -131,6 +131,12 @@ export function pipelineContractCases(paths: {
       expected: secretBlock('secret.basename.env'),
     },
     {
+      name: 'denies listing a .env under a PowerShell environment path in auto mode',
+      ...autoShell('Get-ChildItem $env:USERPROFILE\\proj\\.env'),
+      cwd: 'workspace',
+      expected: secretBlock('secret.basename.env'),
+    },
+    {
       name: 'allows a PowerShell here-string of source code piped to python',
       ...powerShell("@'\ns = 'var x = originalArmy.Key;'\n'@ | python -"),
       cwd: 'workspace',
