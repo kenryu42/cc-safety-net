@@ -1552,6 +1552,49 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: env('.env'),
         relaxedInStandard: true,
       },
+      {
+        name: 'the sole argument of startswith in a guard before hashing and staging paths',
+        command: python(
+          'import hashlib, subprocess, sys',
+          'paths = subprocess.check_output(["git", "ls-files", "-m"]).decode().splitlines()',
+          'if any(any(part.startswith(".env") for part in p.split("/")) for p in paths):',
+          '    sys.exit(1)',
+          'for p in paths:',
+          '    with open(p, "rb") as f:',
+          '        print(hashlib.sha256(f.read()).hexdigest())',
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a name assigned once and passed only to startswith beside a stdout write',
+        command: python(
+          'import os, sys',
+          'MARK = ".env"',
+          'for e in os.scandir("/opt/py"):',
+          '    sys.stdout.write(e.name + " " + str(e.name.startswith(MARK)) + "\\n")',
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'the sole argument of a JS endsWith beside a directory read',
+        command:
+          'node -e \'const fs=require("fs"); for (const f of fs.readdirSync(".")) console.log(f, f.endsWith(".env"))\'',
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'an endswith argument selecting what a loop opens is data too, like the set member',
+        command: python(
+          'import os',
+          'for f in os.listdir("."):',
+          '    if f.endswith(".env"):',
+          '        print(open(f).read())',
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
     ]);
   });
 
@@ -1604,6 +1647,26 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       {
         name: 'an argument list element execFileSync receives',
         command: "node -e \"require('child_process').execFileSync('cat', ['.env'])\"",
+        expected: env('.env'),
+      },
+      {
+        name: 'a name passed to startswith that is also opened',
+        command: python('MARK = ".env"', 'print("x".startswith(MARK), open(MARK).read())'),
+        expected: env('.env'),
+      },
+      {
+        name: 'a path join argument that is opened in a script that also calls endswith',
+        command: python(
+          'import os',
+          'for root, d, f in os.walk("/opt/py"):',
+          '    if any(n.endswith(".pem") for n in f):',
+          '        print(open(os.path.join(root, ".env")).read())',
+        ),
+        expected: env('.env'),
+      },
+      {
+        name: 'a second argument of a method named like a string predicate',
+        command: python('import io', 'print(io.startswith("x", ".env"), open("a.txt").read())'),
         expected: env('.env'),
       },
     ]);
