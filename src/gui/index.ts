@@ -643,6 +643,7 @@ function explainDraftCommand(
   const snapshot = createPolicySnapshot({
     rules: diskSnapshot.policy.rules,
     transparentWrappers: diskSnapshot.policy.transparentWrappers,
+    heredocDataWrappers: diskSnapshot.policy.heredocDataWrappers,
     commandTools: diskSnapshot.policy.commandTools,
     safety: normalizeSafety(draft.safety),
     worktreeMode: draft.workflow.worktree_mode,

@@ -250,9 +250,9 @@ export function evaluateGuard(
       ? null
       : callDependency('secret-protection', command, () =>
           dependencies.findSensitiveTarget(
-            policy.transparentWrappers.length === 0
+            policy.heredocDataWrappers.length === 0
               ? facts
-              : createSemanticFacts(invocation, policy.transparentWrappers),
+              : createSemanticFacts(invocation, policy.heredocDataWrappers),
             policy.secretProtection,
             options.environment,
             budget,
