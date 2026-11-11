@@ -2525,10 +2525,13 @@ function inDataPosition(masked, literal, openers, sequencesMayHoldArguments, dis
   }
   if (/^(?:(?:not\s+)?in(?![\w$])|[=!]=)/.test(masked.slice(after, after + 8)))
     return true;
-  if (sequencesMayHoldArguments && (bracket === "[" || bracket === "("))
-    return false;
   const previous = masked[before];
   const next = masked[after];
+  if (bracket === "(" && before === opener && next === ")" && STRING_PREDICATE_CALL.test(masked.slice(Math.max(0, opener - 20), opener))) {
+    return true;
+  }
+  if (sequencesMayHoldArguments && (bracket === "[" || bracket === "("))
+    return false;
   if (bracket === "{" && previous === ":")
     return startsObjectEntry(masked, before);
   const element = (previous === bracket || previous === ",") && (next === "," || next === BRACKET_CLOSERS[bracket] || bracket === "{" && next === ":");
@@ -2551,6 +2554,7 @@ function assignedOnlyToData(masked, literal, openers, nonDataUses) {
   return (nonDataUses.get(name) ?? []).every((index) => index === target);
 }
 var DISPLAY_CALL = /(?:^|[^\w$.])(?:print|console\s*\.\s*log)\s*$/;
+var STRING_PREDICATE_CALL = /\.\s*(?:startswith|endswith|startsWith|endsWith)\s*$/;
 var DISPLAY_CALL_SHAPE = new Map([
   ["print", /^\s*\(/],
   ["console", /^\s*\.\s*[\w$]+\s*\(/]
