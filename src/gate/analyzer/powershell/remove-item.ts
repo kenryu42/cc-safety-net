@@ -186,7 +186,7 @@ function analyzePowerShellSegment(
     }
   }
 
-  if (!parsed.recursive || !parsed.force) {
+  if (!parsed.recursive) {
     return null;
   }
 
