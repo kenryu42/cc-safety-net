@@ -114,6 +114,7 @@ var import_model = require("./core-shell.js");
 var import_parse = require("./core-shell.js");
 var import_posix = require("./core-shell.js");
 var import_tokens = require("./core-shell.js");
+var import_transparent_wrappers = require("./analyzer.js");
 var import_wrapper_prelude = require("./analyzer.js");
 var ADOPT_AS_OPERAND = Symbol("adopt-as-operand");
 var HEREDOC_CONSUMER_WRAPPERS = new Set(["env", "sudo", "command", "builtin"]);
@@ -147,8 +148,8 @@ var CODE_INTERPRETERS = new Set([
 var SHELL_STDIN_INTERPRETERS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 var MAX_FUNCTION_EXPANSIONS = 256;
 var READ_EVENTS = new WeakMap;
-function readGuardSyntax(source, program) {
-  const suppressed = program.status === "complete" ? new Set(collectDataSinkHeredocSpans(program)) : new Set;
+function readGuardSyntax(source, program, transparentWrappers = []) {
+  const suppressed = program.status === "complete" ? new Set(collectDataSinkHeredocSpans(program, transparentWrappers)) : new Set;
   const masked = maskSpans(source, suppressed);
   const unclosedQuote = program.dialect === "powershell" ? program.issues.some((issue) => issue.code.includes("quote")) : import_tokens.hasUnclosedQuotes(masked);
   if (unclosedQuote)
@@ -744,20 +745,20 @@ function isCodeInterpreterHeredocConsumer(view) {
   const command = import_tokens.getBasename(name).toLowerCase();
   return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);
 }
-function collectDataSinkHeredocSpans(program) {
+function collectDataSinkHeredocSpans(program, transparentWrappers) {
   return program.nodes.flatMap((node, index) => {
     if (node.kind === "group" || node.kind === "function") {
-      return collectDataSinkHeredocSpans(node.body);
+      return collectDataSinkHeredocSpans(node.body, transparentWrappers);
     }
     if (node.kind !== "command")
       return [];
-    const nestedSpans = node.nested.flatMap((nested) => collectDataSinkHeredocSpans(nested));
+    const nestedSpans = node.nested.flatMap((nested) => collectDataSinkHeredocSpans(nested, transparentWrappers));
     const quotedBodies = node.redirections.flatMap((redirection) => redirection.heredoc?.quotedDelimiter ? [redirection.heredoc.bodySpan] : []);
     if (isCodeInterpreterHeredocConsumer(node))
       return [...nestedSpans, ...quotedBodies];
     const next = program.nodes[index + 1];
     const piped = next?.kind === "connector" && (next.operator === "|" || next.operator === "|&");
-    if (piped || !isDataSinkHeredocConsumer(node))
+    if (piped || !isDataSinkHeredocConsumer(node, transparentWrappers))
       return nestedSpans;
     return [...nestedSpans, ...quotedBodies];
   });
@@ -766,18 +767,26 @@ function getCalledFunctionBody(view, functions) {
   const name = import_model.getCalledCommandName(view);
   return name === undefined ? undefined : functions.get(name);
 }
+function isBareLiteral(word) {
+  return word !== undefined && word.provenance === "literal" && !word.quoted && word.raw === word.text;
+}
 function isBareWord(word, text) {
-  return word !== undefined && word.provenance === "literal" && !word.quoted && word.raw === word.text && word.text === text;
+  return isBareLiteral(word) && word.text === text;
 }
-function isMessageSinkConsumer(view) {
-  if (isBareWord(view.words[0], "git"))
-    return isBareWord(view.words[1], "commit");
-  if (!isBareWord(view.words[0], "gh") || !isBareWord(view.words[2], "create"))
+function isMessageSinkConsumer(words) {
+  if (isBareWord(words[0], "git"))
+    return isBareWord(words[1], "commit");
+  if (!isBareWord(words[0], "gh") || !isBareWord(words[2], "create"))
     return false;
-  return isBareWord(view.words[1], "pr") || isBareWord(view.words[1], "issue");
+  return isBareWord(words[1], "pr") || isBareWord(words[1], "issue");
 }
-function isDataSinkHeredocConsumer(view) {
-  const isDataSink = isBareWord(view.words[0], "cat") || isBareWord(view.words[0], "tee") || isMessageSinkConsumer(view);
+function isOptionlessWrapperPrefix(word, transparentWrappers) {
+  return isBareLiteral(word) && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.text) || HEREDOC_CONSUMER_WRAPPERS.has(word.text) || import_transparent_wrappers.isExecWrapper(word.text) || transparentWrappers.includes(word.text));
+}
+function isDataSinkHeredocConsumer(view, transparentWrappers) {
+  const sink = view.words.findIndex((word) => !isOptionlessWrapperPrefix(word, transparentWrappers));
+  const words = sink < 0 ? [] : view.words.slice(sink);
+  const isDataSink = isBareWord(words[0], "cat") || isBareWord(words[0], "tee") || isMessageSinkConsumer(words);
   return isDataSink && !view.words.some(hasOutputProcessSubstitution) && !view.redirections.some((redirection) => hasOutputProcessSubstitution(redirection.target));
 }
 function hasOutputProcessSubstitution(word) {
@@ -829,8 +838,8 @@ class UnparseableCommandError extends Error {
     super(import_reasons.REASON_STRICT_UNPARSEABLE);
   }
 }
-function createSemanticFacts(invocation) {
-  const store = createSemanticFactStore();
+function createSemanticFacts(invocation, transparentWrappers = []) {
+  const store = createSemanticFactStore(transparentWrappers);
   const inputCommand = import_tool_input.getCommandFromToolInput(invocation.input);
   const candidates = [];
   if ((invocation.route.kind === "command" || invocation.route.kind === "unknown") && inputCommand) {
@@ -883,7 +892,7 @@ function projectSensitiveShellText(source, environment) {
     return source;
   return import_canonicalization2.expandSupportedPathEnvironmentVariables(source, environment);
 }
-function createSemanticFactStore() {
+function createSemanticFactStore(transparentWrappers = []) {
   const commandPrograms = new Map;
   const shellFacts = new WeakMap;
   const getCommandProgram = (source, dialect) => {
@@ -903,7 +912,7 @@ function createSemanticFactStore() {
     const existing = shellFacts.get(program);
     if (existing)
       return existing;
-    const syntax = program.status === "limited" ? { status: "structural-limit", source, program, assignmentFallbacks: [] } : readGuardSyntax(source, program);
+    const syntax = program.status === "limited" ? { status: "structural-limit", source, program, assignmentFallbacks: [] } : readGuardSyntax(source, program, transparentWrappers);
     shellFacts.set(program, syntax);
     return syntax;
   };
@@ -3492,7 +3501,7 @@ function evaluateGuard(hostInvocation, options) {
     ...getConfigFallback(snapshot),
     ...promoted
   };
-  const secretTarget = policy.secretProtection.enabled === false ? null : callDependency("secret-protection", command, () => dependencies.findSensitiveTarget(facts, policy.secretProtection, options.environment, budget, {
+  const secretTarget = policy.secretProtection.enabled === false ? null : callDependency("secret-protection", command, () => dependencies.findSensitiveTarget(policy.heredocDataWrappers.length === 0 ? facts : createSemanticFacts(invocation, policy.heredocDataWrappers), policy.secretProtection, options.environment, budget, {
     strict: isCommandInvocation(invocation) || inputCandidate?.program.dialect === "powershell" ? modes.strict : undefined
   }));
   if (secretTarget) {

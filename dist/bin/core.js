@@ -3391,6 +3391,7 @@ function loadPolicySnapshot(environment, options) {
   const policy = {
     rules: rules.rules,
     transparentWrappers: rules.transparent_wrappers,
+    heredocDataWrappers: envTruthy(ENV_FLAGS.projectTightenOnly, environment.env) ? rules.userConfig?.transparent_wrappers ?? [] : rules.transparent_wrappers,
     commandTools: rules.command_tools,
     safety: userPolicy.safety,
     worktreeMode: userPolicy.worktreeMode,
