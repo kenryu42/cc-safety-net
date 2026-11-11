@@ -45,6 +45,7 @@ export function policySnapshot(input: TestPolicyInput = {}): PolicySnapshot {
   const policy = {
     rules: input.rules ?? [],
     transparentWrappers: input.transparent_wrappers ?? [],
+    heredocDataWrappers: input.transparent_wrappers ?? [],
     commandTools: [...(input.commandTools ?? [])],
     safety: input.safety ?? { level: 'standard' as const },
     worktreeMode: input.worktreeMode ?? false,

@@ -15,6 +15,7 @@ import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse'
 import { scanParameterExpansion } from '@/core/shell/posix';
 import { getBasename, hasUnclosedQuotes } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
+import { isExecWrapper } from '@/gate/analyzer/transparent-wrappers';
 import { stripWrappers } from '@/gate/analyzer/wrapper-prelude';
 
 export type GuardSyntax = Readonly<{
@@ -138,10 +139,14 @@ type QuoteState = { single: boolean; double: boolean };
 
 type PositionedEvents = { readonly start: number; readonly events: readonly GuardEvent[] };
 
-export function readGuardSyntax(source: string, program: CommandProgram): GuardSyntax {
+export function readGuardSyntax(
+  source: string,
+  program: CommandProgram,
+  transparentWrappers: readonly string[] = [],
+): GuardSyntax {
   const suppressed =
     program.status === 'complete'
-      ? new Set(collectDataSinkHeredocSpans(program))
+      ? new Set(collectDataSinkHeredocSpans(program, transparentWrappers))
       : new Set<CommandSpan>();
   const masked = maskSpans(source, suppressed);
   const unclosedQuote =
@@ -926,20 +931,25 @@ function isCodeInterpreterHeredocConsumer(view: CommandView): boolean {
   return isCodeInterpreter(command) && !SHELL_STDIN_INTERPRETERS.has(command);
 }
 
-function collectDataSinkHeredocSpans(program: CommandProgram): CommandSpan[] {
+function collectDataSinkHeredocSpans(
+  program: CommandProgram,
+  transparentWrappers: readonly string[],
+): CommandSpan[] {
   return program.nodes.flatMap((node, index): CommandSpan[] => {
     if (node.kind === 'group' || node.kind === 'function') {
-      return collectDataSinkHeredocSpans(node.body);
+      return collectDataSinkHeredocSpans(node.body, transparentWrappers);
     }
     if (node.kind !== 'command') return [];
-    const nestedSpans = node.nested.flatMap((nested) => collectDataSinkHeredocSpans(nested));
+    const nestedSpans = node.nested.flatMap((nested) =>
+      collectDataSinkHeredocSpans(nested, transparentWrappers),
+    );
     const quotedBodies = node.redirections.flatMap((redirection) =>
       redirection.heredoc?.quotedDelimiter ? [redirection.heredoc.bodySpan] : [],
     );
     if (isCodeInterpreterHeredocConsumer(node)) return [...nestedSpans, ...quotedBodies];
     const next = program.nodes[index + 1];
     const piped = next?.kind === 'connector' && (next.operator === '|' || next.operator === '|&');
-    if (piped || !isDataSinkHeredocConsumer(node)) return nestedSpans;
+    if (piped || !isDataSinkHeredocConsumer(node, transparentWrappers)) return nestedSpans;
     return [...nestedSpans, ...quotedBodies];
   });
 }
@@ -952,27 +962,42 @@ function getCalledFunctionBody(
   return name === undefined ? undefined : functions.get(name);
 }
 
-function isBareWord(word: CommandWord | undefined, text: string): boolean {
+function isBareLiteral(word: CommandWord | undefined): word is CommandWord {
   return (
-    word !== undefined &&
-    word.provenance === 'literal' &&
-    !word.quoted &&
-    word.raw === word.text &&
-    word.text === text
+    word !== undefined && word.provenance === 'literal' && !word.quoted && word.raw === word.text
   );
 }
 
-function isMessageSinkConsumer(view: CommandView): boolean {
-  if (isBareWord(view.words[0], 'git')) return isBareWord(view.words[1], 'commit');
-  if (!isBareWord(view.words[0], 'gh') || !isBareWord(view.words[2], 'create')) return false;
-  return isBareWord(view.words[1], 'pr') || isBareWord(view.words[1], 'issue');
+function isBareWord(word: CommandWord | undefined, text: string): boolean {
+  return isBareLiteral(word) && word.text === text;
 }
 
-function isDataSinkHeredocConsumer(view: CommandView): boolean {
+function isMessageSinkConsumer(words: readonly CommandWord[]): boolean {
+  if (isBareWord(words[0], 'git')) return isBareWord(words[1], 'commit');
+  if (!isBareWord(words[0], 'gh') || !isBareWord(words[2], 'create')) return false;
+  return isBareWord(words[1], 'pr') || isBareWord(words[1], 'issue');
+}
+
+function isOptionlessWrapperPrefix(word: CommandWord, transparentWrappers: readonly string[]) {
+  return (
+    isBareLiteral(word) &&
+    (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.text) ||
+      HEREDOC_CONSUMER_WRAPPERS.has(word.text) ||
+      isExecWrapper(word.text) ||
+      transparentWrappers.includes(word.text))
+  );
+}
+
+function isDataSinkHeredocConsumer(
+  view: CommandView,
+  transparentWrappers: readonly string[],
+): boolean {
+  const sink = view.words.findIndex(
+    (word) => !isOptionlessWrapperPrefix(word, transparentWrappers),
+  );
+  const words = sink < 0 ? [] : view.words.slice(sink);
   const isDataSink =
-    isBareWord(view.words[0], 'cat') ||
-    isBareWord(view.words[0], 'tee') ||
-    isMessageSinkConsumer(view);
+    isBareWord(words[0], 'cat') || isBareWord(words[0], 'tee') || isMessageSinkConsumer(words);
   return (
     isDataSink &&
     !view.words.some(hasOutputProcessSubstitution) &&

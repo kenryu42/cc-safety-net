@@ -569,3 +569,45 @@ describe('a host working directory outside the session workspace', () => {
     });
   });
 });
+
+describe('a wrapper only the project declares, in front of a quoted heredoc sink', () => {
+  const home = join(fixtureRoot, 'wrapper-home');
+  const repo = join(fixtureRoot, 'wrapper-repo');
+  const rules = (wrappers: readonly string[]) =>
+    `${JSON.stringify({ version: 1, rules: [], transparent_wrappers: wrappers })}\n`;
+  writeTree(fixtureRoot, {
+    'wrapper-home/.cc-safety-net/rules/rule.json': rules(['mine']),
+    'wrapper-repo/.cc-safety-net/rules/rule.json': rules(['heavy']),
+  });
+  const verdict = (wrapper: string, env: Record<string, string>) => {
+    const decision = portedEvaluateGuard(
+      bash(
+        `${wrapper} git commit -F - <<'MSG'\nVerified: bun --env-file=.env.test test\nMSG`,
+        repo,
+      ),
+      {
+        environment: createTestEnvironment({
+          env: new Map(Object.entries(env)),
+          home,
+          paths: environment.paths,
+        }),
+        policyOptions: { userConfigDir: join(home, '.cc-safety-net', 'rules') },
+        dependencies: { resolveGitMetadata: () => null },
+      },
+    ).decision;
+    return decision.kind === 'deny' ? decision.ruleId : 'allow';
+  };
+  const tightenOnly = { CC_SAFETY_NET_PROJECT_TIGHTEN_ONLY: '1' };
+
+  test('makes the body data without tighten-only', () => {
+    expect(verdict('heavy', {})).toBe('allow');
+  });
+
+  test('keeps the body scanned under tighten-only', () => {
+    expect(verdict('heavy', tightenOnly)).toBe('secret.pattern.env-variant');
+  });
+
+  test('a wrapper the user declares still makes the body data under tighten-only', () => {
+    expect(verdict('mine', tightenOnly)).toBe('allow');
+  });
+});

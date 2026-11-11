@@ -1,4 +1,5 @@
 import type { Environment } from '@/core/environment';
+import { ENV_FLAGS, envTruthy } from './env';
 import type { RulesPolicyOptions } from './paths';
 import type { LoadedRulesPolicy } from './rules-config';
 import { loadRulesPolicy } from './scope-policy';
@@ -22,6 +23,9 @@ export function loadPolicySnapshot(
   const policy = {
     rules: rules.rules,
     transparentWrappers: rules.transparent_wrappers,
+    heredocDataWrappers: envTruthy(ENV_FLAGS.projectTightenOnly, environment.env)
+      ? (rules.userConfig?.transparent_wrappers ?? [])
+      : rules.transparent_wrappers,
     commandTools: rules.command_tools,
     safety: userPolicy.safety,
     worktreeMode: userPolicy.worktreeMode,

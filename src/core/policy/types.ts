@@ -101,6 +101,7 @@ export type EffectiveDestructiveCommandRuleState = Readonly<{
 export type EffectivePolicy = {
   readonly rules: readonly PolicyRule[];
   readonly transparentWrappers: readonly string[];
+  readonly heredocDataWrappers: readonly string[];
   readonly commandTools: readonly { readonly name: string; readonly cwd?: string | false }[];
   readonly safety: {
     readonly level: 'standard' | 'strict' | 'paranoid';

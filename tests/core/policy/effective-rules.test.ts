@@ -109,6 +109,7 @@ const OVERRIDE_MAPS: readonly Record<string, DestructiveCommandRuleOverride>[] =
 const BASE_POLICY: EffectivePolicy = {
   rules: [],
   transparentWrappers: [],
+  heredocDataWrappers: [],
   commandTools: [],
   safety: { level: 'standard' },
   worktreeMode: false,

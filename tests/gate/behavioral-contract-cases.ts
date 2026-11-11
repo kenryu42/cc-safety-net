@@ -1868,6 +1868,34 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows a quoted heredoc commit message behind a declared transparent wrapper',
+      command: "heavy git commit -F - <<'MSG'\nVerified: bun --env-file=.env.test test\nMSG",
+      options: options({ cwd: paths.cwd, policy: { transparent_wrappers: ['heavy'] } }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'blocks a quoted heredoc naming a secret file behind an undeclared wrapper',
+      command: "heavy git commit -F - <<'MSG'\nVerified: bun --env-file=.env.test test\nMSG",
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'secret.pattern.env-variant',
+        intent: 'hard_stop',
+        reasonIncludes: 'sensitive path',
+      },
+    },
+    {
+      name: 'blocks a quoted heredoc a shell reads behind a declared transparent wrapper',
+      command: "heavy sh <<'EOF'\ncat .env\nEOF",
+      options: options({ cwd: paths.cwd, policy: { transparent_wrappers: ['heavy'] } }),
+      expected: {
+        kind: 'block',
+        ruleId: 'secret.basename.env',
+        intent: 'hard_stop',
+        reasonIncludes: 'sensitive path',
+      },
+    },
+    {
       name: 'allows an unquoted heredoc whose only expansion is a variable at standard safety',
       command: 'cat <<EOF\nrm -rf ~ $target\nEOF',
       options: options({ cwd: paths.cwd }),
