@@ -250,7 +250,9 @@ export function evaluateGuard(
       ? null
       : callDependency('secret-protection', command, () =>
           dependencies.findSensitiveTarget(
-            facts,
+            policy.transparentWrappers.length === 0
+              ? facts
+              : createSemanticFacts(invocation, policy.transparentWrappers),
             policy.secretProtection,
             options.environment,
             budget,

@@ -60,8 +60,11 @@ export class UnparseableCommandError extends Error {
   }
 }
 
-export function createSemanticFacts(invocation: ToolInvocation): SemanticFacts {
-  const store = createSemanticFactStore();
+export function createSemanticFacts(
+  invocation: ToolInvocation,
+  transparentWrappers: readonly string[] = [],
+): SemanticFacts {
+  const store = createSemanticFactStore(transparentWrappers);
   const inputCommand = getCommandFromToolInput(invocation.input);
   const candidates: { usage: CommandFactUsage; source: string }[] = [];
   if (
@@ -133,7 +136,9 @@ export function projectSensitiveShellText(source: string, environment: Environme
 }
 
 /** @internal */
-export function createSemanticFactStore(): SemanticFactStore {
+export function createSemanticFactStore(
+  transparentWrappers: readonly string[] = [],
+): SemanticFactStore {
   const commandPrograms = new Map<string, CommandProgram>();
   const shellFacts = new WeakMap<CommandProgram, GuardSyntax>();
   const getCommandProgram = (source: string, dialect: ShellKind) => {
@@ -154,7 +159,7 @@ export function createSemanticFactStore(): SemanticFactStore {
     const syntax =
       program.status === 'limited'
         ? { status: 'structural-limit' as const, source, program, assignmentFallbacks: [] }
-        : readGuardSyntax(source, program);
+        : readGuardSyntax(source, program, transparentWrappers);
     shellFacts.set(program, syntax);
     return syntax;
   };
