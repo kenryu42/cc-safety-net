@@ -1,6 +1,6 @@
 {
   "name": "cc-safety-net",
-  "version": "2.7.11",
+  "version": "2.7.12",
   "description": "A coding agent CLI hook - block destructive commands and secret file access",
   "keywords": [
     "amp",
