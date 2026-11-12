@@ -171,7 +171,14 @@ describe('powershell Remove-Item', () => {
       { source: 'Remove-Item build', id: null },
       { source: 'Remove-Item -Force build', id: null },
       { source: 'Remove-Item -Rec -Fo .', id: 'powershell.remove-item-recursive-force-cwd-self' },
-      { source: 'Remove-Item -r -f .', id: null },
+      { source: 'Remove-Item -r -f .', id: 'powershell.remove-item-recursive-force-cwd-self' },
+      { source: 'Remove-Item -Recurse .', id: 'powershell.remove-item-recursive-force-cwd-self' },
+      {
+        source: 'Remove-Item -Recurse ..',
+        id: 'powershell.remove-item-recursive-force-outside-cwd',
+      },
+      { source: 'rd -r ..', id: 'powershell.remove-item-recursive-force-outside-cwd' },
+      { source: 'Remove-Item -Recurse build', id: null },
       {
         source: 'Remove-Item -Recurse:$true -Force:$true .',
         id: 'powershell.remove-item-recursive-force-cwd-self',
