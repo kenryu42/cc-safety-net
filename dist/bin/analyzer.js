@@ -4250,7 +4250,7 @@ function analyzePowerShellSegment(segment, hasPipelineInput, ctx, policy) {
       return import_destructive8.destructiveCommandMatch("powershell.remove-item-git-metadata", import_git_metadata_protection3.REASON_GIT_METADATA_PROTECTION);
     }
   }
-  if (!parsed.recursive || !parsed.force) {
+  if (!parsed.recursive) {
     return null;
   }
   if (import_effective_rules4.destructiveCommandRuleIsEnabled(policy, "powershell.remove-item-recursive-force-dynamic-target", ctx.strict) && (parsed.hasDynamicTarget || parsed.targets.length === 0)) {
