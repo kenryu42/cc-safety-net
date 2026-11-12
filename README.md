@@ -36,6 +36,13 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
   <img src="https://ccsafetynet.com/go/crazyrouter/view?from=readme" alt="" width="1" height="1">
 </p>
 
+<p align="center">
+  <a href="https://ccsafetynet.com/go/deepsider?from=readme"><picture><source media="(prefers-color-scheme: dark)" srcset="./.github/assets/deepsider-logo-dark.png"><source media="(prefers-color-scheme: light)" srcset="./.github/assets/deepsider-logo-light.png"><img alt="DeepSider API" src="./.github/assets/deepsider-logo-light.png" height="32"></picture></a>
+  <br>
+  <sub><a href="https://ccsafetynet.com/go/deepsider?from=readme">One-stop access to leading global models such as GPT, Claude, Gemini, and DeepSeek. We use official channels from major providers — no account pools, no reverse engineering. Pricing as low as 29% of official rates. Real-time usage monitoring with transparent billing and clear usage, helping you call AI easily at lower cost.</a></sub>
+  <img src="https://ccsafetynet.com/go/deepsider/view?from=readme" alt="" width="1" height="1">
+</p>
+
 <p align="center"><sub><a href="https://ccsafetynet.com/sponsor">Interested in sponsoring? →</a></sub></p>
 
 ## How it works
