@@ -38,6 +38,9 @@ failures follow the Knip section.
 Windows behavior is verified on the `full-check-windows` CI job, from a disposable branch. Never push
 a probe to a PR branch or `main`.
 
+Every Windows-related issue or change goes through this, including issue analysis: a result from
+macOS or Linux, or from reading the code, does not count as Windows verification.
+
 - Branch `tmp/<topic>-windows-probe` from `origin/main` in a `git worktree` under the scratchpad, then
   `git branch --unset-upstream` (a branch cut from `origin/main` tracks it).
 - Red first: commit a `test.skipIf(process.platform !== 'win32')` test, push, run CI, and read the
