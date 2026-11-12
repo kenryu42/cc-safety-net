@@ -210,6 +210,53 @@ test('explain never shows the text of a script read from disk', () => {
   }
 });
 
+describe('Remove-Item -Recurse without -Force on Windows', () => {
+  const tree = { 'backup/keep.txt': 'keep\n', 'project/build/out.txt': 'built\n' };
+  const explainPowerShell = (
+    command: (side: Fixture) => string,
+    level: 'standard' | 'strict' | 'paranoid',
+  ) => {
+    const side = fixture(tree);
+    return compareSides(side, command(side), {
+      shell: 'powershell',
+      policySnapshot: policySnapshot({ safety: { level } }),
+    });
+  };
+  const outside = (side: Fixture) => join(side.root, 'backup');
+  const outsideCwd: readonly (readonly [string, (side: Fixture) => string])[] = [
+    ['relative', () => 'Remove-Item -Recurse ..\\backup'],
+    ['absolute', (side) => `Remove-Item -Recurse ${outside(side)}`],
+    ['-LiteralPath', (side) => `Remove-Item -LiteralPath ${outside(side)} -Recurse`],
+    ['rd alias', (side) => `rd -r ${outside(side)}`],
+    ['ri alias', (side) => `ri -r ${outside(side)}`],
+    ['del alias', () => 'del -r ..\\backup'],
+    ['erase alias', () => 'erase -r ..\\backup'],
+  ];
+
+  test
+    .skipIf(process.platform !== 'win32')
+    .each(
+      (['standard', 'strict', 'paranoid'] as const).flatMap((level) =>
+        outsideCwd.map(([label, command]) => [label, level, command] as const),
+      ),
+    )('%s target outside cwd is blocked on %s', (_label, level, command) => {
+    const result = explainPowerShell(command, level);
+    expect(result.result).toBe('blocked');
+    expect(result.ruleId).toBe('powershell.remove-item-recursive-force-outside-cwd');
+  });
+
+  test.skipIf(process.platform !== 'win32')('the -Force form is blocked the same way', () => {
+    const result = explainPowerShell(() => 'Remove-Item -Recurse -Force ..\\backup', 'standard');
+    expect(result.ruleId).toBe('powershell.remove-item-recursive-force-outside-cwd');
+  });
+
+  test.skipIf(process.platform !== 'win32')('a folder inside cwd stays allowed on standard', () => {
+    expect(explainPowerShell(() => 'Remove-Item -Recurse build', 'standard').result).toBe(
+      'allowed',
+    );
+  });
+});
+
 describe('an unquoted Windows drive path keeps its backslashes', () => {
   const UNQUOTED_NATIVE_PATH = 'Get-ChildItem C:\\Users\\bob -Recurse';
 

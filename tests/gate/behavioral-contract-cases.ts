@@ -2847,6 +2847,17 @@ export function behavioralContractCases(paths: {
         reasonIncludes: 'outside cwd is blocked',
       },
     },
+    {
+      name: 'blocks PowerShell recursive removal without force outside the workspace',
+      command: 'Remove-Item -Recurse ../outside',
+      options: options({ cwd: paths.cwd, shell: 'powershell' }),
+      expected: {
+        kind: 'block',
+        ruleId: 'powershell.remove-item-recursive-force-outside-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'outside cwd is blocked',
+      },
+    },
     ...cmdWrapperCases,
     ...powerShellWrapperCases,
     {
