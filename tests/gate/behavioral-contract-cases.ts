@@ -1946,6 +1946,8 @@ export function behavioralContractCases(paths: {
         'Select-String -LiteralPath .env -Pattern foo',
         'Select-String -LP .env foo',
         'Select-String -PSPath .env foo',
+        "Select-String '-x' .env",
+        'Select-String -Verbose foo .env',
       ].map((command) => [
         `blocks a Select-String file that is a secret: ${command}`,
         command,
@@ -1978,6 +1980,7 @@ export function behavioralContractCases(paths: {
       [false, "sed -n -l 80 'p' .env"],
       [false, 'sed --expr=s/x/y/ .env'],
       [false, 'sed --fi=script.sed .env'],
+      [false, "sed -l 's/x/y/' .env"],
       [true, "sed 's/.env//' list.txt"],
     ].map(([strict, command]) => ({
       name: `blocks a sed read of a secret file${strict ? ' at strict safety' : ''}: ${command}`,

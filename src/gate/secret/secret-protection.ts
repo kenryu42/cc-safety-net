@@ -162,6 +162,18 @@ const SELECT_STRING_VALUE_PARAMETERS = [
   'context',
   'culture',
 ];
+const SELECT_STRING_PARAMETERS = [
+  'pattern',
+  ...SELECT_STRING_VALUE_PARAMETERS,
+  'allmatches',
+  'casesensitive',
+  'list',
+  'noemphasis',
+  'notmatch',
+  'quiet',
+  'raw',
+  'simplematch',
+];
 const SED_LONG_VALUE_OPTIONS = new Set(['expression', 'file', 'line-length']);
 const SED_LONG_OPTIONS = [
   'debug',
@@ -2317,6 +2329,13 @@ function startsCommandSubstitution(
 }
 
 function extractSelectStringTargets(tokens: readonly string[]): string[] {
+  const unknownParameter = tokens.some((token) => {
+    const name = /^-([a-z]+)/i.exec(token)?.[1]?.toLowerCase();
+    return name !== undefined && !SELECT_STRING_PARAMETERS.some((known) => known.startsWith(name));
+  });
+  if (unknownParameter) {
+    return tokens.flatMap((token) => extractOperandPathCandidates('select-string', token));
+  }
   const candidates: string[] = [];
   const positionals: string[] = [];
   let patternNamed = false;
@@ -2376,7 +2395,7 @@ function sedScriptIndexes(args: readonly string[]): Set<number> {
       operands.push(index);
       continue;
     }
-    const valueFlag = arg.slice(1).search(/[efil]/);
+    const valueFlag = arg.slice(1).search(/[efi]/);
     const flag = arg[valueFlag + 1];
     if (flag === 'e' || flag === 'f') scriptFromOption = true;
     if (valueFlag === -1 || flag === 'i' || valueFlag < arg.length - 2) continue;
