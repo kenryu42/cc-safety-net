@@ -1961,6 +1961,7 @@ export function behavioralContractCases(paths: {
       "sed -e 's/.env//' list.txt",
       "sed -n '/.env/p' list.txt",
       'sed --expression=s/.env// list.txt',
+      'sed --expr s/.env// list.txt',
       "sed -i.bak -E 's/.env$//' list.txt",
     ].map((command) => ({
       name: `allows a sed script that mentions a secret file name: ${command}`,
@@ -1973,6 +1974,8 @@ export function behavioralContractCases(paths: {
       [false, "sed -e 's/x/y/' -- .env"],
       [false, 'sed -f .env list.txt'],
       [false, "sed -n -l 80 'p' .env"],
+      [false, 'sed --expr=s/x/y/ .env'],
+      [false, 'sed --fi=script.sed .env'],
       [true, "sed 's/.env//' list.txt"],
     ].map(([strict, command]) => ({
       name: `blocks a sed read of a secret file${strict ? ' at strict safety' : ''}: ${command}`,

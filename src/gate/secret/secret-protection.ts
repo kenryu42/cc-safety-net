@@ -161,6 +161,25 @@ const SELECT_STRING_VALUE_PARAMETERS = [
   'culture',
 ];
 const SED_LONG_VALUE_OPTIONS = new Set(['expression', 'file', 'line-length']);
+const SED_LONG_OPTIONS = [
+  'debug',
+  'expression',
+  'file',
+  'follow-symlinks',
+  'help',
+  'in-place',
+  'line-length',
+  'null-data',
+  'posix',
+  'quiet',
+  'regexp-extended',
+  'sandbox',
+  'separate',
+  'silent',
+  'unbuffered',
+  'version',
+  'zero-terminated',
+];
 const SEARCH_NAMES_ONLY_LONG = new Set([
   'files-with-matches',
   'files-without-match',
@@ -2338,7 +2357,9 @@ function sedScriptIndexes(args: readonly string[]): Set<number> {
       break;
     }
     if (arg.startsWith('--')) {
-      const name = arg.slice(2).split('=')[0] ?? '';
+      const prefix = arg.slice(2).split('=')[0] ?? '';
+      const matches = SED_LONG_OPTIONS.filter((option) => option.startsWith(prefix));
+      const name = matches.length === 1 ? (matches[0] ?? prefix) : prefix;
       if (name === 'expression' || name === 'file') scriptFromOption = true;
       if (arg.includes('=')) {
         if (name === 'expression') scripts.add(index);
