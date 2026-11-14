@@ -1944,6 +1944,8 @@ export function behavioralContractCases(paths: {
         'Select-String -Pattern foo .env',
         "Select-String -Path .env 'Core.KeyRing'",
         'Select-String -LiteralPath .env -Pattern foo',
+        'Select-String -LP .env foo',
+        'Select-String -PSPath .env foo',
       ].map((command) => [
         `blocks a Select-String file that is a secret: ${command}`,
         command,

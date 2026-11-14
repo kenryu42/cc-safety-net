@@ -153,6 +153,8 @@ const SELECT_STRING_COMMANDS = new Set(['select-string', 'sls']);
 const SELECT_STRING_VALUE_PARAMETERS = [
   'path',
   'literalpath',
+  'lp',
+  'pspath',
   'inputobject',
   'include',
   'exclude',
