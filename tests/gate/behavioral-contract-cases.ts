@@ -1922,6 +1922,49 @@ export function behavioralContractCases(paths: {
         reasonIncludes: 'sensitive path',
       },
     },
+    ...atStandardAndStrict(
+      [
+        'git commit -F - <<EOF\nStop tracking .env in the docs\nEOF',
+        'cat <<EOF\nStop tracking .env\nEOF',
+        'tee notes.md <<EOF\nStop tracking .env\nEOF',
+        'gh pr create --title t --body-file - <<EOF\nStop tracking .env\nEOF',
+      ].map((command) => [
+        `allows an unquoted heredoc that only mentions a secret file name: ${command}`,
+        command,
+        { kind: 'allow' },
+      ]),
+      { cwd: paths.cwd },
+    ),
+    ...atStandardAndStrict(
+      [
+        'cat <<EOF\n$(cat .env)\nEOF',
+        'cat <<EOF\nx $(cat "$(echo .env)")\nEOF',
+        "git commit -F - <<EOF\nDon't track\nEOF\ncat .env",
+        "cat > notes.md <<EOF\nIt's done\nEOF\ncat .env",
+        'cat <<EOF | sh\ncat .env\nEOF',
+      ].map((command) => [
+        `blocks a secret read beside an unquoted heredoc: ${command}`,
+        command,
+        {
+          kind: 'block',
+          ruleId: 'secret.basename.env',
+          intent: 'hard_stop',
+          reasonIncludes: 'sensitive path',
+        },
+      ]),
+      { cwd: paths.cwd },
+    ),
+    {
+      name: 'blocks a secret read substituted into an unquoted heredoc body that holds an apostrophe',
+      command: "wc -l <<EOF\nDon't $(cat .env)\nEOF",
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block',
+        ruleId: 'secret.basename.env',
+        intent: 'hard_stop',
+        reasonIncludes: 'sensitive path',
+      },
+    },
     {
       name: 'allows an unquoted heredoc whose only expansion is a variable at standard safety',
       command: 'cat <<EOF\nrm -rf ~ $target\nEOF',
