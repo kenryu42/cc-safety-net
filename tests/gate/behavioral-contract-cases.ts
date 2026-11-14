@@ -76,6 +76,8 @@ export const SCRIPT_FIXTURES = {
   'scripts/reset.ps1': 'git reset --hard\n',
   'scripts/reset[1].ps1': 'git reset --hard\n',
   'scripts/helpers.ps1': 'function Get-Hello { "hi" }\n',
+  'compose/compose.yaml': 'services:\n  web:\n    image: nginx\n',
+  'compose/.env': 'TOKEN=x\n',
 };
 
 export function behavioralContractCases(paths: {
@@ -1922,6 +1924,42 @@ export function behavioralContractCases(paths: {
         reasonIncludes: 'sensitive path',
       },
     },
+    ...atStandardAndStrict(
+      [
+        'cd compose && docker compose config',
+        'docker compose --project-directory compose config',
+        'docker compose -f compose/compose.yaml config',
+        'docker-compose -f compose/compose.yaml config',
+        'docker compose --file=compose/compose.yaml convert',
+        'docker --context default compose --project-directory compose config --format json',
+      ].map((command) => [
+        `blocks a compose config that prints the project .env values: ${command}`,
+        command,
+        {
+          kind: 'block',
+          ruleId: 'secret.basename.env',
+          intent: 'hard_stop',
+          reasonIncludes: 'sensitive path',
+        },
+      ]),
+      { cwd: paths.cwd },
+    ),
+    ...atStandardAndStrict(
+      [
+        'docker compose config',
+        'cd compose && docker compose config --quiet',
+        'docker compose --project-directory compose config -q',
+        'docker compose --project-directory compose config --services',
+        'docker compose -f compose/compose.yaml config --volumes',
+        'docker compose --project-directory compose --env-file compose/compose.yaml config',
+        'docker compose --project-directory compose up -d',
+      ].map((command) => [
+        `allows a compose command that prints no .env values: ${command}`,
+        command,
+        { kind: 'allow' },
+      ]),
+      { cwd: paths.cwd },
+    ),
     ...atStandardAndStrict(
       [
         "Select-String -Path a.cs -Pattern 'Core.KeyRing'",

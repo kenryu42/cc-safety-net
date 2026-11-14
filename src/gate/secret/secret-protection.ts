@@ -194,6 +194,33 @@ const SED_LONG_OPTIONS = [
   'version',
   'zero-terminated',
 ];
+const DOCKER_VALUE_OPTIONS = new Set([
+  '-c',
+  '--context',
+  '--config',
+  '-H',
+  '--host',
+  '-l',
+  '--log-level',
+  '--tlscacert',
+  '--tlscert',
+  '--tlskey',
+]);
+const COMPOSE_VALUE_OPTIONS = new Set([
+  '-f',
+  '--file',
+  '-p',
+  '--project-name',
+  '--project-directory',
+  '--env-file',
+  '--profile',
+  '--ansi',
+  '--parallel',
+  '--progress',
+]);
+const COMPOSE_CONFIG_SUBCOMMANDS = new Set(['config', 'convert']);
+const COMPOSE_CONFIG_NAMES_ONLY =
+  /^(?:-q|--quiet|--services|--profiles|--volumes|--images|--networks|--hash(?:=.*)?)$/;
 const SEARCH_NAMES_ONLY_LONG = new Set([
   'files-with-matches',
   'files-without-match',
@@ -1007,6 +1034,11 @@ function extractSegmentPathTargets(
       ...extractInterpreterPathTargets(command, post, store, options, environment, cwd, budget),
     ];
   }
+  const composeEnvFile = composeConfigEnvFile(command, post);
+  const composeEnvFileTargets =
+    composeEnvFile !== null && candidateExistsOnDisk(composeEnvFile, cwd, environment, budget)
+      ? [here(composeEnvFile)]
+      : [];
   const optionValue = (option: string, index: number) =>
     new RegExp(`^--?${option}=`).test(post[index] ?? '') ||
     new RegExp(`^--?${option}$`).test(post[index - 1] ?? '');
@@ -1022,6 +1054,7 @@ function extractSegmentPathTargets(
     : {};
   return [
     ...preludeTargets,
+    ...composeEnvFileTargets,
     ...post.flatMap((token, index) =>
       extractOperandPathCandidates(command, token).map((target) =>
         writesTailscaleCertFiles && optionValue('(?:cert|key)-file', index)
@@ -2326,6 +2359,44 @@ function startsCommandSubstitution(
     command[index + 1] === '(' &&
     command[index + 2] !== '('
   );
+}
+
+function composeConfigEnvFile(command: string, args: readonly string[]): string | null {
+  const composeStart =
+    command === 'docker-compose' ? 0 : command === 'docker' ? dockerComposeIndex(args) : -1;
+  if (composeStart === -1) return null;
+  let projectDirectory: string | undefined;
+  let firstFile: string | undefined;
+  for (let index = composeStart; index < args.length; index++) {
+    const arg = args[index] ?? '';
+    if (!arg.startsWith('-')) {
+      const configArgs = args.slice(index + 1);
+      if (!COMPOSE_CONFIG_SUBCOMMANDS.has(arg)) return null;
+      if (configArgs.some((option) => COMPOSE_CONFIG_NAMES_ONLY.test(option))) return null;
+      return posix.join(
+        projectDirectory ?? (firstFile === undefined ? '.' : posix.dirname(firstFile)),
+        '.env',
+      );
+    }
+    const equals = arg.indexOf('=');
+    const name = arg.startsWith('--') && equals !== -1 ? arg.slice(0, equals) : arg;
+    if (name === '--env-file') return null;
+    if (!COMPOSE_VALUE_OPTIONS.has(name)) continue;
+    const value = name === arg ? args[++index] : arg.slice(equals + 1);
+    if (name === '--project-directory') projectDirectory = value;
+    if (name === '-f' || name === '--file') firstFile ??= value;
+  }
+  return null;
+}
+
+function dockerComposeIndex(args: readonly string[]): number {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? '';
+    if (arg === 'compose') return index + 1;
+    if (!arg.startsWith('-')) return -1;
+    if (DOCKER_VALUE_OPTIONS.has(arg)) index++;
+  }
+  return -1;
 }
 
 function extractSelectStringTargets(tokens: readonly string[]): string[] {

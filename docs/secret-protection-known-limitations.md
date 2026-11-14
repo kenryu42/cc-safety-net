@@ -175,6 +175,19 @@ the process resolves `~` to the same directory. No failure from a Windows host
 is reported. Examine this limit again after the first report from a Windows
 host.
 
+## Known Limitation: Programs That Load Secrets Without Naming Them
+
+Path rules see only the paths a command names. A program that loads a secret
+file on its own and prints the values is outside them. `docker compose config`
+is the one such command that is covered, because it is the usual way to check a
+compose file and it prints the project `.env` values it interpolates. Its
+coverage stops at that `.env`: files listed under `env_file:` in a compose file
+are not read, compose's search of parent directories for the compose file is
+not followed, and `COMPOSE_FILE` or `COMPOSE_PROJECT_DIRECTORY` are not
+resolved. Values already in a process environment have no path at all, so
+`printenv`, `env`, and `docker inspect` showing `.Config.Env` are not covered,
+for the same reason as operating-system keyrings.
+
 ## Known Limitation: `.envrc` Files
 
 An `.envrc` file can export credentials into the environment. CC Safety Net
