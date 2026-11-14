@@ -33,7 +33,7 @@ function analyzeFromProject(command: string) {
   });
 }
 
-const resetBlock = { kind: 'deny', ruleId: 'git.reset-hard' };
+const resetBlock = { kind: 'deny', ruleId: 'git.reset-hard' } as const;
 
 test.skipIf(process.platform !== 'win32').each([
   [String.raw`. .\helpers.ps1; Get-Hello`, null],
