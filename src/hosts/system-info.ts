@@ -60,7 +60,7 @@ function quoteWindowsCommandArg(value: string): string {
 export function getSpawnCommand(
   args: string[],
   env: NodeJS.ProcessEnv,
-): { cmd: string; args: string[] } {
+): { cmd: string; args: string[]; windowsVerbatimArguments?: boolean } {
   const [command, ...rest] = args;
   const platform = env[TEST_SPAWN_PLATFORM_ENV] === 'win32' ? 'win32' : process.platform;
   if (!command || platform !== 'win32') return { cmd: command ?? '', args: rest };
@@ -72,9 +72,11 @@ export function getSpawnCommand(
     cmd: getEnvValue(env, 'COMSPEC') ?? 'cmd.exe',
     args: [
       '/d',
+      '/s',
       '/c',
-      ['call', quoteWindowsCommandArg(resolved), ...rest.map(quoteWindowsCommandArg)].join(' '),
+      `"${['call', quoteWindowsCommandArg(resolved), ...rest.map(quoteWindowsCommandArg)].join(' ')}"`,
     ],
+    windowsVerbatimArguments: true,
   };
 }
 
@@ -109,6 +111,7 @@ function runCommand(args: string[], options: { timeoutMs: number }): Promise<Com
       const spawnCommand = getSpawnCommand([cmd, ...rest], process.env);
       const proc = spawn(spawnCommand.cmd, spawnCommand.args, {
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsVerbatimArguments: spawnCommand.windowsVerbatimArguments,
       });
       let isSettled = false;
       let stdout = '';

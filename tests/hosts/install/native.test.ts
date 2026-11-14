@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { join } from 'node:path';
 import * as nextNative from '@/hosts/install/native';
 import { createFakeBin, type FakeScriptEntry } from '../../helpers/fake-bin';
+import { writeTree } from '../../helpers/fixture-tree';
 import {
   createTempRoot,
   describeAsyncOutcome,
@@ -102,5 +103,16 @@ describe('running a host CLI', () => {
     });
     expect(ported.value).toEqual(['Failed to run tool gone (exit 3).\nnothing to remove']);
     expect(ported.calls).toEqual(['tool gone', 'tool go']);
+  });
+});
+
+describe('a Windows cmd shim under a path with a space', () => {
+  test.skipIf(process.platform !== 'win32')('runs with its arguments intact', async () => {
+    const root = createTempRoot('spawn-');
+    writeTree(root, { 'DeepSeek Harness/dsh.cmd': '@echo off\r\necho ran [%~1] [%~2]\r\n' });
+    const shim = join(root, 'DeepSeek Harness', 'dsh.cmd');
+    expect((await nextNative.runNativeCommand([shim, 'a b', 'c@1.0'])).trim()).toBe(
+      'ran [a b] [c@1.0]',
+    );
   });
 });
