@@ -51,6 +51,7 @@ import {
   REASON_STRICT_UNPARSEABLE,
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
+import { readPowerShellFileIndex } from './powershell-wrapper';
 import { hasRecursiveForceFlags } from './rm-flags';
 import {
   ANALYZER_RULES,
@@ -428,7 +429,7 @@ export function analyzeSegment(
     }
   }
 
-  if (!child && (normalizedHead === 'source' || normalizedHead === '.')) {
+  if (!child && dialect === 'posix' && (normalizedHead === 'source' || normalizedHead === '.')) {
     const sourceSearchPathIndex = stripped[1] === '-p' ? 2 : null;
     if (sourceSearchPathIndex !== null) {
       const sourceSearchPath = options.commandView ? words[sourceSearchPathIndex] : undefined;
@@ -457,6 +458,39 @@ export function analyzeSegment(
       !isVerifiableLocalGeneratorSource(options.commandView)
     ) {
       return dynamicShellSourceResult(trace);
+    }
+  }
+
+  if (!child) {
+    const parsedWords = prelude.rewritten ? words : prelude.words;
+    const dotSources = dialect === 'powershell' && isBarePowerShellDotSource(parsedWords[0]);
+    for (const index of powerShellScriptOperandIndexes(
+      dialect,
+      normalizedHead,
+      stripped,
+      parsedWords,
+    )) {
+      const operand = parsedWords[index];
+      const path =
+        operand?.provenance === 'literal'
+          ? normalizePowerShellLocationTarget(operand.text)
+          : undefined;
+      if (!path || !POWERSHELL_SCRIPT_FILE.test(path)) {
+        if (operand && dotSources) return dynamicShellSourceResult(trace);
+        continue;
+      }
+      const result = analyzeTrackedHeredocScript(
+        path,
+        nestedEffectiveCwd,
+        envAssignments,
+        options,
+        trace,
+        depth,
+        false,
+        false,
+        'powershell',
+      );
+      if (result || dotSources) return result;
     }
   }
 
@@ -996,6 +1030,7 @@ function analyzeTrackedHeredocScript(
   depth: number,
   failClosed = false,
   runsByPath = false,
+  shell?: CommandView['dialect'],
 ): AnalyzeBlockResult | null {
   if (failClosed && /[$`*?[\]]/.test(source)) return dynamicShellSourceResult(trace);
   const path = resolveTrackedHeredocPath(
@@ -1010,7 +1045,16 @@ function analyzeTrackedHeredocScript(
   }
   if (body === undefined) {
     return path
-      ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath)
+      ? analyzeScriptFile(
+          source,
+          path,
+          effectiveCwd,
+          envAssignments,
+          options,
+          trace,
+          runsByPath,
+          shell,
+        )
       : null;
   }
   if (runsByPath && body.startsWith('#!') && !SHELL_SHEBANG_RE.test(body)) return null;
@@ -1022,9 +1066,9 @@ function analyzeTrackedHeredocScript(
     innerCommand: body,
     depth: depth + 1,
   });
-  if (!runsByPath) return options.analyzeNested(body, { effectiveCwd, envAssignments });
+  if (!runsByPath) return options.analyzeNested(body, { effectiveCwd, envAssignments, shell });
   const result = nestedResultWithinLimits(() =>
-    options.analyzeNested(body, { effectiveCwd, envAssignments }),
+    options.analyzeNested(body, { effectiveCwd, envAssignments, shell }),
   );
   return result?.intent === 'stop_and_explain' ? null : result;
 }
@@ -1040,6 +1084,7 @@ function analyzeScriptFile(
   options: InternalOptions,
   trace: CommandTraceContext | undefined,
   runsByPath: boolean,
+  shell: CommandView['dialect'] | undefined,
 ): AnalyzeBlockResult | null {
   const writtenPaths = [...(options.writtenPaths ?? [])];
   if (writtenPaths.some((written) => path === written || path.startsWith(`${written}${sep}`))) {
@@ -1065,6 +1110,7 @@ function analyzeScriptFile(
         scriptBudget,
         withoutUncertainCapabilities,
         untraced: true,
+        shell,
       });
       if (!result || result.scriptLocation) return result;
       const line =
@@ -1309,6 +1355,30 @@ function isBarePowerShellCallOperator(word: CommandWord | undefined): boolean {
     word.raw === word.text &&
     (word.text === '&' || word.text === '.')
   );
+}
+
+const POWERSHELL_SCRIPT_FILE = /\.psm?1$/i;
+const POWERSHELL_IMPORT_MODULE_HEADS = new Set(['import-module', 'ipmo']);
+
+function isBarePowerShellDotSource(word: CommandWord | undefined): boolean {
+  return isBarePowerShellCallOperator(word) && word?.text === '.';
+}
+
+function powerShellScriptOperandIndexes(
+  dialect: CommandView['dialect'],
+  head: string,
+  texts: readonly string[],
+  words: readonly CommandWord[],
+): number[] {
+  const fileIndex =
+    head === 'pwsh' || head === 'powershell' ? readPowerShellFileIndex(texts) : undefined;
+  if (fileIndex !== undefined) return [fileIndex];
+  if (dialect !== 'powershell') return [];
+  if (isBarePowerShellCallOperator(words[0])) return [1];
+  if (POWERSHELL_IMPORT_MODULE_HEADS.has(head)) {
+    return texts.flatMap((text, index) => (index > 0 && !text.startsWith('-') ? [index] : []));
+  }
+  return /[\\/]/.test(texts[0] ?? '') ? [0] : [];
 }
 
 function isStaticPowerShellCommandWord(

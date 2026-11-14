@@ -159,8 +159,9 @@ Adjudicated 2026-07-22. Sources: `docs/secret-protection-known-limitations.md`;
 
 Destructive content inside a file the analyzed command merely invokes, such as `bash setup.sh` or
 `python tool.py`. Inline `-c` and `-e` code is analyzed. A shell script run by path (`sh`, `bash`,
-`source`, `.`, `./x`) is read from disk best effort, and only a concrete rule match in its body
-blocks: an uncertain result, an analysis limit, an unreadable or oversized file, or a path the same
+`source`, `.`, `./x`) and a literal local PowerShell `.ps1` or `.psm1` (`. x`, `& x`, `.\x`,
+`Import-Module x`, `pwsh -File x`) are read from disk best effort, and only a concrete rule match
+in the body blocks: an uncertain result, an analysis limit, an unreadable or oversized file, or a path the same
 command may have written keeps the outer command's verdict. Analysis stops at the script's first
 result, so an early uncertain line hides later content. When a strict or paranoid run is uncertain,
 the script is analyzed again with standard's uncertainty rules, so a line only those modes find
