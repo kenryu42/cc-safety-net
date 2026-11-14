@@ -74,6 +74,7 @@ export const SCRIPT_FIXTURES = {
   'scripts/runs-upload.sh': 'echo outer\necho more\nsh scripts/upload.sh\n',
   'scripts/upload-in-function.sh': `publish() {\n  echo publishing\n  ${UPLOAD}\n}\npublish\n`,
   'scripts/reset.ps1': 'git reset --hard\n',
+  'scripts/reset[1].ps1': 'git reset --hard\n',
   'scripts/helpers.ps1': 'function Get-Hello { "hi" }\n',
 };
 
@@ -2728,6 +2729,9 @@ export function behavioralContractCases(paths: {
         ['powershell', String.raw`.\scripts\reset.ps1`],
         ['powershell', String.raw`pwsh -NoProfile -File .\scripts\reset.ps1`],
         ['posix', 'pwsh -NoProfile -File scripts/reset.ps1'],
+        ['powershell', '. ./scripts/reset[1].ps1'],
+        ['powershell', '& ./scripts/reset[1].ps1'],
+        ['powershell', 'pwsh -NoProfile -File ./scripts/reset[1].ps1'],
       ] as const
     ).flatMap(([shell, command]) =>
       levels.map(([level, values]) => ({
