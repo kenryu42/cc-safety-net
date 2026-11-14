@@ -475,7 +475,7 @@ export function analyzeSegment(
         operand?.provenance === 'literal'
           ? normalizePowerShellLocationTarget(operand.text)
           : undefined;
-      if (!path || !POWERSHELL_SCRIPT_FILE.test(path)) {
+      if (!path || path.startsWith('~') || !POWERSHELL_SCRIPT_FILE.test(path)) {
         if (operand && dotSources) return dynamicShellSourceResult(trace);
         continue;
       }
@@ -1390,9 +1390,13 @@ function powerShellScriptOperandIndexes(
 }
 
 function commaListIndexes(texts: readonly string[], start: number): number[] {
-  return texts[start + 1] === ','
-    ? [start, start + 1, ...commaListIndexes(texts, start + 2)]
-    : [start];
+  const listEnd = texts.findIndex(
+    (text, index) => index > start && (index - start) % 2 === 1 && text !== ',',
+  );
+  return Array.from(
+    { length: (listEnd === -1 ? texts.length : listEnd) - start },
+    (_, offset) => start + offset,
+  );
 }
 
 function isStaticPowerShellCommandWord(

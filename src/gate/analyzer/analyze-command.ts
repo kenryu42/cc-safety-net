@@ -1124,7 +1124,7 @@ function recordDownloadedPaths(
   ];
   for (const output of outputs.filter((text) => text !== '-')) {
     const path = resolveTrackedHeredocPath(
-      output,
+      commandView.dialect === 'powershell' ? output.replaceAll('\\', '/') : output,
       state.effectiveCwd,
       options.environment.paths,
       options.budget,

