@@ -1932,6 +1932,9 @@ export function behavioralContractCases(paths: {
         'docker-compose -f compose/compose.yaml config',
         'docker compose --file=compose/compose.yaml convert',
         'docker --context default compose --project-directory compose config --format json',
+        'timeout 30 docker compose --project-directory compose config',
+        'docker compose -f=compose/compose.yaml config',
+        'docker compose -fcompose/compose.yaml config',
       ].map((command) => [
         `blocks a compose config that prints the project .env values: ${command}`,
         command,
@@ -1953,12 +1956,32 @@ export function behavioralContractCases(paths: {
         'docker compose -f compose/compose.yaml config --volumes',
         'docker compose --project-directory compose --env-file compose/compose.yaml config',
         'docker compose --project-directory compose up -d',
+        'cd compose && docker compose config --help',
+        'cd compose && docker compose config -h',
+        'cd compose && docker compose config --no-interpolate',
+        'cd compose && docker compose config --variables',
+        'cd compose && docker compose config --models',
       ].map((command) => [
         `allows a compose command that prints no .env values: ${command}`,
         command,
         { kind: 'allow' },
       ]),
       { cwd: paths.cwd },
+    ),
+    ...atStandardAndStrict(
+      [
+        [
+          'blocks a compose config given a Windows compose file path',
+          'docker compose -f .\\compose\\compose.yaml config',
+          {
+            kind: 'block',
+            ruleId: 'secret.basename.env',
+            intent: 'hard_stop',
+            reasonIncludes: 'sensitive path',
+          },
+        ],
+      ],
+      { cwd: paths.cwd, shell: 'powershell' },
     ),
     ...atStandardAndStrict(
       [

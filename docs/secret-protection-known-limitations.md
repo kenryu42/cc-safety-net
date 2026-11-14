@@ -184,7 +184,10 @@ compose file and it prints the project `.env` values it interpolates. Its
 coverage stops at that `.env`: files listed under `env_file:` in a compose file
 are not read, compose's search of parent directories for the compose file is
 not followed, and `COMPOSE_FILE` or `COMPOSE_PROJECT_DIRECTORY` are not
-resolved. Values already in a process environment have no path at all, so
+resolved. The options that print no values are judged by presence, so a secret
+interpolated into an image, volume, network, or profile name and listed with
+`--images` and similar options, an empty `--hash=`, or a later `--quiet=false`
+is not caught. Values already in a process environment have no path at all, so
 `printenv`, `env`, and `docker inspect` showing `.Config.Env` are not covered,
 for the same reason as operating-system keyrings.
 

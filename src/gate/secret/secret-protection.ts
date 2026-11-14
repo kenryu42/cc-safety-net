@@ -220,7 +220,7 @@ const COMPOSE_VALUE_OPTIONS = new Set([
 ]);
 const COMPOSE_CONFIG_SUBCOMMANDS = new Set(['config', 'convert']);
 const COMPOSE_CONFIG_NAMES_ONLY =
-  /^(?:-q|--quiet|--services|--profiles|--volumes|--images|--networks|--hash(?:=.*)?)$/;
+  /^(?:-q|--quiet|-h|--help|--services|--profiles|--volumes|--images|--networks|--models|--variables|--no-interpolate|--hash(?:=.*)?)$/;
 const SEARCH_NAMES_ONLY_LONG = new Set([
   'files-with-matches',
   'files-without-match',
@@ -1034,7 +1034,11 @@ function extractSegmentPathTargets(
       ...extractInterpreterPathTargets(command, post, store, options, environment, cwd, budget),
     ];
   }
-  const composeEnvFile = composeConfigEnvFile(command, post);
+  const composeArgv = withoutTimeout(stripped);
+  const composeEnvFile = composeConfigEnvFile(
+    basename(composeArgv[0] ?? '').toLowerCase(),
+    composeArgv.slice(1),
+  );
   const composeEnvFileTargets =
     composeEnvFile !== null && candidateExistsOnDisk(composeEnvFile, cwd, environment, budget)
       ? [here(composeEnvFile)]
@@ -2374,15 +2378,22 @@ function composeConfigEnvFile(command: string, args: readonly string[]): string 
       if (!COMPOSE_CONFIG_SUBCOMMANDS.has(arg)) return null;
       if (configArgs.some((option) => COMPOSE_CONFIG_NAMES_ONLY.test(option))) return null;
       return posix.join(
-        projectDirectory ?? (firstFile === undefined ? '.' : posix.dirname(firstFile)),
+        projectDirectory ??
+          (firstFile === undefined ? '.' : posix.dirname(firstFile.replaceAll('\\', '/'))),
         '.env',
       );
     }
     const equals = arg.indexOf('=');
-    const name = arg.startsWith('--') && equals !== -1 ? arg.slice(0, equals) : arg;
+    const attachedShort = /^(-[fp])=?(.+)$/.exec(arg);
+    const name =
+      attachedShort?.[1] ?? (arg.startsWith('--') && equals !== -1 ? arg.slice(0, equals) : arg);
     if (name === '--env-file') return null;
     if (!COMPOSE_VALUE_OPTIONS.has(name)) continue;
-    const value = name === arg ? args[++index] : arg.slice(equals + 1);
+    const value = attachedShort
+      ? attachedShort[2]
+      : name === arg
+        ? args[++index]
+        : arg.slice(equals + 1);
     if (name === '--project-directory') projectDirectory = value;
     if (name === '-f' || name === '--file') firstFile ??= value;
   }
