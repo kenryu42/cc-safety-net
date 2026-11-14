@@ -496,7 +496,8 @@ function readPowerShellWord(
   };
 }
 
-const GLUED_ASSIGNMENT = /\$(?:\{[^}\s]*\}|[\w:]+)(?:\.\w+|\[[^\]\s]*\])*([-+*/%]?=)(?!=)/y;
+const GLUED_ASSIGNMENT =
+  /\$(?:\{[^}\s$(`'"]*\}|[\w:]+)(?:\.\w+|\[[^\]\s$(`'"]*\])*([-+*/%]?=)(?!=)/y;
 
 function readGluedAssignment(source: string, start: number, end: number) {
   GLUED_ASSIGNMENT.lastIndex = start;

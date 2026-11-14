@@ -53,6 +53,20 @@ describe('core/shell/parse', () => {
     expect(program.issues.map((issue) => issue.code)).toContain('word-limit');
   });
 
+  test.each([
+    [`$a[${'$('.repeat(65)}0${')'.repeat(65)}]=1`, 'limited'],
+    ["$a['x]=git status", 'partial'],
+  ] as const)('a glued assignment target keeps its parse state: %s', (source, status) => {
+    expect(parseCommand(source, 'powershell').status).toBe(status);
+  });
+
+  test('a glued assignment target keeps the command in its index', () => {
+    const program = parseCommand('$a[$(Get-Date)]=0', 'powershell');
+    expect(
+      projectCommandViews(program).flatMap((view) => view.words.map((word) => word.text)),
+    ).toContain('Get-Date');
+  });
+
   test('the caps a parse runs under', () => {
     expect(DEFAULT_COMMAND_PARSER_LIMITS).toEqual({
       maxInputLength: 128 * 1024,
