@@ -30,6 +30,7 @@ export function probeInstallTarget(
     const proc = spawn(spawnCommand.cmd, spawnCommand.args, {
       env: process.env,
       stdio: 'ignore',
+      windowsVerbatimArguments: spawnCommand.windowsVerbatimArguments,
     });
     let settled = false;
 

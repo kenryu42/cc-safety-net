@@ -40,6 +40,7 @@ export function runNativeCommand(
     const spawnCommand = getSpawnCommand([...command], process.env);
     const child = spawn(spawnCommand.cmd, spawnCommand.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsVerbatimArguments: spawnCommand.windowsVerbatimArguments,
     });
     const captured = captureOutputStreams(child);
     const merged = () => [captured.stdout, captured.stderr].filter(Boolean).join('\n');

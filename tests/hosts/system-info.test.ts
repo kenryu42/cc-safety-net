@@ -47,14 +47,27 @@ describe('the Windows-safe argv', () => {
     expect(resolved(getSpawnCommand)).toEqual([
       { cmd: 'tool', args: ['a b', 'c'] },
       { cmd: '', args: [] },
-      { cmd: 'cmd.exe', args: ['/d', '/c', `call ${join(dir, 'tool.CMD')} "a b" c`] },
+      {
+        cmd: 'cmd.exe',
+        args: ['/d', '/s', '/c', `"call ${join(dir, 'tool.CMD')} "a b" c"`],
+        windowsVerbatimArguments: true,
+      },
       {
         cmd: 'D:\\Windows\\System32\\cmd.exe',
-        args: ['/d', '/c', `call ${join(dir, 'tool.CMD')}`],
+        args: ['/d', '/s', '/c', `"call ${join(dir, 'tool.CMD')}"`],
+        windowsVerbatimArguments: true,
       },
       { cmd: join(dir, 'other.EXE'), args: ['x'] },
-      { cmd: 'cmd.exe', args: ['/d', '/c', `call ${join(dir, 'tool.CMD')} x`] },
-      { cmd: 'cmd.exe', args: ['/d', '/c', `call ${join(dir, 'tool.CMD')} x`] },
+      {
+        cmd: 'cmd.exe',
+        args: ['/d', '/s', '/c', `"call ${join(dir, 'tool.CMD')} x"`],
+        windowsVerbatimArguments: true,
+      },
+      {
+        cmd: 'cmd.exe',
+        args: ['/d', '/s', '/c', `"call ${join(dir, 'tool.CMD')} x"`],
+        windowsVerbatimArguments: true,
+      },
       { cmd: 'ghost', args: ['x'] },
     ]);
   });
