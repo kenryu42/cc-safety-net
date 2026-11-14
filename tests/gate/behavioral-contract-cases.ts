@@ -2747,6 +2747,9 @@ export function behavioralContractCases(paths: {
       'Import-Module ./scripts/helpers.ps1; Get-Hello',
       '. ./scripts/missing.ps1',
       '. { Get-Date }',
+      "'./scripts/reset.ps1'",
+      'Import-Module ./scripts/helpers.ps1 -ArgumentList ./scripts/reset.ps1',
+      'Import-Module ./scripts/helpers.ps1 -Args x, ./scripts/reset.ps1 -Force',
     ].map((command) => ({
       name: `allows a PowerShell script file without a concrete rule match: ${command}`,
       command,

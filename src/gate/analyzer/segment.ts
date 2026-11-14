@@ -1359,6 +1359,7 @@ function isBarePowerShellCallOperator(word: CommandWord | undefined): boolean {
 
 const POWERSHELL_SCRIPT_FILE = /\.psm?1$/i;
 const POWERSHELL_IMPORT_MODULE_HEADS = new Set(['import-module', 'ipmo']);
+const POWERSHELL_ARGUMENT_LIST = /^-(?:argumentlist|args)$/i;
 
 function isBarePowerShellDotSource(word: CommandWord | undefined): boolean {
   return isBarePowerShellCallOperator(word) && word?.text === '.';
@@ -1376,9 +1377,22 @@ function powerShellScriptOperandIndexes(
   if (dialect !== 'powershell') return [];
   if (isBarePowerShellCallOperator(words[0])) return [1];
   if (POWERSHELL_IMPORT_MODULE_HEADS.has(head)) {
-    return texts.flatMap((text, index) => (index > 0 && !text.startsWith('-') ? [index] : []));
+    const moduleArguments = new Set(
+      texts.flatMap((text, index) =>
+        POWERSHELL_ARGUMENT_LIST.test(text) ? commaListIndexes(texts, index + 1) : [],
+      ),
+    );
+    return texts.flatMap((text, index) =>
+      index > 0 && !text.startsWith('-') && !moduleArguments.has(index) ? [index] : [],
+    );
   }
-  return /[\\/]/.test(texts[0] ?? '') ? [0] : [];
+  return /[\\/]/.test(texts[0] ?? '') && !words[0]?.quoted ? [0] : [];
+}
+
+function commaListIndexes(texts: readonly string[], start: number): number[] {
+  return texts[start + 1] === ','
+    ? [start, start + 1, ...commaListIndexes(texts, start + 2)]
+    : [start];
 }
 
 function isStaticPowerShellCommandWord(
