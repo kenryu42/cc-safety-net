@@ -44,6 +44,15 @@ describe('core/shell/parse', () => {
     },
   );
 
+  test('counts a glued PowerShell assignment toward the word limit', () => {
+    const program = parseCommand('$a=;$b=;', 'powershell', {
+      ...DEFAULT_COMMAND_PARSER_LIMITS,
+      maxWords: 1,
+    });
+    expect(program.status).toBe('limited');
+    expect(program.issues.map((issue) => issue.code)).toContain('word-limit');
+  });
+
   test('the caps a parse runs under', () => {
     expect(DEFAULT_COMMAND_PARSER_LIMITS).toEqual({
       maxInputLength: 128 * 1024,

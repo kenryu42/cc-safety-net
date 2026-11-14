@@ -180,6 +180,16 @@ function scanPowerShellSequence(
     } satisfies CommandView);
   };
 
+  const wordLimitResult = (next: number): PowerShellScanResult | undefined => {
+    if (wordCount <= limits.maxWords) return undefined;
+    issues.push({
+      code: 'word-limit',
+      message: `command exceeds ${limits.maxWords} words`,
+    });
+    flush();
+    return { nodes, issues, next, closed: false, words: wordCount, limited: true };
+  };
+
   let i = start;
   while (i < end) {
     const char = source[i];
@@ -319,6 +329,8 @@ function scanPowerShellSequence(
       );
       accumulator.end = assignment.next;
       wordCount += 2;
+      const overLimit = wordLimitResult(assignment.next);
+      if (overLimit) return overLimit;
       i = assignment.next;
       continue;
     }
@@ -330,14 +342,8 @@ function scanPowerShellSequence(
     accumulator.nested.push(...result.nested);
     wordCount += 1 + result.words;
     limited ||= result.limited;
-    if (wordCount > limits.maxWords) {
-      issues.push({
-        code: 'word-limit',
-        message: `command exceeds ${limits.maxWords} words`,
-      });
-      flush();
-      return { nodes, issues, next: result.next, closed: false, words: wordCount, limited: true };
-    }
+    const overLimit = wordLimitResult(result.next);
+    if (overLimit) return overLimit;
     i = result.next > i ? result.next : i + 1;
   }
   flush();
@@ -490,7 +496,7 @@ function readPowerShellWord(
   };
 }
 
-const GLUED_ASSIGNMENT = /\$(?:\{[^}\s]*\}|[\w:]+)([-+*/%]?=)(?!=)/y;
+const GLUED_ASSIGNMENT = /\$(?:\{[^}\s]*\}|[\w:]+)(?:\.\w+|\[[^\]\s]*\])*([-+*/%]?=)(?!=)/y;
 
 function readGluedAssignment(source: string, start: number, end: number) {
   GLUED_ASSIGNMENT.lastIndex = start;
