@@ -475,7 +475,7 @@ export function analyzeSegment(
         operand?.provenance === 'literal'
           ? normalizePowerShellLocationTarget(operand.text)
           : undefined;
-      if (!path || path.startsWith('~') || !POWERSHELL_SCRIPT_FILE.test(path)) {
+      if (!path || /^~|[*?[\]]/.test(path) || !POWERSHELL_SCRIPT_FILE.test(path)) {
         if (operand && dotSources) return dynamicShellSourceResult(trace);
         continue;
       }
