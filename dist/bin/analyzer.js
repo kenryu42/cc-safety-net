@@ -138,6 +138,7 @@ __export(exports_analyzer, {
   parseEnvAssignment: () => parseEnvAssignment,
   parseInterpreterArgv: () => parseInterpreterArgv,
   powerShellTargetForPolicy: () => powerShellTargetForPolicy,
+  readPowerShellFileIndex: () => readPowerShellFileIndex,
   readPowerShellScript: () => readPowerShellScript,
   readShellScriptFile: () => readShellScriptFile,
   reconstructEnvSplitWords: () => reconstructEnvSplitWords,
@@ -4069,6 +4070,7 @@ var REASON_NESTED_RECURSIVE_DELETE_UNREAD = "Recursive delete handed to powershe
 var READ_SWITCH = /^-(?:noprofile|nop|noninteractive|noni|nologo)$/i;
 var READ_EXECUTION_POLICY = /^-(?:executionpolicy|ep)$/i;
 var READ_COMMAND = /^-(?:command|c)$/i;
+var READ_FILE = /^-(?:file|f)$/i;
 var PARAMETER_NAME = /^(?:--?|[/\u2013\u2014\u2015])(\w+)$/;
 var ENCODED_COMMAND = "encodedcommand";
 var DELETE_VERB = /(?<![\w-])(?:remove-item|ri|rm|rmdir|rd|del|erase)(?![\w-])/i;
@@ -4086,17 +4088,21 @@ function analyzePowerShellWrapperMatch(words, analyzeNested) {
   return DELETE_VERB.test(text) && RECURSIVE_FLAG.test(text) ? import_destructive7.destructiveCommandMatch("powershell.nested-recursive-delete-unread", REASON_NESTED_RECURSIVE_DELETE_UNREAD) : null;
 }
 function readPowerShellScript(texts) {
-  const commandIndex = readCommandIndex(texts, 1);
+  const commandIndex = readParameterIndex(texts, 1, READ_COMMAND);
   const script = commandIndex === undefined ? [] : texts.slice(commandIndex + 1);
   return script.length > 0 ? script.join(" ") : undefined;
 }
-function readCommandIndex(texts, index) {
+function readPowerShellFileIndex(texts) {
+  const fileIndex = readParameterIndex(texts, 1, READ_FILE);
+  return fileIndex === undefined ? undefined : fileIndex + 1;
+}
+function readParameterIndex(texts, index, parameter) {
   const text = texts[index] ?? "";
-  if (READ_COMMAND.test(text))
+  if (parameter.test(text))
     return index;
   if (READ_SWITCH.test(text))
-    return readCommandIndex(texts, index + 1);
-  return READ_EXECUTION_POLICY.test(text) ? readCommandIndex(texts, index + 2) : undefined;
+    return readParameterIndex(texts, index + 1, parameter);
+  return READ_EXECUTION_POLICY.test(text) ? readParameterIndex(texts, index + 2, parameter) : undefined;
 }
 function isLiteralScriptWord(word, text) {
   return word?.provenance === "unknown" ? !OUTER_EXPANSION.test(text) : isLiteralExecutionSourceWord(word, text);

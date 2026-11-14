@@ -3588,6 +3588,16 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
       displayText: accumulator.words.map((word) => word.text).join(" ")
     });
   };
+  const wordLimitResult = (next) => {
+    if (wordCount <= limits.maxWords)
+      return;
+    issues.push({
+      code: "word-limit",
+      message: `command exceeds ${limits.maxWords} words`
+    });
+    flush();
+    return { nodes, issues, next, closed: false, words: wordCount, limited: true };
+  };
   let i = start;
   while (i < end) {
     const char = source[i];
@@ -3712,6 +3722,24 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
       accumulator.end = ++i;
       continue;
     }
+    const assignment = accumulator.words.length === 0 ? readGluedAssignment(source, i, end) : undefined;
+    if (assignment) {
+      accumulator.start = i;
+      accumulator.words.push(readPowerShellWord(source, i, assignment.operatorStart, limits, depth).word, createCommandWord({
+        text: assignment.operator,
+        raw: assignment.operator,
+        span: { start: assignment.operatorStart, end: assignment.next },
+        provenance: "literal",
+        quoted: false
+      }));
+      accumulator.end = assignment.next;
+      wordCount += 2;
+      const overLimit = wordLimitResult(assignment.next);
+      if (overLimit)
+        return overLimit;
+      i = assignment.next;
+      continue;
+    }
     const result = readPowerShellWord(source, i, end, limits, depth);
     accumulator.start = accumulator.start === -1 ? i : accumulator.start;
     accumulator.end = result.next;
@@ -3720,14 +3748,9 @@ function scanPowerShellSequence(source, start, end, limits, depth, closingBrace 
     accumulator.nested.push(...result.nested);
     wordCount += 1 + result.words;
     limited ||= result.limited;
-    if (wordCount > limits.maxWords) {
-      issues.push({
-        code: "word-limit",
-        message: `command exceeds ${limits.maxWords} words`
-      });
-      flush();
-      return { nodes, issues, next: result.next, closed: false, words: wordCount, limited: true };
-    }
+    const overLimit = wordLimitResult(result.next);
+    if (overLimit)
+      return overLimit;
     i = result.next > i ? result.next : i + 1;
   }
   flush();
@@ -3859,6 +3882,19 @@ function readPowerShellWord(source, start, end, limits, depth) {
     nested,
     words: nestedWords,
     limited
+  };
+}
+var GLUED_ASSIGNMENT = /\$(?:\{[^}\s$(`'"]*\}|[\w:]+)(?:\.\w+|\[[^\]\s$(`'"]*\])*([-+*/%]?=)(?!=)/y;
+function readGluedAssignment(source, start, end) {
+  GLUED_ASSIGNMENT.lastIndex = start;
+  const match = GLUED_ASSIGNMENT.exec(source);
+  const operator = match?.[1];
+  if (!match || !operator || GLUED_ASSIGNMENT.lastIndex >= end)
+    return;
+  return {
+    operator,
+    operatorStart: GLUED_ASSIGNMENT.lastIndex - operator.length,
+    next: GLUED_ASSIGNMENT.lastIndex
   };
 }
 function readQuoteOpening(source, index, wordStart) {

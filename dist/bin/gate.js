@@ -150,8 +150,12 @@ var MAX_FUNCTION_EXPANSIONS = 256;
 var READ_EVENTS = new WeakMap;
 function readGuardSyntax(source, program, transparentWrappers = []) {
   const suppressed = program.status === "complete" ? new Set(collectDataSinkHeredocSpans(program, transparentWrappers)) : new Set;
-  const masked = maskSpans(source, suppressed);
-  const unclosedQuote = program.dialect === "powershell" ? program.issues.some((issue) => issue.code.includes("quote")) : import_tokens.hasUnclosedQuotes(masked);
+  const heredocBodies = collectHeredocBodies(program);
+  const masked = heredocBodies.filter((heredoc) => suppressed.has(heredoc.body)).flatMap((heredoc) => heredoc.substitutions).map((span) => ({
+    start: span.start - (source[span.start - 1] === "`" ? 1 : 2),
+    end: span.end + 1
+  })).reduce((text, span) => text.slice(0, span.start) + source.slice(span.start, span.end) + text.slice(span.end), maskSpans(source, suppressed));
+  const unclosedQuote = program.dialect === "powershell" ? program.issues.some((issue) => issue.code.includes("quote")) : import_tokens.hasUnclosedQuotes(maskSpans(masked, new Set(heredocBodies.map((heredoc) => heredoc.body))));
   if (unclosedQuote)
     return freezeSyntax("unclosed-quote", masked, program);
   const flags = {
@@ -417,18 +421,12 @@ function readHeredocs(view, program, index, context) {
         wordEvent(heredoc.delimiter),
         .../[\r\n]/.test(context.source[heredoc.terminatorSpan.end] ?? "") ? [operatorEvent(";")] : []
       ];
-      if (context.suppressed.has(heredoc.bodySpan)) {
-        return [{ start: heredoc.bodySpan.start, events: terminator }];
-      }
-      return [
-        {
-          start: heredoc.bodySpan.start,
-          events: [
-            ...readText(context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end), context),
-            ...terminator
-          ]
-        }
-      ];
+      const body = context.suppressed.has(heredoc.bodySpan) ? heredocSubstitutions(view, heredoc.bodySpan).flatMap((nested) => [
+        SCOPE_ENTER,
+        ...readProgram(nested, { ...context, functions: new Map(context.functions) }),
+        SCOPE_EXIT
+      ]) : readText(context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end), context);
+      return [{ start: heredoc.bodySpan.start, events: [...body, ...terminator] }];
     }),
     ...heredocs.some((redirection) => !redirection.heredoc && redirection.target) ? readUnterminatedHeredoc(program, index, context) : []
   ];
@@ -760,8 +758,36 @@ function collectDataSinkHeredocSpans(program, transparentWrappers) {
     const piped = next?.kind === "connector" && (next.operator === "|" || next.operator === "|&");
     if (piped || !isDataSinkHeredocConsumer(node, transparentWrappers))
       return nestedSpans;
-    return [...nestedSpans, ...quotedBodies];
+    return [
+      ...nestedSpans,
+      ...node.redirections.flatMap((redirection) => redirection.heredoc ? [redirection.heredoc.bodySpan] : [])
+    ];
   });
+}
+function collectHeredocBodies(program) {
+  return program.nodes.flatMap((node) => {
+    if (node.kind === "group" || node.kind === "function")
+      return collectHeredocBodies(node.body);
+    if (node.kind !== "command")
+      return [];
+    return [
+      ...node.nested.flatMap(collectHeredocBodies),
+      ...node.redirections.flatMap((redirection) => {
+        const body = redirection.heredoc?.bodySpan;
+        if (!body)
+          return [];
+        return [
+          {
+            body,
+            substitutions: heredocSubstitutions(node, body).map((nested) => nested.span)
+          }
+        ];
+      })
+    ];
+  });
+}
+function heredocSubstitutions(view, body) {
+  return view.nested.filter((nested) => nested.span.start >= body.start && nested.span.end <= body.end);
 }
 function getCalledFunctionBody(view, functions) {
   const name = import_model.getCalledCommandName(view);
@@ -1608,6 +1634,77 @@ var INTERPRETERS_BY_CLUSTERED_CODE_EVAL_FLAG = new Map([
   ["r", new Set(["php"])]
 ]);
 var PATTERN_FIRST_COMMANDS = new Set(["grep", "rg"]);
+var SELECT_STRING_COMMANDS = new Set(["select-string", "sls"]);
+var SELECT_STRING_VALUE_PARAMETERS = [
+  "path",
+  "literalpath",
+  "lp",
+  "pspath",
+  "inputobject",
+  "include",
+  "exclude",
+  "encoding",
+  "context",
+  "culture"
+];
+var SELECT_STRING_PARAMETERS = [
+  "pattern",
+  ...SELECT_STRING_VALUE_PARAMETERS,
+  "allmatches",
+  "casesensitive",
+  "list",
+  "noemphasis",
+  "notmatch",
+  "quiet",
+  "raw",
+  "simplematch"
+];
+var SED_LONG_VALUE_OPTIONS = new Set(["expression", "file", "line-length"]);
+var SED_LONG_OPTIONS = [
+  "debug",
+  "expression",
+  "file",
+  "follow-symlinks",
+  "help",
+  "in-place",
+  "line-length",
+  "null-data",
+  "posix",
+  "quiet",
+  "regexp-extended",
+  "sandbox",
+  "separate",
+  "silent",
+  "unbuffered",
+  "version",
+  "zero-terminated"
+];
+var DOCKER_VALUE_OPTIONS = new Set([
+  "-c",
+  "--context",
+  "--config",
+  "-H",
+  "--host",
+  "-l",
+  "--log-level",
+  "--tlscacert",
+  "--tlscert",
+  "--tlskey"
+]);
+var COMPOSE_VALUE_OPTIONS = new Set([
+  "-f",
+  "--file",
+  "-p",
+  "--project-name",
+  "--project-directory",
+  "--env-file",
+  "--profile",
+  "--ansi",
+  "--parallel",
+  "--progress"
+]);
+var COMPOSE_CONFIG_SUBCOMMANDS = new Set(["config", "convert"]);
+var COMPOSE_CONFIG_NAMES_ONLY = /^(?:-q|--quiet|-h|--help|--services|--profiles|--volumes|--images|--networks|--models|--variables|--no-interpolate|--hash(?:=.*)?)$/;
 var SEARCH_NAMES_ONLY_LONG = new Set([
   "files-with-matches",
   "files-without-match",
@@ -1987,6 +2084,16 @@ function extractSegmentPathTargets(tokens, store, options, environment, segmentC
   if (PATTERN_FIRST_COMMANDS.has(command)) {
     return [...preludeTargets, ...extractPatternCommandTargets(post).map(here)];
   }
+  if (SELECT_STRING_COMMANDS.has(command)) {
+    return [...preludeTargets, ...extractSelectStringTargets(post).map(here)];
+  }
+  if (command === "sed") {
+    const scripts = sedScriptIndexes(post);
+    return [
+      ...preludeTargets,
+      ...post.flatMap((token, index) => extractOperandPathCandidates(command, token).map((target) => scripts.has(index) && options.inlineLiteralsPresumedData === true ? { ...here(target), literalRole: "data" } : here(target)))
+    ];
+  }
   if (PATH_ROOT_COMMANDS.has(command)) {
     return [
       ...preludeTargets,
@@ -2034,6 +2141,9 @@ function extractSegmentPathTargets(tokens, store, options, environment, segmentC
       ...extractInterpreterPathTargets(command, post, store, options, environment, cwd, budget)
     ];
   }
+  const composeArgv = withoutTimeout(stripped);
+  const composeEnvFile = composeConfigEnvFile(basename2(composeArgv[0] ?? "").toLowerCase(), composeArgv.slice(1));
+  const composeEnvFileTargets = composeEnvFile !== null && candidateExistsOnDisk(composeEnvFile, cwd, environment, budget) ? [here(composeEnvFile)] : [];
   const optionValue = (option, index) => new RegExp(`^--?${option}=`).test(post[index] ?? "") || new RegExp(`^--?${option}$`).test(post[index - 1] ?? "");
   const writesTailscaleCertFiles = runsTailscaleCert(stripped);
   const readsOnlyCertificate = command === "openssl" && post[0] === "x509";
@@ -2042,6 +2152,7 @@ function extractSegmentPathTargets(tokens, store, options, environment, segmentC
   const certificateOutput = outputMayFeedReader ? { certificateOutputMayFeedReader: true } : {};
   return [
     ...preludeTargets,
+    ...composeEnvFileTargets,
     ...post.flatMap((token, index) => extractOperandPathCandidates(command, token).map((target) => writesTailscaleCertFiles && optionValue("(?:cert|key)-file", index) ? { ...here(target), isCreatedPath: true, ...certificateOutput } : readsOnlyCertificate && optionValue("in", index) ? { ...here(target), isCertificateInput: true, ...certificateOutput } : identityFileIndexes.has(index) && !redirectionTargets.has(token) ? { ...here(target), isIdentityFile: true } : here(target)))
   ];
 }
@@ -2907,6 +3018,136 @@ function readBacktickCommandSubstitutionBody(command, startIndex) {
 }
 function startsCommandSubstitution(command, index, state) {
   return !state.inSingle && command[index] === "$" && command[index + 1] === "(" && command[index + 2] !== "(";
+}
+function composeConfigEnvFile(command, args) {
+  const composeStart = command === "docker-compose" ? 0 : command === "docker" ? dockerComposeIndex(args) : -1;
+  if (composeStart === -1)
+    return null;
+  let projectDirectory;
+  let firstFile;
+  for (let index = composeStart;index < args.length; index++) {
+    const arg = args[index] ?? "";
+    if (!arg.startsWith("-")) {
+      const configArgs = args.slice(index + 1);
+      if (!COMPOSE_CONFIG_SUBCOMMANDS.has(arg))
+        return null;
+      if (configArgs.some((option) => COMPOSE_CONFIG_NAMES_ONLY.test(option)))
+        return null;
+      return import_node_path4.posix.join(projectDirectory ?? (firstFile === undefined ? "." : import_node_path4.posix.dirname(firstFile.replaceAll("\\", "/"))), ".env");
+    }
+    const equals = arg.indexOf("=");
+    const attachedShort = /^(-[fp])=?(.+)$/.exec(arg);
+    const name = attachedShort?.[1] ?? (arg.startsWith("--") && equals !== -1 ? arg.slice(0, equals) : arg);
+    if (name === "--env-file")
+      return null;
+    if (!COMPOSE_VALUE_OPTIONS.has(name))
+      continue;
+    const value = attachedShort ? attachedShort[2] : name === arg ? args[++index] : arg.slice(equals + 1);
+    if (name === "--project-directory")
+      projectDirectory = value;
+    if (name === "-f" || name === "--file")
+      firstFile ??= value;
+  }
+  return null;
+}
+function dockerComposeIndex(args) {
+  for (let index = 0;index < args.length; index++) {
+    const arg = args[index] ?? "";
+    if (arg === "compose")
+      return index + 1;
+    if (!arg.startsWith("-"))
+      return -1;
+    if (DOCKER_VALUE_OPTIONS.has(arg))
+      index++;
+  }
+  return -1;
+}
+function extractSelectStringTargets(tokens) {
+  const unknownParameter = tokens.some((token) => {
+    const name = /^-([a-z]+)/i.exec(token)?.[1]?.toLowerCase();
+    return name !== undefined && !SELECT_STRING_PARAMETERS.some((known) => known.startsWith(name));
+  });
+  if (unknownParameter) {
+    return tokens.flatMap((token) => extractOperandPathCandidates("select-string", token));
+  }
+  const candidates = [];
+  const positionals = [];
+  let patternNamed = false;
+  for (let index = 0;index < tokens.length; index++) {
+    const token = tokens[index] ?? "";
+    if (token === "--") {
+      positionals.push(...tokens.slice(index + 1));
+      break;
+    }
+    const parameter = /^-([a-z]+)(:?)/i.exec(token);
+    if (parameter === null) {
+      positionals.push(token);
+      continue;
+    }
+    const name = (parameter[1] ?? "").toLowerCase();
+    const attached = parameter[2] === ":";
+    if (name.length >= 4 && "pattern".startsWith(name)) {
+      patternNamed = true;
+      if (!attached)
+        index++;
+      continue;
+    }
+    if (attached || !SELECT_STRING_VALUE_PARAMETERS.some((value) => value.startsWith(name))) {
+      continue;
+    }
+    const value = tokens[index + 1];
+    if (value !== undefined)
+      candidates.push(value);
+    index++;
+  }
+  return [...candidates, ...patternNamed ? positionals : positionals.slice(1)];
+}
+function sedScriptIndexes(args) {
+  const scripts = new Set;
+  const operands = [];
+  let scriptFromOption = false;
+  for (let index = 0;index < args.length; index++) {
+    const arg = args[index] ?? "";
+    if (arg === "--") {
+      operands.push(...args.slice(index + 1).map((_, offset) => index + 1 + offset));
+      break;
+    }
+    if (arg.startsWith("--")) {
+      const prefix = arg.slice(2).split("=")[0] ?? "";
+      const matches = SED_LONG_OPTIONS.filter((option) => option.startsWith(prefix));
+      const name = matches.length === 1 ? matches[0] ?? prefix : prefix;
+      if (name === "expression" || name === "file")
+        scriptFromOption = true;
+      if (arg.includes("=")) {
+        if (name === "expression")
+          scripts.add(index);
+        continue;
+      }
+      if (!SED_LONG_VALUE_OPTIONS.has(name))
+        continue;
+      if (name === "expression")
+        scripts.add(index + 1);
+      index++;
+      continue;
+    }
+    if (!arg.startsWith("-") || arg === "-") {
+      operands.push(index);
+      continue;
+    }
+    const valueFlag = arg.slice(1).search(/[efi]/);
+    const flag = arg[valueFlag + 1];
+    if (flag === "e" || flag === "f")
+      scriptFromOption = true;
+    if (valueFlag === -1 || flag === "i" || valueFlag < arg.length - 2)
+      continue;
+    if (flag === "e")
+      scripts.add(index + 1);
+    index++;
+  }
+  const firstOperand = operands[0];
+  if (!scriptFromOption && firstOperand !== undefined)
+    scripts.add(firstOperand);
+  return scripts;
 }
 function extractPatternCommandTargets(tokens) {
   const optionFileTargets = [];

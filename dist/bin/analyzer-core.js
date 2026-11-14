@@ -1689,6 +1689,7 @@ function isGitRemotePrefixOption(token) {
 var import_heredoc_files = require("./analyzer.js");
 var import_interpreters = require("./analyzer.js");
 var import_reasons = require("./analyzer.js");
+var import_powershell_wrapper = require("./analyzer.js");
 var import_rm_flags = require("./analyzer.js");
 var import_rule = require("./analyzer.js");
 var import_shell_git_env3 = require("./analyzer.js");
@@ -1952,7 +1953,7 @@ function analyzeSegment(commandWords, depth, options) {
       }
     }
   }
-  if (!child && (normalizedHead === "source" || normalizedHead === ".")) {
+  if (!child && dialect === "posix" && (normalizedHead === "source" || normalizedHead === ".")) {
     const sourceSearchPathIndex = stripped[1] === "-p" ? 2 : null;
     if (sourceSearchPathIndex !== null) {
       const sourceSearchPath = options.commandView ? words[sourceSearchPathIndex] : undefined;
@@ -1972,6 +1973,22 @@ function analyzeSegment(commandWords, depth, options) {
     }
     if (options.strict || !options.commandView || !isVerifiableLocalGeneratorSource(options.commandView)) {
       return dynamicShellSourceResult(trace);
+    }
+  }
+  if (!child) {
+    const parsedWords = prelude.rewritten ? words : prelude.words;
+    const dotSources = dialect === "powershell" && isBarePowerShellDotSource(parsedWords[0]);
+    for (const index of powerShellScriptOperandIndexes(dialect, normalizedHead, stripped, parsedWords)) {
+      const operand = parsedWords[index];
+      const path = operand?.provenance === "literal" ? normalizePowerShellLocationTarget(operand.text) : undefined;
+      if (!path || /^~|[*?]/.test(path) || !POWERSHELL_SCRIPT_FILE.test(path)) {
+        if (operand && dotSources)
+          return dynamicShellSourceResult(trace);
+        continue;
+      }
+      const result = analyzeTrackedHeredocScript(path, nestedEffectiveCwd, envAssignments, options, trace, depth, false, false, "powershell");
+      if (result || dotSources)
+        return result;
     }
   }
   const executable = words[0];
@@ -2290,7 +2307,7 @@ function literalOrAssignedPath(word, options, cwd) {
   return options.strict ? null : import_shell_git_env3.expandKnownVariableWord(word, import_shell_git_env3.withImplicitShellVariables(options.shellAssignments ?? new Map, { home, cwd }));
 }
 var SHELL_SHEBANG_RE = /^#!\s*(?:\S*\/)?(?:env\s+(?:-\S+\s+)*)?(?:ba|z|da|k)?sh(?:\s|$)/;
-function analyzeTrackedHeredocScript(source, effectiveCwd, envAssignments, options, trace, depth, failClosed = false, runsByPath = false) {
+function analyzeTrackedHeredocScript(source, effectiveCwd, envAssignments, options, trace, depth, failClosed = false, runsByPath = false, shell) {
   if (failClosed && /[$`*?[\]]/.test(source))
     return dynamicShellSourceResult(trace);
   const path = import_heredoc_files.resolveTrackedHeredocPath(source, effectiveCwd, options.environment.paths, options.budget);
@@ -2299,7 +2316,7 @@ function analyzeTrackedHeredocScript(source, effectiveCwd, envAssignments, optio
     return dynamicShellSourceResult(trace);
   }
   if (body === undefined) {
-    return path ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath) : null;
+    return path ? analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath, shell) : null;
   }
   if (runsByPath && body.startsWith("#!") && !SHELL_SHEBANG_RE.test(body))
     return null;
@@ -2311,12 +2328,12 @@ function analyzeTrackedHeredocScript(source, effectiveCwd, envAssignments, optio
     depth: depth + 1
   });
   if (!runsByPath)
-    return options.analyzeNested(body, { effectiveCwd, envAssignments });
-  const result = nestedResultWithinLimits(() => options.analyzeNested(body, { effectiveCwd, envAssignments }));
+    return options.analyzeNested(body, { effectiveCwd, envAssignments, shell });
+  const result = nestedResultWithinLimits(() => options.analyzeNested(body, { effectiveCwd, envAssignments, shell }));
   return result?.intent === "stop_and_explain" ? null : result;
 }
 var UNCERTAIN_RULE_ID_RE = /^(?:analysis|raw-text)\.|^(?!custom\.).*dynamic|^interpreter\.one-liner-paranoid$/;
-function analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath) {
+function analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, trace, runsByPath, shell) {
   const writtenPaths = [...options.writtenPaths ?? []];
   if (writtenPaths.some((written) => path === written || path.startsWith(`${written}${import_node_path4.sep}`))) {
     return null;
@@ -2341,7 +2358,8 @@ function analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, 
       envAssignments,
       scriptBudget,
       withoutUncertainCapabilities,
-      untraced: true
+      untraced: true,
+      shell
     });
     if (!result || result.scriptLocation)
       return result;
@@ -2511,6 +2529,30 @@ function getPowerShellLocationEffect(words, literalPipelineInput) {
 }
 function isBarePowerShellCallOperator(word) {
   return word?.provenance === "literal" && !word.quoted && word.raw === word.text && (word.text === "&" || word.text === ".");
+}
+var POWERSHELL_SCRIPT_FILE = /\.psm?1$/i;
+var POWERSHELL_IMPORT_MODULE_HEADS = new Set(["import-module", "ipmo"]);
+var POWERSHELL_ARGUMENT_LIST = /^-(?:argumentlist|args)$/i;
+function isBarePowerShellDotSource(word) {
+  return isBarePowerShellCallOperator(word) && word?.text === ".";
+}
+function powerShellScriptOperandIndexes(dialect, head, texts, words) {
+  const fileIndex = head === "pwsh" || head === "powershell" ? import_powershell_wrapper.readPowerShellFileIndex(texts) : undefined;
+  if (fileIndex !== undefined)
+    return [fileIndex];
+  if (dialect !== "powershell")
+    return [];
+  if (isBarePowerShellCallOperator(words[0]))
+    return [1];
+  if (POWERSHELL_IMPORT_MODULE_HEADS.has(head)) {
+    const moduleArguments = new Set(texts.flatMap((text, index) => POWERSHELL_ARGUMENT_LIST.test(text) ? commaListIndexes(texts, index + 1) : []));
+    return texts.flatMap((text, index) => index > 0 && !text.startsWith("-") && !moduleArguments.has(index) ? [index] : []);
+  }
+  return /[\\/]/.test(texts[0] ?? "") && !words[0]?.quoted ? [0] : [];
+}
+function commaListIndexes(texts, start) {
+  const listEnd = texts.findIndex((text, index) => index > start && (index - start) % 2 === 1 && text !== ",");
+  return Array.from({ length: (listEnd === -1 ? texts.length : listEnd) - start }, (_, offset) => start + offset);
 }
 function isStaticPowerShellCommandWord(word, invoked) {
   return word?.provenance === "literal" && (invoked || !word.quoted && word.raw === word.text);
@@ -3123,13 +3165,18 @@ function recordWrittenPaths(commandView, state, options) {
       writtenPaths.add(path);
   }
 }
+var POWERSHELL_OUT_FILE = /^-outf(?:i(?:le?)?)?(?::|$)(.*)/i;
 var DOWNLOAD_OUTPUT_OPTION = new Map([
   ["curl", /^(?:-[^-o]*o|--output(?:=|$))(.*)/],
-  ["wget", /^(?:-[^-O]*O|--output-document(?:=|$))(.*)/]
+  ["wget", /^(?:-[^-O]*O|--output-document(?:=|$))(.*)/],
+  ["irm", POWERSHELL_OUT_FILE],
+  ["iwr", POWERSHELL_OUT_FILE],
+  ["invoke-restmethod", POWERSHELL_OUT_FILE],
+  ["invoke-webrequest", POWERSHELL_OUT_FILE]
 ]);
 function downloadOutputOperands(words) {
-  const fetcherIndex = words.findIndex((word) => DOWNLOAD_OUTPUT_OPTION.has(import_tokens6.getBasename(word.text)));
-  const option = DOWNLOAD_OUTPUT_OPTION.get(import_tokens6.getBasename(words[fetcherIndex]?.text ?? ""));
+  const fetcherIndex = words.findIndex((word) => DOWNLOAD_OUTPUT_OPTION.has(import_tokens6.normalizeCommandToken(word.text)));
+  const option = DOWNLOAD_OUTPUT_OPTION.get(import_tokens6.normalizeCommandToken(words[fetcherIndex]?.text ?? ""));
   return words.slice(fetcherIndex + 1).flatMap((word, index, args) => {
     const attached = word.provenance === "literal" ? option?.exec(word.text)?.[1] : undefined;
     const next = args[index + 1];
@@ -3145,7 +3192,7 @@ function recordDownloadedPaths(commandView, state, options) {
     ...fetches ? downloadOutputOperands(commandView.words) : []
   ];
   for (const output of outputs.filter((text) => text !== "-")) {
-    const path = import_heredoc_files2.resolveTrackedHeredocPath(output, state.effectiveCwd, options.environment.paths, options.budget);
+    const path = import_heredoc_files2.resolveTrackedHeredocPath(commandView.dialect === "powershell" ? output.replaceAll("\\", "/") : output, state.effectiveCwd, options.environment.paths, options.budget);
     if (path && fetches)
       options.downloadedPaths?.add(path);
     if (path && !fetches)
