@@ -1924,6 +1924,69 @@ export function behavioralContractCases(paths: {
     },
     ...atStandardAndStrict(
       [
+        "Select-String -Path a.cs -Pattern 'Core.KeyRing'",
+        "Select-String -Pattern 'id_rsa' -Path a.cs",
+        'Select-String -Path a.cs -Pattern:Core.KeyRing',
+        "Select-String -Path a.cs -SimpleMatch 'Core.KeyRing'",
+        "sls 'Core.KeyRing' a.cs",
+        "Get-Content a.cs | Select-String 'Core.KeyRing'",
+      ].map((command) => [
+        `allows a Select-String pattern that looks like a secret file name: ${command}`,
+        command,
+        { kind: 'allow' },
+      ]),
+      { cwd: paths.cwd, shell: 'powershell' },
+    ),
+    ...atStandardAndStrict(
+      [
+        'Select-String -Path .env -Pattern foo',
+        'Select-String foo .env',
+        'Select-String -Pattern foo .env',
+        "Select-String -Path .env 'Core.KeyRing'",
+        'Select-String -LiteralPath .env -Pattern foo',
+      ].map((command) => [
+        `blocks a Select-String file that is a secret: ${command}`,
+        command,
+        {
+          kind: 'block',
+          ruleId: 'secret.basename.env',
+          intent: 'hard_stop',
+          reasonIncludes: 'sensitive path',
+        },
+      ]),
+      { cwd: paths.cwd, shell: 'powershell' },
+    ),
+    ...[
+      "sed 's/.env//' list.txt",
+      "sed -e 's/.env//' list.txt",
+      "sed -n '/.env/p' list.txt",
+      'sed --expression=s/.env// list.txt',
+      "sed -i.bak -E 's/.env$//' list.txt",
+    ].map((command) => ({
+      name: `allows a sed script that mentions a secret file name: ${command}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' as const },
+    })),
+    ...[
+      [false, "sed 's/x/y/' .env"],
+      [false, "sed -e 's/x/y/' -- .env"],
+      [false, 'sed -f .env list.txt'],
+      [false, "sed -n -l 80 'p' .env"],
+      [true, "sed 's/.env//' list.txt"],
+    ].map(([strict, command]) => ({
+      name: `blocks a sed read of a secret file${strict ? ' at strict safety' : ''}: ${command}`,
+      command: String(command),
+      options: options({ cwd: paths.cwd, strict: Boolean(strict) }),
+      expected: {
+        kind: 'block' as const,
+        ruleId: 'secret.basename.env',
+        intent: 'hard_stop' as const,
+        reasonIncludes: 'sensitive path',
+      },
+    })),
+    ...atStandardAndStrict(
+      [
         'git commit -F - <<EOF\nStop tracking .env in the docs\nEOF',
         'cat <<EOF\nStop tracking .env\nEOF',
         'tee notes.md <<EOF\nStop tracking .env\nEOF',

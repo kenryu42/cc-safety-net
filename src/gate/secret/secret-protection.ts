@@ -149,6 +149,18 @@ const INTERPRETERS_BY_CLUSTERED_CODE_EVAL_FLAG = new Map([
 ]);
 
 const PATTERN_FIRST_COMMANDS = new Set(['grep', 'rg']);
+const SELECT_STRING_COMMANDS = new Set(['select-string', 'sls']);
+const SELECT_STRING_VALUE_PARAMETERS = [
+  'path',
+  'literalpath',
+  'inputobject',
+  'include',
+  'exclude',
+  'encoding',
+  'context',
+  'culture',
+];
+const SED_LONG_VALUE_OPTIONS = new Set(['expression', 'file', 'line-length']);
 const SEARCH_NAMES_ONLY_LONG = new Set([
   'files-with-matches',
   'files-without-match',
@@ -877,6 +889,22 @@ function extractSegmentPathTargets(
   }
   if (PATTERN_FIRST_COMMANDS.has(command)) {
     return [...preludeTargets, ...extractPatternCommandTargets(post).map(here)];
+  }
+  if (SELECT_STRING_COMMANDS.has(command)) {
+    return [...preludeTargets, ...extractSelectStringTargets(post).map(here)];
+  }
+  if (command === 'sed') {
+    const scripts = sedScriptIndexes(post);
+    return [
+      ...preludeTargets,
+      ...post.flatMap((token, index) =>
+        extractOperandPathCandidates(command, token).map((target) =>
+          scripts.has(index) && options.inlineLiteralsPresumedData === true
+            ? { ...here(target), literalRole: 'data' as const }
+            : here(target),
+        ),
+      ),
+    ];
   }
   if (PATH_ROOT_COMMANDS.has(command)) {
     return [
@@ -2265,6 +2293,76 @@ function startsCommandSubstitution(
     command[index + 1] === '(' &&
     command[index + 2] !== '('
   );
+}
+
+function extractSelectStringTargets(tokens: readonly string[]): string[] {
+  const candidates: string[] = [];
+  const positionals: string[] = [];
+  let patternNamed = false;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index] ?? '';
+    if (token === '--') {
+      positionals.push(...tokens.slice(index + 1));
+      break;
+    }
+    const parameter = /^-([a-z]+)(:?)/i.exec(token);
+    if (parameter === null) {
+      positionals.push(token);
+      continue;
+    }
+    const name = (parameter[1] ?? '').toLowerCase();
+    const attached = parameter[2] === ':';
+    if (name.length >= 4 && 'pattern'.startsWith(name)) {
+      patternNamed = true;
+      if (!attached) index++;
+      continue;
+    }
+    if (attached || !SELECT_STRING_VALUE_PARAMETERS.some((value) => value.startsWith(name))) {
+      continue;
+    }
+    const value = tokens[index + 1];
+    if (value !== undefined) candidates.push(value);
+    index++;
+  }
+  return [...candidates, ...(patternNamed ? positionals : positionals.slice(1))];
+}
+
+function sedScriptIndexes(args: readonly string[]): Set<number> {
+  const scripts = new Set<number>();
+  const operands: number[] = [];
+  let scriptFromOption = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? '';
+    if (arg === '--') {
+      operands.push(...args.slice(index + 1).map((_, offset) => index + 1 + offset));
+      break;
+    }
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2).split('=')[0] ?? '';
+      if (name === 'expression' || name === 'file') scriptFromOption = true;
+      if (arg.includes('=')) {
+        if (name === 'expression') scripts.add(index);
+        continue;
+      }
+      if (!SED_LONG_VALUE_OPTIONS.has(name)) continue;
+      if (name === 'expression') scripts.add(index + 1);
+      index++;
+      continue;
+    }
+    if (!arg.startsWith('-') || arg === '-') {
+      operands.push(index);
+      continue;
+    }
+    const valueFlag = arg.slice(1).search(/[efil]/);
+    const flag = arg[valueFlag + 1];
+    if (flag === 'e' || flag === 'f') scriptFromOption = true;
+    if (valueFlag === -1 || flag === 'i' || valueFlag < arg.length - 2) continue;
+    if (flag === 'e') scripts.add(index + 1);
+    index++;
+  }
+  const firstOperand = operands[0];
+  if (!scriptFromOption && firstOperand !== undefined) scripts.add(firstOperand);
+  return scripts;
 }
 
 function extractPatternCommandTargets(tokens: readonly string[]): string[] {
