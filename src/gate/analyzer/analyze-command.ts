@@ -1085,16 +1085,21 @@ function recordWrittenPaths(
   }
 }
 
+const POWERSHELL_OUT_FILE = /^-outf(?:i(?:le?)?)?(?::|$)(.*)/i;
 const DOWNLOAD_OUTPUT_OPTION = new Map([
   ['curl', /^(?:-[^-o]*o|--output(?:=|$))(.*)/],
   ['wget', /^(?:-[^-O]*O|--output-document(?:=|$))(.*)/],
+  ['irm', POWERSHELL_OUT_FILE],
+  ['iwr', POWERSHELL_OUT_FILE],
+  ['invoke-restmethod', POWERSHELL_OUT_FILE],
+  ['invoke-webrequest', POWERSHELL_OUT_FILE],
 ]);
 
 function downloadOutputOperands(words: readonly CommandWord[]): string[] {
   const fetcherIndex = words.findIndex((word) =>
-    DOWNLOAD_OUTPUT_OPTION.has(getBasename(word.text)),
+    DOWNLOAD_OUTPUT_OPTION.has(normalizeCommandToken(word.text)),
   );
-  const option = DOWNLOAD_OUTPUT_OPTION.get(getBasename(words[fetcherIndex]?.text ?? ''));
+  const option = DOWNLOAD_OUTPUT_OPTION.get(normalizeCommandToken(words[fetcherIndex]?.text ?? ''));
   return words.slice(fetcherIndex + 1).flatMap((word, index, args) => {
     const attached = word.provenance === 'literal' ? option?.exec(word.text)?.[1] : undefined;
     const next = args[index + 1];
@@ -1119,7 +1124,7 @@ function recordDownloadedPaths(
   ];
   for (const output of outputs.filter((text) => text !== '-')) {
     const path = resolveTrackedHeredocPath(
-      output,
+      commandView.dialect === 'powershell' ? output.replaceAll('\\', '/') : output,
       state.effectiveCwd,
       options.environment.paths,
       options.budget,

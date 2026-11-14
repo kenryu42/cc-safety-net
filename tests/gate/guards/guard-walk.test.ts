@@ -181,8 +181,8 @@ describe('gate/guards/guard-walk', () => {
   });
 
   test('a heredoc body is read as its own segments, and its fallbacks are reported', () => {
-    expect(segments('cat <<EOF\ncat .env\nEOF')).toStrictEqual([
-      `segment ["cat"] cwd=${workspace} pipe=null boundary=;`,
+    expect(segments('wc <<EOF\ncat .env\nEOF')).toStrictEqual([
+      `segment ["wc"] cwd=${workspace} pipe=null boundary=;`,
       `segment ["cat",".env"] cwd=${workspace} pipe=null boundary=;`,
       `segment ["EOF"] cwd=${workspace} pipe=null boundary=null`,
     ]);

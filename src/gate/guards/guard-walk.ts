@@ -148,11 +148,23 @@ export function readGuardSyntax(
     program.status === 'complete'
       ? new Set(collectDataSinkHeredocSpans(program, transparentWrappers))
       : new Set<CommandSpan>();
-  const masked = maskSpans(source, suppressed);
+  const heredocBodies = collectHeredocBodies(program);
+  const masked = heredocBodies
+    .filter((heredoc) => suppressed.has(heredoc.body))
+    .flatMap((heredoc) => heredoc.substitutions)
+    .map((span) => ({
+      start: span.start - (source[span.start - 1] === '`' ? 1 : 2),
+      end: span.end + 1,
+    }))
+    .reduce(
+      (text, span) =>
+        text.slice(0, span.start) + source.slice(span.start, span.end) + text.slice(span.end),
+      maskSpans(source, suppressed),
+    );
   const unclosedQuote =
     program.dialect === 'powershell'
       ? program.issues.some((issue) => issue.code.includes('quote'))
-      : hasUnclosedQuotes(masked);
+      : hasUnclosedQuotes(maskSpans(masked, new Set(heredocBodies.map((heredoc) => heredoc.body))));
   if (unclosedQuote) return freezeSyntax('unclosed-quote', masked, program);
   const flags: ReadFlags = {
     invalid: false,
@@ -517,21 +529,14 @@ function readHeredocs(
           ? [operatorEvent(';')]
           : []),
       ];
-      if (context.suppressed.has(heredoc.bodySpan)) {
-        return [{ start: heredoc.bodySpan.start, events: terminator }];
-      }
-      return [
-        {
-          start: heredoc.bodySpan.start,
-          events: [
-            ...readText(
-              context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end),
-              context,
-            ),
-            ...terminator,
-          ],
-        },
-      ];
+      const body = context.suppressed.has(heredoc.bodySpan)
+        ? heredocSubstitutions(view, heredoc.bodySpan).flatMap((nested) => [
+            SCOPE_ENTER,
+            ...readProgram(nested, { ...context, functions: new Map(context.functions) }),
+            SCOPE_EXIT,
+          ])
+        : readText(context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end), context);
+      return [{ start: heredoc.bodySpan.start, events: [...body, ...terminator] }];
     }),
 
     ...(heredocs.some((redirection) => !redirection.heredoc && redirection.target)
@@ -950,8 +955,41 @@ function collectDataSinkHeredocSpans(
     const next = program.nodes[index + 1];
     const piped = next?.kind === 'connector' && (next.operator === '|' || next.operator === '|&');
     if (piped || !isDataSinkHeredocConsumer(node, transparentWrappers)) return nestedSpans;
-    return [...nestedSpans, ...quotedBodies];
+    return [
+      ...nestedSpans,
+      ...node.redirections.flatMap((redirection) =>
+        redirection.heredoc ? [redirection.heredoc.bodySpan] : [],
+      ),
+    ];
   });
+}
+
+function collectHeredocBodies(
+  program: CommandProgram,
+): { readonly body: CommandSpan; readonly substitutions: readonly CommandSpan[] }[] {
+  return program.nodes.flatMap((node) => {
+    if (node.kind === 'group' || node.kind === 'function') return collectHeredocBodies(node.body);
+    if (node.kind !== 'command') return [];
+    return [
+      ...node.nested.flatMap(collectHeredocBodies),
+      ...node.redirections.flatMap((redirection) => {
+        const body = redirection.heredoc?.bodySpan;
+        if (!body) return [];
+        return [
+          {
+            body,
+            substitutions: heredocSubstitutions(node, body).map((nested) => nested.span),
+          },
+        ];
+      }),
+    ];
+  });
+}
+
+function heredocSubstitutions(view: CommandView, body: CommandSpan): readonly CommandProgram[] {
+  return view.nested.filter(
+    (nested) => nested.span.start >= body.start && nested.span.end <= body.end,
+  );
 }
 
 function getCalledFunctionBody(

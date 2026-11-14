@@ -149,6 +149,78 @@ const INTERPRETERS_BY_CLUSTERED_CODE_EVAL_FLAG = new Map([
 ]);
 
 const PATTERN_FIRST_COMMANDS = new Set(['grep', 'rg']);
+const SELECT_STRING_COMMANDS = new Set(['select-string', 'sls']);
+const SELECT_STRING_VALUE_PARAMETERS = [
+  'path',
+  'literalpath',
+  'lp',
+  'pspath',
+  'inputobject',
+  'include',
+  'exclude',
+  'encoding',
+  'context',
+  'culture',
+];
+const SELECT_STRING_PARAMETERS = [
+  'pattern',
+  ...SELECT_STRING_VALUE_PARAMETERS,
+  'allmatches',
+  'casesensitive',
+  'list',
+  'noemphasis',
+  'notmatch',
+  'quiet',
+  'raw',
+  'simplematch',
+];
+const SED_LONG_VALUE_OPTIONS = new Set(['expression', 'file', 'line-length']);
+const SED_LONG_OPTIONS = [
+  'debug',
+  'expression',
+  'file',
+  'follow-symlinks',
+  'help',
+  'in-place',
+  'line-length',
+  'null-data',
+  'posix',
+  'quiet',
+  'regexp-extended',
+  'sandbox',
+  'separate',
+  'silent',
+  'unbuffered',
+  'version',
+  'zero-terminated',
+];
+const DOCKER_VALUE_OPTIONS = new Set([
+  '-c',
+  '--context',
+  '--config',
+  '-H',
+  '--host',
+  '-l',
+  '--log-level',
+  '--tlscacert',
+  '--tlscert',
+  '--tlskey',
+]);
+const COMPOSE_VALUE_OPTIONS = new Set([
+  '-f',
+  '--file',
+  '-p',
+  '--project-name',
+  '--project-directory',
+  '--env-file',
+  '--profile',
+  '--ansi',
+  '--parallel',
+  '--progress',
+]);
+const COMPOSE_CONFIG_SUBCOMMANDS = new Set(['config', 'convert']);
+const COMPOSE_CONFIG_NAMES_ONLY =
+  /^(?:-q|--quiet|-h|--help|--services|--profiles|--volumes|--images|--networks|--models|--variables|--no-interpolate|--hash(?:=.*)?)$/;
 const SEARCH_NAMES_ONLY_LONG = new Set([
   'files-with-matches',
   'files-without-match',
@@ -878,6 +950,22 @@ function extractSegmentPathTargets(
   if (PATTERN_FIRST_COMMANDS.has(command)) {
     return [...preludeTargets, ...extractPatternCommandTargets(post).map(here)];
   }
+  if (SELECT_STRING_COMMANDS.has(command)) {
+    return [...preludeTargets, ...extractSelectStringTargets(post).map(here)];
+  }
+  if (command === 'sed') {
+    const scripts = sedScriptIndexes(post);
+    return [
+      ...preludeTargets,
+      ...post.flatMap((token, index) =>
+        extractOperandPathCandidates(command, token).map((target) =>
+          scripts.has(index) && options.inlineLiteralsPresumedData === true
+            ? { ...here(target), literalRole: 'data' as const }
+            : here(target),
+        ),
+      ),
+    ];
+  }
   if (PATH_ROOT_COMMANDS.has(command)) {
     return [
       ...preludeTargets,
@@ -946,6 +1034,15 @@ function extractSegmentPathTargets(
       ...extractInterpreterPathTargets(command, post, store, options, environment, cwd, budget),
     ];
   }
+  const composeArgv = withoutTimeout(stripped);
+  const composeEnvFile = composeConfigEnvFile(
+    basename(composeArgv[0] ?? '').toLowerCase(),
+    composeArgv.slice(1),
+  );
+  const composeEnvFileTargets =
+    composeEnvFile !== null && candidateExistsOnDisk(composeEnvFile, cwd, environment, budget)
+      ? [here(composeEnvFile)]
+      : [];
   const optionValue = (option: string, index: number) =>
     new RegExp(`^--?${option}=`).test(post[index] ?? '') ||
     new RegExp(`^--?${option}$`).test(post[index - 1] ?? '');
@@ -961,6 +1058,7 @@ function extractSegmentPathTargets(
     : {};
   return [
     ...preludeTargets,
+    ...composeEnvFileTargets,
     ...post.flatMap((token, index) =>
       extractOperandPathCandidates(command, token).map((target) =>
         writesTailscaleCertFiles && optionValue('(?:cert|key)-file', index)
@@ -2265,6 +2363,130 @@ function startsCommandSubstitution(
     command[index + 1] === '(' &&
     command[index + 2] !== '('
   );
+}
+
+function composeConfigEnvFile(command: string, args: readonly string[]): string | null {
+  const composeStart =
+    command === 'docker-compose' ? 0 : command === 'docker' ? dockerComposeIndex(args) : -1;
+  if (composeStart === -1) return null;
+  let projectDirectory: string | undefined;
+  let firstFile: string | undefined;
+  for (let index = composeStart; index < args.length; index++) {
+    const arg = args[index] ?? '';
+    if (!arg.startsWith('-')) {
+      const configArgs = args.slice(index + 1);
+      if (!COMPOSE_CONFIG_SUBCOMMANDS.has(arg)) return null;
+      if (configArgs.some((option) => COMPOSE_CONFIG_NAMES_ONLY.test(option))) return null;
+      return posix.join(
+        projectDirectory ??
+          (firstFile === undefined ? '.' : posix.dirname(firstFile.replaceAll('\\', '/'))),
+        '.env',
+      );
+    }
+    const equals = arg.indexOf('=');
+    const attachedShort = /^(-[fp])=?(.+)$/.exec(arg);
+    const name =
+      attachedShort?.[1] ?? (arg.startsWith('--') && equals !== -1 ? arg.slice(0, equals) : arg);
+    if (name === '--env-file') return null;
+    if (!COMPOSE_VALUE_OPTIONS.has(name)) continue;
+    const value = attachedShort
+      ? attachedShort[2]
+      : name === arg
+        ? args[++index]
+        : arg.slice(equals + 1);
+    if (name === '--project-directory') projectDirectory = value;
+    if (name === '-f' || name === '--file') firstFile ??= value;
+  }
+  return null;
+}
+
+function dockerComposeIndex(args: readonly string[]): number {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? '';
+    if (arg === 'compose') return index + 1;
+    if (!arg.startsWith('-')) return -1;
+    if (DOCKER_VALUE_OPTIONS.has(arg)) index++;
+  }
+  return -1;
+}
+
+function extractSelectStringTargets(tokens: readonly string[]): string[] {
+  const unknownParameter = tokens.some((token) => {
+    const name = /^-([a-z]+)/i.exec(token)?.[1]?.toLowerCase();
+    return name !== undefined && !SELECT_STRING_PARAMETERS.some((known) => known.startsWith(name));
+  });
+  if (unknownParameter) {
+    return tokens.flatMap((token) => extractOperandPathCandidates('select-string', token));
+  }
+  const candidates: string[] = [];
+  const positionals: string[] = [];
+  let patternNamed = false;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index] ?? '';
+    if (token === '--') {
+      positionals.push(...tokens.slice(index + 1));
+      break;
+    }
+    const parameter = /^-([a-z]+)(:?)/i.exec(token);
+    if (parameter === null) {
+      positionals.push(token);
+      continue;
+    }
+    const name = (parameter[1] ?? '').toLowerCase();
+    const attached = parameter[2] === ':';
+    if (name.length >= 4 && 'pattern'.startsWith(name)) {
+      patternNamed = true;
+      if (!attached) index++;
+      continue;
+    }
+    if (attached || !SELECT_STRING_VALUE_PARAMETERS.some((value) => value.startsWith(name))) {
+      continue;
+    }
+    const value = tokens[index + 1];
+    if (value !== undefined) candidates.push(value);
+    index++;
+  }
+  return [...candidates, ...(patternNamed ? positionals : positionals.slice(1))];
+}
+
+function sedScriptIndexes(args: readonly string[]): Set<number> {
+  const scripts = new Set<number>();
+  const operands: number[] = [];
+  let scriptFromOption = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? '';
+    if (arg === '--') {
+      operands.push(...args.slice(index + 1).map((_, offset) => index + 1 + offset));
+      break;
+    }
+    if (arg.startsWith('--')) {
+      const prefix = arg.slice(2).split('=')[0] ?? '';
+      const matches = SED_LONG_OPTIONS.filter((option) => option.startsWith(prefix));
+      const name = matches.length === 1 ? (matches[0] ?? prefix) : prefix;
+      if (name === 'expression' || name === 'file') scriptFromOption = true;
+      if (arg.includes('=')) {
+        if (name === 'expression') scripts.add(index);
+        continue;
+      }
+      if (!SED_LONG_VALUE_OPTIONS.has(name)) continue;
+      if (name === 'expression') scripts.add(index + 1);
+      index++;
+      continue;
+    }
+    if (!arg.startsWith('-') || arg === '-') {
+      operands.push(index);
+      continue;
+    }
+    const valueFlag = arg.slice(1).search(/[efi]/);
+    const flag = arg[valueFlag + 1];
+    if (flag === 'e' || flag === 'f') scriptFromOption = true;
+    if (valueFlag === -1 || flag === 'i' || valueFlag < arg.length - 2) continue;
+    if (flag === 'e') scripts.add(index + 1);
+    index++;
+  }
+  const firstOperand = operands[0];
+  if (!scriptFromOption && firstOperand !== undefined) scripts.add(firstOperand);
+  return scripts;
 }
 
 function extractPatternCommandTargets(tokens: readonly string[]): string[] {

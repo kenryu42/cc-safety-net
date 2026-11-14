@@ -10,6 +10,7 @@ const REASON_NESTED_RECURSIVE_DELETE_UNREAD =
 const READ_SWITCH = /^-(?:noprofile|nop|noninteractive|noni|nologo)$/i;
 const READ_EXECUTION_POLICY = /^-(?:executionpolicy|ep)$/i;
 const READ_COMMAND = /^-(?:command|c)$/i;
+const READ_FILE = /^-(?:file|f)$/i;
 const PARAMETER_NAME = /^(?:--?|[/\u2013\u2014\u2015])(\w+)$/;
 const ENCODED_COMMAND = 'encodedcommand';
 const DELETE_VERB = /(?<![\w-])(?:remove-item|ri|rm|rmdir|rd|del|erase)(?![\w-])/i;
@@ -41,16 +42,27 @@ export function analyzePowerShellWrapperMatch(
 }
 
 export function readPowerShellScript(texts: readonly string[]): string | undefined {
-  const commandIndex = readCommandIndex(texts, 1);
+  const commandIndex = readParameterIndex(texts, 1, READ_COMMAND);
   const script = commandIndex === undefined ? [] : texts.slice(commandIndex + 1);
   return script.length > 0 ? script.join(' ') : undefined;
 }
 
-function readCommandIndex(texts: readonly string[], index: number): number | undefined {
+export function readPowerShellFileIndex(texts: readonly string[]): number | undefined {
+  const fileIndex = readParameterIndex(texts, 1, READ_FILE);
+  return fileIndex === undefined ? undefined : fileIndex + 1;
+}
+
+function readParameterIndex(
+  texts: readonly string[],
+  index: number,
+  parameter: RegExp,
+): number | undefined {
   const text = texts[index] ?? '';
-  if (READ_COMMAND.test(text)) return index;
-  if (READ_SWITCH.test(text)) return readCommandIndex(texts, index + 1);
-  return READ_EXECUTION_POLICY.test(text) ? readCommandIndex(texts, index + 2) : undefined;
+  if (parameter.test(text)) return index;
+  if (READ_SWITCH.test(text)) return readParameterIndex(texts, index + 1, parameter);
+  return READ_EXECUTION_POLICY.test(text)
+    ? readParameterIndex(texts, index + 2, parameter)
+    : undefined;
 }
 
 function isLiteralScriptWord(word: CommandWord | undefined, text: string): boolean {

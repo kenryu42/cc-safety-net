@@ -21,6 +21,7 @@ export const runAmpCommand: AmpRunner = (command, cwd) => {
     const child = spawn(spawnCommand.cmd, spawnCommand.args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsVerbatimArguments: spawnCommand.windowsVerbatimArguments,
     });
     const captured = captureOutputStreams(child);
     let timedOut = false;
