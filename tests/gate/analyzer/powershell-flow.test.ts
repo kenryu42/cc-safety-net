@@ -76,3 +76,21 @@ test.each([
     ruleId: 'powershell.remove-item-recursive-force-root-or-home',
   });
 });
+
+const scripts = {
+  'project/helpers.ps1': 'function Get-Hello { "hi" }\n',
+  'project/reset.ps1': 'git reset --hard\n',
+};
+const resetBlock = { kind: 'deny', ruleId: 'git.reset-hard' } as const;
+
+test.skipIf(process.platform !== 'win32').each([
+  [String.raw`. .\helpers.ps1; Get-Hello`, null],
+  [String.raw`. .\reset.ps1`, resetBlock],
+  [String.raw`Import-Module .\reset.ps1`, resetBlock],
+  [String.raw`& .\reset.ps1`, resetBlock],
+  [String.raw`.\reset.ps1`, resetBlock],
+  [String.raw`pwsh -NoProfile -File .\reset.ps1`, resetBlock],
+])('a local .ps1 is read: %s', (command, expected) => {
+  const result = analyzeFromProject(command, scripts);
+  expect(result === null ? null : { kind: result.kind, ruleId: result.ruleId }).toEqual(expected);
+});
