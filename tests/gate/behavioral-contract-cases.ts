@@ -1940,6 +1940,8 @@ export function behavioralContractCases(paths: {
         'cat <<EOF\n$(cat .env)\nEOF',
         'cat <<EOF\nx $(cat "$(echo .env)")\nEOF',
         'git commit -F - <<EOF\nx `cat .env`\nEOF',
+        'cat <<EOF\n$(wc -c .env)\nEOF',
+        'f() { cat .env; }\ncat <<EOF\n$(f() { :; })\nEOF\nf',
         "git commit -F - <<EOF\nDon't track\nEOF\ncat .env",
         "cat > notes.md <<EOF\nIt's done\nEOF\ncat .env",
         'cat <<EOF | sh\ncat .env\nEOF',

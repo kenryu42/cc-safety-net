@@ -152,6 +152,10 @@ export function readGuardSyntax(
   const masked = heredocBodies
     .filter((heredoc) => suppressed.has(heredoc.body))
     .flatMap((heredoc) => heredoc.substitutions)
+    .map((span) => ({
+      start: span.start - (source[span.start - 1] === '`' ? 1 : 2),
+      end: span.end + 1,
+    }))
     .reduce(
       (text, span) =>
         text.slice(0, span.start) + source.slice(span.start, span.end) + text.slice(span.end),
@@ -528,7 +532,7 @@ function readHeredocs(
       const body = context.suppressed.has(heredoc.bodySpan)
         ? heredocSubstitutions(view, heredoc.bodySpan).flatMap((nested) => [
             SCOPE_ENTER,
-            ...readProgram(nested, context),
+            ...readProgram(nested, { ...context, functions: new Map(context.functions) }),
             SCOPE_EXIT,
           ])
         : readText(context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end), context);
