@@ -525,17 +525,14 @@ function readHeredocs(
           ? [operatorEvent(';')]
           : []),
       ];
-      const substitutions = heredocSubstitutions(view, heredoc.bodySpan).flatMap((nested) => [
-        SCOPE_ENTER,
-        ...readProgram(nested, context),
-        SCOPE_EXIT,
-      ]);
       const body = context.suppressed.has(heredoc.bodySpan)
-        ? []
+        ? heredocSubstitutions(view, heredoc.bodySpan).flatMap((nested) => [
+            SCOPE_ENTER,
+            ...readProgram(nested, context),
+            SCOPE_EXIT,
+          ])
         : readText(context.source.slice(heredoc.bodySpan.start, heredoc.bodySpan.end), context);
-      return [
-        { start: heredoc.bodySpan.start, events: [...substitutions, ...body, ...terminator] },
-      ];
+      return [{ start: heredoc.bodySpan.start, events: [...body, ...terminator] }];
     }),
 
     ...(heredocs.some((redirection) => !redirection.heredoc && redirection.target)

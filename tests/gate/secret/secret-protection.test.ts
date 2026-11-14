@@ -2067,6 +2067,20 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     }
   });
 
+  test('heredocs nested in heredoc substitutions eight times deeper grow at most quadratically', () => {
+    const nested = (consumer: string) => (depth: number) =>
+      Array.from({ length: depth }, (_, level) => level).reduce(
+        (body, level) => `$(${consumer} <<D${level}\n${body}\nD${level}\n)`,
+        'x',
+      );
+    for (const consumer of ['wc', 'cat']) {
+      const command = (depth: number) => `${consumer} <<TOP\n${nested(consumer)(depth)}\nTOP`;
+      for (const mode of [STANDARD, STRICT]) {
+        expect(growthAtEightfoldSize(command, 24, mode)).toBeLessThan(8 ** 2 * 3);
+      }
+    }
+  });
+
   test('a curl upload operand is a read, a literal body is not', () => {
     checkCarriers([
       {

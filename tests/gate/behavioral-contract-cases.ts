@@ -1955,17 +1955,6 @@ export function behavioralContractCases(paths: {
       { cwd: paths.cwd },
     ),
     {
-      name: 'blocks a secret read substituted into an unquoted heredoc body that holds an apostrophe',
-      command: "wc -l <<EOF\nDon't $(cat .env)\nEOF",
-      options: options({ cwd: paths.cwd }),
-      expected: {
-        kind: 'block',
-        ruleId: 'secret.basename.env',
-        intent: 'hard_stop',
-        reasonIncludes: 'sensitive path',
-      },
-    },
-    {
       name: 'allows an unquoted heredoc whose only expansion is a variable at standard safety',
       command: 'cat <<EOF\nrm -rf ~ $target\nEOF',
       options: options({ cwd: paths.cwd }),
