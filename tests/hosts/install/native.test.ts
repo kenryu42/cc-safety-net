@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as nextNative from '@/hosts/install/native';
 import { createFakeBin, type FakeScriptEntry } from '../../helpers/fake-bin';
@@ -102,5 +103,17 @@ describe('running a host CLI', () => {
     });
     expect(ported.value).toEqual(['Failed to run tool gone (exit 3).\nnothing to remove']);
     expect(ported.calls).toEqual(['tool gone', 'tool go']);
+  });
+});
+
+describe('a Windows cmd shim under a path with a space', () => {
+  test.skipIf(process.platform !== 'win32')('runs with its arguments intact', async () => {
+    const dir = join(createTempRoot('spawn-'), 'DeepSeek Harness');
+    mkdirSync(dir);
+    const shim = join(dir, 'dsh.cmd');
+    writeFileSync(shim, '@echo off\r\necho ran [%~1] [%~2]\r\n');
+    expect((await nextNative.runNativeCommand([shim, 'a b', 'c@1.0'])).trim()).toBe(
+      'ran [a b] [c@1.0]',
+    );
   });
 });
