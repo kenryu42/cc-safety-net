@@ -31,6 +31,8 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
 
 <p><sub><a href="https://ccsafetynet.com/sponsor">Want to appear here? →</a></sub></p>
 
+<br>
+
 <details open>
 <summary>Our sponsors</summary>
 <br>
@@ -40,6 +42,8 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
   <sub><a href="https://ccsafetynet.com/go/crazyrouter?from=readme">One API for 300+ AI models, OpenAI&#8209;compatible.</a></sub>
   <img src="https://ccsafetynet.com/go/crazyrouter/view?from=readme" alt="" width="1" height="1">
 </p>
+
+<br>
 
 <p>
   <a href="https://ccsafetynet.com/go/deepsider?from=readme"><picture><source media="(prefers-color-scheme: dark)" srcset="./.github/assets/deepsider-logo-dark.png"><source media="(prefers-color-scheme: light)" srcset="./.github/assets/deepsider-logo-light.png"><img alt="DeepSider API" src="./.github/assets/deepsider-logo-light.png" height="32"></picture></a>
