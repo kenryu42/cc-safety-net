@@ -2157,7 +2157,7 @@ function analyzeSegment(commandWords, depth, options) {
     return blockResultFromMatch(commandResult);
   }
   if (stream && child && (normalizedHead === "rm" || normalizedHead === "rmdir")) {
-    const dynamicRmPolicyApplies = normalizedHead === "rm" && (import_rm_flags.hasRecursiveForceFlags(stripped) || child.dynamicRmInput);
+    const dynamicRmPolicyApplies = normalizedHead === "rm" && (import_rm_flags.hasRecursiveForceFlags(stripped) || child.dynamicRmInput || import_rm_flags.hasRecursiveOption(stripped) && import_effective_rules2.destructiveCommandRuleIsEnabled(options.policy, "rm.recursive-force-paranoid", !!options.paranoidRm));
     if (!dynamicRmPolicyApplies)
       return null;
     return (child.dynamicRmInput ? childDynamicSourceResult(child, options.policy) : null) ?? childDynamicRmResult(child, options.policy);
