@@ -1171,6 +1171,23 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'allows xargs recursive removal without force from find output',
+      command: 'find . -name node_modules | xargs rm -r',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
+      name: 'blocks xargs recursive removal without force from find output under paranoid rm',
+      command: 'find . -name node_modules | xargs rm -r',
+      options: options({ cwd: paths.cwd, paranoidRm: true }),
+      expected: {
+        kind: 'block',
+        ruleId: 'xargs.rm-recursive-force-dynamic',
+        intent: 'scope_down',
+        reasonIncludes: 'dynamic input is dangerous',
+      },
+    },
+    {
       name: 'blocks recursive removal from the platform home directory',
       command: 'rm -rf contract-build',
       options: options({ cwd: paths.home }),

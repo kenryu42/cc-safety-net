@@ -52,7 +52,7 @@ import {
   REASON_UNSUPPORTED_HEREDOC_SYNTAX,
 } from './reasons';
 import { readPowerShellFileIndex } from './powershell-wrapper';
-import { hasRecursiveForceFlags } from './rm-flags';
+import { hasRecursiveForceFlags, hasRecursiveOption } from './rm-flags';
 import {
   ANALYZER_RULES,
   type AnalyzerRuleContext,
@@ -757,7 +757,15 @@ export function analyzeSegment(
 
   if (stream && child && (normalizedHead === 'rm' || normalizedHead === 'rmdir')) {
     const dynamicRmPolicyApplies =
-      normalizedHead === 'rm' && (hasRecursiveForceFlags(stripped) || child.dynamicRmInput);
+      normalizedHead === 'rm' &&
+      (hasRecursiveForceFlags(stripped) ||
+        child.dynamicRmInput ||
+        (hasRecursiveOption(stripped) &&
+          destructiveCommandRuleIsEnabled(
+            options.policy,
+            'rm.recursive-force-paranoid',
+            !!options.paranoidRm,
+          )));
     if (!dynamicRmPolicyApplies) return null;
     return (
       (child.dynamicRmInput ? childDynamicSourceResult(child, options.policy) : null) ??
