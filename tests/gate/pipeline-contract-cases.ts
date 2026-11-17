@@ -448,6 +448,11 @@ export function pipelineContractCases(paths: {
       'docker run --rm "$OPTS" -w /work alpine rm -rf .git',
       'podman run --rm --rootfs "$PWD" sh -c \'rm -rf .git\'',
       'docker run --rm --privileged --device /dev/sda alpine rm -rf .git',
+      'docker run --rm --mount type=bind,src=/,dst=/host,readonly,bind-recursive=writable -w /host/repo alpine rm -rf .git',
+      'docker run --rm --mount type=bind,src=/srv/repo,dst=/work,ro,readonly=false -w /work alpine rm -rf .git',
+      'docker run --rm "--${OPT}" -w /work alpine rm -rf .git',
+      'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro docker:cli docker exec -w /work builder rm -rf .git',
+      'docker run --rm -v /var/run:/run:ro docker:cli docker exec -w /work builder rm -rf .git',
     ].map((command): PipelineContractCase => ({
       name: `denies deleting .git through a container command that may reach the host repository: ${command}`,
       ...bash(command),

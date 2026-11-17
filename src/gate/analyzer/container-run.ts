@@ -16,7 +16,9 @@ const GLOBAL_OPTIONS_WITH_VALUE = new Set([
 ]);
 const MOUNT_FLAG = /^(?:--(?:volume|mount)|-[A-Za-z]*v)$/;
 const HOST_ACCESS_OPTION = /^--(?:volumes-from|privileged|pid|userns|device|rootfs|cap-add)(?:=|$)/;
-const READ_ONLY_MOUNT_FIELDS = new Set(['readonly', 'ro', 'readonly=true', 'ro=true']);
+const HOST_CONTROL_PATH = /\.sock\b|(?:^|[=,])\/(?:var\/)?run(?:[:,/]|$)/;
+const READ_ONLY_MOUNT_FIELDS = new Set(['readonly', 'ro']);
+const MOUNT_FIELD_THAT_MAY_UNDO_READ_ONLY = /^(?:readonly|ro|bind-recursive)=/;
 
 export function isContainerRunIsolatedFromHost(
   head: string,
@@ -28,6 +30,7 @@ export function isContainerRunIsolatedFromHost(
   const args = operands.map((word) => word.text);
   const mayHideAnOption = (word: CommandWord, index: number) =>
     mayExpandToSeveralWords(word) ||
+    /^"?-[^=]*[$`]/.test(word.raw) ||
     (/^"?[$`]/.test(word.raw) &&
       !MOUNT_FLAG.test(args[index - 1] ?? '') &&
       expandKnownVariableWord(word, shellAssignments) === null);
@@ -51,12 +54,14 @@ function mayExpandToSeveralWords(word: CommandWord): boolean {
 
 function reachesHostAt(args: readonly string[], index: number): boolean {
   const arg = args[index] ?? '';
-  if (HOST_ACCESS_OPTION.test(arg)) return true;
+  if (HOST_ACCESS_OPTION.test(arg) || HOST_CONTROL_PATH.test(arg)) return true;
   const long = /^--(volume|mount)(?:=(.*))?$/s.exec(arg);
   const short = /^-[A-Za-z]*?v(.*)$/s.exec(arg);
   if (!long && !short) return false;
   const value = (long ? long[2] : short?.[1]) || (args[index + 1] ?? '');
+  const fields = value.split(',');
   return long?.[1] === 'mount'
-    ? !value.split(',').some((field) => READ_ONLY_MOUNT_FIELDS.has(field))
+    ? !fields.some((field) => READ_ONLY_MOUNT_FIELDS.has(field)) ||
+        fields.some((field) => MOUNT_FIELD_THAT_MAY_UNDO_READ_ONLY.test(field))
     : !value.split(':').at(-1)?.split(',').includes('ro');
 }

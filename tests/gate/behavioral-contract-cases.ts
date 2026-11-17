@@ -3057,6 +3057,20 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'blocks recursive removal in a container run when the paranoid rm rule is enabled by override',
+      command: 'docker run --rm -w /tmp/app alpine rm -rf ./build',
+      options: options({
+        cwd: paths.cwd,
+        policy: { destructiveCommandRuleOverrides: { 'rm.recursive-force-paranoid': 'on' } },
+      }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-paranoid',
+        intent: 'scope_down',
+        reasonIncludes: 'blocked by the active safety policy',
+      },
+    },
+    {
       name: 'blocks workspace recursive removal under paranoid rm',
       command: 'rm -rf build',
       options: options({ cwd: paths.cwd, paranoidRm: true }),

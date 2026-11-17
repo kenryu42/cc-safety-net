@@ -779,8 +779,16 @@ export function analyzeSegment(
 
   const payloadStaysInContainer =
     !options.strict &&
-    !options.paranoidRm &&
-    !options.paranoidInterpreters &&
+    !destructiveCommandRuleIsEnabled(
+      options.policy,
+      'rm.recursive-force-paranoid',
+      !!options.paranoidRm,
+    ) &&
+    !destructiveCommandRuleIsEnabled(
+      options.policy,
+      'interpreter.one-liner-paranoid',
+      !!options.paranoidInterpreters,
+    ) &&
     isContainerRunIsolatedFromHost(normalizedHead, words, options.shellAssignments ?? new Map());
   const scansForEmbedded =
     !child && !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead) && !payloadStaysInContainer;
