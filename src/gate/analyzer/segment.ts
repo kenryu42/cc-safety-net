@@ -29,6 +29,7 @@ import type { CommandTraceContext } from '@/gate/trace';
 import { analyzeAwkSystemCallMatch, extractAwkExecutableSources } from './awk';
 import { type ChildProvenance, normalizeChildCommands } from './child-command';
 import { analysisWordText, analyzedViewWords, textCommandWords } from './command-words';
+import { isContainerRunIsolatedFromHost } from './container-run';
 import { dangerousInTextMatch } from './dangerous-text';
 import { analyzeDynamicCommandStructure, hasDynamicExecutableSource } from './derived-input';
 import { analyzeDeviceCommandMatch } from './device';
@@ -776,6 +777,26 @@ export function analyzeSegment(
   const matchedKnown =
     commandAnalyzer !== undefined && !HEADS_STILL_SCANNED_FOR_EMBEDDED.has(normalizedHead);
 
+  const payloadStaysInContainer =
+    !options.strict &&
+    !options.policy.rules.some((rule) =>
+      stripped.some((token) =>
+        token
+          .split(/[^\w.+-]+/)
+          .some((word) => normalizeCommandToken(word) === normalizeCommandToken(rule.command)),
+      ),
+    ) &&
+    !destructiveCommandRuleIsEnabled(
+      options.policy,
+      'rm.recursive-force-paranoid',
+      !!options.paranoidRm,
+    ) &&
+    !destructiveCommandRuleIsEnabled(
+      options.policy,
+      'interpreter.one-liner-paranoid',
+      !!options.paranoidInterpreters,
+    ) &&
+    isContainerRunIsolatedFromHost(normalizedHead, words, options.shellAssignments ?? new Map());
   const scansForEmbedded = !child && !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead);
   const tokensScanned: string[] | undefined = trace && scansForEmbedded ? [] : undefined;
   if (scansForEmbedded) {
@@ -797,7 +818,7 @@ export function analyzeSegment(
         ),
         options.policy,
       );
-      if (match) {
+      if (match && (!payloadStaysInContainer || RULE_REACHING_BEYOND_A_CONTAINER.test(match.id))) {
         trace?.recordSegment({
           type: 'fallback-scan',
           tokensScanned: tokensScanned ?? [],
@@ -1225,6 +1246,7 @@ function filterBuiltInCommandMatch(
 
 const CWD_CHANGE_REGEX =
   /^\s*(?:\$\(\s*)?[({]*\s*(?:command\s+|builtin\s+)?(?:cd|pushd|popd)(?:\s|$)/;
+const RULE_REACHING_BEYOND_A_CONTAINER = /^(?:custom\.|git\.push-|network\.|interpreter\.)/;
 const HEADS_STILL_SCANNED_FOR_EMBEDDED = new Set(['powershell', 'pwsh']);
 const POWERSHELL_LOCATION_COMMANDS = new Set([
   'cd',

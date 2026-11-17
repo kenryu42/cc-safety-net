@@ -3057,6 +3057,74 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'blocks recursive removal in a container run when the paranoid rm rule is enabled by override',
+      command: 'docker run --rm -w /tmp/app alpine rm -rf ./build',
+      options: options({
+        cwd: paths.cwd,
+        policy: { destructiveCommandRuleOverrides: { 'rm.recursive-force-paranoid': 'on' } },
+      }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-paranoid',
+        intent: 'scope_down',
+        reasonIncludes: 'blocked by the active safety policy',
+      },
+    },
+    {
+      name: 'keeps judging a container run payload when a custom rule could match inside it',
+      command: "docker run --rm alpine sh -c 'rm -rf /var/cache/apk'",
+      options: options({
+        cwd: paths.cwd,
+        policy: {
+          rules: [
+            { name: 'block-rm-rf', command: 'rm', block_args: ['-rf'], reason: 'Use trash.' },
+          ],
+        },
+      }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-outside-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'outside cwd is blocked',
+      },
+    },
+    {
+      name: 'keeps judging a container run payload when a custom rule names its command in another letter case',
+      command: "docker run --rm alpine sh -c 'rm -rf /var/cache/apk'",
+      options: options({
+        cwd: paths.cwd,
+        policy: {
+          rules: [
+            { name: 'block-rm-rf', command: 'RM', block_args: ['-rf'], reason: 'Use trash.' },
+          ],
+        },
+      }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-outside-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'outside cwd is blocked',
+      },
+    },
+    {
+      name: 'keeps the container run exemption when the only custom rule names a command absent from the payload',
+      command: "docker run --rm alpine sh -c 'rm -rf /var/cache/apk'",
+      options: options({
+        cwd: paths.cwd,
+        policy: {
+          rules: [
+            {
+              name: 'block-npm-publish',
+              command: 'npm',
+              block_args: ['publish'],
+              reason: 'Publish from CI.',
+            },
+          ],
+        },
+      }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks workspace recursive removal under paranoid rm',
       command: 'rm -rf build',
       options: options({ cwd: paths.cwd, paranoidRm: true }),
