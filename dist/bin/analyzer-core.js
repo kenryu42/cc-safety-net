@@ -1354,6 +1354,7 @@ var import_tokens5 = require("./core-shell.js");
 var import_awk = require("./analyzer.js");
 var import_child_command = require("./analyzer.js");
 var import_command_words4 = require("./analyzer.js");
+var import_container_run = require("./analyzer.js");
 var import_dangerous_text = require("./analyzer.js");
 var import_derived_input = require("./analyzer.js");
 var import_device = require("./analyzer.js");
@@ -2163,6 +2164,7 @@ function analyzeSegment(commandWords, depth, options) {
     return (child.dynamicRmInput ? childDynamicSourceResult(child, options.policy) : null) ?? childDynamicRmResult(child, options.policy);
   }
   const matchedKnown = commandAnalyzer !== undefined && !HEADS_STILL_SCANNED_FOR_EMBEDDED.has(normalizedHead);
+  const payloadStaysInContainer = !options.strict && !options.policy.rules.some((rule) => stripped.some((token) => token.split(/[^\w.+-]+/).some((word) => import_tokens5.normalizeCommandToken(word) === import_tokens5.normalizeCommandToken(rule.command)))) && !import_effective_rules2.destructiveCommandRuleIsEnabled(options.policy, "rm.recursive-force-paranoid", !!options.paranoidRm) && !import_effective_rules2.destructiveCommandRuleIsEnabled(options.policy, "interpreter.one-liner-paranoid", !!options.paranoidInterpreters) && import_container_run.isContainerRunIsolatedFromHost(normalizedHead, words, options.shellAssignments ?? new Map);
   const scansForEmbedded = !child && !matchedKnown && !import_constants4.DISPLAY_COMMANDS.has(normalizedHead);
   const tokensScanned = trace && scansForEmbedded ? [] : undefined;
   if (scansForEmbedded) {
@@ -2172,7 +2174,7 @@ function analyzeSegment(commandWords, depth, options) {
         continue;
       tokensScanned?.push(token);
       const match = filterBuiltInCommandMatch(analyzeEmbeddedSuffix(stripped, i, depth, analyzerOptions, cwdForRm, originalCwdForRm, nestedEffectiveCwd, envAssignments), options.policy);
-      if (match) {
+      if (match && (!payloadStaysInContainer || RULE_REACHING_BEYOND_A_CONTAINER.test(match.id))) {
         trace?.recordSegment({
           type: "fallback-scan",
           tokensScanned: tokensScanned ?? [],
@@ -2438,6 +2440,7 @@ function filterBuiltInCommandMatch(match, policy) {
   return match?.id.startsWith("custom.") || match?.id === "raw-text.dangerous-command" ? match : import_effective_rules2.filterDestructiveCommandMatch(match, policy);
 }
 var CWD_CHANGE_REGEX = /^\s*(?:\$\(\s*)?[({]*\s*(?:command\s+|builtin\s+)?(?:cd|pushd|popd)(?:\s|$)/;
+var RULE_REACHING_BEYOND_A_CONTAINER = /^(?:custom\.|git\.push-|network\.|interpreter\.)/;
 var HEADS_STILL_SCANNED_FOR_EMBEDDED = new Set(["powershell", "pwsh"]);
 var POWERSHELL_LOCATION_COMMANDS = new Set([
   "cd",
