@@ -779,6 +779,7 @@ export function analyzeSegment(
 
   const payloadStaysInContainer =
     !options.strict &&
+    options.policy.rules.length === 0 &&
     !destructiveCommandRuleIsEnabled(
       options.policy,
       'rm.recursive-force-paranoid',
@@ -1239,7 +1240,7 @@ function filterBuiltInCommandMatch(
 
 const CWD_CHANGE_REGEX =
   /^\s*(?:\$\(\s*)?[({]*\s*(?:command\s+|builtin\s+)?(?:cd|pushd|popd)(?:\s|$)/;
-const RULE_REACHING_BEYOND_A_CONTAINER = /^(?:custom\.|git\.push-|network\.)/;
+const RULE_REACHING_BEYOND_A_CONTAINER = /^(?:custom\.|git\.push-|network\.|interpreter\.)/;
 const HEADS_STILL_SCANNED_FOR_EMBEDDED = new Set(['powershell', 'pwsh']);
 const POWERSHELL_LOCATION_COMMANDS = new Set([
   'cd',

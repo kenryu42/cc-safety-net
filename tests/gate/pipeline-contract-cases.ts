@@ -425,11 +425,12 @@ export function pipelineContractCases(paths: {
     ...[
       "docker run --rm -w /tmp/app alpine sh -c 'rm -rf .git'",
       'docker run --rm -w /tmp/app alpine rm -rf .git',
+      'docker run --rm alpine rm -rf /run/app',
       'IMAGE="golang:1.24-alpine"\ndocker --context default run --rm \\\n  -v "$(pwd):/src:ro" \\\n  -w /tmp/app \\\n  "$IMAGE" \\\n  sh -c "\n    cp -r /src/. . &&\n    rm -rf .git &&\n    git init &&\n    go test -v $*\n  "',
       'podman run --rm --mount type=bind,source=/src,target=/src,readonly alpine rm -rf .git',
       'nerdctl container run --rm --volume=/src:/src:ro alpine find . -name .git -delete',
     ].map((command): PipelineContractCase => ({
-      name: `allows deleting a .git that exists only inside a container with no writable mount: ${command}`,
+      name: `allows a delete that stays inside a container with no writable mount: ${command}`,
       ...bash(command),
       cwd: 'repo',
       expected: { kind: 'allow' },
@@ -453,6 +454,8 @@ export function pipelineContractCases(paths: {
       'docker run --rm "--${OPT}" -w /work alpine rm -rf .git',
       'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock:ro docker:cli docker exec -w /work builder rm -rf .git',
       'docker run --rm -v /var/run:/run:ro docker:cli docker exec -w /work builder rm -rf .git',
+      'docker run --rm -v/var/run:/run:ro docker:cli docker exec -w /work builder rm -rf .git',
+      'docker run --rm --mount \'type=bind,"src=/srv/repo,readonly,data",dst=/work\' -w /work alpine rm -rf .git',
     ].map((command): PipelineContractCase => ({
       name: `denies deleting .git through a container command that may reach the host repository: ${command}`,
       ...bash(command),
@@ -489,6 +492,20 @@ export function pipelineContractCases(paths: {
         ruleId: 'git.push-force',
         intent: 'use_alternative',
         reasonIncludes: 'destroys remote history',
+      },
+    },
+    {
+      name: 'denies a force push run by interpreter code in a container with no writable mount',
+      ...bash(
+        'docker run --rm app sh -c \'python -c "import os; os.system(\\"git push --force origin main\\")"\'',
+      ),
+      cwd: 'repo',
+      expected: {
+        kind: 'block',
+        stage: 'command-analysis',
+        ruleId: 'interpreter.dangerous-command',
+        intent: 'use_alternative',
+        reasonIncludes: 'Interpreter code contains a dangerous command',
       },
     },
     {

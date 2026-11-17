@@ -54,11 +54,12 @@ function mayExpandToSeveralWords(word: CommandWord): boolean {
 
 function reachesHostAt(args: readonly string[], index: number): boolean {
   const arg = args[index] ?? '';
-  if (HOST_ACCESS_OPTION.test(arg) || HOST_CONTROL_PATH.test(arg)) return true;
+  if (HOST_ACCESS_OPTION.test(arg)) return true;
   const long = /^--(volume|mount)(?:=(.*))?$/s.exec(arg);
   const short = /^-[A-Za-z]*?v(.*)$/s.exec(arg);
   if (!long && !short) return false;
   const value = (long ? long[2] : short?.[1]) || (args[index + 1] ?? '');
+  if (HOST_CONTROL_PATH.test(value) || value.includes('"')) return true;
   const fields = value.split(',');
   return long?.[1] === 'mount'
     ? !fields.some((field) => READ_ONLY_MOUNT_FIELDS.has(field)) ||
