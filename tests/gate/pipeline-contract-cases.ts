@@ -478,6 +478,20 @@ export function pipelineContractCases(paths: {
       },
     },
     {
+      name: 'denies a force push from a container that mounts the repository read-only',
+      ...bash(
+        'docker run --rm -v "$PWD:/src:ro" -w /src alpine sh -c \'git push --force origin main\'',
+      ),
+      cwd: 'repo',
+      expected: {
+        kind: 'block',
+        stage: 'command-analysis',
+        ruleId: 'git.push-force',
+        intent: 'use_alternative',
+        reasonIncludes: 'destroys remote history',
+      },
+    },
+    {
       name: 'denies deleting .git inside a container with no writable mount at strict safety',
       ...bash("docker run --rm -w /tmp/app alpine sh -c 'rm -rf .git'"),
       cwd: 'repo',
