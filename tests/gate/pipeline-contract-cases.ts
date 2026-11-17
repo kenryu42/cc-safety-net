@@ -444,6 +444,10 @@ export function pipelineContractCases(paths: {
       'docker run --rm "${ARGS[@]}" -w /work alpine rm -rf .git',
       'docker exec -w /tmp/app builder rm -rf .git',
       'docker exec builder run rm -rf .git',
+      'VOL="--volume=$PWD:/work"; docker run --rm "$VOL" -w /work alpine rm -rf .git',
+      'docker run --rm "$OPTS" -w /work alpine rm -rf .git',
+      'podman run --rm --rootfs "$PWD" sh -c \'rm -rf .git\'',
+      'docker run --rm --privileged --device /dev/sda alpine rm -rf .git',
     ].map((command): PipelineContractCase => ({
       name: `denies deleting .git through a container command that may reach the host repository: ${command}`,
       ...bash(command),
@@ -456,6 +460,18 @@ export function pipelineContractCases(paths: {
         reasonIncludes: 'Git',
       },
     })),
+    {
+      name: 'denies deleting the root directory from a container that joins the host namespaces',
+      ...bash('docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -- rm -rf /'),
+      cwd: 'repo',
+      expected: {
+        kind: 'block',
+        stage: 'command-analysis',
+        ruleId: 'rm.recursive-force-root-or-home',
+        intent: 'hard_stop',
+        reasonIncludes: 'root or home',
+      },
+    },
     {
       name: 'denies deleting .git inside a container with no writable mount at strict safety',
       ...bash("docker run --rm -w /tmp/app alpine sh -c 'rm -rf .git'"),

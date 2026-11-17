@@ -1,4 +1,5 @@
 import type { CommandWord } from '@/core/shell/model';
+import { expandKnownVariableWord } from './shell-git-env';
 
 const CONTAINER_CLIS = new Set(['docker', 'podman', 'nerdctl']);
 const GLOBAL_OPTIONS_WITH_VALUE = new Set([
@@ -13,16 +14,24 @@ const GLOBAL_OPTIONS_WITH_VALUE = new Set([
   '--tlscert',
   '--tlskey',
 ]);
+const MOUNT_FLAG = /^(?:--(?:volume|mount)|-[A-Za-z]*v)$/;
+const HOST_ACCESS_OPTION = /^--(?:volumes-from|privileged|pid|userns|device|rootfs|cap-add)(?:=|$)/;
 const READ_ONLY_MOUNT_FIELDS = new Set(['readonly', 'ro', 'readonly=true', 'ro=true']);
 
-export function isContainerRunWithoutWritableMount(
+export function isContainerRunIsolatedFromHost(
   head: string,
   words: readonly CommandWord[],
+  shellAssignments: ReadonlyMap<string, string>,
 ): boolean {
   if (!CONTAINER_CLIS.has(head)) return false;
   const operands = words.slice(1);
-  if (operands.some(mayExpandToSeveralWords)) return false;
   const args = operands.map((word) => word.text);
+  const mayHideAnOption = (word: CommandWord, index: number) =>
+    mayExpandToSeveralWords(word) ||
+    (/^"?[$`]/.test(word.raw) &&
+      !MOUNT_FLAG.test(args[index - 1] ?? '') &&
+      expandKnownVariableWord(word, shellAssignments) === null);
+  if (operands.some(mayHideAnOption)) return false;
   const firstCommandIndex = args.findIndex(
     (arg, index) => !arg.startsWith('-') && !GLOBAL_OPTIONS_WITH_VALUE.has(args[index - 1] ?? ''),
   );
@@ -31,7 +40,7 @@ export function isContainerRunWithoutWritableMount(
     args[firstCommandIndex] === 'container' ? firstCommandIndex + 1 : firstCommandIndex;
   if (args[runIndex] !== 'run') return false;
   const runArgs = args.slice(runIndex + 1);
-  return !runArgs.some((_, index) => isWritableMountAt(runArgs, index));
+  return !runArgs.some((_, index) => reachesHostAt(runArgs, index));
 }
 
 function mayExpandToSeveralWords(word: CommandWord): boolean {
@@ -40,9 +49,9 @@ function mayExpandToSeveralWords(word: CommandWord): boolean {
   return !/^"[^"]*"$/.test(word.raw) || /\$@|\$\{@|\[@\]/.test(word.raw);
 }
 
-function isWritableMountAt(args: readonly string[], index: number): boolean {
+function reachesHostAt(args: readonly string[], index: number): boolean {
   const arg = args[index] ?? '';
-  if (/^--volumes-from(?:=|$)/.test(arg)) return true;
+  if (HOST_ACCESS_OPTION.test(arg)) return true;
   const long = /^--(volume|mount)(?:=(.*))?$/s.exec(arg);
   const short = /^-[A-Za-z]*?v(.*)$/s.exec(arg);
   if (!long && !short) return false;
