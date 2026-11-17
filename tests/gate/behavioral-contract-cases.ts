@@ -3089,6 +3089,24 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'keeps the container run exemption when the only custom rule names a command absent from the payload',
+      command: "docker run --rm alpine sh -c 'rm -rf /var/cache/apk'",
+      options: options({
+        cwd: paths.cwd,
+        policy: {
+          rules: [
+            {
+              name: 'block-npm-publish',
+              command: 'npm',
+              block_args: ['publish'],
+              reason: 'Publish from CI.',
+            },
+          ],
+        },
+      }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks workspace recursive removal under paranoid rm',
       command: 'rm -rf build',
       options: options({ cwd: paths.cwd, paranoidRm: true }),

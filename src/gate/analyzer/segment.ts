@@ -779,7 +779,9 @@ export function analyzeSegment(
 
   const payloadStaysInContainer =
     !options.strict &&
-    options.policy.rules.length === 0 &&
+    !options.policy.rules.some((rule) =>
+      stripped.some((token) => token.split(/[^\w.+-]+/).includes(rule.command)),
+    ) &&
     !destructiveCommandRuleIsEnabled(
       options.policy,
       'rm.recursive-force-paranoid',
