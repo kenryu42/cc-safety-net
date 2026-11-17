@@ -29,6 +29,7 @@ import type { CommandTraceContext } from '@/gate/trace';
 import { analyzeAwkSystemCallMatch, extractAwkExecutableSources } from './awk';
 import { type ChildProvenance, normalizeChildCommands } from './child-command';
 import { analysisWordText, analyzedViewWords, textCommandWords } from './command-words';
+import { isContainerRunWithoutWritableMount } from './container-run';
 import { dangerousInTextMatch } from './dangerous-text';
 import { analyzeDynamicCommandStructure, hasDynamicExecutableSource } from './derived-input';
 import { analyzeDeviceCommandMatch } from './device';
@@ -776,7 +777,13 @@ export function analyzeSegment(
   const matchedKnown =
     commandAnalyzer !== undefined && !HEADS_STILL_SCANNED_FOR_EMBEDDED.has(normalizedHead);
 
-  const scansForEmbedded = !child && !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead);
+  const payloadStaysInContainer =
+    !options.strict &&
+    !options.paranoidRm &&
+    !options.paranoidInterpreters &&
+    isContainerRunWithoutWritableMount(normalizedHead, words);
+  const scansForEmbedded =
+    !child && !matchedKnown && !DISPLAY_COMMANDS.has(normalizedHead) && !payloadStaysInContainer;
   const tokensScanned: string[] | undefined = trace && scansForEmbedded ? [] : undefined;
   if (scansForEmbedded) {
     for (let i = 1; i < stripped.length; i++) {
