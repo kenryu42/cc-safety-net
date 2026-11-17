@@ -780,7 +780,11 @@ export function analyzeSegment(
   const payloadStaysInContainer =
     !options.strict &&
     !options.policy.rules.some((rule) =>
-      stripped.some((token) => token.split(/[^\w.+-]+/).includes(rule.command)),
+      stripped.some((token) =>
+        token
+          .split(/[^\w.+-]+/)
+          .some((word) => normalizeCommandToken(word) === normalizeCommandToken(rule.command)),
+      ),
     ) &&
     !destructiveCommandRuleIsEnabled(
       options.policy,

@@ -3089,6 +3089,24 @@ export function behavioralContractCases(paths: {
       },
     },
     {
+      name: 'keeps judging a container run payload when a custom rule names its command in another letter case',
+      command: "docker run --rm alpine sh -c 'rm -rf /var/cache/apk'",
+      options: options({
+        cwd: paths.cwd,
+        policy: {
+          rules: [
+            { name: 'block-rm-rf', command: 'RM', block_args: ['-rf'], reason: 'Use trash.' },
+          ],
+        },
+      }),
+      expected: {
+        kind: 'block',
+        ruleId: 'rm.recursive-force-outside-cwd',
+        intent: 'scope_down',
+        reasonIncludes: 'outside cwd is blocked',
+      },
+    },
+    {
       name: 'keeps the container run exemption when the only custom rule names a command absent from the payload',
       command: "docker run --rm alpine sh -c 'rm -rf /var/cache/apk'",
       options: options({
