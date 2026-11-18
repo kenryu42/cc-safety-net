@@ -38,6 +38,8 @@ export interface SecretProtectionConfig {
 
 export type DestructiveCommandRuleOverride = 'on' | 'off';
 
+export type RuleMessage = { reason: string; intent?: BlockIntent };
+
 export type GuiPolicy = {
   version: 1;
   safety: {
@@ -54,11 +56,13 @@ export type GuiPolicy = {
   destructive_command_protection: {
     enabled: boolean;
     overrides: Record<string, DestructiveCommandRuleOverride>;
+    messages?: Record<string, RuleMessage>;
     allow_paths: string[];
   };
   secret_protection: {
     enabled: boolean;
     overrides: Record<string, DestructiveCommandRuleOverride>;
+    messages?: Record<string, RuleMessage>;
     deny_paths: string[];
     allow_paths: string[];
   };
@@ -123,6 +127,7 @@ export type EffectivePolicy = {
     readonly denyPaths: readonly string[];
     readonly allowPaths: readonly string[];
   };
+  readonly ruleMessages?: Readonly<Record<string, RuleMessage>>;
 };
 
 export type CommandAnalysisPolicy = EffectivePolicy & {

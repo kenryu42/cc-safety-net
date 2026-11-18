@@ -206,10 +206,22 @@ describe('the GUI project draft', () => {
           revision: 0,
           proposal: { version: 1, safety: { level: 'bogus' } },
         }),
+        draftWrite('/api/policy/project/apply', {
+          revision: 0,
+          proposal: {
+            ...PARANOID,
+            secret_protection: {
+              messages: { 'secret.basename.env': { reason: 'Read it another way.' } },
+            },
+          },
+        }),
       ],
     });
 
-    expect(row.responses.map((response) => response.status)).toStrictEqual([400, 400, 400]);
+    expect(row.responses.map((response) => response.status)).toStrictEqual([400, 400, 400, 400]);
+    expect(errorsOf(row.responses[3]?.body)).toStrictEqual([
+      'secret_protection.messages is user scope only; remove it from a project proposal',
+    ]);
     expect(errorsOf(row.responses[0]?.body)).toStrictEqual(['revision must be a number']);
     expect(errorsOf(row.responses[1]?.body)).toStrictEqual([
       'audit settings are user scope only; remove the audit section from a project proposal',

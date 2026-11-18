@@ -181,6 +181,12 @@ error, so validate against it rather than guessing further fields):
 - `destructive_command_protection` and `secret_protection`: an `enabled` boolean, and per-rule
   `overrides` mapping a built-in rule id (`git.reset-hard`, `secret.basename.env`) to `"on"` or
   `"off"`. Get the id for a blocked command from the `ruleId` field of `explain --json`.
+- `destructive_command_protection.messages` and `secret_protection.messages`, user scope only: map
+  a built-in rule id to `{ "reason": "...", "intent": "..." }` to replace what the agent is told
+  when that rule blocks, for example to name a safe alternative. The rule still blocks. `reason`
+  is required, at most 256 characters. `intent` is optional and picks the closing instruction:
+  `hard_stop`, `use_alternative`, `scope_down`, `manual_only`, or `stop_and_explain`. One message
+  covers every command its rule id blocks.
 - `destructive_command_protection.allow_paths`: absolute or `~/` paths where recursive delete
   targets are permitted. `secret_protection.allow_paths`: exact user-managed files or directories,
   or a folder followed by `**/` and an exact file name (for example `~/code/**/.env.local`; the

@@ -41,7 +41,9 @@ import {
   normalizeGuiPolicy,
   normalizeSafety,
   projectPolicyProjection,
+  projectRuleMessageRejections,
   resolveSecretDisabledRules,
+  ruleMessagesOf,
 } from '@/core/policy/store';
 import {
   previewUserPolicyForGui,
@@ -609,9 +611,12 @@ async function readProjectDraft(
 function getProjectProposalErrors(proposal: unknown, home: string): string[] {
   const errors = getUserPolicyDiagnostics(proposal, home);
   if (errors.length > 0) return errors;
-  return (proposal as { audit?: unknown } | null)?.audit === undefined
-    ? []
-    : [PROJECT_AUDIT_REJECTION];
+  return [
+    ...((proposal as { audit?: unknown } | null)?.audit === undefined
+      ? []
+      : [PROJECT_AUDIT_REJECTION]),
+    ...projectRuleMessageRejections(proposal),
+  ];
 }
 
 function writeProjectPolicy(
@@ -656,6 +661,7 @@ function explainDraftCommand(
       denyPaths: draft.secret_protection.deny_paths,
       allowPaths: draft.secret_protection.allow_paths,
     },
+    ruleMessages: ruleMessagesOf(draft),
   });
   return explainCommand(
     command,

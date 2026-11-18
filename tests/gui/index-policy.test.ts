@@ -25,6 +25,18 @@ const USER_POLICY = {
   audit: { retention_days: 10 },
 };
 
+const MESSAGED_POLICY = {
+  ...USER_POLICY,
+  destructive_command_protection: {
+    enabled: true,
+    overrides: {},
+    messages: {
+      'git.push-force': { reason: 'Use --force-with-lease.', intent: 'use_alternative' },
+    },
+    allow_paths: [],
+  },
+};
+
 const CONFIGURABLE_RULE = DESTRUCTIVE_COMMAND_RULE_METADATA.find((rule) => !rule.catastrophic);
 if (!CONFIGURABLE_RULE) throw new Error('the destructive metadata carries no configurable rule');
 
@@ -348,12 +360,24 @@ describe('the policy GUI server', () => {
         }),
         explainRequest(42, draft),
         explainRequest('ls', { version: 1, safety: { level: 'bogus' } }),
+        explainRequest('cat ~/.ssh/id_rsa', {
+          ...draft,
+          secret_protection: {
+            ...draft.secret_protection,
+            messages: { 'secret.home.ssh': { reason: 'Keys stay with the person.' } },
+          },
+        }),
       ],
     });
 
     expect(row.responses.map((response) => response.status)).toStrictEqual([
-      200, 200, 200, 200, 200, 200, 200, 400, 400,
+      200, 200, 200, 200, 200, 200, 200, 400, 400, 200,
     ]);
+    expect(row.responses[9]?.body).toMatchObject({
+      result: 'blocked',
+      ruleId: 'secret.home.ssh',
+      reason: 'Keys stay with the person.',
+    });
     expect(
       row.responses.slice(0, 7).map((response) => (response.body as { result: string }).result),
     ).toStrictEqual(['blocked', 'allowed', 'blocked', 'blocked', 'allowed', 'blocked', 'allowed']);
@@ -369,6 +393,10 @@ describe('the policy GUI server', () => {
       seed: S0,
       requests: [{ method: 'POST', path: '/api/policy', body: USER_POLICY }],
     });
+    const messaged = await runGuiRow({
+      seed: S0,
+      requests: [{ method: 'POST', path: '/api/policy', body: MESSAGED_POLICY }],
+    });
     const refused = await runGuiRow({
       seed: S1,
       requests: [
@@ -379,6 +407,7 @@ describe('the policy GUI server', () => {
 
     expect(written.responses[0]).toMatchObject({ status: 200, body: { errors: [] } });
     expect(policyFile(written.tree)).toMatchObject({ content: json(USER_POLICY) });
+    expect(policyFile(messaged.tree)).toMatchObject({ content: json(MESSAGED_POLICY) });
     expect(policyFileMode(written.home)).toBe(0o600);
     expect(refused.responses.map((response) => response.status)).toStrictEqual([400, 400]);
     expect(errorsOf(refused.responses[0]?.body).length).toBeGreaterThan(0);

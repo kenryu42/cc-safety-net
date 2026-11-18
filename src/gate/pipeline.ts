@@ -266,13 +266,14 @@ export function evaluateGuard(
         );
   if (secretTarget) {
     const displayCommand = command ?? secretTarget.target;
+    const message = policy.ruleMessages?.[secretTarget.ruleId];
     return {
       stage: 'secret-protection',
       ...reported,
       decision: {
         kind: 'deny',
-        reason: REASON_SECRET_PROTECTION,
-        intent: 'hard_stop',
+        reason: message?.reason ?? REASON_SECRET_PROTECTION,
+        intent: message?.intent ?? 'hard_stop',
         ruleId: secretTarget.ruleId,
         evidence: { command: displayCommand, segment: secretTarget.target },
       },
@@ -344,7 +345,8 @@ export function evaluateGuard(
     const unverifiedByStandardMode =
       !modes.strict &&
       (analysis.decision.ruleId === 'raw-text.dangerous-command' ||
-        (analysis.decision.reason === REASON_DYNAMIC_SHELL_SOURCE &&
+        (analysis.decision.ruleId === 'analysis.dynamic-shell-source' &&
+          analysis.decision.reason === REASON_DYNAMIC_SHELL_SOURCE &&
           !BARE_SHELL_READING_STDIN.test(analysis.decision.evidence?.segment ?? '') &&
           dangerousInTextMatch(invocation.command as string) === null));
     const posixReading = unverifiedByStandardMode ? readAsPosix?.() : undefined;

@@ -108,6 +108,7 @@ const collectFormPolicy = () => ({
   secret_protection: {
     enabled: draftPolicy.secret_protection.enabled,
     overrides: draftPolicy.secret_protection.overrides,
+    messages: draftPolicy.secret_protection.messages,
     deny_paths: draftPolicy.secret_protection.deny_paths,
     allow_paths: draftPolicy.secret_protection.allow_paths,
   },

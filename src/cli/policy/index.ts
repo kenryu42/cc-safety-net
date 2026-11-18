@@ -18,7 +18,11 @@ import {
   getUserPolicyPath,
   projectPolicyIsUserPolicy,
 } from '@/core/policy/paths';
-import { normalizeGuiPolicy, projectPolicyProjection } from '@/core/policy/store';
+import {
+  normalizeGuiPolicy,
+  projectPolicyProjection,
+  projectRuleMessageRejections,
+} from '@/core/policy/store';
 import { writeUserPolicyFromGui } from '@/core/policy/store-gui';
 import type { GuiPolicy } from '@/core/policy/types';
 import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics';
@@ -85,6 +89,9 @@ export async function runPolicyCommand(
           `${file}: audit settings are user scope only; remove the audit section from a project proposal`,
         ]
       : []),
+    ...(parsed.flags.global ? [] : projectRuleMessageRejections(proposal.value)).map(
+      (rejection) => `${file}: ${rejection}`,
+    ),
   ];
   if (diagnostics.length > 0) {
     for (const diagnostic of diagnostics) console.error(diagnostic);
