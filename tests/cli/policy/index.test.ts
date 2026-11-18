@@ -119,12 +119,38 @@ describe('policy check', () => {
     expect(outcome.stdout).toContain(
       [
         'Changes (2):',
-        '  destructive_command_protection.messages.git.push-force: (unset) -> Use --force-with-lease. (use_alternative)',
-        '  secret_protection.messages.secret.pattern.env-variant: (unset) -> Run `link-env <worktree>`.',
+        '  destructive_command_protection.messages.git.push-force: (unset) -> {"reason":"Use --force-with-lease.","intent":"use_alternative"}',
+        '  secret_protection.messages.secret.pattern.env-variant: (unset) -> {"reason":"Run `link-env <worktree>`."}',
         '',
       ].join('\n'),
     );
     expect(outcome.exitCode).toBe(0);
+  }, 60_000);
+
+  test('moving an intent out of the reason text into the intent field is still a change', async () => {
+    const outcome = await runPolicy(['check', 'prop.json', '--global'], {
+      [USER_POLICY]: json({
+        version: 1,
+        secret_protection: {
+          messages: { 'secret.basename.env': { reason: 'Use the helper. (use_alternative)' } },
+        },
+      }),
+      [PROPOSAL_FILE]: json({
+        version: 1,
+        secret_protection: {
+          messages: {
+            'secret.basename.env': { reason: 'Use the helper.', intent: 'use_alternative' },
+          },
+        },
+      }),
+    });
+    expect(outcome.stdout).toContain(
+      [
+        'Changes (1):',
+        '  secret_protection.messages.secret.basename.env: {"reason":"Use the helper. (use_alternative)"} -> {"reason":"Use the helper.","intent":"use_alternative"}',
+        '',
+      ].join('\n'),
+    );
   }, 60_000);
 
   test('a malformed rule message is refused and names what is wrong with it', async () => {

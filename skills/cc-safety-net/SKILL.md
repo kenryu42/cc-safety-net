@@ -186,7 +186,9 @@ error, so validate against it rather than guessing further fields):
   when that rule blocks, for example to name a safe alternative. The rule still blocks. `reason`
   is required, at most 256 characters. `intent` is optional and picks the closing instruction:
   `hard_stop`, `use_alternative`, `scope_down`, `manual_only`, or `stop_and_explain`. One message
-  covers every command its rule id blocks.
+  covers every command its rule id blocks. Only ids in that section's rule set qualify; a
+  structural denial (`guard.*`, `analysis.*`, `cwd.*`, `tool-call.*`) and `secret.deny-path`
+  cannot carry a message.
 - `destructive_command_protection.allow_paths`: absolute or `~/` paths where recursive delete
   targets are permitted. `secret_protection.allow_paths`: exact user-managed files or directories,
   or a folder followed by `**/` and an exact file name (for example `~/code/**/.env.local`; the

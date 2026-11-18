@@ -109,10 +109,7 @@ function flattenMessages(prefix: string, messages: Record<string, RuleMessage> =
   return flattenSection(
     prefix,
     Object.fromEntries(
-      Object.entries(messages).map(([id, message]) => [
-        id,
-        message.intent ? `${message.reason} (${message.intent})` : message.reason,
-      ]),
+      Object.entries(messages).map(([id, message]) => [id, JSON.stringify(message)]),
     ),
   );
 }
