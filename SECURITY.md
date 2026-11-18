@@ -6,6 +6,73 @@ Security fixes are provided for the latest published release of `cc-safety-net`.
 
 If you are using an older version, please upgrade to the latest version before reporting an issue unless the vulnerability also affects the latest release.
 
+## The Boundary: Bug or Vulnerability?
+
+Most reports about CC Safety Net are public bugs. Read this section before opening a private advisory.
+
+CC Safety Net's job is to stop agents from running destructive commands and from reading protected secret files, within the selected safety level's documented guarantees. A report that the tool failed to do that job is a **bug**, and it belongs in a public GitHub issue, at every safety level and whether the command deletes data or reads a secret. The strict and paranoid threat model assumes an attacker (prompt injection, adversarial context) can emit any command, so publishing "this command shape is not caught" does not hand the attacker a capability they did not already have — it just gets the gap fixed faster and lets users ship a custom rule as an immediate workaround.
+
+A report that the tool did something harmful it was never supposed to do — disclose a secret its caller did not already hold, write a file outside its own directory, or ship a tampered package — is a **vulnerability**. The non-obvious construction is the secret, so it belongs in private disclosure.
+
+The dividing line is: **did the tool fail to stop a command, or did the tool itself become the harmful vector?** A command that prints a secret after CC Safety Net allowed it is the first kind: the command disclosed the secret, not the tool.
+
+A private advisory that describes a public bug is closed, and the reporter is asked to open it as a public issue.
+
+## What Counts as a Security Issue
+
+Report these privately:
+
+- Disclosure of a secret the tool call did not supply, such as file contents or environment values the tool read, through block messages, audit logs, diagnostics, or debug output
+- A false-positive report prefill that carries a path the report preview claims to have replaced
+- A path traversal or filesystem issue in audit logging or configuration handling, where crafted input writes outside the intended directory
+- A supply-chain or packaging issue affecting the published npm package or plugin distribution, including rulebook integrity
+
+## What Should Be Reported Publicly Instead
+
+Use normal GitHub issues for:
+
+- Any bypass or fail-open that lets a destructive command execute or a protected secret file be read — a coverage gap (a command the rules do not block yet), a parser, tokenizer, or wrapper-analysis edge case, or an analysis error that lets a command through instead of blocking it. Report the command _shape_, not a ready-to-paste weaponized prompt-injection payload.
+- A command shape that an invariant under "Security Model and Invariants" says is covered but is allowed. The invariants describe best-effort coverage, so a shape they miss is a coverage gap.
+- Results from bypass research, evasion benchmarks, or GTFOBins-style surveys. Test the latest release, include the exact commands, and check [docs/residual-risk.md](docs/residual-risk.md) first: the families listed there are documented limits of standard mode, not undisclosed bypasses. These reports need no embargo.
+- Redaction gaps: a credential form the redactor does not recognize, or a field it does not cover, when the value came from the tool call itself and appears only in the denial message returned to that caller or in the local audit log
+- False positives where a safe command is blocked
+- Missing convenience rules or new feature requests
+- Documentation bugs
+- Installation problems without a security impact
+- Questions about custom rules or configuration
+
+Findings from Anthropic's OSS Scanner, including bypasses, are confidential under that service's terms. The maintainer fixes them privately and opens a public issue only after the fix is released.
+
+## Reporting a Vulnerability
+
+Please do not report the vulnerabilities listed under "What Counts as a Security Issue" in public GitHub issues.
+
+Use GitHub private vulnerability reporting for this repository when available. If that is unavailable, email the maintainer at jliew@420024lab.com.
+
+Include as much detail as you can safely share:
+
+- The affected `cc-safety-net` version
+- Your operating system and runtime version
+- The affected integration, such as Claude Code, OpenCode, Gemini CLI, GitHub Copilot CLI, Grok Build, Factory Droid, Devin CLI, or Codex
+- Steps to reproduce the issue
+- The input that makes CC Safety Net itself leak a secret in its own output, write outside its intended directory, or distribute tampered code
+- Any relevant output from `cc-safety-net explain` or `cc-safety-net doctor`
+- Whether the issue can cause data loss, command execution, secret exposure, or another concrete security impact
+
+Please redact tokens, credentials, private repository names, and sensitive file paths before sending logs or command output.
+
+## Response Expectations
+
+You should receive an initial response within 7 days.
+
+The maintainer will work with you to confirm the impact, identify affected versions, prepare a fix, and coordinate disclosure. Please give the maintainer reasonable time to investigate before publishing details publicly.
+
+## Disclosure
+
+When a vulnerability is confirmed, the maintainer will publish a fix as soon as practical and may publish a GitHub security advisory or release note with appropriate credit, unless you request otherwise.
+
+Please do not publicly disclose exploit details until a fixed version is available.
+
 ## Security Model and Invariants
 
 CC Safety Net is a best-effort, static pre-execution policy gate for supported coding-agent tool calls. It is not an operating-system sandbox, a privilege boundary, or protection for commands that bypass an installed integration. An agent and the command text it supplies are untrusted; the user's policy, pinned rulebook state, configured roots, and adapter-established execution context are trusted inputs.
@@ -84,64 +151,3 @@ DeepSeek Harness loads CC Safety Net as an optional profile plugin that register
 Policy-file protection is deliberately a minimal exact-path guard, not command emulation or an operating-system security boundary. It tracks only simple assignment-only shell variables and explicit `cd` changes needed to resolve direct paths. It does not infer computed interpreter paths, inspect interpreter bodies, expand shell globs or braces, infer archive members, simulate `find` actions, infer remote filenames, or infer a transfer's final filename from its destination directory. Malformed shell input is blocked by this guard only when the canonical policy path remains directly extractable; parser resource exhaustion still fails closed. The hard-stop message, `This path contains the protected policy config and you must not modify or delete it.`, is guidance to the agent, not a claim of complete filesystem enforcement. Use a trusted write broker, operating-system permissions, a sandbox, or equivalent runtime enforcement when complete protection is required.
 
 The structural command IR is produced by the bounded internal POSIX and PowerShell parsers. No third-party shell parser is embedded in the published JavaScript artifacts.
-
-## Reporting a Vulnerability
-
-Please do not report security vulnerabilities in public GitHub issues.
-
-Use GitHub private vulnerability reporting for this repository when available. If that is unavailable, email the maintainer at jliew@420024lab.com.
-
-Include as much detail as you can safely share:
-
-- The affected `cc-safety-net` version
-- Your operating system and runtime version
-- The affected integration, such as Claude Code, OpenCode, Gemini CLI, GitHub Copilot CLI, Grok Build, Factory Droid, Devin CLI, or Codex
-- Steps to reproduce the issue
-- The input that makes CC Safety Net leak a secret, write outside its intended directory, or distribute tampered code
-- Any relevant output from `cc-safety-net explain` or `cc-safety-net doctor`
-- Whether the issue can cause data loss, command execution, secret exposure, or another concrete security impact
-
-Please redact tokens, credentials, private repository names, and sensitive file paths before sending logs or command output.
-
-## The Boundary: Bug or Vulnerability?
-
-CC Safety Net's job is to stop agents from running destructive commands within the selected safety level's documented guarantees. A report that the tool failed to do that job is a **bug**, and it belongs in a public GitHub issue. The strict and paranoid threat model assumes an attacker (prompt injection, adversarial context) can emit any destructive command, so publishing "this command shape is not caught" does not hand the attacker a capability they did not already have — it just gets the gap fixed faster and lets users ship a custom rule as an immediate workaround.
-
-A report that the tool did something harmful it was never supposed to do — disclose a secret its caller did not already hold, write a file outside its own directory, or ship a tampered package — is a **vulnerability**. The non-obvious construction is the secret, so it belongs in private disclosure.
-
-The dividing line is: **did the tool fail to stop a destructive command, or did the tool itself become the harmful vector?**
-
-## What Counts as a Security Issue
-
-Report these privately:
-
-- Disclosure of a secret the tool call did not supply, such as file contents or environment values the tool read, through block messages, audit logs, diagnostics, or debug output
-- A false-positive report prefill that carries a path the report preview claims to have replaced
-- A path traversal or filesystem issue in audit logging or configuration handling, where crafted input writes outside the intended directory
-- A supply-chain or packaging issue affecting the published npm package or plugin distribution, including rulebook integrity
-
-## What Should Be Reported Publicly Instead
-
-Use normal GitHub issues for:
-
-- Any bypass or fail-open that lets a destructive command execute — a coverage gap (a command the rules do not block yet), a parser, tokenizer, or wrapper-analysis edge case, or an analysis error that lets a command through instead of blocking it. Report the command _shape_, not a ready-to-paste weaponized prompt-injection payload.
-- Redaction gaps: a credential form the redactor does not recognize, or a field it does not cover, when the value came from the tool call itself and appears only in the denial message returned to that caller or in the local audit log
-- False positives where a safe command is blocked
-- Missing convenience rules or new feature requests
-- Documentation bugs
-- Installation problems without a security impact
-- Questions about custom rules or configuration
-
-Findings from Anthropic's OSS Scanner, including bypasses, are confidential under that service's terms. The maintainer fixes them privately and opens a public issue only after the fix is released.
-
-## Response Expectations
-
-You should receive an initial response within 7 days.
-
-The maintainer will work with you to confirm the impact, identify affected versions, prepare a fix, and coordinate disclosure. Please give the maintainer reasonable time to investigate before publishing details publicly.
-
-## Disclosure
-
-When a vulnerability is confirmed, the maintainer will publish a fix as soon as practical and may publish a GitHub security advisory or release note with appropriate credit, unless you request otherwise.
-
-Please do not publicly disclose exploit details until a fixed version is available.

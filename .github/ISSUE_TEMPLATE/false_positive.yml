@@ -9,7 +9,7 @@ body:
         Use this form when CC Safety Net **blocked a command that was safe**.
 
         - Blocked something safe → you are in the right place.
-        - Allowed something destructive → use the [Bug Report](https://github.com/kenryu42/cc-safety-net/issues/new?template=bug_report.yml) form instead. Missed detections are public bugs, see [SECURITY.md](https://github.com/kenryu42/cc-safety-net/blob/main/SECURITY.md).
+        - Allowed something destructive or a read of a protected secret file → use the [Bug Report](https://github.com/kenryu42/cc-safety-net/issues/new?template=bug_report.yml) form instead. Missed detections are public bugs, see [SECURITY.md](https://github.com/kenryu42/cc-safety-net/blob/main/SECURITY.md).
         - The tool leaked a secret or wrote outside its own directory → that is a vulnerability, please report it privately per [SECURITY.md](https://github.com/kenryu42/cc-safety-net/blob/main/SECURITY.md).
 
         **Finding the block.** Agents usually run unattended, so the block has probably already scrolled past. Browse what was recorded:

@@ -66,7 +66,8 @@ safe one that was blocked, also include:
   (`npx cc-safety-net logs --id <id> --json`).
 - Why the decision should have been different.
 
-A missed destructive command is a public bug, not a vulnerability. See
+A missed destructive command or an allowed read of a protected secret file is a
+public bug, not a vulnerability, at every safety level. See
 [SECURITY.md](SECURITY.md) for the few issues that must be reported privately.
 
 Before you submit, remove credentials and tokens. Logs redact secrets but not
