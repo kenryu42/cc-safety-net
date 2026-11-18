@@ -26,8 +26,9 @@ Trusted: the user's own `policy.json`, the host agent CLI, and the operating sys
    must never run), writes outside the intended directories through audit logging or config handling, secrets
    leaking through block messages, audit logs, `doctor`/`explain` output or GUI report prefills, a rulebook
    integrity bypass, or GUI access without the token.
-2. **Catastrophic protections failing in any mode**: recursive deletion of `/` or the home directory, destructive
-   mutation of the protected Git metadata set, or destructive mutation of the canonical user `policy.json`.
+2. **Catastrophic protections failing in any mode on a command a helpful agent plausibly writes**: recursive
+   deletion of `/` or the home directory, destructive mutation of the protected Git metadata set, or destructive
+   mutation of the canonical user `policy.json`.
 3. **Strict or paranoid mode failing open** where `SECURITY.md` documents fail-closed behavior.
 4. **Resource bounds** in `SECURITY.md` (payload size, parser limits, rulebook limits, sync budget) not holding:
    unbounded recursion, catastrophic regex backtracking, or a crash that lets a call through.
@@ -48,18 +49,18 @@ Trusted: the user's own `policy.json`, the host agent CLI, and the operating sys
   remote rulebook through CC Safety Net itself; GUI access without the token from a browser page or another
   user's process; a rulebook integrity bypass that lets unpinned content weaken a user's policy.
 - **High**: secret disclosure through CC Safety Net's own output or logs; path traversal in audit or config writes;
-  a literal, non-obfuscated command that defeats a catastrophic protection in any mode.
-- **Medium**: an obfuscated or constructed command that defeats a catastrophic protection; strict or paranoid mode
-  failing open on a documented fail-closed shape; an adapter crash or malformed-input path that allows a call on a
-  host documented as fail-closed; a resource-bound regression.
+  a command a helpful agent plausibly writes during ordinary coding work that defeats a catastrophic protection
+  in any mode.
+- **Medium**: strict or paranoid mode failing open on a documented fail-closed shape; an adapter crash or
+  malformed-input path that allows a call on a host documented as fail-closed; a resource-bound regression.
 - **Low**: a standard-mode bypass of a documented rule by a command shape an agent plausibly writes without
   adversarial intent.
-- **Informational**: standard-mode bypasses that need crafted input, and anything already listed below.
+- **Informational**: standard-mode bypasses that need crafted input, a crafted command that defeats a catastrophic
+  protection such as deleting root or home, and anything already listed below.
 
-Standard mode is a blocklist and admits endless constructed bypasses. Please group bypasses with a shared root cause
-into one report, and give the command shape, not a prompt-injection payload. A good patch for a constructed bypass
-refuses the shape fail-closed rather than making the parser emulate the shell more faithfully (see "What Is Never
-Residual Risk" in `docs/residual-risk.md`).
+Standard mode is a blocklist and admits endless constructed bypasses. CC Safety Net fixes the commands helpful
+agents write, not shapes built to evade it, so a constructed bypass rates Informational and needs no report. For a
+command an agent plausibly writes, name the ordinary task that produces it.
 
 ## Out of scope
 

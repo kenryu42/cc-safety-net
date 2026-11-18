@@ -83,9 +83,9 @@ blocking rule under its declared mode.
 A finding in any of these areas is always in scope and merge-blocking, no matter how contrived the
 triggering input is:
 
-- Catastrophic protections failing in any mode: recursive deletion of root or home, destructive
-  mutation of the protected Git metadata set, or destructive mutation of the canonical user policy
-  file.
+- A catastrophic protection regressing in any mode: a recursive deletion of root or home, a
+  destructive mutation of the protected Git metadata set, or a destructive mutation of the canonical
+  user policy file that `main` blocks and the change allows.
 - Strict or paranoid mode failing open where `SECURITY.md` documents fail-closed behavior.
 - False positives: a safe command that agents commonly run being blocked.
 - Documented resource bounds regressing, or new resource-exhaustion behavior such as catastrophic
@@ -93,10 +93,14 @@ triggering input is:
 - Secret redaction failing in audit or diagnostic output, or the tool itself becoming a harmful
   vector (`SECURITY.md`, "The Boundary: Bug or Vulnerability?").
 
-A reviewer-constructed input that defeats a catastrophic protection or a strict or paranoid
-fail-closed promise is must-fix, but its remedy is limited: refuse the shape fail-closed, so the
-parser reports it `invalid` and every level denies it, as `${ list; }` function substitutions are
-refused. Never make the parser read a constructed shape more faithfully. Quote, operand-grammar,
+A constructed input that defeats a catastrophic protection `main` already misses is not a
+regression. Without field evidence or a realistic agent task that produces it, it is a known gap:
+record it and do not fix it.
+
+A reviewer-constructed input that defeats a strict or paranoid fail-closed promise, or a
+catastrophic protection the change regresses, is must-fix, but its remedy is limited: refuse the
+shape fail-closed, so the parser reports it `invalid` and every level denies it, as `${ list; }`
+function substitutions are refused. Never make the parser read a constructed shape more faithfully. Quote, operand-grammar,
 subscript, or shell-version emulation is not a remedy for a constructed input, because each
 refinement exposes the next constructed shape. The refusal must be positionless: keyed to the
 presence of a construct (a quote, an escape, a substitution opener anywhere later in the command),

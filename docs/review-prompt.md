@@ -16,7 +16,7 @@ in case those files are not part of your bundle.
 - Strict and paranoid modes own adversarial input such as prompt injection and unverifiable
   execution. They fail closed on dynamic executables, unverifiable targets, malformed input, and
   metadata-only sensitive-path discovery, without emulating every shell or utility.
-- Catastrophic protections hold in every mode and configuration: recursive deletion of root or
+- No mode or configuration turns off the catastrophic protections: recursive deletion of root or
   home, destructive mutation of the protected Git metadata set, and destructive mutation of the
   canonical user policy file.
 
@@ -82,11 +82,13 @@ fixture for `tests/gate/behavioral-contract-cases.ts` is welcome.
   close a crafted standard-mode bypass.
 - Prefer, in order: a simpler ownership boundary, a bounded conservative check, a strict-only
   denial, a documented residual-risk entry, or an OS-level sandbox recommendation.
-- A reviewer-constructed input that defeats a catastrophic protection or a strict or paranoid
-  fail-closed promise is blocking, but propose only a fail-closed refusal of its shape: the parser
-  reports it `invalid`, so every level denies it. The refusal must key on the presence of a
-  construct, not on where quotes or escapes sit or whether they balance. Never propose quote,
-  operand-grammar, subscript, or shell-version fidelity for a constructed input.
+- A reviewer-constructed input that defeats a strict or paranoid fail-closed promise, or a
+  catastrophic protection the change regresses against `main`, is blocking. One that defeats a
+  catastrophic protection `main` already misses is a non-blocking known-gap note. For a blocking
+  one, propose only a fail-closed refusal of its shape: the parser reports it `invalid`, so every
+  level denies it. The refusal must key on the presence of a construct, not on where quotes or
+  escapes sit or whether they balance. Never propose quote, operand-grammar, subscript, or
+  shell-version fidelity for a constructed input.
 - Propose the smallest sufficient remediation for each finding. Proposals that add process
   automation, registries, attestations, or new validation frameworks are non-blocking suggestions
   for the maintainer, not remediations.
