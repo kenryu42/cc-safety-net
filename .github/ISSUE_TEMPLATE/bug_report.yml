@@ -8,7 +8,7 @@ body:
       value: |
         Follow the reporting rules in [CONTRIBUTING.md](https://github.com/kenryu42/cc-safety-net/blob/main/CONTRIBUTING.md#reporting-a-bug). If a coding agent is writing this issue, point it at that file.
 
-        A destructive command or a read of a protected secret file that was allowed? Report it here. Missed detections are public bugs, not vulnerabilities, see [SECURITY.md](https://github.com/kenryu42/cc-safety-net/blob/main/SECURITY.md).
+        A destructive command or a read of a protected secret file that was allowed? Report it here with the agent transcript showing the agent ran it during real work. Reports of commands written to probe CC Safety Net are closed as not planned. Missed detections are public bugs, not vulnerabilities, see [SECURITY.md](https://github.com/kenryu42/cc-safety-net/blob/main/SECURITY.md).
 
         A safe command that was blocked? Use the [False Positive](https://github.com/kenryu42/cc-safety-net/issues/new?template=false_positive.yml) form instead.
 
@@ -16,6 +16,6 @@ body:
     id: report
     attributes:
       label: Report
-      description: The problem, how to reproduce it, and the evidence (`explain` output, `doctor --json`, logs).
+      description: The problem, how to reproduce it, and the evidence (`explain` output, `doctor --json`, logs). For a missed detection, the agent transcript with the task and the exact command the agent ran.
     validations:
       required: true

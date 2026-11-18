@@ -66,6 +66,19 @@ safe one that was blocked, also include:
   (`npx cc-safety-net logs --id <id> --json`).
 - Why the decision should have been different.
 
+For a destructive command that was allowed or a protected secret file that was
+read, also show that a coding agent ran the command while doing real work:
+
+- The agent's transcript: the task you gave it and the tool call with the exact
+  command as the agent wrote it.
+- What the command deleted or read.
+
+A command you wrote yourself, or one an agent wrote because it was asked to
+find commands CC Safety Net misses, is not a bug report. That covers bypass
+research, evasion benchmarks, and GTFOBins-style surveys, at every safety level
+and for every target, including root and home. Such issues are closed as not
+planned.
+
 A missed destructive command or an allowed read of a protected secret file is a
 public bug, not a vulnerability, at every safety level. See
 [SECURITY.md](SECURITY.md) for the few issues that must be reported privately.

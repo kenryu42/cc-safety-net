@@ -33,13 +33,14 @@ Use normal GitHub issues for:
 
 - Any bypass or fail-open that lets a destructive command execute or a protected secret file be read — a coverage gap (a command the rules do not block yet), a parser, tokenizer, or wrapper-analysis edge case, or an analysis error that lets a command through instead of blocking it. Report the command _shape_, not a ready-to-paste weaponized prompt-injection payload.
 - A command shape that an invariant under "Security Model and Invariants" says is covered but is allowed. The invariants describe best-effort coverage, so a shape they miss is a coverage gap.
-- Results from bypass research, evasion benchmarks, or GTFOBins-style surveys. Test the latest release, include the exact commands, and check [docs/residual-risk.md](docs/residual-risk.md) first: the families listed there are documented limits of standard mode, not undisclosed bypasses. These reports need no embargo.
 - Redaction gaps: a credential form the redactor does not recognize, or a field it does not cover, when the value came from the tool call itself and appears only in the denial message returned to that caller or in the local audit log
 - False positives where a safe command is blocked
 - Missing convenience rules or new feature requests
 - Documentation bugs
 - Installation problems without a security impact
 - Questions about custom rules or configuration
+
+A missed-detection report needs evidence that a coding agent ran the command while doing real work: the agent's transcript with the task and the exact tool call, as [CONTRIBUTING.md](CONTRIBUTING.md#reporting-a-bug) describes. A command the reporter wrote, or one an agent wrote because it was asked to find commands CC Safety Net misses, is not a bug report. That covers bypass research, evasion benchmarks, and GTFOBins-style surveys, at every safety level and for every target, including root and home. Such issues are closed as not planned.
 
 Findings from Anthropic's OSS Scanner, including bypasses, are confidential under that service's terms. The maintainer fixes them privately and opens a public issue only after the fix is released.
 
