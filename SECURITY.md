@@ -31,8 +31,8 @@ Report these privately:
 
 Use normal GitHub issues for:
 
-- Any bypass or fail-open that lets a destructive command execute or a protected secret file be read — a coverage gap (a command the rules do not block yet), a parser, tokenizer, or wrapper-analysis edge case, or an analysis error that lets a command through instead of blocking it. Report the command _shape_, not a ready-to-paste weaponized prompt-injection payload.
-- A command shape that an invariant under "Security Model and Invariants" says is covered but is allowed. The invariants describe best-effort coverage, so a shape they miss is a coverage gap.
+- A destructive command or protected secret file read that a coding agent ran during real work and CC Safety Net allowed — a coverage gap (a command the rules do not block yet), a parser, tokenizer, or wrapper-analysis edge case, or an analysis error that let the command through instead of blocking it. The evidence the paragraph below the list describes is required.
+- A command an agent ran during real work that an invariant under "Security Model and Invariants" says is covered but was allowed. The invariants describe best-effort coverage, so a command they miss is a coverage gap.
 - Redaction gaps: a credential form the redactor does not recognize, or a field it does not cover, when the value came from the tool call itself and appears only in the denial message returned to that caller or in the local audit log
 - False positives where a safe command is blocked
 - Missing convenience rules or new feature requests
