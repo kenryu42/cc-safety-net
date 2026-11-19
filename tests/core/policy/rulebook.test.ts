@@ -318,6 +318,15 @@ describe('rulebook diagnostics', () => {
       ['block-uninstall', 'block-delete', 'block-read'],
     ],
     [
+      'options declared inside a rule match are pointed at the rulebook level',
+      {
+        ...V2_RULEBOOK,
+        rules: [{ ...V2_RULE, match: { ...V2_RULE.match, options_with_values: ['-n'] } }],
+      },
+      ['rules[0].match.options_with_values: belongs at the rulebook level, keyed by command'],
+      ['block-uninstall'],
+    ],
+    [
       'a version 1 rulebook cannot declare options, because its rules guess instead',
       { ...VALID_RULEBOOK, options_with_values: { terraform: ['-chdir'] } },
       ['options_with_values: not supported in rulebook_version 1'],

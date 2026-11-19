@@ -217,6 +217,14 @@ function v2MatchIssues(match: unknown, path: readonly PropertyKey[]): Issue[] {
     ...(match.exclude_args === undefined
       ? []
       : tokenArrayIssues(match.exclude_args, [...path, 'exclude_args'], TOKEN_LIST_ERROR, true)),
+    ...(match.options_with_values === undefined
+      ? []
+      : [
+          custom(
+            [...path, 'options_with_values'],
+            'belongs at the rulebook level, keyed by command',
+          ),
+        ]),
   ];
 }
 
