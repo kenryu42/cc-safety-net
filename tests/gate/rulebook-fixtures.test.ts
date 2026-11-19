@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { Rulebook } from '@/core/policy/rulebook';
 import { evaluateRulebookFixtures } from '@/gate/rulebook-fixtures';
 
@@ -114,6 +117,24 @@ describe('the rulebook fixture evaluator', () => {
         tests: [fixture],
       }),
     ).toEqual([]);
+  });
+
+  test('judges a fixture on its command line and reads no file it names', () => {
+    const script = join(mkdtempSync(join(tmpdir(), 'ccsn-fixture-script-')), 'cleanup.sh');
+    writeFileSync(script, 'docker system prune\n');
+    try {
+      expect(
+        evaluateRulebookFixtures({
+          ...RULEBOOK,
+          tests: [
+            { command: `bash ${script}`, expect: 'allowed' },
+            { command: `git -C ${dirname(script)} status`, expect: 'allowed' },
+          ],
+        }),
+      ).toEqual([]);
+    } finally {
+      rmSync(dirname(script), { recursive: true });
+    }
   });
 
   test('leaves a version 1 rulebook shape-validated only', () => {

@@ -1,4 +1,4 @@
-import { createTestEnvironment } from '@/core/environment';
+import { createInertEnvironment } from '@/core/environment';
 import { getCCSafetyNetEnvModes } from '@/core/policy/env';
 import { declaredOptionsWithValues, type Rulebook } from '@/core/policy/rulebook';
 import { createPolicySnapshot } from '@/core/policy/snapshot';
@@ -13,7 +13,7 @@ export function evaluateRulebookFixtures(rulebook: Rulebook): string[] {
   }
   const analysis: AnalyzeInput = {
     effectiveCapabilities: getCCSafetyNetEnvModes({}, new Map()).capabilities,
-    environment: createTestEnvironment(),
+    environment: createInertEnvironment(),
     protectedGitMetadata: null,
     policySnapshot: createPolicySnapshot({
       rules: rulebook.rules.map((rule) => ({

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from './git/metadata';
@@ -25,6 +25,8 @@ export type Environment = Readonly<{
   tmpdir: string;
   darwinUserTempDir: () => string | null;
   paths: PathResolver;
+
+  readShellScriptFile: (path: string) => { text: string; bytes: number } | null;
 
   gitMetadata: (cwd: string) => ProtectedGitMetadata | null;
 
@@ -91,8 +93,10 @@ function readDarwinUserTempDir(): string | null {
   return result.status === 0 && value?.startsWith('/') ? value : null;
 }
 
+/** @internal */
 export type FakeEntry = 'present' | 'directory' | { symlink: string };
 
+/** @internal */
 export function createTestEnvironment(
   overrides: Partial<Environment> & { entries?: ReadonlyMap<string, FakeEntry> } = {},
 ): Environment {
@@ -120,6 +124,36 @@ export function createTestEnvironment(
   );
 }
 
+export function createInertEnvironment(): Environment {
+  return {
+    env: new Map(),
+    home: '/home/user',
+    tmpdir: '/tmp',
+    darwinUserTempDir: () => null,
+    paths: { realpath: () => null, entryKind: () => 'missing', isDirectory: () => false },
+    readShellScriptFile: () => null,
+    gitMetadata: () => null,
+    worktreeFacts: () => null,
+    isGitDirectory: () => false,
+    gitDirectoryRedirects: () => false,
+  };
+}
+
+const SCRIPT_FILE_MAX_BYTES = 256 * 1024;
+
+function readShellScriptFile(path: string) {
+  try {
+    const stats = statSync(path, { throwIfNoEntry: false });
+    if (!stats?.isFile() || stats.size > SCRIPT_FILE_MAX_BYTES) return null;
+    const content = readFileSync(path);
+    return content.length > SCRIPT_FILE_MAX_BYTES || content.includes(0)
+      ? null
+      : { text: content.toString('utf8').replaceAll('\r\n', '\n'), bytes: content.length };
+  } catch {
+    return null;
+  }
+}
+
 function fakeRealpath(
   entries: ReadonlyMap<string, FakeEntry>,
   path: string,
@@ -134,7 +168,11 @@ function fakeRealpath(
 function withGitFacts(
   base: Omit<
     Environment,
-    'gitMetadata' | 'worktreeFacts' | 'isGitDirectory' | 'gitDirectoryRedirects'
+    | 'readShellScriptFile'
+    | 'gitMetadata'
+    | 'worktreeFacts'
+    | 'isGitDirectory'
+    | 'gitDirectoryRedirects'
   >,
   overrides: Partial<Environment> = {},
 ): Environment {
@@ -143,6 +181,7 @@ function withGitFacts(
   const redirects = new Map<string, boolean>();
   const environment: Environment = {
     ...base,
+    readShellScriptFile,
     gitMetadata: (cwd) =>
       memoized(metadata, cwd, () => resolveProtectedGitMetadata(cwd, environment)),
     worktreeFacts: (cwd) => memoized(facts, cwd, () => resolveWorktreeFacts(cwd)),
