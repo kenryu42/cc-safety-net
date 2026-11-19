@@ -1,4 +1,4 @@
-import type { Rulebook } from '@/core/policy/rulebook';
+import { declaredOptionsWithValues, type Rulebook } from '@/core/policy/rulebook';
 import { checkPolicyRuleMatch } from '@/core/rules/custom';
 import type { PolicyRule } from '@/core/rules/types';
 import type { CommandProgram } from '@/core/shell/model';
@@ -17,7 +17,7 @@ export function evaluateRulebookFixtures(rulebook: Rulebook): string[] {
     command: rule.command,
     block_args: [],
     match: rule.match,
-    options_with_values: rulebook.options_with_values?.[rule.command],
+    options_with_values: declaredOptionsWithValues(rulebook, rule.command),
     reason: rule.reason,
     intent: rule.intent,
   }));

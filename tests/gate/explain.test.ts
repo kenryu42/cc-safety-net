@@ -184,6 +184,39 @@ describe('a version 2 rulebook declares which options take a value', () => {
     },
   );
 
+  test('a rule command named like an object property reads no declared options', () => {
+    const files: TreeSpec = {
+      'project/.cc-safety-net/rules/rule.json': JSON.stringify({ version: 1, rules: ['tools'] }),
+      'project/.cc-safety-net/rules/tools/rulebook.json': JSON.stringify({
+        rulebook_version: 2,
+        name: 'tools',
+        version: '1.0.0',
+        allowed_commands: ['constructor', 'kubectl'],
+        options_with_values: { kubectl: ['-n'] },
+        rules: [
+          {
+            name: 'block-wipe',
+            command: 'constructor',
+            match: { command_path: ['wipe'] },
+            reason: 'Wiping needs a human.',
+          },
+          {
+            name: 'block-delete',
+            command: 'kubectl',
+            match: { command_path: ['delete'] },
+            reason: 'Deleting cluster objects needs a human.',
+          },
+        ],
+      }),
+    };
+    expect(compareSides(fixture(files), 'constructor --force wipe').ruleId).toBe(
+      'custom.tools/block-wipe',
+    );
+    expect(compareSides(fixture(files), 'kubectl -n payments delete pod api').ruleId).toBe(
+      'custom.tools/block-delete',
+    );
+  });
+
   test('a rulebook that declares nothing keeps missing a separate option value', () => {
     expect(ruleIdFor('kubectl -n payments delete pod api')).toBeUndefined();
     expect(ruleIdFor('kubectl delete pod api')).toBe('custom.cluster/block-delete');

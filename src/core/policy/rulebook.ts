@@ -50,6 +50,14 @@ export type Rulebook =
       options_with_values?: Record<string, string[]>;
     });
 
+export function declaredOptionsWithValues(
+  rulebook: Extract<Rulebook, { rulebook_version: 2 }>,
+  command: string,
+) {
+  const declared = rulebook.options_with_values;
+  return declared && Object.hasOwn(declared, command) ? declared[command] : undefined;
+}
+
 export function assertValidRulebook(rulebook: unknown): Rulebook {
   const result = validateRulebook(rulebook);
   if (result.errors.length > 0) {
