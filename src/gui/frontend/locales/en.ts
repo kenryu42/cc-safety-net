@@ -268,6 +268,8 @@ export const en = {
     `Shorten by ${plural(characters, 'character', 'characters')} to save.`,
   blockMessageTooLong: (limit: number) =>
     `A block message is longer than ${count(limit)} characters.`,
+  ruleMessageAskNote: (strict: string) =>
+    `Below the ${strict} preset, an agent that can ask for approval shows this rule as a prompt with its own closing line.`,
   ruleMessageRemove: 'Remove message',
   done: 'Done',
   editBlockMessage: 'Edit its message',

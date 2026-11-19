@@ -382,7 +382,7 @@ const messageEditorHtml = (target: MessageTarget, ruleOff: boolean) => {
     </div>
     <div class="message-preview"><span class="field-label">${escapeHtml(t.ruleMessagePreview)}</span><pre data-message-preview></pre></div>
     <div class="message-foot">
-      <small>${escapeHtml(ruleOff ? t.ruleMessageRuleOff : t.ruleMessageFootnote)}</small>
+      <small>${escapeHtml(ruleOff ? t.ruleMessageRuleOff : t.ruleMessageFootnote)}${target.rule.id === 'raw-text.dangerous-command' ? ` ${escapeHtml(t.ruleMessageAskNote(t.presetStrict))}` : ''}</small>
       <div><button type="button" class="danger-quiet" data-message-remove>${escapeHtml(t.ruleMessageRemove)}</button><button type="button" data-message-toggle="${id}">${escapeHtml(t.done)}</button></div>
     </div>
   </div>`;
@@ -687,9 +687,25 @@ const renderRuleSummaries = () => {
 };
 
 const renderRules = () => {
+  const focused = document.activeElement;
+  const typing =
+    focused instanceof HTMLTextAreaElement && 'messageReason' in focused.dataset
+      ? {
+          id: focused.id,
+          value: focused.value,
+          start: focused.selectionStart,
+          end: focused.selectionEnd,
+        }
+      : null;
   renderDestructiveCommands();
   renderSecretPatterns();
   renderRuleSummaries();
+  const redrawn = typing && document.getElementById(typing.id);
+  if (typing && redrawn instanceof HTMLTextAreaElement) {
+    redrawn.value = typing.value;
+    redrawn.focus();
+    redrawn.setSelectionRange(typing.start, typing.end);
+  }
   document.querySelectorAll<HTMLElement>('[data-message-editor]').forEach((editor) => {
     syncMessageEditor(editor.closest('[data-rule-row]') as HTMLElement);
   });

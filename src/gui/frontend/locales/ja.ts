@@ -269,6 +269,8 @@ export const ja: Messages = {
     `保存するには ${count(characters)} 文字短くしてください。`,
   blockMessageTooLong: (limit: number) =>
     `ブロックメッセージが ${count(limit)} 文字を超えています。`,
+  ruleMessageAskNote: (strict: string) =>
+    `${strict} プリセット未満では、承認を求められるエージェントはこのルールを確認プロンプトとして表示し、最後の一文は固定になります。`,
   ruleMessageRemove: 'メッセージを削除',
   done: '完了',
   editBlockMessage: 'メッセージを編集',

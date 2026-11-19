@@ -256,6 +256,8 @@ export const zhCN: Messages = {
   ruleMessageRuleOff: '此规则已关闭，因此不会显示该消息。',
   shortenMessage: (characters: number) => `需再缩短 ${count(characters)} 个字符才能保存。`,
   blockMessageTooLong: (limit: number) => `有阻止消息超过 ${count(limit)} 个字符。`,
+  ruleMessageAskNote: (strict: string) =>
+    `低于${strict}预设时，可请求批准的智能体会将此规则显示为确认提示，结尾语句固定。`,
   ruleMessageRemove: '移除消息',
   done: '完成',
   editBlockMessage: '编辑其消息',
