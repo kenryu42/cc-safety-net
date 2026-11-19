@@ -37,6 +37,15 @@ export function isRulebookWithinAcceptanceLimits(rulebook: Record<string, unknow
     return true;
   };
 
+  const acceptTokens = (tokens: unknown) => {
+    if (!Array.isArray(tokens)) return true;
+    if (tokens.length > RULEBOOK_LIMITS.maxBlockArgsPerRule || tokens.length > remainingBlockArgs) {
+      return false;
+    }
+    remainingBlockArgs -= tokens.length;
+    return tokens.every((token) => acceptString(token));
+  };
+
   if (
     !acceptString(rulebook.name) ||
     !acceptString(rulebook.version) ||
@@ -71,25 +80,25 @@ export function isRulebookWithinAcceptanceLimits(rulebook: Record<string, unknow
         candidate.match && typeof candidate.match === 'object'
           ? (candidate.match as Record<string, unknown>)
           : {};
-      for (const tokens of [
-        candidate.block_args,
-        match.command_path,
-        match.any_args,
-        match.exclude_args,
-      ]) {
-        if (!Array.isArray(tokens)) continue;
-        if (
-          tokens.length > RULEBOOK_LIMITS.maxBlockArgsPerRule ||
-          tokens.length > remainingBlockArgs
-        ) {
-          return false;
-        }
-        remainingBlockArgs -= tokens.length;
-        for (const token of tokens) {
-          if (!acceptString(token)) return false;
-        }
+      if (
+        ![candidate.block_args, match.command_path, match.any_args, match.exclude_args].every(
+          acceptTokens,
+        )
+      ) {
+        return false;
       }
     }
+  }
+
+  const optionsWithValues =
+    rulebook.options_with_values && typeof rulebook.options_with_values === 'object'
+      ? Object.entries(rulebook.options_with_values)
+      : [];
+  if (
+    optionsWithValues.length > RULEBOOK_LIMITS.maxAllowedCommands ||
+    !optionsWithValues.every(([command, options]) => acceptString(command) && acceptTokens(options))
+  ) {
+    return false;
   }
 
   if (Array.isArray(rulebook.tests)) {

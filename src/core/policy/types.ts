@@ -12,6 +12,8 @@ export interface CustomRule {
 
   match?: CustomRuleMatch;
 
+  options_with_values?: readonly string[];
+
   reason: string;
 
   intent?: BlockIntent;

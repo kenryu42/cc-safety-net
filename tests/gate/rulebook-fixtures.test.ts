@@ -86,6 +86,24 @@ describe('the rulebook fixture evaluator', () => {
     ]);
   });
 
+  test('reads a fixture with the options the rulebook declares as taking a value', () => {
+    const fixture = {
+      command: 'kubectl --context prod config use-context staging',
+      expect: 'blocked' as const,
+      rule: 'block-context-use',
+    };
+    expect(evaluateRulebookFixtures({ ...RULEBOOK, tests: [fixture] })).toEqual([
+      'tests[0]: expected "block-context-use" to block "kubectl --context prod config use-context staging" but no rule matched',
+    ]);
+    expect(
+      evaluateRulebookFixtures({
+        ...RULEBOOK,
+        options_with_values: { kubectl: ['--context'] },
+        tests: [fixture],
+      }),
+    ).toEqual([]);
+  });
+
   test('leaves a version 1 rulebook shape-validated only', () => {
     expect(evaluateRulebookFixtures(VERSION_ONE_RULEBOOK)).toEqual([]);
   });

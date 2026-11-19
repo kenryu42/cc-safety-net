@@ -17,6 +17,7 @@ export function evaluateRulebookFixtures(rulebook: Rulebook): string[] {
     command: rule.command,
     block_args: [],
     match: rule.match,
+    options_with_values: rulebook.options_with_values?.[rule.command],
     reason: rule.reason,
     intent: rule.intent,
   }));
