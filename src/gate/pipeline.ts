@@ -43,6 +43,7 @@ import { createToolInvocation, type ToolInvocation } from '@/gate/invocation';
 import {
   findSensitiveTargetInSemanticFacts,
   REASON_SECRET_PROTECTION,
+  SECRET_PROTECTION_INTENT,
 } from '@/gate/secret/secret-protection';
 import type { CommandTraceContext } from '@/gate/trace';
 
@@ -273,7 +274,7 @@ export function evaluateGuard(
       decision: {
         kind: 'deny',
         reason: message?.reason ?? REASON_SECRET_PROTECTION,
-        intent: message?.intent ?? 'hard_stop',
+        intent: message?.intent ?? SECRET_PROTECTION_INTENT,
         ruleId: secretTarget.ruleId,
         evidence: { command: displayCommand, segment: secretTarget.target },
       },

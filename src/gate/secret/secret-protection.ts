@@ -46,6 +46,7 @@ import {
 } from '@/gate/guards/semantic-facts';
 
 export const REASON_SECRET_PROTECTION = 'Access to a sensitive path is not allowed.';
+export const SECRET_PROTECTION_INTENT = 'hard_stop';
 
 const NON_PATH_OPERAND_COMMANDS = new Set(['echo', 'printf']);
 

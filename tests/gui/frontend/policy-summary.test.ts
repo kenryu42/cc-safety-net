@@ -125,6 +125,38 @@ describe('the unsaved change summary', () => {
   });
 });
 
+describe('the unsaved change summary for rule messages', () => {
+  const labels = { 'git.push-force': 'Git push force', 'secret.basename.env': '.env' };
+
+  test('names a rule whose message was set, reworded, or given another next step', () => {
+    const before = clonePolicy(saved);
+    before.destructive_command_protection.messages = {
+      'git.push-force': { reason: 'Use the helper.' },
+    };
+    const reworded = clonePolicy(before);
+    reworded.destructive_command_protection.messages = {
+      'git.push-force': { reason: 'Use the helper.', intent: 'scope_down' },
+    };
+    reworded.secret_protection.messages = { 'secret.basename.env': { reason: 'Run link-env.' } };
+
+    expect(policyChanges(before, reworded, labels, en)).toEqual([
+      'Git push force: custom message',
+      '.env: custom message',
+    ]);
+  });
+
+  test('says a removed message goes back to the built-in one', () => {
+    const before = clonePolicy(saved);
+    before.destructive_command_protection.messages = {
+      'git.push-force': { reason: 'Use the helper.' },
+    };
+
+    expect(policyChanges(before, clonePolicy(saved), labels, en)).toEqual([
+      'Git push force: built-in message',
+    ]);
+  });
+});
+
 describe('the protections address', () => {
   test('is the bare view when nothing is filtered', () => {
     expect(policyHash({ query: '', changedOnly: false })).toBe('policy');

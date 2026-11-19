@@ -1,8 +1,10 @@
+import type { BlockIntent } from '@/core/decision';
 import type { SafetyLevelCapability } from '@/core/policy/safety-level';
 
 export type SafetyLevel = 'standard' | 'strict' | 'paranoid';
 export type RuleOverrides = Record<string, 'on' | 'off'>;
-type RuleMessages = Record<string, { reason: string; intent?: string }>;
+export type RuleMessage = { reason: string; intent?: BlockIntent };
+export type RuleMessages = Record<string, RuleMessage>;
 export type Policy = {
   version: number;
   safety: {

@@ -81,6 +81,7 @@ type PolicyBody = {
   projectPolicy?: { path: string; weakenings: string[] };
   destructiveCommandRules: unknown[];
   secretPatterns: unknown[];
+  secretDenial: { reason: string; intent: string };
   version: string;
   preview: { selectedPreset: string; counts: Record<string, number> } | null;
 };
@@ -273,6 +274,10 @@ describe('the policy GUI server', () => {
       expect(body.version).toBeString();
       expect(body.destructiveCommandRules.length).toBeGreaterThan(0);
       expect(body.secretPatterns.length).toBeGreaterThan(0);
+      expect(body.secretDenial).toStrictEqual({
+        reason: 'Access to a sensitive path is not allowed.',
+        intent: 'hard_stop',
+      });
     }
   });
 

@@ -73,7 +73,7 @@ const ruleLink = (ruleId: string) =>
   ruleId.startsWith('custom.')
     ? `<a class="rule-id" href="#rules?focus=${encodeURIComponent(ruleId)}" title="${escapeHtml(t.showCustomRule)}">${escapeHtml(ruleId)}</a>`
     : knownRuleIds().has(ruleId)
-      ? `<a class="rule-id" href="#policy?q=${encodeURIComponent(ruleId)}" title="${escapeHtml(t.showProtection)}">${escapeHtml(ruleId)}</a>`
+      ? `<a class="rule-id" href="#policy?q=${encodeURIComponent(ruleId)}" title="${escapeHtml(t.showProtection)}">${escapeHtml(ruleId)}</a> · <a href="#policy?q=${encodeURIComponent(ruleId)}&message=1">${escapeHtml(t.customizeMessage)}</a>`
       : `<code class="rule-id">${escapeHtml(ruleId)}</code>`;
 
 const entryCommand = (entry: FeedEntry) => entry.segment || entry.command || '';
