@@ -1,4 +1,4 @@
-import { BLOCK_INTENTS, type BlockIntent } from '@/core/decision';
+import { BLOCK_INTENTS } from '@/core/decision';
 import {
   bindDelegatedPolicyFilesystemTarget,
   PolicyFilesystemError,
@@ -9,9 +9,9 @@ import { COMMAND_PATTERN, MAX_REASON_LENGTH } from '@/core/rules/constants';
 import { RULE_SOURCE_LIMIT, RULE_SOURCE_LIMIT_ERROR } from './resource-limits';
 import { getRulebookSourceSyntaxError } from './source-syntax';
 import { isReservedTransparentWrapper } from './transparent-wrappers';
-import type { CustomRule } from './types';
+import type { CustomRule, RuleMessage } from './types';
 
-export type RuleOverride = 'off' | { reason: string; intent?: BlockIntent };
+export type RuleOverride = 'off' | RuleMessage;
 
 export type RulesConfig = {
   version: 1;
@@ -255,13 +255,20 @@ function ruleOverrideIssues(overrides: unknown): Issue[] {
     const override = overrides[key];
     if (override === 'off') return [];
     if (!isRecord(override)) return [typed(['overrides', key], 'must be "off" or an object')];
-    return [
-      ...overrideReasonIssues(override.reason, ['overrides', key, 'reason']),
-      ...(override.intent === undefined || isBlockIntent(override.intent)
-        ? []
-        : [typed(['overrides', key, 'intent'], INTENT_ERROR)]),
-    ];
+    return ruleMessageIssues(override, ['overrides', key]);
   });
+}
+
+export function ruleMessageIssues(
+  message: Record<string, unknown>,
+  path: readonly PropertyKey[],
+): Issue[] {
+  return [
+    ...overrideReasonIssues(message.reason, [...path, 'reason']),
+    ...(message.intent === undefined || isBlockIntent(message.intent)
+      ? []
+      : [typed([...path, 'intent'], INTENT_ERROR)]),
+  ];
 }
 
 function overrideReasonIssues(reason: unknown, path: readonly PropertyKey[]): Issue[] {

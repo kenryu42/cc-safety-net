@@ -44,10 +44,12 @@ export function analyzeCommandWithProgram(
     program,
   );
   if (!result) return null;
+  const message = options.policySnapshot.policy.ruleMessages?.[result.ruleId];
+  const reason = message?.reason ?? result.reason;
   return {
     kind: 'deny',
-    reason: result.scriptLocation ? `${result.scriptLocation}: ${result.reason}` : result.reason,
-    intent: result.intent ?? 'manual_only',
+    reason: result.scriptLocation ? `${result.scriptLocation}: ${reason}` : reason,
+    intent: message?.intent ?? result.intent ?? 'manual_only',
     ruleId: result.ruleId,
     evidence: { command, segment: result.segment },
   };

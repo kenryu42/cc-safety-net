@@ -38,6 +38,7 @@ export function loadPolicySnapshot(
       denyPaths: userPolicy.secretProtection.denyPaths,
       allowPaths: userPolicy.secretProtection.allowPaths ?? [],
     },
+    ruleMessages: userPolicy.ruleMessages,
   };
 
   const overrides = {

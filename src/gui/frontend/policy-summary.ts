@@ -1,7 +1,7 @@
 import type { SafetyLevelCapability } from '@/core/policy/safety-level';
 import { viewHash } from './format';
 import type { Messages } from './locales/en';
-import type { Policy, RuleOverrides, SafetyLevel } from './project-draft';
+import type { Policy, RuleMessages, RuleOverrides, SafetyLevel } from './project-draft';
 import type { CapabilitySources, DestructiveRule, RuleState } from './types';
 
 export const safetyLevels = (t: Messages): Record<SafetyLevel, [string, string]> => ({
@@ -90,6 +90,18 @@ export const policyChanges = (
           after[id] === undefined ? t.stateDefault : onOff(after[id] === 'on'),
         ),
       );
+  const messageChanges = (before: RuleMessages = {}, after: RuleMessages = {}) =>
+    [...new Set([...Object.keys(before), ...Object.keys(after)])]
+      .filter(
+        (id) =>
+          before[id]?.reason !== after[id]?.reason || before[id]?.intent !== after[id]?.intent,
+      )
+      .map((id) =>
+        t.settingChange(
+          labels[id] ?? id,
+          after[id] ? t.customMessageChange : t.builtInMessageChange,
+        ),
+      );
   const pathChanges = (name: string, before: string[], after: string[]) => {
     const added = after.filter((path) => !before.includes(path)).length;
     const removed = before.filter((path) => !after.includes(path)).length;
@@ -131,6 +143,11 @@ export const policyChanges = (
       draft.destructive_command_protection.overrides,
     ),
     ...overrideChanges(saved.secret_protection.overrides, draft.secret_protection.overrides),
+    ...messageChanges(
+      saved.destructive_command_protection.messages,
+      draft.destructive_command_protection.messages,
+    ),
+    ...messageChanges(saved.secret_protection.messages, draft.secret_protection.messages),
     pathChanges(
       t.allowPathsChange,
       saved.destructive_command_protection.allow_paths,

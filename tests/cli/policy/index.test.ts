@@ -101,6 +101,123 @@ describe('policy check', () => {
     );
   }, 60_000);
 
+  test('--global lists each rule message a proposal adds', async () => {
+    const outcome = await runPolicy(['check', 'prop.json', '--global'], {
+      [PROPOSAL_FILE]: json({
+        version: 1,
+        destructive_command_protection: {
+          messages: {
+            'git.push-force': { reason: 'Use --force-with-lease.', intent: 'use_alternative' },
+          },
+        },
+        secret_protection: {
+          messages: { 'secret.pattern.env-variant': { reason: 'Run `link-env <worktree>`.' } },
+        },
+      }),
+    });
+    expect(outcome.stderr).toBe('');
+    expect(outcome.stdout).toContain(
+      [
+        'Changes (2):',
+        '  destructive_command_protection.messages.git.push-force: (unset) -> {"reason":"Use --force-with-lease.","intent":"use_alternative"}',
+        '  secret_protection.messages.secret.pattern.env-variant: (unset) -> {"reason":"Run `link-env <worktree>`."}',
+        '',
+      ].join('\n'),
+    );
+    expect(outcome.exitCode).toBe(0);
+  }, 60_000);
+
+  test('moving an intent out of the reason text into the intent field is still a change', async () => {
+    const outcome = await runPolicy(['check', 'prop.json', '--global'], {
+      [USER_POLICY]: json({
+        version: 1,
+        secret_protection: {
+          messages: { 'secret.basename.env': { reason: 'Use the helper. (use_alternative)' } },
+        },
+      }),
+      [PROPOSAL_FILE]: json({
+        version: 1,
+        secret_protection: {
+          messages: {
+            'secret.basename.env': { reason: 'Use the helper.', intent: 'use_alternative' },
+          },
+        },
+      }),
+    });
+    expect(outcome.stdout).toContain(
+      [
+        'Changes (1):',
+        '  secret_protection.messages.secret.basename.env: {"reason":"Use the helper. (use_alternative)"} -> {"reason":"Use the helper.","intent":"use_alternative"}',
+        '',
+      ].join('\n'),
+    );
+  }, 60_000);
+
+  test('a malformed rule message is refused and names what is wrong with it', async () => {
+    const outcome = await runPolicy(['check', 'prop.json', '--global'], {
+      [PROPOSAL_FILE]: json({
+        version: 1,
+        destructive_command_protection: {
+          messages: {
+            'secret.basename.env': { reason: 'A secret rule under the destructive section.' },
+            'git.push-force': { intent: 'use_alternative' },
+            'git.reset-hard': { reason: 'Stash first.', intent: 'nope' },
+            'git.clean-force': 'Preview with git clean -n.',
+            'git.stash-drop': { reason: 'Keep the stash.', intnet: 'hard_stop' },
+            'git.stash-clear': { reason: 'x'.repeat(257) },
+          },
+        },
+        secret_protection: { messages: [] },
+      }),
+    });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stdout).toBe('');
+    expect(outcome.stderr.split('\n')).toEqual([
+      'prop.json: unknown destructive command rule id "secret.basename.env"',
+      'prop.json: destructive_command_protection.messages.git.push-force.reason required non-empty string',
+      'prop.json: destructive_command_protection.messages.git.reset-hard.intent must be one of hard_stop, use_alternative, scope_down, manual_only, stop_and_explain',
+      'prop.json: destructive_command_protection.messages.git.clean-force must be an object with a reason',
+      'prop.json: destructive_command_protection.messages.git.stash-drop.unknown field "intnet"',
+      'prop.json: destructive_command_protection.messages.git.stash-clear.reason must be at most 256 characters',
+      'prop.json: secret_protection.messages must be an object if provided',
+      '',
+    ]);
+  }, 60_000);
+
+  test('a reason written under overrides is pointed at the messages map', async () => {
+    const outcome = await runPolicy(['check', 'prop.json', '--global'], {
+      [PROPOSAL_FILE]: json({
+        version: 1,
+        secret_protection: {
+          overrides: { 'secret.pattern.env-variant': { reason: 'Run `link-env <worktree>`.' } },
+        },
+      }),
+    });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toBe(
+      'prop.json: secret_protection.overrides.secret.pattern.env-variant must be "on" or "off"; a custom reason belongs in secret_protection.messages\n',
+    );
+  }, 60_000);
+
+  test('a project proposal carrying rule messages is refused, because they are user scope only', async () => {
+    const outcome = await runPolicy(['check', 'prop.json'], {
+      [PROPOSAL_FILE]: json({
+        version: 1,
+        destructive_command_protection: { messages: { 'git.push-force': { reason: 'Push it.' } } },
+        secret_protection: { messages: {} },
+      }),
+    });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stdout).toBe('');
+    expect(outcome.stderr).toBe(
+      [
+        'prop.json: destructive_command_protection.messages is user scope only; remove it from a project proposal',
+        'prop.json: secret_protection.messages is user scope only; remove it from a project proposal',
+        '',
+      ].join('\n'),
+    );
+  }, 60_000);
+
   test('a file that does not exist is reported by path', async () => {
     const outcome = await runPolicy(['check', 'missing.json']);
     expect(outcome.exitCode).toBe(1);
@@ -247,6 +364,28 @@ describe('policy apply at a terminal', () => {
     expect(JSON.parse(applied?.content ?? '')).toMatchObject({ safety: { level: 'strict' } });
     if (process.platform === 'win32') return;
     expect(lstatSync(join(outcome.home, '.cc-safety-net', 'policy.json')).mode & 0o777).toBe(0o600);
+  }, 30_000);
+
+  test('--global writes the rule messages a proposal carries and no empty map beside them', async () => {
+    const messages = {
+      'secret.pattern.env-variant': {
+        reason: 'Run `link-env <worktree>`.',
+        intent: 'use_alternative',
+      },
+    };
+    const outcome = await applyBothWays(['--global'], (input) => input.write('y\n'), undefined, {
+      [PROPOSAL_FILE]: json({ version: 1, secret_protection: { messages } }),
+    });
+    expect(outcome.code).toBe(0);
+    const applied = JSON.parse(
+      outcome.tree.find((entry) => entry.path === USER_POLICY)?.content ?? '',
+    );
+    expect(applied.secret_protection.messages).toEqual(messages);
+    expect(Object.keys(applied.destructive_command_protection)).toEqual([
+      'enabled',
+      'overrides',
+      'allow_paths',
+    ]);
   }, 30_000);
 
   test('a typed no cancels and leaves the scope untouched', async () => {

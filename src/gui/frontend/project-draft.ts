@@ -1,7 +1,10 @@
+import type { BlockIntent } from '@/core/decision';
 import type { SafetyLevelCapability } from '@/core/policy/safety-level';
 
 export type SafetyLevel = 'standard' | 'strict' | 'paranoid';
 export type RuleOverrides = Record<string, 'on' | 'off'>;
+export type RuleMessage = { reason: string; intent?: BlockIntent };
+export type RuleMessages = Record<string, RuleMessage>;
 export type Policy = {
   version: number;
   safety: {
@@ -12,11 +15,13 @@ export type Policy = {
   destructive_command_protection: {
     enabled: boolean;
     overrides: RuleOverrides;
+    messages?: RuleMessages;
     allow_paths: string[];
   };
   secret_protection: {
     enabled: boolean;
     overrides: RuleOverrides;
+    messages?: RuleMessages;
     deny_paths: string[];
     allow_paths: string[];
   };

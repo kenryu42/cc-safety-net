@@ -56,6 +56,7 @@ rejected part ignored. Both produce the `degraded` state.
 | Unknown or invalid field in the project `.cc-safety-net/policy.json` | warning | The salvaged project policy: its recognized valid fields still layer over the user policy, the rest is dropped |
 | Empty or malformed JSON in the project `.cc-safety-net/policy.json` | warning | The user policy alone; the project file contributes nothing |
 | An `audit` section in the project `.cc-safety-net/policy.json` | warning | The user policy's audit settings; audit is user scope only and the project section is ignored |
+| A `messages` map in a section of the project `.cc-safety-net/policy.json` | warning | The user policy's rule messages; rule messages are user scope only and the project map is ignored |
 | Unknown rule override key | warning | Every loaded rule, with only the unknown override ignored |
 | Project override naming a user-scoped rule | warning | The user-scoped rule as configured; user policy stays authoritative |
 | Duplicate active rulebook name | warning | The rulebook that claimed the name first; the later one contributes nothing |

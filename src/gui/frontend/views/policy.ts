@@ -1,4 +1,6 @@
+import { BLOCK_INTENTS } from '@/core/decision';
 import { SAFETY_LEVEL_CAPABILITIES, type SafetyLevelCapability } from '@/core/policy/safety-level';
+import { MAX_REASON_LENGTH } from '@/core/rules/constants';
 import {
   clonePolicy,
   collectProjectProposal,
@@ -21,6 +23,12 @@ import {
   safetyLevels,
   tierForRule,
 } from '../policy-summary';
+import {
+  blockMessagePreview,
+  intentLabels,
+  messagesWithinLimit,
+  withRuleMessage,
+} from '../rule-messages';
 import type { DestructiveRule, PolicyState, Preview, SecretRule } from '../types';
 import {
   confirmDialog,
@@ -72,6 +80,8 @@ let markedFields = new Set<string>();
 let busy = false;
 let showChangedOnly = false;
 const groupExpanded = new Map<string, boolean>();
+const openMessageEditors = new Set<string>();
+const builtInReasons = new Map<string, string>();
 
 const searchQuery = () => qs<HTMLInputElement>('policy-search').value.trim().toLowerCase();
 const filtering = () => searchQuery() !== '' || showChangedOnly;
@@ -104,17 +114,36 @@ const collectFormPolicy = () => ({
     ),
   },
   workflow: draftPolicy.workflow,
-  destructive_command_protection: draftPolicy.destructive_command_protection,
+  destructive_command_protection: {
+    enabled: draftPolicy.destructive_command_protection.enabled,
+    overrides: draftPolicy.destructive_command_protection.overrides,
+    messages: draftPolicy.destructive_command_protection.messages,
+    allow_paths: draftPolicy.destructive_command_protection.allow_paths,
+  },
   secret_protection: {
     enabled: draftPolicy.secret_protection.enabled,
     overrides: draftPolicy.secret_protection.overrides,
+    messages: draftPolicy.secret_protection.messages,
     deny_paths: draftPolicy.secret_protection.deny_paths,
     allow_paths: draftPolicy.secret_protection.allow_paths,
   },
   audit: draftPolicy.audit,
 });
 
-const effectivePreviewPolicy = (policy: ReturnType<typeof collectFormPolicy>) => {
+const withoutOverlongMessages = (collected: ReturnType<typeof collectFormPolicy>) => ({
+  ...collected,
+  destructive_command_protection: {
+    ...collected.destructive_command_protection,
+    messages: messagesWithinLimit(collected.destructive_command_protection.messages),
+  },
+  secret_protection: {
+    ...collected.secret_protection,
+    messages: messagesWithinLimit(collected.secret_protection.messages),
+  },
+});
+
+const effectivePreviewPolicy = (collected: ReturnType<typeof collectFormPolicy>) => {
+  const policy = withoutOverlongMessages(collected);
   const baseline = projectDraft?.baseline;
   if (!baseline) return policy;
   const union = (user: string[], project: string[]) => [...new Set([...user, ...project])];
@@ -216,6 +245,14 @@ const savedComparisonPolicy = () =>
       )
     : (state?.policy as Policy);
 
+const messageTooLong = () =>
+  !projectDraft &&
+  [draftPolicy.destructive_command_protection, draftPolicy.secret_protection].some((section) =>
+    Object.values(section.messages ?? {}).some(
+      (message) => message.reason.length > MAX_REASON_LENGTH,
+    ),
+  );
+
 const renderSavebar = () => {
   qs('policy-savebar').hidden = !shared.dirty;
   qs('save').textContent = projectDraft ? t.reviewAndApply : t.save;
@@ -223,9 +260,10 @@ const renderSavebar = () => {
   const changes = policyChanges(savedComparisonPolicy(), draftPolicy, ruleLabels(), t);
   qs('savebar-title').textContent =
     changes.length === 0 ? t.unsavedChanges : t.unsavedChangeCount(changes.length);
-  qs('savebar-summary').textContent =
-    changes.slice(0, 3).join(t.changeSeparator) +
-    (changes.length > 3 ? t.moreChanges(changes.length - 3) : '');
+  qs('savebar-summary').textContent = messageTooLong()
+    ? t.blockMessageTooLong(MAX_REASON_LENGTH)
+    : changes.slice(0, 3).join(t.changeSeparator) +
+      (changes.length > 3 ? t.moreChanges(changes.length - 3) : '');
 };
 
 const syncRawFromForm = () => {
@@ -266,7 +304,7 @@ const afterEdit = (refreshPreview = true) => {
 
 const updateActions = () => {
   const hasErrors = (state?.errors.length ?? 0) > 0;
-  qs<HTMLButtonElement>('save').disabled = busy || !state || hasErrors;
+  qs<HTMLButtonElement>('save').disabled = busy || !state || hasErrors || messageTooLong();
   qs<HTMLButtonElement>('repair').disabled = busy || !hasErrors;
   qs<HTMLButtonElement>('reset').disabled = busy;
   qs<HTMLInputElement>('retention-days').disabled = busy;
@@ -302,6 +340,134 @@ const destructiveChanged = (rule: DestructiveRule) =>
 const secretChanged = (rule: SecretRule) =>
   draftPolicy.secret_protection.overrides[rule.id] !== undefined;
 
+const messageTarget = (ruleId: string) => {
+  const destructive = state?.destructiveCommandRules.find((rule) => rule.id === ruleId);
+  if (destructive) return { section: 'destructive_command_protection' as const, rule: destructive };
+  const secret = state?.secretPatterns.find((rule) => rule.id === ruleId);
+  return secret ? { section: 'secret_protection' as const, rule: secret } : undefined;
+};
+type MessageTarget = NonNullable<ReturnType<typeof messageTarget>>;
+const ruleMessage = (target: MessageTarget) =>
+  projectDraft ? undefined : draftPolicy[target.section].messages?.[target.rule.id];
+const hasRuleMessage = (ruleId: string) => {
+  const target = messageTarget(ruleId);
+  return target !== undefined && ruleMessage(target) !== undefined;
+};
+const customMessageCount = (rules: { id: string }[]) => {
+  const messages = rules.filter((rule) => hasRuleMessage(rule.id)).length;
+  return messages > 0 ? ` · ${t.customMessageCount(messages)}` : '';
+};
+
+const messageEditorHtml = (target: MessageTarget, ruleOff: boolean) => {
+  const id = escapeHtml(target.rule.id);
+  const labels = intentLabels(t);
+  const builtInIntent = 'intent' in target.rule ? target.rule.intent : state?.secretDenial.intent;
+  const message = ruleMessage(target);
+  return `<div class="message-editor" data-message-editor>
+    <div class="message-fields">
+      <div class="field">
+        <div class="message-field-top"><label class="field-label" for="message-reason-${id}">${escapeHtml(t.ruleMessageLabel)}</label><span class="message-counter" data-message-counter></span></div>
+        <textarea id="message-reason-${id}" data-message-reason spellcheck="true">${escapeHtml(message?.reason ?? '')}</textarea>
+        <p class="field-error" data-message-error hidden></p>
+        <small class="message-builtin" data-message-builtin hidden><span data-message-builtin-text></span><button type="button" class="quiet small" data-message-use-builtin>${escapeHtml(t.ruleMessageUseBuiltIn)}</button></small>
+      </div>
+      <div class="field">
+        <label class="field-label" for="message-intent-${id}">${escapeHtml(t.ruleMessageIntentLabel)}</label>
+        <select id="message-intent-${id}" data-message-intent>
+          <option value="">${escapeHtml(t.ruleMessageIntentBuiltIn(builtInIntent ? labels[builtInIntent] : ''))}</option>
+          ${BLOCK_INTENTS.map((intent) => `<option value="${intent}" ${message?.intent === intent ? 'selected' : ''}>${escapeHtml(labels[intent])}</option>`).join('')}
+        </select>
+        <small>${escapeHtml(t.ruleMessageIntentHelp)}</small>
+      </div>
+    </div>
+    <div class="message-preview"><span class="field-label">${escapeHtml(t.ruleMessagePreview)}</span><pre data-message-preview></pre></div>
+    <div class="message-foot">
+      <small>${escapeHtml(ruleOff ? t.ruleMessageRuleOff : t.ruleMessageFootnote)}${target.rule.id === 'raw-text.dangerous-command' ? ` ${escapeHtml(t.ruleMessageAskNote(t.presetStrict))}` : ''}</small>
+      <div><button type="button" class="danger-quiet" data-message-remove>${escapeHtml(t.ruleMessageRemove)}</button><button type="button" data-message-toggle="${id}">${escapeHtml(t.done)}</button></div>
+    </div>
+  </div>`;
+};
+
+const messageRowParts = (ruleId: string, ruleOff: boolean) => {
+  const target = messageTarget(ruleId);
+  if (projectDraft || !target) return { open: false, note: '', told: '', button: '', editor: '' };
+  const id = escapeHtml(ruleId);
+  const message = ruleMessage(target);
+  const open = openMessageEditors.has(ruleId);
+  return {
+    open,
+    note: `<span class="rule-note changed" data-message-note ${message ? '' : 'hidden'}>${escapeHtml(t.customMessageNote)}</span>`,
+    told:
+      message && !open
+        ? `<button type="button" class="rule-told" data-message-toggle="${id}"><b>${escapeHtml(t.agentIsTold)}</b><span>${escapeHtml(message.reason)}</span></button>`
+        : '',
+    button: `<button type="button" class="info-button message-button${message ? ' has-message' : ''}" data-message-toggle="${id}" aria-expanded="${open}" aria-label="${escapeHtml(t.blockMessageFor(target.rule.label))}" title="${escapeHtml(t.blockMessage)}">${icons.message}</button>`,
+    editor: open ? messageEditorHtml(target, ruleOff) : '',
+  };
+};
+
+const messagePart = <T extends HTMLElement>(row: HTMLElement, name: string) =>
+  row.querySelector(`[data-message-${name}]`) as T;
+
+const syncMessageEditor = (row: HTMLElement) => {
+  const target = messageTarget(row.dataset.ruleRow ?? '');
+  if (!target || !state) return;
+  const message = ruleMessage(target);
+  const builtInReason =
+    target.section === 'secret_protection'
+      ? state.secretDenial.reason
+      : builtInReasons.get(target.rule.id);
+  messagePart(row, 'note').hidden = !message;
+  row.querySelector('.message-button')?.classList.toggle('has-message', message !== undefined);
+  const textarea = messagePart<HTMLTextAreaElement>(row, 'reason');
+  textarea.placeholder = builtInReason ?? '';
+  const excess = textarea.value.trim().length - MAX_REASON_LENGTH;
+  messagePart(row, 'counter').textContent =
+    `${textarea.value.trim().length} / ${MAX_REASON_LENGTH}`;
+  messagePart(row, 'counter').classList.toggle('over', excess > 0);
+  messagePart(row, 'error').hidden = excess <= 0;
+  messagePart(row, 'error').textContent = t.shortenMessage(excess);
+  messagePart(row, 'builtin').hidden = builtInReason === undefined;
+  messagePart(row, 'builtin-text').textContent = t.ruleMessageBuiltIn(builtInReason ?? '');
+  messagePart<HTMLSelectElement>(row, 'intent').disabled = !message;
+  messagePart(row, 'remove').hidden = !message;
+  messagePart(row, 'preview').innerHTML = blockMessagePreview({
+    ruleId: target.rule.id,
+    command: 'example' in target.rule ? target.rule.example : undefined,
+    builtIn: {
+      reason: builtInReason ?? t.ruleMessageBuiltInVaries,
+      intent: 'intent' in target.rule ? target.rule.intent : state.secretDenial.intent,
+    },
+    message,
+  })
+    .map((part) => (part.custom ? `<mark>${escapeHtml(part.text)}</mark>` : escapeHtml(part.text)))
+    .join('');
+};
+
+const loadBuiltInReason = async (rule: DestructiveRule) => {
+  if (builtInReasons.has(rule.id)) return;
+  const policy = effectivePreviewPolicy(collectFormPolicy());
+  const result = await requestJson('/api/policy/explain', {
+    method: 'POST',
+    body: JSON.stringify({
+      command: rule.example,
+      policy: {
+        ...policy,
+        destructive_command_protection: {
+          ...policy.destructive_command_protection,
+          enabled: true,
+          overrides: rule.catastrophic ? {} : { [rule.id]: 'on' },
+          messages: undefined,
+        },
+      },
+    }),
+  });
+  if (!result.ok || result.data.ruleId !== rule.id) return;
+  builtInReasons.set(rule.id, result.data.reason);
+  const row = document.querySelector<HTMLElement>(`[data-rule-row="${CSS.escape(rule.id)}"]`);
+  if (row?.querySelector('[data-message-editor]')) syncMessageEditor(row);
+};
+
 const categoryHtml = (options: {
   key: string;
   title: string;
@@ -334,15 +500,20 @@ const ruleRowHtml = (row: {
   description: string;
   info: string;
   disabled: boolean;
-}) =>
-  `<li class="rule-row${row.disabled ? ' row-disabled' : ''}" data-rule-row="${escapeHtml(row.id)}">
+  ruleOff: boolean;
+}) => {
+  const message = messageRowParts(row.id, row.ruleOff);
+  return `<li class="rule-row${row.disabled ? ' row-disabled' : ''}${message.open ? ' message-open' : ''}" data-rule-row="${escapeHtml(row.id)}">
     ${row.control}
     <div class="rule-body">
-      <div class="rule-line">${row.heading}${row.note ? `<span class="rule-note ${row.noteTone}">${escapeHtml(row.note)}</span>` : ''}${row.actions}</div>
+      <div class="rule-line">${row.heading}${row.note ? `<span class="rule-note ${row.noteTone}">${escapeHtml(row.note)}</span>` : ''}${message.note}${row.actions}</div>
       ${row.description ? `<p class="rule-description">${escapeHtml(row.description)}</p>` : ''}
+      ${message.told}
     </div>
-    ${row.info}
+    ${message.button}${row.info}
+    ${message.editor}
   </li>`;
+};
 
 const offCount = (off: number) =>
   off > 0 ? ` · <span class="off-count">${escapeHtml(t.offCount(off))}</span>` : '';
@@ -352,17 +523,19 @@ const renderDestructiveCommands = () => {
   const effectiveState = preview;
   const query = searchQuery();
   const disabled = !draftPolicy.destructive_command_protection.enabled;
-  const catastrophicCount = state.destructiveCommandRules.filter(
-    (rule) => rule.catastrophic,
-  ).length;
-  qs('destructive-command-summary').textContent = disabled
-    ? t.commandProtectionOffSummary
-    : t.commandRuleSummary(preview.counts.enabled, preview.counts.disabled, catastrophicCount);
   qs('destructive-panel').classList.toggle('is-off', disabled);
   const visible = state.destructiveCommandRules.filter(
     (rule) =>
-      matches(query, [rule.category, rule.label, rule.id, rule.description]) &&
-      (!showChangedOnly || destructiveChanged(rule)),
+      matches(query, [
+        rule.category,
+        rule.label,
+        rule.id,
+        rule.description,
+        projectDraft
+          ? undefined
+          : draftPolicy.destructive_command_protection.messages?.[rule.id]?.reason,
+      ]) &&
+      (!showChangedOnly || destructiveChanged(rule) || hasRuleMessage(rule.id)),
   );
   const rowHtml = (rule: DestructiveRule) => {
     const info = `<button type="button" class="info-button" data-rule-example="${escapeHtml(rule.id)}" aria-label="${escapeHtml(t.aboutRule(rule.label))}" aria-haspopup="dialog" aria-controls="rule-example-popover">${icons.info}</button>`;
@@ -378,6 +551,7 @@ const renderDestructiveCommands = () => {
         description: rule.description,
         info,
         disabled: false,
+        ruleOff: false,
       });
     const effective = effectiveState.rules[rule.id];
     if (!effective) return '';
@@ -397,6 +571,7 @@ const renderDestructiveCommands = () => {
       description: rule.description,
       info,
       disabled,
+      ruleOff: disabled || !effective.enabled,
     });
   };
   qs('destructive-command-rules').innerHTML =
@@ -431,12 +606,6 @@ const renderSecretPatterns = () => {
   const query = searchQuery();
   const overrides = draftPolicy.secret_protection.overrides;
   const disabled = !draftPolicy.secret_protection.enabled;
-  const offTotal = loaded.secretPatterns.filter(
-    (rule) => !secretRuleIsActive(rule, overrides),
-  ).length;
-  qs('secret-summary').textContent = disabled
-    ? t.secretProtectionOffSummary
-    : t.secretRuleSummary(loaded.secretPatterns.length - offTotal, offTotal);
   qs('secret-panel').classList.toggle('is-off', disabled);
   const visible = loaded.secretPatterns.filter(
     (rule) =>
@@ -447,8 +616,9 @@ const renderSecretPatterns = () => {
         rule.id,
         rule.description,
         ...(rule.paths ?? []),
+        projectDraft ? undefined : draftPolicy.secret_protection.messages?.[rule.id]?.reason,
       ]) &&
-      (!showChangedOnly || secretChanged(rule)),
+      (!showChangedOnly || secretChanged(rule) || hasRuleMessage(rule.id)),
   );
   const rowHtml = (rule: SecretRule) => {
     const active = secretRuleIsActive(rule, overrides);
@@ -465,6 +635,7 @@ const renderSecretPatterns = () => {
         ? `<button type="button" class="info-button" data-secret-paths="${escapeHtml(rule.id)}" aria-label="${escapeHtml(t.protectedPathsFor(rule.label))}" aria-haspopup="dialog" aria-controls="rule-example-popover">${icons.info}</button>`
         : '<span class="info-spacer"></span>',
       disabled,
+      ruleOff: disabled || !active,
     });
   };
   qs('secret-patterns').innerHTML =
@@ -489,15 +660,80 @@ const renderSecretPatterns = () => {
 const renderChangedCount = () => {
   if (!state) return;
   const changed =
-    state.destructiveCommandRules.filter((rule) => !rule.catastrophic && destructiveChanged(rule))
-      .length + state.secretPatterns.filter(secretChanged).length;
+    state.destructiveCommandRules.filter(
+      (rule) => (!rule.catastrophic && destructiveChanged(rule)) || hasRuleMessage(rule.id),
+    ).length +
+    state.secretPatterns.filter((rule) => secretChanged(rule) || hasRuleMessage(rule.id)).length;
   qs('changed-count').textContent = changed > 0 ? String(changed) : '';
 };
 
+const renderRuleSummaries = () => {
+  if (!state || !preview) return;
+  const secretOff = state.secretPatterns.filter(
+    (rule) => !secretRuleIsActive(rule, draftPolicy.secret_protection.overrides),
+  ).length;
+  qs('destructive-command-summary').textContent = draftPolicy.destructive_command_protection.enabled
+    ? t.commandRuleSummary(
+        preview.counts.enabled,
+        preview.counts.disabled,
+        state.destructiveCommandRules.filter((rule) => rule.catastrophic).length,
+      ) + customMessageCount(state.destructiveCommandRules)
+    : t.commandProtectionOffSummary;
+  qs('secret-summary').textContent = draftPolicy.secret_protection.enabled
+    ? t.secretRuleSummary(state.secretPatterns.length - secretOff, secretOff) +
+      customMessageCount(state.secretPatterns)
+    : t.secretProtectionOffSummary;
+  renderChangedCount();
+};
+
 const renderRules = () => {
+  const focused = document.activeElement;
+  const typing =
+    focused instanceof HTMLTextAreaElement && 'messageReason' in focused.dataset
+      ? {
+          id: focused.id,
+          value: focused.value,
+          start: focused.selectionStart,
+          end: focused.selectionEnd,
+        }
+      : null;
   renderDestructiveCommands();
   renderSecretPatterns();
-  renderChangedCount();
+  renderRuleSummaries();
+  const redrawn = typing && document.getElementById(typing.id);
+  if (typing && redrawn instanceof HTMLTextAreaElement) {
+    redrawn.value = typing.value;
+    redrawn.focus();
+    redrawn.setSelectionRange(typing.start, typing.end);
+  }
+  document.querySelectorAll<HTMLElement>('[data-message-editor]').forEach((editor) => {
+    syncMessageEditor(editor.closest('[data-rule-row]') as HTMLElement);
+  });
+};
+
+const toggleMessageEditor = (ruleId: string, open: boolean) => {
+  const target = messageTarget(ruleId);
+  if (!target || projectDraft) return;
+  if (open) openMessageEditors.add(ruleId);
+  if (!open) openMessageEditors.delete(ruleId);
+  renderRules();
+  if (!open) return;
+  document.getElementById(`message-reason-${ruleId}`)?.focus();
+  if ('example' in target.rule) void loadBuiltInReason(target.rule);
+};
+
+const updateMessageFromEditor = (row: HTMLElement) => {
+  const target = messageTarget(row.dataset.ruleRow ?? '');
+  if (!target) return;
+  draftPolicy[target.section].messages = withRuleMessage(
+    draftPolicy[target.section].messages,
+    target.rule.id,
+    messagePart<HTMLTextAreaElement>(row, 'reason').value,
+    messagePart<HTMLSelectElement>(row, 'intent').value,
+  );
+  syncMessageEditor(row);
+  renderRuleSummaries();
+  afterEdit(false);
 };
 
 const renderSafety = () => {
@@ -571,7 +807,7 @@ const validatePathAdditions = async (
 ) => {
   const candidate = collectFormPolicy();
   patch(candidate);
-  const result = await requestPolicyPreview(candidate);
+  const result = await requestPolicyPreview(withoutOverlongMessages(candidate));
   return result.ok && result.data?.preview ? null : errorText(result);
 };
 
@@ -776,6 +1012,10 @@ const runCommandTest = async () => {
       : `<a class="rule-id" href="#policy?q=${encodeURIComponent(ruleId)}">${escapeHtml(ruleId)}</a>`;
   el.className = 'notice error';
   el.innerHTML = `${t.testerBlocked(ruleHtml)} ${escapeHtml(result.data.reason || '')}${
+    ruleId && !result.data.customRule && !projectDraft && messageTarget(ruleId)
+      ? ` <a href="#policy?q=${encodeURIComponent(ruleId)}&message=1">${escapeHtml(t.editBlockMessage)}</a>`
+      : ''
+  }${
     result.data.segment && result.data.segment !== command
       ? `<div class="tester-segment">${escapeHtml(t.blockedPart)} <code>${escapeHtml(result.data.segment)}</code></div>`
       : ''
@@ -1218,6 +1458,10 @@ const toggleProtection = async (input: HTMLInputElement) => {
 };
 
 const handleChange = (control: HTMLInputElement | HTMLSelectElement) => {
+  if ('messageIntent' in control.dataset) {
+    updateMessageFromEditor(control.closest('[data-rule-row]') as HTMLElement);
+    return;
+  }
   if (control.name === 'safety-level') {
     draftPolicy.safety.level = control.value as SafetyLevel;
     markProjectField('safety.level');
@@ -1295,6 +1539,25 @@ const handleClick = (target: Element) => {
     syncHash();
     return;
   }
+  const messageToggle = target.closest<HTMLElement>('[data-message-toggle]');
+  if (messageToggle) {
+    const ruleId = messageToggle.dataset.messageToggle ?? '';
+    toggleMessageEditor(ruleId, !openMessageEditors.has(ruleId));
+    return;
+  }
+  const messageAction = target.closest<HTMLElement>(
+    '[data-message-use-builtin], [data-message-remove]',
+  );
+  if (messageAction) {
+    const row = messageAction.closest('[data-rule-row]') as HTMLElement;
+    const textarea = messagePart<HTMLTextAreaElement>(row, 'reason');
+    textarea.value = 'messageRemove' in messageAction.dataset ? '' : textarea.placeholder;
+    if ('messageRemove' in messageAction.dataset)
+      messagePart<HTMLSelectElement>(row, 'intent').value = '';
+    updateMessageFromEditor(row);
+    textarea.focus();
+    return;
+  }
   const example = state?.destructiveCommandRules.find(
     (rule) => rule.id === target.closest<HTMLElement>('[data-rule-example]')?.dataset.ruleExample,
   );
@@ -1363,6 +1626,7 @@ export const showPolicy = (params: URLSearchParams) => {
     renderRules();
   }
   if (!next.query) return;
+  if (params.has('message')) toggleMessageEditor(next.query, true);
   document
     .querySelector(`[data-rule-row="${CSS.escape(next.query)}"]`)
     ?.scrollIntoView({ block: 'center' });
@@ -1382,6 +1646,10 @@ export const initPolicy = () => {
   });
   view.addEventListener('click', (event) => {
     if (event.target instanceof Element) handleClick(event.target);
+  });
+  view.addEventListener('input', (event) => {
+    if (event.target instanceof HTMLTextAreaElement && 'messageReason' in event.target.dataset)
+      updateMessageFromEditor(event.target.closest('[data-rule-row]') as HTMLElement);
   });
   document.addEventListener('keydown', (event) => {
     if (view.hidden || document.querySelector('dialog[open]')) return;

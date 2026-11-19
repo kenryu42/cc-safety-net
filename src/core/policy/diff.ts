@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { Environment } from '@/core/environment';
 import { getUserPolicyPath, type UserScopeOptions } from './paths';
 import { normalizeGuiPolicy } from './store';
-import type { GuiPolicy } from './types';
+import type { GuiPolicy, RuleMessage } from './types';
 import { salvageUserPolicy } from './user-policy-diagnostics';
 
 export type PolicyDiffRow = { field: string; before?: string; after?: string };
@@ -17,11 +17,16 @@ function flattenPolicy(policy: GuiPolicy, includeAudit: boolean): Record<string,
       'destructive_command_protection.overrides',
       policy.destructive_command_protection.overrides,
     ),
+    ...flattenMessages(
+      'destructive_command_protection.messages',
+      policy.destructive_command_protection.messages,
+    ),
     'destructive_command_protection.allow_paths': flattenList(
       policy.destructive_command_protection.allow_paths,
     ),
     'secret_protection.enabled': String(policy.secret_protection.enabled),
     ...flattenSection('secret_protection.overrides', policy.secret_protection.overrides),
+    ...flattenMessages('secret_protection.messages', policy.secret_protection.messages),
     'secret_protection.deny_paths': flattenList(policy.secret_protection.deny_paths),
     'secret_protection.allow_paths': flattenList(policy.secret_protection.allow_paths),
     ...(includeAudit ? { 'audit.retention_days': String(policy.audit.retention_days) } : {}),
@@ -98,6 +103,15 @@ function flattenSection(prefix: string, values: Record<string, string | boolean 
       value === undefined ? [] : [[`${prefix}.${key}`, String(value)]],
     ),
   ) as Record<string, string>;
+}
+
+function flattenMessages(prefix: string, messages: Record<string, RuleMessage> = {}) {
+  return flattenSection(
+    prefix,
+    Object.fromEntries(
+      Object.entries(messages).map(([id, message]) => [id, JSON.stringify(message)]),
+    ),
+  );
 }
 
 function flattenList(values: readonly string[]): string {

@@ -1,3 +1,4 @@
+import type { BlockIntent } from '@/core/decision';
 import type { SafetyLevelCapability } from '@/core/policy/safety-level';
 import type { Policy } from './project-draft';
 
@@ -19,6 +20,7 @@ export type DestructiveRule = {
   description: string;
   category: string;
   example: string;
+  intent: BlockIntent;
   catastrophic?: boolean;
   activationCapability?: SafetyLevelCapability;
 };
@@ -35,6 +37,7 @@ export type PolicyState = {
   preview: Preview | null;
   destructiveCommandRules: DestructiveRule[];
   secretPatterns: SecretRule[];
+  secretDenial: { reason: string; intent: BlockIntent };
   errors: string[];
   raw: string;
   path: string;

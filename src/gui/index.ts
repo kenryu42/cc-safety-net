@@ -41,7 +41,9 @@ import {
   normalizeGuiPolicy,
   normalizeSafety,
   projectPolicyProjection,
+  projectRuleMessageRejections,
   resolveSecretDisabledRules,
+  ruleMessagesOf,
 } from '@/core/policy/store';
 import {
   previewUserPolicyForGui,
@@ -53,6 +55,10 @@ import { getUserPolicyDiagnostics } from '@/core/policy/user-policy-diagnostics'
 import { DESTRUCTIVE_COMMAND_RULE_METADATA } from '@/core/rules/destructive';
 import { SECRET_PROTECTION_RULE_METADATA } from '@/core/rules/secret';
 import { type ExplainResult, explainCommand } from '@/gate/explain';
+import {
+  REASON_SECRET_PROTECTION,
+  SECRET_PROTECTION_INTENT,
+} from '@/gate/secret/secret-protection';
 import { getIntegrationDisplayName, installIntegrationMetadata } from '@/hosts/catalog';
 import { detectAllHooks } from '@/hosts/detect/index';
 import type { SystemInfo, UpdateInfo } from '@/hosts/doctor-types';
@@ -282,6 +288,7 @@ async function handleRequest(
         : {}),
       destructiveCommandRules: DESTRUCTIVE_COMMAND_RULE_METADATA,
       secretPatterns: SECRET_PROTECTION_RULE_METADATA,
+      secretDenial: { reason: REASON_SECRET_PROTECTION, intent: SECRET_PROTECTION_INTENT },
       version: getPackageVersion(),
       preview:
         result.errors.length > 0 ? null : createPolicyPreview(result.policy, environment.env),
@@ -609,9 +616,12 @@ async function readProjectDraft(
 function getProjectProposalErrors(proposal: unknown, home: string): string[] {
   const errors = getUserPolicyDiagnostics(proposal, home);
   if (errors.length > 0) return errors;
-  return (proposal as { audit?: unknown } | null)?.audit === undefined
-    ? []
-    : [PROJECT_AUDIT_REJECTION];
+  return [
+    ...((proposal as { audit?: unknown } | null)?.audit === undefined
+      ? []
+      : [PROJECT_AUDIT_REJECTION]),
+    ...projectRuleMessageRejections(proposal),
+  ];
 }
 
 function writeProjectPolicy(
@@ -656,6 +666,7 @@ function explainDraftCommand(
       denyPaths: draft.secret_protection.deny_paths,
       allowPaths: draft.secret_protection.allow_paths,
     },
+    ruleMessages: ruleMessagesOf(draft),
   });
   return explainCommand(
     command,
