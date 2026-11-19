@@ -46,6 +46,7 @@ __export(exports_gate, {
   REASON_POLICY_APPLY_PROTECTION: () => REASON_POLICY_APPLY_PROTECTION,
   REASON_POLICY_CONFIG_PROTECTION: () => REASON_POLICY_CONFIG_PROTECTION,
   REASON_SECRET_PROTECTION: () => REASON_SECRET_PROTECTION,
+  SECRET_PROTECTION_INTENT: () => SECRET_PROTECTION_INTENT,
   SHELL_STDIN_INTERPRETERS: () => SHELL_STDIN_INTERPRETERS,
   StructuralShellSyntaxLimitError: () => StructuralShellSyntaxLimitError,
   UnparseableCommandError: () => UnparseableCommandError,
@@ -1536,6 +1537,7 @@ var import_powershell_wrapper = require("./analyzer.js");
 var import_wrapper_prelude5 = require("./analyzer.js");
 var import_xargs = require("./analyzer.js");
 var REASON_SECRET_PROTECTION = "Access to a sensitive path is not allowed.";
+var SECRET_PROTECTION_INTENT = "hard_stop";
 var NON_PATH_OPERAND_COMMANDS = new Set(["echo", "printf"]);
 var PATH_ROOT_COMMANDS = new Set(["find"]);
 var SHELL_RESERVED_WORDS = new Set(["!", "do", "elif", "else", "if", "then", "until", "while"]);
@@ -3747,13 +3749,14 @@ function evaluateGuard(hostInvocation, options) {
   }));
   if (secretTarget) {
     const displayCommand = command ?? secretTarget.target;
+    const message = policy.ruleMessages?.[secretTarget.ruleId];
     return {
       stage: "secret-protection",
       ...reported,
       decision: {
         kind: "deny",
-        reason: REASON_SECRET_PROTECTION,
-        intent: "hard_stop",
+        reason: message?.reason ?? REASON_SECRET_PROTECTION,
+        intent: message?.intent ?? SECRET_PROTECTION_INTENT,
         ruleId: secretTarget.ruleId,
         evidence: { command: displayCommand, segment: secretTarget.target }
       }
@@ -3800,7 +3803,7 @@ function evaluateGuard(hostInvocation, options) {
     };
   } : undefined;
   if (analysis.decision) {
-    const unverifiedByStandardMode = !modes.strict && (analysis.decision.ruleId === "raw-text.dangerous-command" || analysis.decision.reason === import_reasons2.REASON_DYNAMIC_SHELL_SOURCE && !BARE_SHELL_READING_STDIN.test(analysis.decision.evidence?.segment ?? "") && import_dangerous_text.dangerousInTextMatch(invocation.command) === null);
+    const unverifiedByStandardMode = !modes.strict && (analysis.decision.ruleId === "raw-text.dangerous-command" || analysis.decision.ruleId === "analysis.dynamic-shell-source" && analysis.decision.reason === import_reasons2.REASON_DYNAMIC_SHELL_SOURCE && !BARE_SHELL_READING_STDIN.test(analysis.decision.evidence?.segment ?? "") && import_dangerous_text.dangerousInTextMatch(invocation.command) === null);
     const posixReading = unverifiedByStandardMode ? readAsPosix?.() : undefined;
     if (posixReading?.decision.kind === "deny" && !posixReading.decision.unverifiedByStandardMode) {
       return posixReading.withItsTrace();

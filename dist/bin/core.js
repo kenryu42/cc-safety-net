@@ -170,6 +170,7 @@ __export(exports_core, {
   projectGuardDenial: () => projectGuardDenial,
   projectPolicyIsUserPolicy: () => projectPolicyIsUserPolicy,
   projectPolicyProjection: () => projectPolicyProjection,
+  projectRuleMessageRejections: () => projectRuleMessageRejections,
   randomHex16: () => randomHex16,
   readPolicyFile: () => readPolicyFile2,
   readRetentionDays: () => readRetentionDays,
@@ -187,6 +188,8 @@ __export(exports_core, {
   resolveProtectedGitMetadata: () => resolveProtectedGitMetadata,
   resolveSecretDisabledRules: () => resolveSecretDisabledRules,
   resolveWorktreeFacts: () => resolveWorktreeFacts,
+  ruleMessageIssues: () => ruleMessageIssues,
+  ruleMessagesOf: () => ruleMessagesOf,
   sanitizeDiagnosticText: () => sanitizeDiagnosticText,
   sessionSafetyLevel: () => sessionSafetyLevel,
   shouldRecordAllowedCommands: () => shouldRecordAllowedCommands,
@@ -1248,11 +1251,14 @@ function ruleOverrideIssues(overrides) {
       return [];
     if (!isRecord(override))
       return [typed(["overrides", key], 'must be "off" or an object')];
-    return [
-      ...overrideReasonIssues(override.reason, ["overrides", key, "reason"]),
-      ...override.intent === undefined || isBlockIntent(override.intent) ? [] : [typed(["overrides", key, "intent"], INTENT_ERROR)]
-    ];
+    return ruleMessageIssues(override, ["overrides", key]);
   });
+}
+function ruleMessageIssues(message, path) {
+  return [
+    ...overrideReasonIssues(message.reason, [...path, "reason"]),
+    ...message.intent === undefined || isBlockIntent(message.intent) ? [] : [typed([...path, "intent"], INTENT_ERROR)]
+  ];
 }
 function overrideReasonIssues(reason, path) {
   if (typeof reason !== "string") {
@@ -1417,6 +1423,7 @@ function loadPolicyConfig(environment, options) {
   const levelScope = project.policy.safety?.level && merged?.policy.safety.level === project.policy.safety.level ? "project" : user.levelPresent ? "user" : "default";
   return {
     ...merged ? normalizePolicyConfig(merged.policy) : user.policy,
+    ruleMessages: ruleMessagesOf(userPolicy),
     errors,
     ...fallback ? { fallback } : {},
     ...projectFile.exists ? {
@@ -1425,6 +1432,21 @@ function loadPolicyConfig(environment, options) {
   };
 }
 var PROJECT_AUDIT_DIAGNOSTIC = "project policy audit settings are ignored; audit is user scope only";
+function ruleMessagesOf(policy) {
+  return {
+    ...policy.destructive_command_protection.messages,
+    ...policy.secret_protection.messages
+  };
+}
+function projectRuleMessageFields(value) {
+  return ["destructive_command_protection", "secret_protection"].flatMap((section) => {
+    const fields = value[section];
+    return isRecord2(fields) && fields.messages !== undefined ? [`${section}.messages`] : [];
+  });
+}
+function projectRuleMessageRejections(proposal) {
+  return (isRecord2(proposal) ? projectRuleMessageFields(proposal) : []).map((field) => `${field} is user scope only; remove it from a project proposal`);
+}
 function projectPolicyProjection(value, home) {
   if (!isRecord2(value))
     return { policy: {}, diagnostics: [] };
@@ -1466,7 +1488,10 @@ function projectPolicyProjection(value, home) {
       destructive_command_protection: destructiveSection,
       secret_protection: secretSection
     }),
-    diagnostics: value.audit === undefined ? [] : [PROJECT_AUDIT_DIAGNOSTIC]
+    diagnostics: [
+      ...value.audit === undefined ? [] : [PROJECT_AUDIT_DIAGNOSTIC],
+      ...projectRuleMessageFields(value).map((field) => `project policy ${field} is ignored; rule messages are user scope only`)
+    ]
   };
 }
 function pickBooleans(source, keys, path, report) {
@@ -1496,6 +1521,15 @@ var SECRET_OVERRIDES = {
   path: ["secret_protection", "overrides"],
   label: "secret protection"
 };
+var DESTRUCTIVE_MESSAGES = {
+  path: ["destructive_command_protection", "messages"],
+  label: "destructive command"
+};
+var SECRET_MESSAGES = {
+  path: ["secret_protection", "messages"],
+  label: "secret protection"
+};
+var RULE_MESSAGE_FIELDS = ["reason", "intent"];
 var USER_POLICY_FIELDS = [
   "version",
   "safety",
@@ -1524,8 +1558,8 @@ function salvagePolicy(value, home, report) {
   const safety = readSection(value.safety, ["safety"], ["level", "overrides"], report);
   const safetyOverrides = readSection(safety.overrides, ["safety", "overrides"], SAFETY_OVERRIDE_KEYS, report);
   const workflow = readSection(value.workflow, ["workflow"], ["worktree_mode"], report);
-  const destructiveCommand = readSection(value.destructive_command_protection, ["destructive_command_protection"], ["enabled", "overrides", "allow_paths"], report);
-  const secret = readSection(value.secret_protection, ["secret_protection"], ["enabled", "overrides", "deny_paths", "allow_paths"], report);
+  const destructiveCommand = readSection(value.destructive_command_protection, ["destructive_command_protection"], ["enabled", "overrides", "messages", "allow_paths"], report);
+  const secret = readSection(value.secret_protection, ["secret_protection"], ["enabled", "overrides", "messages", "deny_paths", "allow_paths"], report);
   const audit = readSection(value.audit, ["audit"], ["retention_days"], report);
   reportUnknownFields(value, USER_POLICY_FIELDS, [], report);
   return {
@@ -1540,11 +1574,13 @@ function salvagePolicy(value, home, report) {
     destructive_command_protection: {
       enabled: readBoolean(destructiveCommand.enabled, ["destructive_command_protection", "enabled"], true, report),
       overrides: repairRuleOverrides(destructiveCommand.overrides, import_destructive2.DESTRUCTIVE_COMMAND_RULE_ID_SET, DESTRUCTIVE_OVERRIDES, report),
+      ...repairRuleMessages(destructiveCommand.messages, import_destructive2.DESTRUCTIVE_COMMAND_RULE_ID_SET, DESTRUCTIVE_MESSAGES, report),
       allow_paths: repairPaths(destructiveCommand.allow_paths, getDestructiveAllowPathError, home, ["destructive_command_protection", "allow_paths"], report)
     },
     secret_protection: {
       enabled: readBoolean(secret.enabled, ["secret_protection", "enabled"], true, report),
       overrides: repairRuleOverrides(secret.overrides, import_secret2.SECRET_PROTECTION_RULE_ID_SET, SECRET_OVERRIDES, report),
+      ...repairRuleMessages(secret.messages, import_secret2.SECRET_PROTECTION_RULE_ID_SET, SECRET_MESSAGES, report),
       deny_paths: repairPaths(secret.deny_paths, getSecretDenyPathError, home, ["secret_protection", "deny_paths"], report),
       allow_paths: repairPaths(secret.allow_paths, getSecretAllowPathError, home, ["secret_protection", "allow_paths"], report)
     },
@@ -1587,27 +1623,49 @@ function readAuditRetentionDays(value, report) {
     report(typed(["audit", "retention_days"], AUDIT_RETENTION_ERROR));
   return clampAuditRetentionDays(value);
 }
-function repairRuleOverrides(value, knownRuleIds, overrides, report) {
+function repairRuleEntries(value, knownRuleIds, entries, report, repairEntry) {
   if (value === undefined)
     return {};
   if (!isRecord2(value)) {
-    report(typed(overrides.path, NOT_AN_OBJECT));
+    report(typed(entries.path, NOT_AN_OBJECT));
     return {};
   }
-  return Object.fromEntries(Object.entries(value).flatMap(([id, override]) => {
+  return Object.fromEntries(Object.entries(value).flatMap(([id, entry]) => {
+    const path = [...entries.path, id];
     if (!knownRuleIds.has(id)) {
-      report({
-        path: [...overrides.path, id],
-        message: `unknown ${overrides.label} rule id "${id}"`,
-        kind: "key"
-      });
+      report({ path, message: `unknown ${entries.label} rule id "${id}"`, kind: "key" });
       return [];
     }
-    if (override === "on" || override === "off")
-      return [[id, override]];
-    report(typed([...overrides.path, id], 'must be "on" or "off"'));
-    return [];
+    const repaired = repairEntry(entry, path);
+    return repaired === undefined ? [] : [[id, repaired]];
   }));
+}
+function repairRuleOverrides(value, knownRuleIds, overrides, report) {
+  return repairRuleEntries(value, knownRuleIds, overrides, report, (override, path) => {
+    if (override === "on" || override === "off")
+      return override;
+    report(typed(path, isRecord2(override) ? `must be "on" or "off"; a custom reason belongs in ${String(overrides.path[0])}.messages` : 'must be "on" or "off"'));
+    return;
+  });
+}
+function repairRuleMessages(value, knownRuleIds, messages, report) {
+  const repaired = repairRuleEntries(value, knownRuleIds, messages, report, (message, path) => {
+    if (!isRecord2(message)) {
+      report(typed(path, "must be an object with a reason"));
+      return;
+    }
+    reportUnknownFields(message, RULE_MESSAGE_FIELDS, path, report);
+    const issues = ruleMessageIssues(message, path);
+    for (const issue of issues)
+      report(issue);
+    if (issues.length > 0)
+      return;
+    return {
+      reason: message.reason,
+      ...message.intent === undefined ? {} : { intent: message.intent }
+    };
+  });
+  return Object.keys(repaired).length > 0 ? { messages: repaired } : {};
 }
 function repairPaths(value, getPathError, home, path, report) {
   if (value === undefined)
@@ -3403,7 +3461,8 @@ function loadPolicySnapshot(environment, options) {
       disabledRules: userPolicy.secretProtection.disabledRules ?? [],
       denyPaths: userPolicy.secretProtection.denyPaths,
       allowPaths: userPolicy.secretProtection.allowPaths ?? []
-    }
+    },
+    ruleMessages: userPolicy.ruleMessages
   };
   const overrides = {
     ...rules.userConfig?.overrides,
