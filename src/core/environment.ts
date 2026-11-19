@@ -91,10 +91,8 @@ function readDarwinUserTempDir(): string | null {
   return result.status === 0 && value?.startsWith('/') ? value : null;
 }
 
-/** @internal */
 export type FakeEntry = 'present' | 'directory' | { symlink: string };
 
-/** @internal */
 export function createTestEnvironment(
   overrides: Partial<Environment> & { entries?: ReadonlyMap<string, FakeEntry> } = {},
 ): Environment {

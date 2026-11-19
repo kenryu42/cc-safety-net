@@ -163,7 +163,7 @@ Version 2 replaces \`subcommand\` and \`block_args\` with an exact-token \`match
 | \`expect\` | Yes | \`"blocked"\` or \`"allowed"\` |
 | \`rule\` | Required for blocked fixtures | Rule name expected to block the command |
 
-Fixtures are optional documentation of intended behavior. Version 1 fixtures are shape-validated only. Version 2 fixtures are evaluated against the rulebook's own rules when a source is fetched by \`rule add\` or \`rule update\`, and by \`rule verify\`; a failing fixture rejects that source before it is written. Loading a rulebook does not re-evaluate fixtures. CC Safety Net never executes fixture commands; they are analyzer inputs only.
+Fixtures are optional documentation of intended behavior. Version 1 fixtures are shape-validated only. Version 2 fixtures are evaluated when a source is fetched by \`rule add\` or \`rule update\`, and by \`rule verify\`; a failing fixture rejects that source before it is written. Each fixture is read the way the hook reads a command, against this rulebook's rules only, so a wrapped spelling such as \`sudo docker system prune\`, \`env FOO=1 docker system prune\`, or \`bash -c 'docker system prune'\` is a valid \`blocked\` fixture. Built-in rules that can be turned off are not applied. A \`blocked\` fixture that another rule blocks first fails and names that rule; an \`allowed\` fixture fails only when one of this rulebook's rules matches. Wrappers from \`transparent_wrappers\` are not applied, because a rulebook must verify the same for every consumer. Loading a rulebook does not re-evaluate fixtures. CC Safety Net never executes fixture commands; they are analyzer inputs only.
 
 ## Matching Behavior
 

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { Rulebook } from '@/core/policy/rulebook';
 import { evaluateRulebookFixtures } from '@/gate/rulebook-fixtures';
 
+const DEEPLY_NESTED = `echo ${'$('.repeat(100)}docker system prune${')'.repeat(100)}`;
+
 const RULEBOOK: Rulebook = {
   rulebook_version: 2,
   name: 'fixture-rules',
@@ -25,12 +27,9 @@ const RULEBOOK: Rulebook = {
     { command: 'docker system prune', expect: 'blocked', rule: 'block-system-prune' },
     { command: 'FOO=1 docker system prune', expect: 'blocked', rule: 'block-system-prune' },
     { command: 'sudo docker system prune', expect: 'blocked', rule: 'block-system-prune' },
+    { command: 'env FOO=1 docker system prune', expect: 'blocked', rule: 'block-system-prune' },
+    { command: 'timeout 30 docker system prune', expect: 'blocked', rule: 'block-system-prune' },
     { command: '{ docker system prune; }', expect: 'blocked', rule: 'block-system-prune' },
-    {
-      command: 'cleanup() { docker system prune; }',
-      expect: 'blocked',
-      rule: 'block-system-prune',
-    },
     { command: "bash -c 'docker system prune'", expect: 'blocked', rule: 'block-system-prune' },
     {
       command: 'docker system prune | tee prune.log',
@@ -38,9 +37,20 @@ const RULEBOOK: Rulebook = {
       rule: 'block-system-prune',
     },
     { command: 'echo $(docker system prune)', expect: 'blocked', rule: 'block-system-prune' },
-    { command: '', expect: 'blocked', rule: 'block-system-prune' },
-    { command: 'docker system prune --all', expect: 'allowed' },
+    {
+      command: 'cleanup() { docker system prune; }; cleanup',
+      expect: 'blocked',
+      rule: 'block-system-prune',
+    },
     { command: 'docker ps', expect: 'allowed' },
+    { command: 'rm -rf /', expect: 'allowed' },
+    { command: 'git reset --hard', expect: 'allowed' },
+    {
+      command: 'cleanup() { docker system prune; }',
+      expect: 'blocked',
+      rule: 'block-system-prune',
+    },
+    { command: 'docker system prune --all', expect: 'allowed' },
     {
       command: 'kubectl config use-context prod',
       expect: 'blocked',
@@ -51,6 +61,8 @@ const RULEBOOK: Rulebook = {
       expect: 'blocked',
       rule: 'block-system-prune',
     },
+    { command: 'rm -rf /', expect: 'blocked', rule: 'block-system-prune' },
+    { command: DEEPLY_NESTED, expect: 'blocked', rule: 'block-system-prune' },
   ],
 };
 
@@ -75,14 +87,14 @@ const VERSION_ONE_RULEBOOK: Rulebook = {
 };
 
 describe('the rulebook fixture evaluator', () => {
-  test('names the failing fixture, its verdict and why', () => {
+  test('reads each fixture the way the hook would, and names the ones that disagree', () => {
     expect(evaluateRulebookFixtures(RULEBOOK)).toEqual([
-      'tests[2]: expected "block-system-prune" to block "sudo docker system prune" but no rule matched',
-      'tests[5]: expected "block-system-prune" to block "bash -c \'docker system prune\'" but no rule matched',
-      'tests[8]: could not parse fixture command: ',
-      'tests[9]: expected "docker system prune --all" to be allowed but "block-system-prune" matched',
-      'tests[11]: expected "block-system-prune" to block "kubectl config use-context prod" but "block-context-use" matched first',
-      'tests[12]: expected "block-system-prune" to block "docker system prune --filter until=24h" but no rule matched',
+      'tests[13]: expected "block-system-prune" to block "cleanup() { docker system prune; }" but no rule matched',
+      'tests[14]: expected "docker system prune --all" to be allowed but "block-system-prune" matched',
+      'tests[15]: expected "block-system-prune" to block "kubectl config use-context prod" but "block-context-use" matched first',
+      'tests[16]: expected "block-system-prune" to block "docker system prune --filter until=24h" but no rule matched',
+      'tests[17]: expected "block-system-prune" to block "rm -rf /" but "rm.recursive-force-root-or-home" matched first',
+      `tests[18]: expected "block-system-prune" to block "${DEEPLY_NESTED}" but "analysis.recursion-limit" matched first`,
     ]);
   });
 
