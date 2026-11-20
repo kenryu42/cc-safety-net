@@ -348,6 +348,8 @@ describe('the transparent wrapper vocabulary', () => {
 });
 
 const tokens = (count: number) => Array.from({ length: count }, () => 'a');
+const declaredCommands = (count: number) =>
+  Object.fromEntries(Array.from({ length: count }, (_unused, index) => [`tool${index}`, []]));
 const blockArgRules = (count: number, perRule: number) =>
   Array.from({ length: count }, () => ({ name: 'r', command: 'rm', block_args: tokens(perRule) }));
 
@@ -386,6 +388,35 @@ const ACCEPTANCE_CASES: Array<{
   {
     name: 'block args over the per-rule cap',
     rulebook: { rules: blockArgRules(1, 1025) },
+    expected: false,
+  },
+  {
+    name: 'declared options at the per-list cap',
+    rulebook: { options_with_values: { kubectl: tokens(1024) } },
+    expected: true,
+  },
+  {
+    name: 'declared options over the per-list cap',
+    rulebook: { options_with_values: { kubectl: tokens(1025) } },
+    expected: false,
+  },
+  {
+    name: 'declared options count toward the total token cap',
+    rulebook: { rules: blockArgRules(16, 1024), options_with_values: { kubectl: tokens(1) } },
+    expected: false,
+  },
+  {
+    name: 'commands with declared options at the cap',
+    rulebook: {
+      options_with_values: declaredCommands(1024),
+    },
+    expected: true,
+  },
+  {
+    name: 'commands with declared options over the cap',
+    rulebook: {
+      options_with_values: declaredCommands(1025),
+    },
     expected: false,
   },
   {

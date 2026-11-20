@@ -275,6 +275,64 @@ describe('rulebook diagnostics', () => {
       ['block-destroy'],
     ],
     [
+      'a version 2 rulebook may declare which options of a rule command take a value',
+      { ...V2_RULEBOOK, options_with_values: { helm: ['-n', '--namespace', '--kube-context'] } },
+      [],
+      ['block-uninstall'],
+    ],
+    [
+      'declared options must be keyed by command, not listed bare',
+      { ...V2_RULEBOOK, options_with_values: ['--namespace'] },
+      ['options_with_values: must be an object of command names to option lists'],
+      ['block-uninstall'],
+    ],
+    [
+      'options declared for a command no rule names would never be read',
+      { ...V2_RULEBOOK, options_with_values: { Helm: ['--namespace'] } },
+      ['options_with_values.Helm: is not the command of any rule'],
+      ['block-uninstall'],
+    ],
+    [
+      'a declared option list is a non-empty list of unique options that start with a dash',
+      {
+        ...V2_RULEBOOK,
+        allowed_commands: ['helm', 'kubectl', 'op'],
+        rules: [
+          V2_RULE,
+          { ...V2_RULE, name: 'block-delete', command: 'kubectl' },
+          { ...V2_RULE, name: 'block-read', command: 'op' },
+        ],
+        options_with_values: {
+          helm: [],
+          kubectl: ['-n', '-n', 'namespace', ''],
+          op: '--account',
+        },
+      },
+      [
+        'options_with_values.helm: must be a non-empty array of unique non-empty strings',
+        'options_with_values.kubectl[3]: must be a non-empty string',
+        'options_with_values.kubectl: must not contain duplicate values',
+        'options_with_values.kubectl[2]: must start with "-"',
+        'options_with_values.op: must be a non-empty array of unique non-empty strings',
+      ],
+      ['block-uninstall', 'block-delete', 'block-read'],
+    ],
+    [
+      'options declared inside a rule match are pointed at the rulebook level',
+      {
+        ...V2_RULEBOOK,
+        rules: [{ ...V2_RULE, match: { ...V2_RULE.match, options_with_values: ['-n'] } }],
+      },
+      ['rules[0].match.options_with_values: belongs at the rulebook level, keyed by command'],
+      ['block-uninstall'],
+    ],
+    [
+      'a version 1 rulebook cannot declare options, because its rules guess instead',
+      { ...VALID_RULEBOOK, options_with_values: { terraform: ['-chdir'] } },
+      ['options_with_values: not supported in rulebook_version 1'],
+      ['block-destroy'],
+    ],
+    [
       'a rulebook carrying only its version reports every required field',
       { rulebook_version: 1 },
       [

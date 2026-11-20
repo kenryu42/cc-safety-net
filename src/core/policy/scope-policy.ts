@@ -14,7 +14,7 @@ import {
   RULE_UPDATE_COMMAND,
   type RulesPolicyOptions,
 } from './paths';
-import { assertValidRulebook, type Rulebook } from './rulebook';
+import { assertValidRulebook, declaredOptionsWithValues, type Rulebook } from './rulebook';
 import {
   type CommandToolDeclaration,
   type CommandToolEntry,
@@ -232,6 +232,7 @@ function toPolicyRules(rulebook: Rulebook): CustomRule[] {
       command: rule.command,
       block_args: [],
       match: rule.match,
+      options_with_values: declaredOptionsWithValues(rulebook, rule.command),
       reason: rule.reason,
       intent: rule.intent,
     }));

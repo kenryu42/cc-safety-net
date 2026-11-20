@@ -108,6 +108,23 @@ describe('rule verify', () => {
   });
 
   test.each([
+    'env FOO=1 docker system prune',
+    'sudo docker system prune',
+    "bash -c 'docker system prune'",
+    'timeout 30 docker system prune',
+  ])('a fixture the hook blocks through a wrapper verifies: %s', (command) => {
+    const outcome = verifyBothWays({
+      'project/.cc-safety-net/rules/team-rules/rulebook.json': RULEBOOK('team-rules', {
+        command,
+        expect: 'blocked',
+        rule: 'block-system-prune',
+      }),
+    });
+    expect(outcome.report).toContain('All configs valid.');
+    expect(outcome.code).toBe(0);
+  });
+
+  test.each([
     ['bad name', null, 'rulebook directory names must match'],
     ['missing', null, 'missing/rulebook.json is required'],
     ['broken', '{', 'broken/rulebook.json: invalid JSON'],

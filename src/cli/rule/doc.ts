@@ -102,6 +102,7 @@ Legacy inline \`.safety-net.json\` and \`~/.cc-safety-net/config.json\` files ar
 | \`author\` | No | Free text; not type-checked at runtime |
 | \`allowed_commands\` | Yes | Unique command names matching \`^[a-zA-Z][a-zA-Z0-9_-]*$\` |
 | \`rules\` | Yes | Array of rule objects |
+| \`options_with_values\` | No | \`rulebook_version\` 2 only. Object keyed by a rule's \`command\`; each value is a non-empty array of unique options that start with \`-\` |
 | \`tests\` | No | Array of fixtures |
 
 ### Rule Fields
@@ -145,8 +146,9 @@ Version 2 replaces \`subcommand\` and \`block_args\` with an exact-token \`match
 ### Matching Behavior (\`rulebook_version\` 2)
 
 - **Command**: Normalized to lowercase basename, as in version 1.
-- **Command path**: After recognized global options and their values are skipped, the next command words must equal \`command_path\` exactly. AWS, gcloud, and Azure CLI value-taking global options are built in; Terraform's \`-chdir=dir\` is \`=\`-joined and is skipped with its own token.
-- **Unrecognized options**: A token starting with \`-\` that is not a recognized global option is skipped without consuming a value, so an unlisted value-taking option with a separate value (\`--newflag value\`) makes the rule miss. This fails open deliberately; document such gaps in the rulebook.
+- **Command path**: After recognized options and their values are skipped, the next command words must equal \`command_path\` exactly. AWS, gcloud, and Azure CLI value-taking global options are built in; Terraform's \`-chdir=dir\` is \`=\`-joined and is skipped with its own token.
+- **Options that take a value**: For any other command, declare them once in the rulebook's \`options_with_values\`, such as \`"options_with_values": { "kubectl": ["-n", "--namespace", "--context"] }\`. The token after a declared option is read as its value for every rule of that command, so \`kubectl -n payments delete pod api\` matches \`"command_path": ["delete"]\`. Declared options add to the built-in ones.
+- **Unrecognized options**: A token starting with \`-\` that is neither built in nor declared is skipped without consuming a value, so a value-taking option with a separate value (\`--newflag value\`) makes the rule miss. This fails open deliberately; declare the option to close the gap. A client older than this key ignores it and keeps missing those commands; it also refuses to add or update a rulebook whose \`blocked\` fixture depends on a declared option, because that fixture fails there.
 - **\`any_args\`**: At least one listed token must appear literally among the arguments.
 - **\`exclude_args\`**: Any listed token appearing literally among the arguments prevents the match, which is how a safe preview such as \`aws s3 rm --dryrun\` stays allowed.
 - **No short-option expansion**: Arguments compare as exact tokens, so list every accepted spelling (\`"-destroy"\` and \`"--destroy"\`).
@@ -161,7 +163,7 @@ Version 2 replaces \`subcommand\` and \`block_args\` with an exact-token \`match
 | \`expect\` | Yes | \`"blocked"\` or \`"allowed"\` |
 | \`rule\` | Required for blocked fixtures | Rule name expected to block the command |
 
-Fixtures are optional documentation of intended behavior. Version 1 fixtures are shape-validated only. Version 2 fixtures are evaluated against the rulebook's own rules when a source is fetched by \`rule add\` or \`rule update\`, and by \`rule verify\`; a failing fixture rejects that source before it is written. Loading a rulebook does not re-evaluate fixtures. CC Safety Net never executes fixture commands; they are analyzer inputs only.
+Fixtures are optional documentation of intended behavior. Version 1 fixtures are shape-validated only. Version 2 fixtures are evaluated when a source is fetched by \`rule add\` or \`rule update\`, and by \`rule verify\`; a failing fixture rejects that source before it is written. Each fixture is read the way the hook reads a command, against this rulebook's rules only, so a wrapped spelling such as \`sudo docker system prune\`, \`env FOO=1 docker system prune\`, or \`bash -c 'docker system prune'\` is a valid \`blocked\` fixture. Built-in rules that can be turned off are not applied. A \`blocked\` fixture that another rule blocks first fails and names that rule; an \`allowed\` fixture fails only when one of this rulebook's rules matches. Wrappers from \`transparent_wrappers\` are not applied, because a rulebook must verify the same for every consumer. For the same reason no file is read: a fixture that runs a script by path, such as \`bash deploy.sh\`, is judged on its command line alone. Loading a rulebook does not re-evaluate fixtures. CC Safety Net never executes fixture commands; they are analyzer inputs only.
 
 ## Matching Behavior
 

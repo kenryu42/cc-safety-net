@@ -44,7 +44,19 @@ interface RulebookBase {
 
 export type Rulebook =
   | (RulebookBase & { rulebook_version: 1; rules: CustomRule[] })
-  | (RulebookBase & { rulebook_version: 2; rules: CustomRuleV2[] });
+  | (RulebookBase & {
+      rulebook_version: 2;
+      rules: CustomRuleV2[];
+      options_with_values?: Record<string, string[]>;
+    });
+
+export function declaredOptionsWithValues(
+  rulebook: Extract<Rulebook, { rulebook_version: 2 }>,
+  command: string,
+) {
+  const declared = rulebook.options_with_values;
+  return declared && Object.hasOwn(declared, command) ? declared[command] : undefined;
+}
 
 export function assertValidRulebook(rulebook: unknown): Rulebook {
   const result = validateRulebook(rulebook);
@@ -99,6 +111,7 @@ function rulebookIssues(rulebook: Record<string, unknown>, v2: boolean): Issue[]
       : [typed(['version'], 'required non-empty string')]),
     ...allowedCommandIssues(rulebook.allowed_commands),
     ...rulebookRuleIssues(rulebook.rules, v2),
+    ...optionsWithValuesIssues(rulebook, v2),
     ...rulebookTestIssues(rulebook.tests),
     ...unknownFixtureRuleIssues(rulebook),
     ...unlistedRuleCommandIssues(rulebook),
@@ -204,6 +217,14 @@ function v2MatchIssues(match: unknown, path: readonly PropertyKey[]): Issue[] {
     ...(match.exclude_args === undefined
       ? []
       : tokenArrayIssues(match.exclude_args, [...path, 'exclude_args'], TOKEN_LIST_ERROR, true)),
+    ...(match.options_with_values === undefined
+      ? []
+      : [
+          custom(
+            [...path, 'options_with_values'],
+            'belongs at the rulebook level, keyed by command',
+          ),
+        ]),
   ];
 }
 
@@ -228,6 +249,31 @@ function tokenArrayIssues(
       ? [custom(path, 'must not contain duplicate values')]
       : []),
   ];
+}
+
+function optionsWithValuesIssues(rulebook: Record<string, unknown>, v2: boolean): Issue[] {
+  const declared = rulebook.options_with_values;
+  if (declared === undefined) return [];
+  if (!v2) return [typed(['options_with_values'], 'not supported in rulebook_version 1')];
+  if (!isRecord(declared)) {
+    return [typed(['options_with_values'], 'must be an object of command names to option lists')];
+  }
+  const ruleCommands = new Set(
+    (Array.isArray(rulebook.rules) ? rulebook.rules : []).flatMap((rule) =>
+      isRecord(rule) && typeof rule.command === 'string' ? [rule.command] : [],
+    ),
+  );
+  return Object.entries(declared).flatMap(([command, options]) => [
+    ...(ruleCommands.has(command)
+      ? []
+      : [custom(['options_with_values', command], 'is not the command of any rule')]),
+    ...tokenArrayIssues(options, ['options_with_values', command], TOKEN_LIST_ERROR, true),
+    ...(Array.isArray(options) ? options : []).flatMap((option, index) =>
+      typeof option === 'string' && option !== '' && !option.startsWith('-')
+        ? [custom(['options_with_values', command, index], 'must start with "-"')]
+        : [],
+    ),
+  ]);
 }
 
 function rulebookTestIssues(tests: unknown): Issue[] {

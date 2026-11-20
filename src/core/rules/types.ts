@@ -16,6 +16,7 @@ export type PolicyRule = {
   readonly subcommand?: string;
   readonly block_args: readonly string[];
   readonly match?: CustomRuleMatch;
+  readonly options_with_values?: readonly string[];
   readonly reason: string;
   readonly intent?: BlockIntent;
 };

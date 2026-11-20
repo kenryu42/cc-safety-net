@@ -36,7 +36,7 @@ import { analyzeDeviceCommandMatch } from './device';
 import { analyzeNamespaceCommandMatch } from './namespace';
 import { analyzeNetworkCommandMatch } from './network';
 import { analyzeGitDetailed } from './git';
-import { readShellScriptFile, resolveTrackedHeredocPath } from './heredoc-files';
+import { isPersistentHeredocFilePath, resolveTrackedHeredocPath } from './heredoc-files';
 import {
   containsDangerousCode,
   extractInterpreterCodeArg,
@@ -1125,7 +1125,9 @@ function analyzeScriptFile(
     nestedResultWithinLimits(() => {
       if (withoutUncertainCapabilities) resetAllButScriptFiles(scriptBudget);
       scriptBudget.charge('scriptFiles');
-      const script = readShellScriptFile(path);
+      const script = isPersistentHeredocFilePath(path)
+        ? options.environment.readShellScriptFile(path)
+        : null;
       if (script === null) return null;
       if (runsByPath && script.text.startsWith('#!') && !SHELL_SHEBANG_RE.test(script.text)) {
         return null;

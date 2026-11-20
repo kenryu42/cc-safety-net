@@ -20,7 +20,7 @@ export function checkPolicyRuleMatch(
     }
 
     if (rule.match) {
-      if (matchesCustomRuleMatch(command, tokens, rule.match)) {
+      if (matchesCustomRuleMatch(command, tokens, rule.match, rule.options_with_values)) {
         return toRuleMatch(rule);
       }
       continue;
@@ -50,6 +50,7 @@ function matchesCustomRuleMatch(
   command: string,
   tokens: readonly string[],
   match: CustomRuleMatch,
+  declaredOptionsWithValues: readonly string[] | undefined,
 ): boolean {
   const args = tokens.slice(1);
   if (match.exclude_args?.some((arg) => args.includes(arg))) {
@@ -58,7 +59,13 @@ function matchesCustomRuleMatch(
   if (match.any_args && !match.any_args.some((arg) => args.includes(arg))) {
     return false;
   }
-  return matchesCommandPath(args, match.command_path, getMatchGlobalOptionsWithValues(command));
+  return matchesCommandPath(
+    args,
+    match.command_path,
+    declaredOptionsWithValues
+      ? new Set([...getMatchGlobalOptionsWithValues(command), ...declaredOptionsWithValues])
+      : getMatchGlobalOptionsWithValues(command),
+  );
 }
 
 function matchesCommandPath(

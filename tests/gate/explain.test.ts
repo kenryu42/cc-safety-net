@@ -124,6 +124,105 @@ describe('explainCommand reports the rule config explain resolved against', () =
   }
 });
 
+describe('a version 2 rulebook declares which options take a value', () => {
+  const rulebookFiles = (optionsWithValues?: Record<string, string[]>): TreeSpec => ({
+    'project/.cc-safety-net/rules/rule.json': JSON.stringify({ version: 1, rules: ['cluster'] }),
+    'project/.cc-safety-net/rules/cluster/rulebook.json': JSON.stringify({
+      rulebook_version: 2,
+      name: 'cluster',
+      version: '1.0.0',
+      allowed_commands: ['kubectl', 'op', 'aws'],
+      ...(optionsWithValues ? { options_with_values: optionsWithValues } : {}),
+      rules: [
+        {
+          name: 'block-delete',
+          command: 'kubectl',
+          match: { command_path: ['delete'] },
+          reason: 'Deleting cluster objects needs a human.',
+        },
+        {
+          name: 'block-item-json',
+          command: 'op',
+          match: { command_path: ['item', 'get'], any_args: ['--format', '--format=json'] },
+          reason: 'Prints concealed fields.',
+        },
+        {
+          name: 'block-bucket-removal',
+          command: 'aws',
+          match: { command_path: ['s3', 'rb'] },
+          reason: 'Removing a bucket drops its objects.',
+        },
+      ],
+    }),
+  });
+  const DECLARED = {
+    kubectl: ['-n', '--namespace', '--context'],
+    op: ['--account', '--format'],
+    aws: ['--sso-session'],
+  };
+  const ruleIdFor = (command: string, optionsWithValues?: Record<string, string[]>) =>
+    compareSides(fixture(rulebookFiles(optionsWithValues)), command).ruleId;
+
+  test.each([
+    ['kubectl -n payments delete pod api', 'custom.cluster/block-delete'],
+    ['kubectl --context prod delete ns prod', 'custom.cluster/block-delete'],
+    ['kubectl --namespace=payments delete pod api', 'custom.cluster/block-delete'],
+    ['op --account my item get abc --format json', 'custom.cluster/block-item-json'],
+    ['op --format json item get abc', 'custom.cluster/block-item-json'],
+    [
+      'aws --profile prod --sso-session dev s3 rb s3://bucket',
+      'custom.cluster/block-bucket-removal',
+    ],
+  ])('%s is blocked once the option is declared', (command, ruleId) => {
+    expect(ruleIdFor(command, DECLARED)).toBe(ruleId);
+  });
+
+  test.each(['kubectl -n payments get pods', 'kubectl -n delete get pods'])(
+    '%s stays allowed, because the declared option only skips its value',
+    (command) => {
+      expect(ruleIdFor(command, DECLARED)).toBeUndefined();
+    },
+  );
+
+  test('a rule command named like an object property reads no declared options', () => {
+    const files: TreeSpec = {
+      'project/.cc-safety-net/rules/rule.json': JSON.stringify({ version: 1, rules: ['tools'] }),
+      'project/.cc-safety-net/rules/tools/rulebook.json': JSON.stringify({
+        rulebook_version: 2,
+        name: 'tools',
+        version: '1.0.0',
+        allowed_commands: ['constructor', 'kubectl'],
+        options_with_values: { kubectl: ['-n'] },
+        rules: [
+          {
+            name: 'block-wipe',
+            command: 'constructor',
+            match: { command_path: ['wipe'] },
+            reason: 'Wiping needs a human.',
+          },
+          {
+            name: 'block-delete',
+            command: 'kubectl',
+            match: { command_path: ['delete'] },
+            reason: 'Deleting cluster objects needs a human.',
+          },
+        ],
+      }),
+    };
+    expect(compareSides(fixture(files), 'constructor --force wipe').ruleId).toBe(
+      'custom.tools/block-wipe',
+    );
+    expect(compareSides(fixture(files), 'kubectl -n payments delete pod api').ruleId).toBe(
+      'custom.tools/block-delete',
+    );
+  });
+
+  test('a rulebook that declares nothing keeps missing a separate option value', () => {
+    expect(ruleIdFor('kubectl -n payments delete pod api')).toBeUndefined();
+    expect(ruleIdFor('kubectl delete pod api')).toBe('custom.cluster/block-delete');
+  });
+});
+
 test('a linked worktree relaxes the reset rule on both sides', () => {
   const worktree = createLinkedWorktreeFixture();
   const side = { ...fixture(), project: worktree.linkedWorktree };
