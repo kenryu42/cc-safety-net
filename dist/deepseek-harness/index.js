@@ -1,1 +1,1 @@
-import"../chunks/index-653r4dtn.js";import{It}from"../chunks/index-nwpth121.js";import"../chunks/index-ndya5x8h.js";import"../chunks/index-e5cfhc9d.js";var t={name:"cc-safety-net",inject:["tools"],apply:It};export{t as default};
+import"../chunks/index-653r4dtn.js";import{It}from"../chunks/index-ym12yzvg.js";import"../chunks/index-70cgp21p.js";import"../chunks/index-fm4mccs7.js";var t={name:"cc-safety-net",inject:["tools"],apply:It};export{t as default};
