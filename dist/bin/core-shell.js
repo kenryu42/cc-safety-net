@@ -4262,7 +4262,7 @@ function checkPolicyRuleMatch(tokens, rules) {
       continue;
     }
     if (rule.match) {
-      if (matchesCustomRuleMatch(command, tokens, rule.match)) {
+      if (matchesCustomRuleMatch(command, tokens, rule.match, rule.options_with_values)) {
         return toRuleMatch(rule);
       }
       continue;
@@ -4283,7 +4283,7 @@ function toRuleMatch(rule) {
     intent: rule.intent ?? "manual_only"
   };
 }
-function matchesCustomRuleMatch(command, tokens, match) {
+function matchesCustomRuleMatch(command, tokens, match, declaredOptionsWithValues) {
   const args = tokens.slice(1);
   if (match.exclude_args?.some((arg) => args.includes(arg))) {
     return false;
@@ -4291,7 +4291,7 @@ function matchesCustomRuleMatch(command, tokens, match) {
   if (match.any_args && !match.any_args.some((arg) => args.includes(arg))) {
     return false;
   }
-  return matchesCommandPath(args, match.command_path, getMatchGlobalOptionsWithValues(command));
+  return matchesCommandPath(args, match.command_path, declaredOptionsWithValues ? new Set([...getMatchGlobalOptionsWithValues(command), ...declaredOptionsWithValues]) : getMatchGlobalOptionsWithValues(command));
 }
 function matchesCommandPath(args, commandPath, optionsWithValues) {
   let pathIndex = 0;

@@ -84,12 +84,14 @@ __export(exports_core, {
   createCwdDenial: () => createCwdDenial,
   createDefaultGuiPolicy: () => createDefaultGuiPolicy,
   createFailedClosedDenial: () => createFailedClosedDenial,
+  createInertEnvironment: () => createInertEnvironment,
   createMalformedToolCallDenial: () => createMalformedToolCallDenial,
   createPolicyPreview: () => createPolicyPreview,
   createPolicySnapshot: () => createPolicySnapshot,
   createProcessEnvironment: () => createProcessEnvironment,
   createTestEnvironment: () => createTestEnvironment,
   custom: () => custom,
+  declaredOptionsWithValues: () => declaredOptionsWithValues,
   deriveEffectiveSafetyLevel: () => deriveEffectiveSafetyLevel,
   describeConfigState: () => describeConfigState,
   destructiveCommandRuleIsEnabled: () => destructiveCommandRuleIsEnabled,
@@ -2967,6 +2969,15 @@ function isRulebookWithinAcceptanceLimits(rulebook) {
     remainingStringCodeUnits -= value.length;
     return true;
   };
+  const acceptTokens = (tokens) => {
+    if (!Array.isArray(tokens))
+      return true;
+    if (tokens.length > RULEBOOK_LIMITS.maxBlockArgsPerRule || tokens.length > remainingBlockArgs) {
+      return false;
+    }
+    remainingBlockArgs -= tokens.length;
+    return tokens.every((token) => acceptString(token));
+  };
   if (!acceptString(rulebook.name) || !acceptString(rulebook.version) || !acceptString(rulebook.description) || !acceptString(rulebook.author) || !acceptString(rulebook.migrated_from)) {
     return false;
   }
@@ -2985,24 +2996,14 @@ function isRulebookWithinAcceptanceLimits(rulebook) {
         return false;
       }
       const match = candidate.match && typeof candidate.match === "object" ? candidate.match : {};
-      for (const tokens of [
-        candidate.block_args,
-        match.command_path,
-        match.any_args,
-        match.exclude_args
-      ]) {
-        if (!Array.isArray(tokens))
-          continue;
-        if (tokens.length > RULEBOOK_LIMITS.maxBlockArgsPerRule || tokens.length > remainingBlockArgs) {
-          return false;
-        }
-        remainingBlockArgs -= tokens.length;
-        for (const token of tokens) {
-          if (!acceptString(token))
-            return false;
-        }
+      if (![candidate.block_args, match.command_path, match.any_args, match.exclude_args].every(acceptTokens)) {
+        return false;
       }
     }
+  }
+  const optionsWithValues = rulebook.options_with_values && typeof rulebook.options_with_values === "object" ? Object.entries(rulebook.options_with_values) : [];
+  if (optionsWithValues.length > RULEBOOK_LIMITS.maxAllowedCommands || !optionsWithValues.every(([command, options]) => acceptString(command) && acceptTokens(options))) {
+    return false;
   }
   if (Array.isArray(rulebook.tests)) {
     for (const fixture of rulebook.tests) {
@@ -3021,6 +3022,10 @@ function exceedsArrayLimit(value, limit) {
 }
 
 // src/core/policy/rulebook.ts
+function declaredOptionsWithValues(rulebook, command) {
+  const declared = rulebook.options_with_values;
+  return declared && Object.hasOwn(declared, command) ? declared[command] : undefined;
+}
 function assertValidRulebook(rulebook) {
   const result = validateRulebook(rulebook);
   if (result.errors.length > 0) {
@@ -3060,6 +3065,7 @@ function rulebookIssues(rulebook, v2) {
     ...typeof rulebook.version === "string" && rulebook.version !== "" ? [] : [typed(["version"], "required non-empty string")],
     ...allowedCommandIssues(rulebook.allowed_commands),
     ...rulebookRuleIssues(rulebook.rules, v2),
+    ...optionsWithValuesIssues(rulebook, v2),
     ...rulebookTestIssues(rulebook.tests),
     ...unknownFixtureRuleIssues(rulebook),
     ...unlistedRuleCommandIssues(rulebook)
@@ -3135,7 +3141,10 @@ function v2MatchIssues(match, path) {
   return [
     ...tokenArrayIssues(match.command_path, [...path, "command_path"], COMMAND_PATH_ERROR, false),
     ...match.any_args === undefined ? [] : tokenArrayIssues(match.any_args, [...path, "any_args"], TOKEN_LIST_ERROR, true),
-    ...match.exclude_args === undefined ? [] : tokenArrayIssues(match.exclude_args, [...path, "exclude_args"], TOKEN_LIST_ERROR, true)
+    ...match.exclude_args === undefined ? [] : tokenArrayIssues(match.exclude_args, [...path, "exclude_args"], TOKEN_LIST_ERROR, true),
+    ...match.options_with_values === undefined ? [] : [
+      custom([...path, "options_with_values"], "belongs at the rulebook level, keyed by command")
+    ]
   ];
 }
 function tokenArrayIssues(tokens, path, arrayError, unique) {
@@ -3154,6 +3163,22 @@ function tokenArrayIssues(tokens, path, arrayError, unique) {
     ...tokens.length === 0 ? [custom(path, arrayError)] : [],
     ...unique && new Set(tokens).size !== tokens.length ? [custom(path, "must not contain duplicate values")] : []
   ];
+}
+function optionsWithValuesIssues(rulebook, v2) {
+  const declared = rulebook.options_with_values;
+  if (declared === undefined)
+    return [];
+  if (!v2)
+    return [typed(["options_with_values"], "not supported in rulebook_version 1")];
+  if (!isRecord3(declared)) {
+    return [typed(["options_with_values"], "must be an object of command names to option lists")];
+  }
+  const ruleCommands = new Set((Array.isArray(rulebook.rules) ? rulebook.rules : []).flatMap((rule) => isRecord3(rule) && typeof rule.command === "string" ? [rule.command] : []));
+  return Object.entries(declared).flatMap(([command, options]) => [
+    ...ruleCommands.has(command) ? [] : [custom(["options_with_values", command], "is not the command of any rule")],
+    ...tokenArrayIssues(options, ["options_with_values", command], TOKEN_LIST_ERROR, true),
+    ...(Array.isArray(options) ? options : []).flatMap((option, index) => typeof option === "string" && option !== "" && !option.startsWith("-") ? [custom(["options_with_values", command, index], 'must start with "-"')] : [])
+  ]);
 }
 function rulebookTestIssues(tests) {
   if (tests === undefined)
@@ -3313,6 +3338,7 @@ function toPolicyRules(rulebook) {
       command: rule.command,
       block_args: [],
       match: rule.match,
+      options_with_values: declaredOptionsWithValues(rulebook, rule.command),
       reason: rule.reason,
       intent: rule.intent
     }));
@@ -3674,6 +3700,34 @@ function createTestEnvironment(overrides = {}) {
     }
   }, rest);
 }
+function createInertEnvironment() {
+  return {
+    env: new Map,
+    home: "/home/user",
+    tmpdir: "/tmp",
+    darwinUserTempDir: () => null,
+    paths: { realpath: () => null, entryKind: () => "missing", isDirectory: () => false },
+    readShellScriptFile: () => null,
+    gitMetadata: () => null,
+    worktreeFacts: () => null,
+    isGitDirectory: () => false,
+    gitDirectoryRedirects: () => false
+  };
+}
+var SCRIPT_FILE_MAX_BYTES = 256 * 1024;
+function readShellScriptFile(path) {
+  try {
+    const stats = import_node_fs4.statSync(path, { throwIfNoEntry: false });
+    if (!stats?.isFile() || stats.size > SCRIPT_FILE_MAX_BYTES)
+      return null;
+    const content = import_node_fs4.readFileSync(path);
+    return content.length > SCRIPT_FILE_MAX_BYTES || content.includes(0) ? null : { text: content.toString("utf8").replaceAll(`\r
+`, `
+`), bytes: content.length };
+  } catch {
+    return null;
+  }
+}
 function fakeRealpath(entries, path, seen) {
   const entry = entries.get(path);
   if (entry === undefined || seen.has(path))
@@ -3688,6 +3742,7 @@ function withGitFacts(base, overrides = {}) {
   const redirects = new Map;
   const environment = {
     ...base,
+    readShellScriptFile,
     gitMetadata: (cwd) => memoized(metadata, cwd, () => resolveProtectedGitMetadata(cwd, environment)),
     worktreeFacts: (cwd) => memoized(facts, cwd, () => resolveWorktreeFacts(cwd)),
     isGitDirectory,

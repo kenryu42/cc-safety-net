@@ -141,7 +141,6 @@ __export(exports_analyzer, {
   powerShellTargetForPolicy: () => powerShellTargetForPolicy,
   readPowerShellFileIndex: () => readPowerShellFileIndex,
   readPowerShellScript: () => readPowerShellScript,
-  readShellScriptFile: () => readShellScriptFile,
   reconstructEnvSplitWords: () => reconstructEnvSplitWords,
   resolveTrackedHeredocPath: () => resolveTrackedHeredocPath,
   scanChar: () => scanChar,
@@ -4779,7 +4778,6 @@ function gitAnalyzeOptions(context) {
   };
 }
 // src/gate/analyzer/heredoc-files.ts
-var import_node_fs = require("node:fs");
 var import_node_path3 = require("node:path");
 var import_canonicalization4 = require("./core.js");
 function resolveTrackedHeredocPath(source, effectiveCwd, paths, budget) {
@@ -4794,22 +4792,6 @@ function resolveTrackedHeredocPath(source, effectiveCwd, paths, budget) {
 }
 function isPersistentHeredocFilePath(path) {
   return !["/dev", "/proc", "/sys"].some((root) => path === root || path.startsWith(`${root}/`));
-}
-var SCRIPT_FILE_MAX_BYTES = 256 * 1024;
-function readShellScriptFile(path) {
-  if (!isPersistentHeredocFilePath(path))
-    return null;
-  try {
-    const stats = import_node_fs.statSync(path, { throwIfNoEntry: false });
-    if (!stats?.isFile() || stats.size > SCRIPT_FILE_MAX_BYTES)
-      return null;
-    const content = import_node_fs.readFileSync(path);
-    return content.length > SCRIPT_FILE_MAX_BYTES || content.includes(0) ? null : { text: content.toString("utf8").replaceAll(`\r
-`, `
-`), bytes: content.length };
-  } catch {
-    return null;
-  }
 }
 // src/gate/analyzer/network.ts
 var import_transparent_wrappers4 = require("./core.js");

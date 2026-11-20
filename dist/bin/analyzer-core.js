@@ -2346,7 +2346,7 @@ function analyzeScriptFile(source, path, effectiveCwd, envAssignments, options, 
     if (withoutUncertainCapabilities)
       resetAllButScriptFiles(scriptBudget);
     scriptBudget.charge("scriptFiles");
-    const script = import_heredoc_files.readShellScriptFile(path);
+    const script = import_heredoc_files.isPersistentHeredocFilePath(path) ? options.environment.readShellScriptFile(path) : null;
     if (script === null)
       return null;
     if (runsByPath && script.text.startsWith("#!") && !SHELL_SHEBANG_RE.test(script.text)) {
