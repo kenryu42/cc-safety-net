@@ -728,7 +728,6 @@ export async function buildPackageTarball(options: BuildPackageTarballOptions) {
     chmodSync(join(stagingDirectory, 'dist', 'bin', 'cc-safety-net.js'), 0o755);
     const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as Record<string, unknown>;
     delete manifest.gitHead;
-    delete (manifest.scripts as Record<string, unknown>).prepare;
     writeFileSync(
       join(stagingDirectory, 'package.json'),
       `${JSON.stringify(options.gitHead ? { ...manifest, gitHead: options.gitHead } : manifest, null, 2)}\n`,

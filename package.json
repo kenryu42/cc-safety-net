@@ -81,7 +81,6 @@
     "cc-safety-net": "bun run src/entries/bin.ts",
     "gui:dev": "bun scripts/gui-dev.ts",
     "eval": "claude plugin eval . --ablation with-without --judge-model sonnet --allow-tools \"Bash(npx -y cc-safety-net:*)\" \"Bash(npx cc-safety-net:*)\"",
-    "prepare": "lefthook install",
     "lint:fix": "oxlint --fix src tests scripts knip.ts",
     "format": "oxfmt src tests scripts knip.ts .oxfmtrc.json .oxlintrc.json package.json kimi.plugin.json tsconfig.json tsconfig.build.json tsconfig.gui.json .claude-plugin .codex-plugin .cursor-plugin assets/cc-safety-net.schema.json docs/residual-risk-registry.json hooks",
     "format:check": "oxfmt --check src tests scripts knip.ts .oxfmtrc.json .oxlintrc.json package.json kimi.plugin.json tsconfig.json tsconfig.build.json tsconfig.gui.json .claude-plugin .codex-plugin .cursor-plugin assets/cc-safety-net.schema.json docs/residual-risk-registry.json hooks"

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync } from 'node:fs';
+import { cpSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import pkg from '../../package.json';
 import { buildPackageTarball } from '../../scripts/verify-package';
@@ -24,6 +24,21 @@ describe('release package identity', () => {
       const manifest = JSON.parse(packedManifest.stdout.toString());
       expect(manifest.gitHead).toBe(gitHead);
       expect(manifest.scripts.prepare).toBeUndefined();
+    });
+  }, 90_000);
+
+  test('the repository source installs outside a git checkout', async () => {
+    await withTempDir('cc-safety-net-source-install-', (directory) => {
+      cpSync('package.json', join(directory, 'package.json'));
+      cpSync('bun.lock', join(directory, 'bun.lock'));
+      const result = Bun.spawnSync(
+        [process.execPath, 'install', '--production', '--frozen-lockfile'],
+        { cwd: directory, stdout: 'pipe', stderr: 'pipe' },
+      );
+
+      expect({ exitCode: result.exitCode, stderr: result.stderr.toString() }).toMatchObject({
+        exitCode: 0,
+      });
     });
   }, 90_000);
 
