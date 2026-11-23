@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -7,6 +7,7 @@ import {
   createTestEnvironment,
   type FakeEntry,
   processPathResolver,
+  realpathWithinKernelSymlinkLimit,
 } from '@/core/environment';
 import { createLinkedWorktreeFixture, runGit } from '../helpers';
 import { describeOutcome } from '../helpers/fixture-tree';
@@ -61,6 +62,55 @@ describe('process environment', () => {
   test('a name too long for the filesystem is missing, not an error', () => {
     expect(processPathResolver.entryKind(join(root, 'x'.repeat(300)))).toBe('missing');
     expect(processPathResolver.entryKind(join(root, 'x/'.repeat(4000)))).toBe('missing');
+  });
+});
+
+describe('linux realpath', () => {
+  const chained = (count: number) => {
+    const dir = join(realpathSync(root), `chained-${count}`);
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'target'), 'x');
+    Array.from({ length: count }, (_, index) => index).forEach((index) => {
+      symlinkSync(index === 0 ? 'target' : `link-${index - 1}`, join(dir, `link-${index}`));
+    });
+    return { path: join(dir, `link-${count - 1}`), target: join(dir, 'target') };
+  };
+  const spread = (count: number) => {
+    const dir = join(realpathSync(root), `spread-${count}`);
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'target'), 'x');
+    const links = Array.from({ length: count }, (_, index) => `same-dir-${index}`);
+    links.forEach((link) => {
+      symlinkSync('.', join(dir, link));
+    });
+    return { path: join(dir, ...links, 'target'), target: join(dir, 'target') };
+  };
+
+  test.skipIf(process.platform === 'win32')(
+    'resolves a path that crosses as many symlinks as the kernel follows',
+    () => {
+      for (const fixture of [chained(40), spread(40)]) {
+        expect(realpathWithinKernelSymlinkLimit(fixture.path), fixture.path).toBe(fixture.target);
+      }
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')(
+    'refuses a path the kernel would refuse, and a symlink loop, without hanging',
+    () => {
+      for (const path of [chained(41).path, spread(41).path, join(root, 'loop-a')]) {
+        expect(
+          describeOutcome(() => realpathWithinKernelSymlinkLimit(path)),
+          path,
+        ).toSatisfy((outcome) => !outcome.ok && outcome.error.message.includes('ELOOP'));
+      }
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')('reports a broken link as missing', () => {
+    expect(describeOutcome(() => realpathWithinKernelSymlinkLimit(join(root, 'broken')))).toSatisfy(
+      (outcome) => !outcome.ok && outcome.error.message.includes('ENOENT'),
+    );
   });
 });
 

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join, parse, resolve, sep } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { type ProtectedGitMetadata, resolveProtectedGitMetadata } from './git/metadata';
 import {
@@ -37,11 +37,40 @@ export type Environment = Readonly<{
   gitDirectoryRedirects: (gitDir: string) => boolean;
 }>;
 
+const KERNEL_SYMLINKS_PER_LOOKUP = 40;
+
+/** @internal */
+export function realpathWithinKernelSymlinkLimit(path: string): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync.native(absolute);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ELOOP') throw error;
+    const pending = absolute.split(sep).reverse();
+    let resolved = parse(absolute).root;
+    let followed = 0;
+    for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+      const entry = join(resolved, name);
+      if (!lstatSync(entry).isSymbolicLink()) {
+        resolved = entry;
+        continue;
+      }
+      if (followed === KERNEL_SYMLINKS_PER_LOOKUP) throw error;
+      followed++;
+      const target = readlinkSync(entry);
+      if (isAbsolute(target)) resolved = sep;
+      pending.push(...target.split(sep).reverse());
+    }
+    return resolved;
+  }
+}
+
 /** @internal */
 export const processPathResolver: PathResolver = {
   realpath: (path) => {
     try {
-      const resolved = realpathSync(path);
+      const resolved =
+        process.platform === 'linux' ? realpathWithinKernelSymlinkLimit(path) : realpathSync(path);
       return isAbsolute(resolved) ? resolved : null;
     } catch {
       return null;
