@@ -177,6 +177,7 @@ __export(exports_core, {
   readPolicyFile: () => readPolicyFile2,
   readRetentionDays: () => readRetentionDays,
   readRulesConfig: () => readRulesConfig,
+  realpathWithinKernelSymlinkLimit: () => realpathWithinKernelSymlinkLimit,
   redactEnvAssignmentValues: () => redactEnvAssignmentValues,
   redactNonAssignmentSecrets: () => redactNonAssignmentSecrets,
   redactSecrets: () => redactSecrets,
@@ -3628,10 +3629,38 @@ function comparePath(path) {
 }
 
 // src/core/environment.ts
+var KERNEL_SYMLINKS_PER_LOOKUP = 40;
+function realpathWithinKernelSymlinkLimit(path) {
+  const absolute = import_node_path9.resolve(path);
+  try {
+    return import_node_fs4.realpathSync.native(absolute);
+  } catch (error) {
+    if (error.code !== "ELOOP")
+      throw error;
+    const pending = absolute.split(import_node_path9.sep).reverse();
+    let resolved = import_node_path9.parse(absolute).root;
+    let followed = 0;
+    for (let name = pending.pop();name !== undefined; name = pending.pop()) {
+      const entry = import_node_path9.join(resolved, name);
+      if (!import_node_fs4.lstatSync(entry).isSymbolicLink()) {
+        resolved = entry;
+        continue;
+      }
+      if (followed === KERNEL_SYMLINKS_PER_LOOKUP)
+        throw error;
+      followed++;
+      const target = import_node_fs4.readlinkSync(entry);
+      if (import_node_path9.isAbsolute(target))
+        resolved = import_node_path9.sep;
+      pending.push(...target.split(import_node_path9.sep).reverse());
+    }
+    return resolved;
+  }
+}
 var processPathResolver = {
   realpath: (path) => {
     try {
-      const resolved = import_node_fs4.realpathSync(path);
+      const resolved = process.platform === "linux" ? realpathWithinKernelSymlinkLimit(path) : import_node_fs4.realpathSync(path);
       return import_node_path9.isAbsolute(resolved) ? resolved : null;
     } catch {
       return null;
