@@ -1337,6 +1337,29 @@ test('the selector can cancel, install several targets in order, or hand over to
   expect(handedOver).toMatchObject({ exitCode: 7, lines: [''], log: [] });
 });
 
+test('the picker offers a CLI on PATH that is slow to answer and greys out one that is absent', async () => {
+  const offered: InstallTargetChoice[] = [];
+  await flow({
+    invoke: 'install',
+    script: [{ command: 'opencode', args: ['--version'], delayMs: 6000 }],
+    options: () => ({
+      detectConfiguredTargets: async () => [],
+      selectTargets: async (_action: string, choices: readonly InstallTargetChoice[]) => {
+        offered.push(...choices);
+        return null;
+      },
+    }),
+  });
+
+  expect(offered.find((choice) => choice.target === 'opencode')).toMatchObject({
+    available: true,
+  });
+  expect(offered.find((choice) => choice.target === 'droid')).toMatchObject({
+    available: false,
+    unavailableReason: 'CLI not installed',
+  });
+}, 15_000);
+
 test('the uninstall selector does not offer a Cursor covered only by the Claude Code plugin', async () => {
   const offered: InstallTargetChoice[] = [];
   const result = await flow({

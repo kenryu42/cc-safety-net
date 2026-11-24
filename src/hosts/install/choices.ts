@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { CURSOR_AGENT_PROBE } from '@/hosts/catalog';
-import { getSpawnCommand } from '@/hosts/system-info';
+import { CURSOR_AGENT_PROBE, DEEPSEEK_HARNESS_NPM_PROBE } from '@/hosts/catalog';
+import { getSpawnCommand, isCommandOnPath } from '@/hosts/system-info';
 import type { NativeCommand } from './native';
 import { INSTALL_TARGETS, type InstallAction, type InstallTarget } from './targets';
 
@@ -21,10 +21,13 @@ export type BuildInstallTargetChoicesOptions = {
 
 const PROBE_TIMEOUT_MS = 5000;
 
-export function probeInstallTarget(
-  command: NativeCommand,
-  timeoutMs = PROBE_TIMEOUT_MS,
-): Promise<boolean> {
+export function probeInstallTarget(command: NativeCommand) {
+  return command === DEEPSEEK_HARNESS_NPM_PROBE
+    ? runsCleanly(command)
+    : isCommandOnPath(command[0], process.env);
+}
+
+function runsCleanly(command: NativeCommand): Promise<boolean> {
   return new Promise((resolve) => {
     const spawnCommand = getSpawnCommand([...command], process.env);
     const proc = spawn(spawnCommand.cmd, spawnCommand.args, {
@@ -44,7 +47,7 @@ export function probeInstallTarget(
     const timeoutId = setTimeout(() => {
       proc.kill();
       finish(false);
-    }, timeoutMs);
+    }, PROBE_TIMEOUT_MS);
 
     proc.on('error', () => finish(false));
     proc.on('close', (code) => finish(code === 0));

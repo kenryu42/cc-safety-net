@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { delimiter, extname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
@@ -34,7 +34,7 @@ function getWindowsExecutableExtensions(env: NodeJS.ProcessEnv): string[] {
     .filter((extension) => extension.length > 0);
 }
 
-function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv): string {
+function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv): string | undefined {
   const candidates = extname(command)
     ? [command]
     : [
@@ -42,14 +42,29 @@ function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv): string 
         command,
       ];
   if (command.includes('/') || command.includes('\\')) {
-    return candidates.find((candidate) => existsSync(candidate)) ?? command;
+    return candidates.find((candidate) => existsSync(candidate));
   }
+  return (getEnvValue(env, 'PATH') ?? '')
+    .split(delimiter)
+    .flatMap((dir) => candidates.map((candidate) => join(dir, candidate)))
+    .find((candidate) => existsSync(candidate));
+}
+
+function getSpawnPlatform(env: NodeJS.ProcessEnv) {
+  return env[TEST_SPAWN_PLATFORM_ENV] === 'win32' ? 'win32' : process.platform;
+}
+
+export function isCommandOnPath(command: string, env: NodeJS.ProcessEnv): boolean {
+  if (getSpawnPlatform(env) === 'win32') return resolveWindowsCommand(command, env) !== undefined;
   return (
-    (getEnvValue(env, 'PATH') ?? '')
-      .split(delimiter)
-      .flatMap((dir) => candidates.map((candidate) => join(dir, candidate)))
-      .find((candidate) => existsSync(candidate)) ?? command
-  );
+    command.includes('/')
+      ? [command]
+      : (getEnvValue(env, 'PATH') ?? '').split(delimiter).map((dir) => join(dir, command))
+  ).some((candidate) => {
+    if (!existsSync(candidate)) return false;
+    const stat = statSync(candidate);
+    return stat.isFile() && (stat.mode & 0o111) !== 0;
+  });
 }
 
 function quoteWindowsCommandArg(value: string): string {
@@ -62,10 +77,9 @@ export function getSpawnCommand(
   env: NodeJS.ProcessEnv,
 ): { cmd: string; args: string[]; windowsVerbatimArguments?: boolean } {
   const [command, ...rest] = args;
-  const platform = env[TEST_SPAWN_PLATFORM_ENV] === 'win32' ? 'win32' : process.platform;
-  if (!command || platform !== 'win32') return { cmd: command ?? '', args: rest };
+  if (!command || getSpawnPlatform(env) !== 'win32') return { cmd: command ?? '', args: rest };
 
-  const resolved = resolveWindowsCommand(command, env);
+  const resolved = resolveWindowsCommand(command, env) ?? command;
   if (!/\.(?:bat|cmd)$/i.test(resolved)) return { cmd: resolved, args: rest };
 
   return {

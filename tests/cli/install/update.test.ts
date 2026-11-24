@@ -113,7 +113,6 @@ test('every installed integration is updated in catalog order behind one cache c
     invoke: 'update',
     seed: await seedInstalledHome(),
     script: [{ command: 'claude' }, { command: 'hermes' }],
-    extraCommands: ['gemini'],
     options: () => versions(),
   });
 
@@ -122,9 +121,6 @@ test('every installed integration is updated in catalog order behind one cache c
     lines: [...UPDATE_REPORTS, '', NUDGE, ''],
     errors: [],
     log: [
-      'claude --version\t<root>',
-      'gemini --version\t<root>',
-      'hermes --version\t<root>',
       'claude plugin marketplace update cc-marketplace\t<root>',
       'claude plugin update cc-safety-net@cc-marketplace\t<root>',
       'hermes plugins enable cc-safety-net --no-allow-tool-override\t<root>',
@@ -145,7 +141,6 @@ test('one failing target is reported as an error while the rest still update', a
       { command: 'claude' },
       { command: 'hermes' },
     ],
-    extraCommands: ['gemini'],
     options: () => versions(),
   });
 
@@ -245,7 +240,6 @@ test('a Codex plugin list with a legacy row updates Codex and removes the old pl
     exitCode: 0,
     warnings: [],
     log: [
-      'codex --version\t<root>',
       'codex plugin marketplace upgrade cc-marketplace\t<root>',
       'codex plugin add cc-safety-net@cc-marketplace\t<root>',
       'codex plugin remove safety-net@cc-marketplace\t<root>',
@@ -272,7 +266,6 @@ test('a Copilot plugin checkout on disk is enough to update Copilot', async () =
   expect(result).toMatchObject({
     exitCode: 0,
     log: [
-      'copilot --binary-version\t<root>',
       'copilot plugin list\t<root>',
       'copilot plugin marketplace update cc-marketplace\t<root>',
       'copilot plugin update cc-safety-net@cc-marketplace\t<root>',
@@ -297,7 +290,6 @@ test('a Claude Code install under CLAUDE_CONFIG_DIR is found and updated', async
   expect(result).toMatchObject({
     exitCode: 0,
     log: [
-      'claude --version\t<root>',
       'claude plugin marketplace update cc-marketplace\t<root>',
       'claude plugin update cc-safety-net@cc-marketplace\t<root>',
     ].sort(),
