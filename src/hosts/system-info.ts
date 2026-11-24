@@ -54,17 +54,21 @@ function getSpawnPlatform(env: NodeJS.ProcessEnv) {
   return env[TEST_SPAWN_PLATFORM_ENV] === 'win32' ? 'win32' : process.platform;
 }
 
-export function isCommandOnPath(command: string, env: NodeJS.ProcessEnv): boolean {
-  if (getSpawnPlatform(env) === 'win32') return resolveWindowsCommand(command, env) !== undefined;
-  return (
-    command.includes('/')
-      ? [command]
-      : (getEnvValue(env, 'PATH') ?? '').split(delimiter).map((dir) => join(dir, command))
-  ).some((candidate) => {
-    if (!existsSync(candidate)) return false;
-    const stat = statSync(candidate);
-    return stat.isFile() && (stat.mode & 0o111) !== 0;
+export const isExecutableOnPath = (binary: string, env: NodeJS.ProcessEnv) =>
+  (env.PATH ?? '').split(delimiter).some((dir) => {
+    if (dir.length === 0) return false;
+    try {
+      const stats = statSync(join(dir, binary));
+      return stats.isFile() && (stats.mode & 0o111) !== 0;
+    } catch {
+      return false;
+    }
   });
+
+export function isCommandOnPath(command: string, env: NodeJS.ProcessEnv): boolean {
+  return getSpawnPlatform(env) === 'win32'
+    ? resolveWindowsCommand(command, env) !== undefined
+    : isExecutableOnPath(command, env);
 }
 
 function quoteWindowsCommandArg(value: string): string {

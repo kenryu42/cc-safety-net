@@ -22,7 +22,7 @@ export type BuildInstallTargetChoicesOptions = {
 const PROBE_TIMEOUT_MS = 5000;
 
 export function probeInstallTarget(command: NativeCommand) {
-  return command === DEEPSEEK_HARNESS_NPM_PROBE
+  return command.join(' ') === DEEPSEEK_HARNESS_NPM_PROBE.join(' ')
     ? runsCleanly(command)
     : isCommandOnPath(command[0], process.env);
 }

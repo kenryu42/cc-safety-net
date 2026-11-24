@@ -57,7 +57,7 @@ describe('probing a host CLI', () => {
       const bin = createFakeBin(join(createTempRoot('next-probe-'), 'fake'), [
         { command: 'npx', exit },
       ]);
-      return withProcessEnv(bin.env, () => probeInstallTarget(DEEPSEEK_HARNESS_NPM_PROBE));
+      return withProcessEnv(bin.env, () => probeInstallTarget([...DEEPSEEK_HARNESS_NPM_PROBE]));
     };
     expect([await probeWith(0), await probeWith(1)]).toEqual([true, false]);
   });
