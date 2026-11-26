@@ -1413,6 +1413,51 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: env('.env'),
         relaxedInStandard: true,
       },
+      {
+        name: 'a status line beside an argument list held in a name',
+        command: python(
+          'import subprocess',
+          "args = ['true']",
+          'subprocess.run(args, check=True)',
+          "print('Fixture ready; no credentials printed')",
+        ),
+        expected: creds('credentials'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'prose beside a literal argument list held in a name',
+        command: python(
+          'import subprocess',
+          "args = ['true']",
+          'subprocess.run(args)',
+          "x = 'see .env file'",
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'prose beside an ffprobe argument list held in a name',
+        command: python(
+          'import subprocess',
+          "f = 'a.mp3'",
+          "args = ['ffprobe', '-v', 'error', f]",
+          'subprocess.run(args)',
+          "texts = ['It keeps SSH keys and .env files out of reach.']",
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a command literal held in a name a nice argument list receives',
+        command: python(
+          'import subprocess',
+          "cmd = 'cat .env'",
+          "args = ['nice', cmd]",
+          'subprocess.run(args)',
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
     ]);
   });
 
@@ -1431,7 +1476,6 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         'subprocess.run([prog, cmd])',
         "subprocess.run([f'{prog}', cmd])",
         'subprocess.run([cmd], shell=True)',
-        "args = ['nice', cmd]\nsubprocess.run(args)",
         "subprocess.run(['nice', cmd] + extra)",
         "subprocess.run(['env', *argv, cmd])",
         "subprocess.run(['nice', [cmd]])",
@@ -1439,6 +1483,16 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         "subprocess.run(['CMD.EXE', '/c', cmd])",
         "subprocess.run(['powershell', '-Command', cmd])",
         "subprocess.run(['pwsh.exe', '-NoProfile', cmd])",
+        "args = ['true']\nargs += ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ['true']\nargs.extend(['sh', '-c', cmd])\nsubprocess.run(args)",
+        "args = ['true']\nargs[0:1] = ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ['true']\nif cmd:\n    args = ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ('sh', '-c', 'cat .env')\nsubprocess.run(args)",
+        'args = [cmd]\nsubprocess.run(args, shell=True)',
+        'args = [prog, cmd]\nsubprocess.run(args)',
+        "args = ['nice', cmd] + extra\nsubprocess.run(args)",
+        "args = ['true']\nsubprocess.run(args)\nsubprocess.run(cmd, shell=True)",
       ].map((call) => ({
         name: `a command literal reaching ${call}`,
         command: python('import subprocess', cmd, call),
@@ -1461,6 +1515,26 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       {
         name: 'a home key path held in a name an argument list receives',
         command: python('import subprocess', "f = '~/.ssh/id_rsa'", "subprocess.run(['cat', f])"),
+        expected: ssh('~/.ssh/id_rsa'),
+      },
+      {
+        name: 'a path literal held in a name an argument list held in a name receives',
+        command: python(
+          'import subprocess',
+          "f = '.env'",
+          "args = ['cat', f]",
+          'subprocess.run(args)',
+        ),
+        expected: env('.env'),
+      },
+      {
+        name: 'a home key path held in a name an argument list held in a name receives',
+        command: python(
+          'import subprocess',
+          "f = '~/.ssh/id_rsa'",
+          "args = ['cat', f]",
+          'subprocess.run(args)',
+        ),
         expected: ssh('~/.ssh/id_rsa'),
       },
       {

@@ -1693,7 +1693,11 @@ function extractInlineCodePathTargets(
   const execCalls = literalsPresumedData
     ? Array.from(masked.masked.matchAll(SHELL_EXEC_CALL), (call) => {
         const start = call.index + call[0].length;
-        return { start, end: closingParenthesis(masked.masked, start) };
+        return {
+          start,
+          end: closingParenthesis(masked.masked, start),
+          heldList: heldArgvList(masked, start),
+        };
       })
     : [];
   const literalsExecCallsReceive =
@@ -1701,13 +1705,19 @@ function extractInlineCodePathTargets(
     execCalls.some(
       (call) =>
         firstArgumentHasName(masked.masked, call.start) &&
-        !runsArgvWithoutCodeFlag(masked, call.start),
+        !runsArgvWithoutCodeFlag(masked, call.start) &&
+        call.heldList === undefined,
     )
       ? masked.literals
       : masked.literals.filter(
           (literal) =>
             SHELL_EXEC_PREFIX.test(masked.masked.slice(0, literal.start)) ||
-            execCalls.some((call) => literal.start >= call.start && literal.start < call.end),
+            execCalls.some((call) =>
+              [call, call.heldList].some(
+                (range) =>
+                  range !== undefined && literal.start >= range.start && literal.start < range.end,
+              ),
+            ),
         );
   const literalsWalkedAsShell = new Set(shellExec ? literalsExecCallsReceive : []);
   const literalRolesReadable =
@@ -1845,6 +1855,32 @@ function namesCommandExecution(identifiers: readonly Identifier[]): boolean {
 
 const WINDOWS_SHELLS = new Set(['cmd', 'powershell', 'pwsh']);
 
+function heldArgvList(masked: Extract<MaskedCode, { kind: 'masked' }>, start: number) {
+  const loneName = /\s*([A-Za-z_$][\w$]*)\s*[,)]/y;
+  loneName.lastIndex = start;
+  const name = loneName.exec(masked.masked)?.[1]?.replaceAll('$', '\\$');
+  if (
+    name === undefined ||
+    masked.masked.match(new RegExp(`(?<![\\w$])${name}(?![\\w$])`, 'g'))?.length !== 2
+  ) {
+    return undefined;
+  }
+  const assignment = new RegExp(
+    `(?:^|[;\\n{])[ \\t]*(?:(?:const|let|var)\\s+)?${name}\\s*=\\s*(?=[[(])`,
+  ).exec(masked.masked);
+  if (assignment === null) return undefined;
+  const opener = assignment.index + assignment[0].length;
+  const end = masked.masked.indexOf(masked.masked[opener] === '[' ? ']' : ')', opener + 1);
+  const statementEnd = /[ \t]*(?:[;\r\n]|$)/y;
+  statementEnd.lastIndex = end + 1;
+  return end !== -1 &&
+    statementEnd.test(masked.masked) &&
+    (!/[A-Za-z_$]/.test(masked.masked.slice(opener + 1, end)) ||
+      argvElementsRunNoCode(masked, opener, end))
+    ? { start: opener + 1, end }
+    : undefined;
+}
+
 function runsArgvWithoutCodeFlag(
   masked: Extract<MaskedCode, { kind: 'masked' }>,
   start: number,
@@ -1853,11 +1889,20 @@ function runsArgvWithoutCodeFlag(
   const closer = BRACKET_CLOSERS[masked.masked[opener] ?? ''];
   if (closer === undefined || closer === '}') return false;
   const end = masked.masked.indexOf(closer, opener + 1);
-  const elements = masked.masked.slice(opener + 1, end);
   return (
     end !== -1 &&
-    /^\s*,[\w\s,]*$/.test(elements) &&
     /^[,)]/.test(masked.masked.slice(nextNonWhitespaceIndex(masked.masked, end + 1))) &&
+    argvElementsRunNoCode(masked, opener, end)
+  );
+}
+
+function argvElementsRunNoCode(
+  masked: Extract<MaskedCode, { kind: 'masked' }>,
+  opener: number,
+  end: number,
+): boolean {
+  return (
+    /^\s*,[\w\s,]*$/.test(masked.masked.slice(opener + 1, end)) &&
     !masked.literals.some(
       (literal) =>
         literal.tokenStart > opener &&
