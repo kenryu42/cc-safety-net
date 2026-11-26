@@ -1493,11 +1493,24 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         'args = [prog, cmd]\nsubprocess.run(args)',
         "args = ['nice', cmd] + extra\nsubprocess.run(args)",
         "args = ['true']\nsubprocess.run(args)\nsubprocess.run(cmd, shell=True)",
+        "args = ['sh'[0:2]\n, '-c', cmd]\nsubprocess.run(args)",
       ].map((call) => ({
         name: `a command literal reaching ${call}`,
         command: python('import subprocess', cmd, call),
         expected: env('.env'),
       })),
+      {
+        name: 'a JavaScript comma expression held in a name is not an argument list',
+        command: [
+          "node - <<'EOF'",
+          "const cp = require('node:child_process');",
+          "const cmd = 'cat .env';",
+          "const args = ('nice', cmd);",
+          "cp.execSync(args, { stdio: 'inherit' });",
+          'EOF',
+        ].join('\n'),
+        expected: env('.env'),
+      },
       {
         name: 'node code reaching an argument list with an eval flag',
         command: python(

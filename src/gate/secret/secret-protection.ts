@@ -1696,7 +1696,7 @@ function extractInlineCodePathTargets(
         return {
           start,
           end: closingParenthesis(masked.masked, start),
-          heldList: heldArgvList(masked, start),
+          heldList: heldArgvList(masked, start, family),
         };
       })
     : [];
@@ -1855,7 +1855,11 @@ function namesCommandExecution(identifiers: readonly Identifier[]): boolean {
 
 const WINDOWS_SHELLS = new Set(['cmd', 'powershell', 'pwsh']);
 
-function heldArgvList(masked: Extract<MaskedCode, { kind: 'masked' }>, start: number) {
+function heldArgvList(
+  masked: Extract<MaskedCode, { kind: 'masked' }>,
+  start: number,
+  family: LiteralFamily,
+) {
   const loneName = /\s*([A-Za-z_$][\w$]*)\s*[,)]/y;
   loneName.lastIndex = start;
   const name = loneName.exec(masked.masked)?.[1]?.replaceAll('$', '\\$');
@@ -1866,7 +1870,7 @@ function heldArgvList(masked: Extract<MaskedCode, { kind: 'masked' }>, start: nu
     return undefined;
   }
   const assignment = new RegExp(
-    `(?:^|[;\\n{])[ \\t]*(?:(?:const|let|var)\\s+)?${name}\\s*=\\s*(?=[[(])`,
+    `(?:^|[;\\n{])[ \\t]*(?:(?:const|let|var)\\s+)?${name}\\s*=\\s*(?=${family === 'python' ? '[[(]' : '\\['})`,
   ).exec(masked.masked);
   if (assignment === null) return undefined;
   const opener = assignment.index + assignment[0].length;
@@ -1875,6 +1879,7 @@ function heldArgvList(masked: Extract<MaskedCode, { kind: 'masked' }>, start: nu
   statementEnd.lastIndex = end + 1;
   return end !== -1 &&
     statementEnd.test(masked.masked) &&
+    !/[[\](){}]/.test(masked.masked.slice(opener + 1, end)) &&
     (!/[A-Za-z_$]/.test(masked.masked.slice(opener + 1, end)) ||
       argvElementsRunNoCode(masked, opener, end))
     ? { start: opener + 1, end }
