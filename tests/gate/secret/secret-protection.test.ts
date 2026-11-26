@@ -3794,6 +3794,16 @@ describe('secret protection through tool inputs', () => {
         command: 'Get-Content id.key',
         expected: { target: 'id.key', ruleId: 'secret.ext-pattern.key' },
       },
+      ...[
+        ['Get-Content ./certs/$name.key', './certs/${name}.key'],
+        ['Get-Content ./keys/server$null.key', './keys/server${null}.key'],
+        ['Get-Content certs\\$name.key', 'certs\\${name}.key'],
+        ['Get-Content $.key', '${}.key'],
+        ['Get-Content $?.key', '${?}.key'],
+      ].map(([command = '', target = '']) => ({
+        command,
+        expected: { target, ruleId: 'secret.ext-pattern.key' },
+      })),
     ];
     for (const row of cases) {
       expect(routeVerdict({ command: row.command }, powershell), row.command).toStrictEqual(

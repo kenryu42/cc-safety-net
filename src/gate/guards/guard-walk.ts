@@ -817,7 +817,7 @@ function readExpansion(
       ? char
       : ((powershell ? POWERSHELL_VARIABLE_NAME : /^\w*/).exec(raw.slice(start + 1))?.[0] ?? '');
   const member =
-    powershell && !state.double
+    powershell && !state.double && /^\w/.test(name)
       ? (POWERSHELL_MEMBER_ACCESS.exec(raw.slice(start + 1 + name.length))?.[0] ?? '')
       : '';
   return { text: `\${${name}${member}}`, next: start + 1 + name.length + member.length };

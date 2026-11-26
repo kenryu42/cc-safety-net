@@ -674,9 +674,11 @@ function derivePowerShellWordParts(source: string, start: number, end: number): 
     }
     if (char === '$' || (char === '@' && i === start)) {
       const nameEnd = readPowerShellVariableEnd(source, i + 1, end);
-      const next = double
-        ? nameEnd
-        : nameEnd + (POWERSHELL_MEMBER_ACCESS.exec(source.slice(nameEnd, end))?.[0].length ?? 0);
+      const startsMemberAccess =
+        !double && i === start && /^\w+(?::\w+)*$/.test(source.slice(i + 1, nameEnd));
+      const next = startsMemberAccess
+        ? nameEnd + (POWERSHELL_MEMBER_ACCESS.exec(source.slice(nameEnd, end))?.[0].length ?? 0)
+        : nameEnd;
       collector.push(literalStart, i, 'literal');
       collector.push(i, next, 'variable');
       i = next;
