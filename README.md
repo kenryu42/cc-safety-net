@@ -52,6 +52,15 @@ CC Safety Net (Coding CLI Safety Net) blocks destructive commands and access to 
   <img src="https://ccsafetynet.com/go/deepsider/view?from=readme" alt="" width="1" height="1">
 </p>
 
+<br>
+
+<p>
+  <a href="https://ccsafetynet.com/go/fastaitoken?from=readme"><picture><source media="(prefers-color-scheme: dark)" srcset="./.github/assets/fastaitoken-logo-dark.png"><source media="(prefers-color-scheme: light)" srcset="./.github/assets/fastaitoken-logo-light.png"><img alt="FastAIToken" src="./.github/assets/fastaitoken-logo-light.png" height="32"></picture></a>
+  <br>
+  <sub><a href="https://ccsafetynet.com/go/fastaitoken?from=readme">One-stop access to Claude, GPT and DeepSeek, from 6% of list price, with company invoicing and payment.</a></sub>
+  <img src="https://ccsafetynet.com/go/fastaitoken/view?from=readme" alt="" width="1" height="1">
+</p>
+
 </details>
 
 ## How it works
