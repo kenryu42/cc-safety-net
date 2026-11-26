@@ -3767,6 +3767,41 @@ describe('secret protection through tool inputs', () => {
     }
   });
 
+  test('an unquoted PowerShell member access is one value, not a file suffix', () => {
+    const powershell: ToolRoute = { kind: 'command', shell: 'powershell' };
+    const cases: readonly { command: string; expected: Verdict }[] = [
+      {
+        command:
+          '@{a=1}.GetEnumerator() | ForEach-Object { $o | Add-Member $_.Key $_.Value -Force }',
+        expected: null,
+      },
+      { command: 'Write-Output $_.Key', expected: null },
+      { command: 'Add-Member $x.Key 1', expected: null },
+      { command: 'Get-Content $_.Key', expected: null },
+      {
+        command: 'Get-Content "$_.key"',
+        expected: { target: '${_}.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      {
+        command: 'Get-Content "$dir.key"',
+        expected: { target: '${dir}.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      {
+        command: 'Get-Content ${dir}.key',
+        expected: { target: '${dir}.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      {
+        command: 'Get-Content id.key',
+        expected: { target: 'id.key', ruleId: 'secret.ext-pattern.key' },
+      },
+    ];
+    for (const row of cases) {
+      expect(routeVerdict({ command: row.command }, powershell), row.command).toStrictEqual(
+        row.expected,
+      );
+    }
+  });
+
   test('a ForEach-Object or Where-Object script block is auto-detected as PowerShell', () => {
     const auto: ToolRoute = { kind: 'command', shell: 'auto' };
     const key = (target: string): Verdict => ({ target, ruleId: 'secret.ext-pattern.key' });
