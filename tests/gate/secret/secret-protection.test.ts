@@ -3767,6 +3767,20 @@ describe('secret protection through tool inputs', () => {
     }
   });
 
+  test.skipIf(process.platform !== 'win32')(
+    'a PowerShell member access argument is not a file name on Windows',
+    () => {
+      const powershell: ToolRoute = { kind: 'command', shell: 'powershell' };
+      for (const command of [
+        '@{a=1}.GetEnumerator() | ForEach-Object { $o | Add-Member $_.Key $_.Value -Force }',
+        'Write-Output $_.Key',
+        'Add-Member $x.Key 1',
+      ]) {
+        expect(routeVerdict({ command }, powershell), command).toBeNull();
+      }
+    },
+  );
+
   test('a ForEach-Object or Where-Object script block is auto-detected as PowerShell', () => {
     const auto: ToolRoute = { kind: 'command', shell: 'auto' };
     const key = (target: string): Verdict => ({ target, ruleId: 'secret.ext-pattern.key' });
