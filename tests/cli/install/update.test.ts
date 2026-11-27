@@ -187,35 +187,41 @@ test('update moves a legacy Antigravity CLI hook onto the agy plugin and keeps o
   expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
 });
 
-test('update reinstalls the Antigravity CLI plugin from the plugin branch to refresh its skill', async () => {
-  const result = await flow({
-    invoke: 'update',
-    seed: {
-      [`${AGY_PLUGIN}/.antigravity-plugin/plugin.json`]:
-        '{"name":"cc-safety-net","version":"0.0.1"}\n',
-      [`${AGY_PLUGIN}/hooks.json`]: `${JSON.stringify(agyHooks('cc-safety-net', AGY_BUNDLED_COMMAND))}\n`,
-      [`${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`]: '# CC Safety Net, outdated\n',
-      [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
-    },
-    seedTmp: AGY_PLUGIN_BRANCH,
-    script: [AGY_PLUGIN_BRANCH_INSTALL],
-    options: () => versions(),
-  });
+test.each([
+  ['a cached npx package', NPX_ENTRY, '{"name":"cc-safety-net"}\n'],
+  ['an npx cache that cannot be cleared', '.npm/_npx', 'not a directory\n'],
+])(
+  'update reinstalls the Antigravity CLI plugin from the plugin branch to refresh its skill with %s',
+  async (_cache, cachePath, cacheContent) => {
+    const result = await flow({
+      invoke: 'update',
+      seed: {
+        [`${AGY_PLUGIN}/.antigravity-plugin/plugin.json`]:
+          '{"name":"cc-safety-net","version":"0.0.1"}\n',
+        [`${AGY_PLUGIN}/hooks.json`]: `${JSON.stringify(agyHooks('cc-safety-net', AGY_BUNDLED_COMMAND))}\n`,
+        [`${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`]: '# CC Safety Net, outdated\n',
+        [cachePath]: cacheContent,
+      },
+      seedTmp: AGY_PLUGIN_BRANCH,
+      script: [AGY_PLUGIN_BRANCH_INSTALL],
+      options: () => versions(),
+    });
 
-  expect(result).toMatchObject({
-    exitCode: 0,
-    lines: ['Updated Antigravity CLI integration', '', NUDGE, ''],
-    errors: [],
-    log: AGY_INSTALL_LOG,
-  });
-  expect(
-    JSON.parse(fileAt(result.tree, `${AGY_PLUGIN}/.antigravity-plugin/plugin.json`) ?? '{}'),
-  ).toMatchObject({ version: '9.9.9' });
-  expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
-    AGY_PLUGIN_BRANCH_SKILL,
-  );
-  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
-});
+    expect(result).toMatchObject({
+      exitCode: 0,
+      lines: ['Updated Antigravity CLI integration', '', NUDGE, ''],
+      errors: [],
+      log: AGY_INSTALL_LOG,
+    });
+    expect(
+      JSON.parse(fileAt(result.tree, `${AGY_PLUGIN}/.antigravity-plugin/plugin.json`) ?? '{}'),
+    ).toMatchObject({ version: '9.9.9' });
+    expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
+      AGY_PLUGIN_BRANCH_SKILL,
+    );
+    expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+  },
+);
 
 test('every installed integration is updated in catalog order behind one cache clear', async () => {
   const result = await flow({

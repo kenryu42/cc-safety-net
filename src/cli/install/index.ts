@@ -928,7 +928,11 @@ async function updateInstalledIntegrations(options: UpdateCommandOptions): Promi
             message: `${getIntegrationDisplayName(target)} not found; skipped`,
             failed: false,
           });
-        if (npxCacheFailure !== null && NPX_CACHE_TARGETS.has(target))
+        if (
+          npxCacheFailure !== null &&
+          NPX_CACHE_TARGETS.has(target) &&
+          target !== 'antigravity-cli'
+        )
           return Promise.resolve({ message: npxCacheFailure, failed: true });
         return runSingleInstallTarget(
           'install',
