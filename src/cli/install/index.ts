@@ -15,7 +15,11 @@ import { createProcessEnvironment, type Environment } from '@/core/environment';
 import { atomicWriteFile } from '@/core/io/atomic-write';
 import { stripJsonComments } from '@/core/io/jsonc';
 import { installAmp, uninstallAmp } from '@/hosts/amp/install';
-import { installAntigravityCli, uninstallAntigravityCli } from '@/hosts/antigravity-cli/install';
+import {
+  planAntigravityCliInstall,
+  planAntigravityCliUninstall,
+  removeLegacyAntigravityHook,
+} from '@/hosts/antigravity-cli/install';
 import { getIntegrationDisplayName } from '@/hosts/catalog';
 import { detectClaudeCode, hasClaudeInstalledPlugin } from '@/hosts/claude-code/detect';
 import { CODEX_TRUST_HINT } from '@/hosts/codex/detect';
@@ -89,7 +93,7 @@ import { defaultVersionFetcher, type VersionFetcher } from '@/hosts/system-info'
 
 type ConfigInstallTarget = Extract<
   InstallTarget,
-  'antigravity-cli' | 'devin' | 'droid' | 'grok-build' | 'kimi-code' | 'cursor'
+  'devin' | 'droid' | 'grok-build' | 'kimi-code' | 'cursor'
 >;
 
 type ManagedArtifactTarget = Extract<InstallTarget, 'amp' | 'hermes-agent'>;
@@ -100,6 +104,7 @@ type NativeInstallPlan = {
 
   cleanupCommands?: readonly NativeCommand[];
   afterInstall?: () => Promise<void>;
+  cleanup?: () => void;
   update?: boolean;
 };
 type InstallTargetSelection = readonly InstallTarget[] | null | 'update';
@@ -184,6 +189,10 @@ function hasCodexMarketplace(output: string | null): boolean {
 }
 
 const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
+  'antigravity-cli': {
+    installCommands: planAntigravityCliInstall,
+    uninstallCommands: planAntigravityCliUninstall,
+  },
   'claude-code': {
     installCommands: (environment) => {
       const update = hasClaudeInstalledPlugin(environment, 'cc-safety-net@cc-marketplace');
@@ -525,7 +534,7 @@ async function installNativeTarget(
     typeof definition.installCommands === 'function'
       ? await definition.installCommands(environment, codexPluginListOutput)
       : { commands: definition.installCommands };
-  await runNativeCommands(plan.commands);
+  await runNativeCommands(plan.commands).finally(() => plan.cleanup?.());
   await runNativeCleanupCommands(plan.cleanupCommands ?? []);
   await plan.afterInstall?.();
   return [
@@ -561,7 +570,6 @@ function uninstallOpenCodeTarget(environment: Environment): string {
 }
 
 const CONFIG_INSTALLS = {
-  'antigravity-cli': { install: installAntigravityCli, uninstall: uninstallAntigravityCli },
   cursor: { install: installCursor, uninstall: uninstallCursor },
   devin: { install: installDevin, uninstall: uninstallDevin },
   droid: { install: installDroid, uninstall: uninstallDroid },
@@ -667,6 +675,10 @@ async function runManagedArtifactInstallTarget(
   return [message, noChange ? undefined : definition.restartNote].filter(Boolean).join('\n');
 }
 
+function clearNpxCacheOnInstall(environment: Environment, updating: boolean): void {
+  if (!updating) clearNpxSafetyNetCache(environment);
+}
+
 const INSTALL_EXTRAS: Partial<
   Record<
     InstallTarget,
@@ -678,13 +690,13 @@ const INSTALL_EXTRAS: Partial<
     }
   >
 > = {
+  'antigravity-cli': {
+    beforeInstall: clearNpxCacheOnInstall,
+    afterInstall: removeLegacyAntigravityHook,
+  },
   'copilot-cli': { afterInstall: enableCopilotPlugin },
   cursor: { afterUninstall: uninstallCursorPlugin },
-  'hermes-agent': {
-    beforeInstall: (environment, updating) => {
-      if (!updating) clearNpxSafetyNetCache(environment);
-    },
-  },
+  'hermes-agent': { beforeInstall: clearNpxCacheOnInstall },
   openclaw: { beforeUninstall: assertOpenClawPluginDirIsOurs },
   pi: { afterInstall: removePiExtensionsFilter },
 };

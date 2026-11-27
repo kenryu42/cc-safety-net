@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AMP_MANAGED_HEADER } from '@/hosts/amp/artifact';
 import { buildOpenClawArtifactHeader } from '@/hosts/openclaw/artifact';
@@ -54,7 +54,6 @@ const NPX_ENTRY = '.npm/_npx/dd7a/node_modules/cc-safety-net/package.json';
 
 const CONFIG_HOSTS = [
   { flag: '--cursor', name: 'Cursor', file: '.cursor/hooks.json' },
-  { flag: '--agy-cli', name: 'Antigravity CLI', file: '.gemini/config/hooks.json' },
   { flag: '--devin', name: 'Devin CLI', file: DEVIN_CONFIG },
   { flag: '--droid', name: 'Factory Droid', file: '.factory/hooks.json' },
   { flag: '--grok-build', name: 'Grok Build', file: '.grok/hooks/cc-safety-net.json' },
@@ -117,12 +116,168 @@ test('a file where the config directory belongs stops the install', async () => 
 test('a file part-way down the config path gets the parent-path hint', async () => {
   const result = await flow({
     invoke: 'install',
-    args: ['--agy-cli'],
-    seed: { '.gemini': 'not a directory\n' },
+    args: ['--grok-build'],
+    seed: { '.grok': 'not a directory\n' },
   });
 
   expect(result.exitCode).toBe(1);
   expect(result.errors[0]).toEndWith('\nCheck that every parent path component is a directory.');
+});
+
+const AGY_LEGACY = '.gemini/config/hooks.json';
+const AGY_PLUGIN = '.gemini/config/plugins/cc-safety-net';
+const AGY_COMMAND = 'npx -y cc-safety-net hook --agy-cli';
+const agyLegacyHooks = (definition: Record<string, unknown>) =>
+  `${JSON.stringify(
+    {
+      mine: {
+        PreToolUse: [{ hooks: [{ type: 'command', command: 'echo mine' }] }],
+      },
+      'cc-safety-net': definition,
+    },
+    null,
+    2,
+  )}\n`;
+const AGY_LEGACY_SEED = agyLegacyHooks({
+  PreToolUse: [{ hooks: [{ type: 'command', command: AGY_COMMAND, timeout: 30 }] }],
+});
+const AGY_INSTALL = {
+  command: 'agy',
+  args: ['plugin', 'install'],
+  copyLastArgTo: `<home>/${AGY_PLUGIN}`,
+};
+const AGY_PLUGIN_HOOKS = `${AGY_PLUGIN}/hooks.json`;
+const agyPluginSeed = {
+  [`${AGY_PLUGIN}/plugin.json`]: '{"name":"cc-safety-net"}\n',
+  [AGY_PLUGIN_HOOKS]: `{"cc-safety-net":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"${AGY_COMMAND}"}]}]}}\n`,
+};
+
+test('Antigravity CLI installs as a native agy plugin and retires the legacy hook entry', async () => {
+  const installed = await flow({
+    invoke: 'install',
+    args: ['--agy-cli'],
+    script: [AGY_INSTALL],
+    seed: {
+      [AGY_LEGACY]: AGY_LEGACY_SEED,
+      [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+    },
+  });
+
+  expect(installed).toMatchObject({
+    exitCode: 0,
+    lines: [
+      'Installed Antigravity CLI integration',
+      'Removed the legacy Antigravity CLI hook from <home>/.gemini/config/hooks.json',
+      '',
+    ],
+    errors: [],
+    tmp: [],
+  });
+  expect(installed.log).toEqual([
+    expect.stringMatching(/^agy plugin install <root>\/tmp\/\S+\t<root>$/),
+  ]);
+  expect(JSON.parse(fileAt(installed.tree, `${AGY_PLUGIN}/plugin.json`) ?? '{}')).toMatchObject({
+    name: 'cc-safety-net',
+    version: 'dev',
+  });
+  expect(JSON.parse(fileAt(installed.tree, AGY_PLUGIN_HOOKS) ?? '{}')).toEqual({
+    'cc-safety-net': {
+      PreToolUse: [
+        {
+          matcher: '*',
+          hooks: [{ type: 'command', command: AGY_COMMAND, timeout: 30 }],
+        },
+      ],
+    },
+  });
+  expect(fileAt(installed.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
+    readFileSync(
+      join(import.meta.dir, '..', '..', '..', 'skills', 'cc-safety-net', 'SKILL.md'),
+      'utf-8',
+    ).replace(/\r\n/g, '\n'),
+  );
+  expect(fileAt(installed.tree, AGY_LEGACY)).toBe(agyLegacyHooks({ PreToolUse: [] }));
+  expect(installed.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/dd7a');
+});
+
+test('a failed agy plugin install keeps the legacy Antigravity CLI hook in place', async () => {
+  const failed = await flow({
+    invoke: 'install',
+    args: ['--agy-cli'],
+    script: [
+      {
+        command: 'agy',
+        args: ['plugin', 'install'],
+        exit: 1,
+        stderr: 'agy exploded\n',
+      },
+    ],
+    seed: { [AGY_LEGACY]: AGY_LEGACY_SEED },
+  });
+
+  expect(failed).toMatchObject({ exitCode: 1, tmp: [] });
+  expect(failed.errors[0]).toStartWith('Failed to run agy plugin install ');
+  expect(failed.errors[0]).toEndWith('(exit 1).\nagy exploded');
+  expect(fileAt(failed.tree, AGY_LEGACY)).toBe(AGY_LEGACY_SEED);
+  expect(failed.tree.map((entry) => entry.path)).not.toContain(AGY_PLUGIN);
+});
+
+test('reinstalling an Antigravity CLI plugin the user disabled enables it again', async () => {
+  const reinstalled = await flow({
+    invoke: 'install',
+    args: ['--agy-cli'],
+    script: [AGY_INSTALL, { command: 'agy', args: ['plugin', 'enable', 'cc-safety-net'] }],
+    seed: {
+      ...agyPluginSeed,
+      '.gemini/config/config.json': '{"plugins":{"cc-safety-net":{"enabled":false}}}\n',
+    },
+  });
+
+  expect(reinstalled).toMatchObject({
+    exitCode: 0,
+    lines: ['Updated Antigravity CLI integration', ''],
+  });
+  expect(reinstalled.log).toEqual([
+    expect.stringMatching(/^agy plugin enable cc-safety-net\t<root>$/),
+    expect.stringMatching(/^agy plugin install <root>\/tmp\/\S+\t<root>$/),
+  ]);
+});
+
+test.each([
+  ['[]\n', 'Antigravity hooks config must be a JSON object'],
+  [
+    '{\n  // ours\n  "cc-safety-net": {}\n}\n',
+    'Failed to parse Antigravity hooks config <home>/.gemini/config/hooks.json: ',
+  ],
+])(
+  'Antigravity CLI uninstall refuses a legacy hook config it cannot edit: %s',
+  async (seed, message) => {
+    const refused = await flow({
+      invoke: 'uninstall',
+      args: ['--agy-cli'],
+      seed: { [AGY_LEGACY]: seed },
+    });
+
+    expect(refused.exitCode).toBe(1);
+    expect(refused.errors[0]).toStartWith(message);
+    expect(fileAt(refused.tree, AGY_LEGACY)).toBe(seed);
+  },
+);
+
+test('Antigravity CLI uninstall removes the agy plugin and the legacy hook entry', async () => {
+  const removed = await flow({
+    invoke: 'uninstall',
+    args: ['--agy-cli'],
+    script: [{ command: 'agy', args: ['plugin', 'uninstall', 'cc-safety-net'] }],
+    seed: { ...agyPluginSeed, [AGY_LEGACY]: AGY_LEGACY_SEED },
+  });
+
+  expect(removed).toMatchObject({
+    exitCode: 0,
+    lines: ['Uninstalled Antigravity CLI integration', ''],
+    log: ['agy plugin uninstall cc-safety-net\t<root>'],
+  });
+  expect(fileAt(removed.tree, AGY_LEGACY)).toBe(agyLegacyHooks({ PreToolUse: [] }));
 });
 
 function filesUnder(tree: readonly { path: string; content?: string }[], prefix: string) {

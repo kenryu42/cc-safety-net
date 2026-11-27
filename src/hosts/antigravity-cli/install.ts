@@ -1,130 +1,72 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Environment } from '@/core/environment';
 import { atomicWriteFile } from '@/core/io/atomic-write';
+import {
+  ANTIGRAVITY_PLUGIN_NAME,
+  getAntigravityPluginDir,
+  isAntigravityPluginDisabled,
+} from '@/hosts/antigravity-cli/detect';
 import { getAntigravityHooksPath } from '@/hosts/antigravity-cli/hook';
-import type { InstallResult } from '@/hosts/install/types';
+import type { NativeCommand } from '@/hosts/install/native';
 import { managedHookCommands } from '@/hosts/managed-command';
+import { getPackageVersion } from '@/hosts/system-info';
+import { CC_SAFETY_NET_SKILL } from '@/hosts/templates/cc-safety-net';
 
 const ANTIGRAVITY_HOOK_COMMAND = managedHookCommands['antigravity-cli'];
-const MANAGED_HOOK_NAME = 'cc-safety-net';
-
-type AntigravityHookHandler = {
-  type?: string;
-  command?: string;
-  timeout?: number;
-};
-
-type AntigravityPreToolUseEntry = {
-  hooks?: AntigravityHookHandler[];
-  [key: string]: unknown;
-};
-
-type AntigravityHookDefinition = {
-  enabled?: boolean;
-  PreToolUse?: AntigravityPreToolUseEntry[];
-  [key: string]: unknown;
-};
-
-type AntigravityHooksConfig = Record<string, unknown>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function managedHookEntry(): AntigravityHookDefinition {
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+export function planAntigravityCliInstall(environment: Environment) {
+  const dir = mkdtempSync(join(environment.tmpdir, 'cc-safety-net-agy-'));
+  mkdirSync(join(dir, 'skills', ANTIGRAVITY_PLUGIN_NAME), { recursive: true });
+  writeJson(join(dir, 'plugin.json'), {
+    name: ANTIGRAVITY_PLUGIN_NAME,
+    version: getPackageVersion(),
+    description: 'Blocks destructive commands and secret access before Antigravity CLI runs them.',
+  });
+  writeJson(join(dir, 'hooks.json'), {
+    [ANTIGRAVITY_PLUGIN_NAME]: {
+      PreToolUse: [
+        {
+          matcher: '*',
+          hooks: [{ type: 'command', command: ANTIGRAVITY_HOOK_COMMAND, timeout: 30 }],
+        },
+      ],
+    },
+  });
+  writeFileSync(join(dir, 'skills', ANTIGRAVITY_PLUGIN_NAME, 'SKILL.md'), CC_SAFETY_NET_SKILL);
+
   return {
-    PreToolUse: [
-      {
-        hooks: [
-          {
-            type: 'command',
-            command: ANTIGRAVITY_HOOK_COMMAND,
-            timeout: 30,
-          },
-        ],
-      },
-    ],
+    commands: [
+      ['agy', 'plugin', 'install', dir],
+      ...(isAntigravityPluginDisabled(environment.home)
+        ? [['agy', 'plugin', 'enable', ANTIGRAVITY_PLUGIN_NAME] as const]
+        : []),
+    ] satisfies NativeCommand[],
+    update: existsSync(getAntigravityPluginDir(environment.home)),
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
 
-function parseAntigravityHooksConfig(configPath: string): AntigravityHooksConfig {
-  try {
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      throw new Error('Antigravity hooks config must be a JSON object');
-    }
-    return config as AntigravityHooksConfig;
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error(`Failed to parse Antigravity hooks config ${configPath}: ${error.message}`);
-    }
-    throw error;
-  }
+export function planAntigravityCliUninstall(environment: Environment) {
+  return {
+    commands: existsSync(getAntigravityPluginDir(environment.home))
+      ? ([['agy', 'plugin', 'uninstall', ANTIGRAVITY_PLUGIN_NAME]] as const)
+      : [],
+    afterUninstall: () => {
+      removeLegacyAntigravityHook(environment);
+    },
+  };
 }
 
-function getManagedHookDefinition(config: AntigravityHooksConfig): {
-  definition: Record<string, unknown>;
-  preToolUse: unknown[];
-} {
-  const existing = config[MANAGED_HOOK_NAME];
-  if (existing === undefined) {
-    const created = managedHookEntry();
-    config[MANAGED_HOOK_NAME] = created;
-    return { definition: created, preToolUse: created.PreToolUse ?? [] };
-  }
-
-  if (!isRecord(existing)) {
-    throw new Error(`Antigravity hooks config entry "${MANAGED_HOOK_NAME}" must be an object`);
-  }
-
-  const preToolUse = Array.isArray(existing.PreToolUse) ? existing.PreToolUse : [];
-  existing.PreToolUse = preToolUse;
-  return { definition: existing, preToolUse };
-}
-
-function hasManagedHookCommand(definition: Record<string, unknown>): boolean {
-  if (!Array.isArray(definition.PreToolUse)) return false;
-
-  return definition.PreToolUse.some(
-    (entry) =>
-      isRecord(entry) &&
-      Array.isArray(entry.hooks) &&
-      entry.hooks.some((hook) => isRecord(hook) && hook.command === ANTIGRAVITY_HOOK_COMMAND),
-  );
-}
-
-function hasActiveManagedHook(config: AntigravityHooksConfig): boolean {
-  return Object.values(config).some(
-    (definition) =>
-      isRecord(definition) && definition.enabled !== false && hasManagedHookCommand(definition),
-  );
-}
-
-function enableManagedHookDefinition(config: AntigravityHooksConfig): boolean {
-  if (config[MANAGED_HOOK_NAME] === undefined) return false;
-
-  const managed = getManagedHookDefinition(config);
-  if (managed.definition.enabled !== false || !hasManagedHookCommand(managed.definition)) {
-    return false;
-  }
-
-  managed.definition.enabled = true;
-  return true;
-}
-
-function appendManagedHook(config: AntigravityHooksConfig): void {
-  if (config[MANAGED_HOOK_NAME] === undefined) {
-    config[MANAGED_HOOK_NAME] = managedHookEntry();
-    return;
-  }
-
-  const managed = getManagedHookDefinition(config);
-  managed.definition.enabled = true;
-  managed.preToolUse.push(managedHookEntry().PreToolUse?.[0] ?? { hooks: [] });
-}
-
-function removeManagedHook(config: AntigravityHooksConfig): boolean {
+function removeManagedHook(config: Record<string, unknown>): boolean {
   let removed = false;
   for (const definition of Object.values(config)) {
     if (!isRecord(definition) || !Array.isArray(definition.PreToolUse)) continue;
@@ -141,39 +83,26 @@ function removeManagedHook(config: AntigravityHooksConfig): boolean {
   return removed;
 }
 
-function writeAntigravityHooksConfig(configPath: string, config: AntigravityHooksConfig): void {
+export function removeLegacyAntigravityHook(environment: Environment): string | undefined {
+  const configPath = getAntigravityHooksPath(environment.home);
+  if (!existsSync(configPath)) return;
+
+  const config = parseAntigravityHooksConfig(configPath);
+  if (!removeManagedHook(config)) return;
+
   atomicWriteFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  return `Removed the legacy Antigravity CLI hook from ${configPath}`;
 }
 
-export function installAntigravityCli(environment: Environment): InstallResult {
-  const configPath = getAntigravityHooksPath(environment.home);
-  mkdirSync(dirname(configPath), { recursive: true });
-
-  if (!existsSync(configPath)) {
-    writeAntigravityHooksConfig(configPath, { [MANAGED_HOOK_NAME]: managedHookEntry() });
-    return { path: configPath, alreadyInstalled: false };
+function parseAntigravityHooksConfig(configPath: string): Record<string, unknown> {
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (!isRecord(config)) throw new Error('Antigravity hooks config must be a JSON object');
+    return config;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Failed to parse Antigravity hooks config ${configPath}: ${error.message}`);
+    }
+    throw error;
   }
-
-  const config = parseAntigravityHooksConfig(configPath);
-  if (hasActiveManagedHook(config)) return { path: configPath, alreadyInstalled: true };
-  if (enableManagedHookDefinition(config)) {
-    writeAntigravityHooksConfig(configPath, config);
-    return { path: configPath, alreadyInstalled: false };
-  }
-
-  appendManagedHook(config);
-  writeAntigravityHooksConfig(configPath, config);
-  return { path: configPath, alreadyInstalled: false };
-}
-
-export function uninstallAntigravityCli(environment: Environment): InstallResult {
-  const configPath = getAntigravityHooksPath(environment.home);
-  if (!existsSync(configPath)) return { path: configPath, alreadyInstalled: false };
-
-  const config = parseAntigravityHooksConfig(configPath);
-  const removed = removeManagedHook(config);
-  if (!removed) return { path: configPath, alreadyInstalled: false };
-
-  writeAntigravityHooksConfig(configPath, config);
-  return { path: configPath, alreadyInstalled: true };
 }

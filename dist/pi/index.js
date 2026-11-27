@@ -1,5 +1,5 @@
-import"../chunks/index-wxgrf1hd.js";import{_t}from"../chunks/index-rgvabt91.js";import{se}from"../chunks/index-znx5ctps.js";import"../chunks/index-5p0dys6a.js";import"../chunks/index-qj90th93.js";var o="cc-safety-net",r="Operate CC Safety Net: explain blocks, rules, integrations, diagnostics",s="Help me with CC Safety Net.";function t(e){e.registerCommand(o,{description:r,handler:async(n,i)=>{e.sendUserMessage(a(n),i.isIdle()?void 0:{deliverAs:"followUp"})}})}function a(e){return`${se.slice(se.indexOf("# CC Safety Net")).trimEnd()}
+import"../chunks/index-sn5gshbq.js";import{Tt}from"../chunks/index-cbgt3z2p.js";import{se}from"../chunks/index-9btpp0ax.js";import"../chunks/index-cy0bkakv.js";import"../chunks/index-fvb662d1.js";var o="cc-safety-net",r="Operate CC Safety Net: explain blocks, rules, integrations, diagnostics",s="Help me with CC Safety Net.";function t(e){e.registerCommand(o,{description:r,handler:async(n,i)=>{e.sendUserMessage(a(n),i.isIdle()?void 0:{deliverAs:"followUp"})}})}function a(e){return`${se.slice(se.indexOf("# CC Safety Net")).trimEnd()}
 
 ## User request
 
-${e.trim()||s}`}function m(e){_t(e),t(e)}export{m as default};
+${e.trim()||s}`}function m(e){Tt(e),t(e)}export{m as default};

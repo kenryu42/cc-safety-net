@@ -30,6 +30,8 @@ if (!match) {
 if (match.seedDir) {
   cpSync(match.seedDir, match.seedInto ?? args[args.length - 1] ?? '.', { recursive: true });
 }
+if (match.copyLastArgTo)
+  cpSync(args[args.length - 1] ?? '.', match.copyLastArgTo, { recursive: true });
 if (match.snapshotTo) cpSync(process.cwd(), match.snapshotTo, { recursive: true });
 if (match.stdout) process.stdout.write(match.stdout);
 if (match.stderr) process.stderr.write(match.stderr);
