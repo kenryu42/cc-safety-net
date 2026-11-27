@@ -186,7 +186,7 @@ test('Antigravity CLI installs the agy plugin from the plugin branch and retires
     ),
   );
   expect(fileAt(installed.tree, AGY_LEGACY)).toBe(agyLegacyHooks({ PreToolUse: [] }));
-  expect(installed.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/dd7a');
+  expect(installed.tree.map((entry) => entry.path)).toContain('.npm/_npx/dd7a');
 });
 
 test('a failed agy plugin install keeps the legacy Antigravity CLI hook in place', async () => {

@@ -167,7 +167,6 @@ const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
 ]);
 
 const NPX_CACHE_TARGETS = new Set<InstallTarget>([
-  'antigravity-cli',
   'cursor',
   'devin',
   'droid',
@@ -675,10 +674,6 @@ async function runManagedArtifactInstallTarget(
   return [message, noChange ? undefined : definition.restartNote].filter(Boolean).join('\n');
 }
 
-function clearNpxCacheOnInstall(environment: Environment, updating: boolean): void {
-  if (!updating) clearNpxSafetyNetCache(environment);
-}
-
 const INSTALL_EXTRAS: Partial<
   Record<
     InstallTarget,
@@ -690,13 +685,14 @@ const INSTALL_EXTRAS: Partial<
     }
   >
 > = {
-  'antigravity-cli': {
-    beforeInstall: clearNpxCacheOnInstall,
-    afterInstall: removeLegacyAntigravityHook,
-  },
+  'antigravity-cli': { afterInstall: removeLegacyAntigravityHook },
   'copilot-cli': { afterInstall: enableCopilotPlugin },
   cursor: { afterUninstall: uninstallCursorPlugin },
-  'hermes-agent': { beforeInstall: clearNpxCacheOnInstall },
+  'hermes-agent': {
+    beforeInstall: (environment, updating) => {
+      if (!updating) clearNpxSafetyNetCache(environment);
+    },
+  },
   openclaw: { beforeUninstall: assertOpenClawPluginDirIsOurs },
   pi: { afterInstall: removePiExtensionsFilter },
 };

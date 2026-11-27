@@ -176,7 +176,7 @@ test('update moves a legacy Antigravity CLI hook onto the agy plugin and keeps o
     ...unrelated,
     'cc-safety-net': { PreToolUse: [] },
   });
-  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+  expect(result.tree.map((entry) => entry.path)).toContain('.npm/_npx/9f1');
 });
 
 test('update reinstalls the Antigravity CLI plugin from the plugin branch to refresh its skill', async () => {
@@ -206,7 +206,7 @@ test('update reinstalls the Antigravity CLI plugin from the plugin branch to ref
   expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
     AGY_PLUGIN_BRANCH_SKILL,
   );
-  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+  expect(result.tree.map((entry) => entry.path)).toContain('.npm/_npx/9f1');
 });
 
 test('every installed integration is updated in catalog order behind one cache clear', async () => {
