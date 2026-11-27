@@ -126,22 +126,30 @@ const AGY_INSTALL_LOG = [
   'agy plugin install https://github.com/kenryu42/cc-safety-net/tree/plugin\t<root>',
 ];
 
-test('a retained Antigravity CLI install is skipped when agy is not on PATH', async () => {
-  const result = await flow({
-    invoke: 'update',
-    seed: {
-      [`${AGY_PLUGIN}/hooks.json`]: `${JSON.stringify(agyHooks('cc-safety-net', AGY_BUNDLED_COMMAND))}\n`,
-    },
-    options: () => versions(),
-  });
+test.each([
+  ['plugin', `${AGY_PLUGIN}/hooks.json`, AGY_BUNDLED_COMMAND],
+  ['legacy npx hook', AGY_LEGACY, AGY_COMMAND],
+])(
+  'a retained Antigravity CLI %s is skipped when agy is not on PATH and the npx package is still refreshed',
+  async (_install, hooksPath, command) => {
+    const result = await flow({
+      invoke: 'update',
+      seed: {
+        [hooksPath]: `${JSON.stringify(agyHooks('cc-safety-net', command))}\n`,
+        [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+      },
+      options: () => versions(),
+    });
 
-  expect(result).toMatchObject({
-    exitCode: 0,
-    lines: ['Antigravity CLI not found; skipped', '', NUDGE, ''],
-    errors: [],
-    log: [],
-  });
-});
+    expect(result).toMatchObject({
+      exitCode: 0,
+      lines: ['Antigravity CLI not found; skipped', '', NUDGE, ''],
+      errors: [],
+      log: [],
+    });
+    expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+  },
+);
 
 test('update moves a legacy Antigravity CLI hook onto the agy plugin and keeps other hooks', async () => {
   const unrelated = agyHooks('mine', 'echo mine');
@@ -176,7 +184,7 @@ test('update moves a legacy Antigravity CLI hook onto the agy plugin and keeps o
     ...unrelated,
     'cc-safety-net': { PreToolUse: [] },
   });
-  expect(result.tree.map((entry) => entry.path)).toContain('.npm/_npx/9f1');
+  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
 });
 
 test('update reinstalls the Antigravity CLI plugin from the plugin branch to refresh its skill', async () => {
@@ -206,7 +214,7 @@ test('update reinstalls the Antigravity CLI plugin from the plugin branch to ref
   expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
     AGY_PLUGIN_BRANCH_SKILL,
   );
-  expect(result.tree.map((entry) => entry.path)).toContain('.npm/_npx/9f1');
+  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
 });
 
 test('every installed integration is updated in catalog order behind one cache clear', async () => {

@@ -167,6 +167,7 @@ const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
 ]);
 
 const NPX_CACHE_TARGETS = new Set<InstallTarget>([
+  'antigravity-cli',
   'cursor',
   'devin',
   'droid',
