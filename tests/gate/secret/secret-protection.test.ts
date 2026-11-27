@@ -498,6 +498,23 @@ describe('shell operands against the built-in secret catalog', () => {
     checkCarriers([{ name: target, command: `cat ${target}`, expected }]);
     expect(toolSecret({ file_path: target }, { kind: 'path' })).toStrictEqual(expected);
   });
+
+  test.each([
+    ['~/.gemini/config/hooks.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/mcp_config.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/config.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/plugins/cc-safety-net/hooks.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/plugins/other-plugin/hooks.json', null],
+  ])('an Antigravity read, shell edit and file tool write of %s decide as %s', (target, ruleId) => {
+    const expected = ruleId === null ? null : { target, ruleId };
+    checkCarriers([
+      { name: `cat ${target}`, command: `cat ${target}`, expected },
+      { name: `sed -i ${target}`, command: `sed -i 's/true/false/' ${target}`, expected },
+    ]);
+    expect(toolSecret({ file_path: target, content: '{}' }, { kind: 'path' })).toStrictEqual(
+      expected,
+    );
+  });
 });
 
 describe('the carriers a candidate path can arrive through', () => {

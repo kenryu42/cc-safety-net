@@ -2818,7 +2818,7 @@ function matchesCodingCliPath(
           return matchesFileInRoot(
             normalized,
             normalizeCandidatePath('~/.gemini/config', cwd, environment, budget),
-            ['hooks.json', 'mcp_config.json'],
+            ['hooks.json', 'mcp_config.json', 'config.json', 'plugins/cc-safety-net/hooks.json'],
           );
         case 'secret.cli.codex': {
           const root = codingCliRoot(
