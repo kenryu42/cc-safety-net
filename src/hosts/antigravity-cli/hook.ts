@@ -64,29 +64,32 @@ function getAntigravityCliToolRoute(toolName: string) {
 
 type AntigravityDenyOutput = (denial: IntegrationDenial) => void;
 
-export async function runAntigravityCliHook(): Promise<void> {
-  await runConfiguredHookAdapter<AntigravityCliHookInput>({
-    agent: 'antigravity-cli',
-    createDenyOutput: (message): AntigravityCliHookOutput => ({
-      decision: 'deny',
-      reason: message,
-    }),
-    isSupported: () => true,
-    getToolName: (input) => input.toolCall?.name,
-    getToolInput: (input, toolName) => {
-      const sent = inputSentToTask(input.toolCall?.args, toolName);
-      if (sent === undefined) {
-        return {
-          ok: true,
-          input: normalizeAntigravityToolArgs(input.toolCall?.args, toolName),
-          route: getAntigravityCliToolRoute(toolName),
-        };
-      }
-      return { ok: true, input: { command: sent }, route: { kind: 'command', shell: 'auto' } };
+export async function runAntigravityCliHook(parsedInput?: object): Promise<void> {
+  await runConfiguredHookAdapter<AntigravityCliHookInput>(
+    {
+      agent: 'antigravity-cli',
+      createDenyOutput: (message): AntigravityCliHookOutput => ({
+        decision: 'deny',
+        reason: message,
+      }),
+      isSupported: () => true,
+      getToolName: (input) => input.toolCall?.name,
+      getToolInput: (input, toolName) => {
+        const sent = inputSentToTask(input.toolCall?.args, toolName);
+        if (sent === undefined) {
+          return {
+            ok: true,
+            input: normalizeAntigravityToolArgs(input.toolCall?.args, toolName),
+            route: getAntigravityCliToolRoute(toolName),
+          };
+        }
+        return { ok: true, input: { command: sent }, route: { kind: 'command', shell: 'auto' } };
+      },
+      getContext: resolveAntigravityContext,
+      getSessionId: (input) => input.conversationId,
     },
-    getContext: resolveAntigravityContext,
-    getSessionId: (input) => input.conversationId,
-  });
+    parsedInput,
+  );
 }
 
 function resolveAntigravityContext(

@@ -1,6 +1,7 @@
 import type { Environment } from '@/core/environment';
 import { getToolRoute } from '@/gate/intake';
 import type { CommandToolKind, ToolRoute } from '@/gate/invocation';
+import { runAntigravityCliHook } from '@/hosts/antigravity-cli/hook';
 import { detectClaudeShapeAgent } from '@/hosts/hook/agent-detection';
 import { type PreToolUseHookInput, runPreToolUseHook } from '@/hosts/hook/pre-tool-use';
 
@@ -32,5 +33,13 @@ export async function runClaudeCodeHook(): Promise<void> {
     canPromptPerson: (input) =>
       PERMISSION_MODES_THAT_PROMPT_ON_ASK.includes(input.permission_mode ?? ''),
     getToolRoute: getClaudeCodeToolRoute,
+    handOff: (input) =>
+      'toolCall' in input &&
+      typeof input.toolCall === 'object' &&
+      input.toolCall !== null &&
+      !Array.isArray(input.toolCall) &&
+      !('tool_name' in input)
+        ? runAntigravityCliHook(input)
+        : undefined,
   });
 }

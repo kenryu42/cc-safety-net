@@ -16,6 +16,28 @@ import {
   withWorkspace,
 } from './harness';
 
+const codingCliAntigravityAdapter = {
+  agent: 'antigravity-cli',
+  flag: '--coding-cli',
+  label: 'Coding CLI with an Antigravity payload',
+  commandInput: (command: string, cwd: string, home: string, sessionId: string) => ({
+    toolCall: {
+      id: `${sessionId}-tool-call`,
+      name: 'run_command',
+      args: { CommandLine: command, Cwd: cwd },
+    },
+    stepIdx: 4,
+    conversationId: sessionId,
+    workspacePaths: [cwd],
+    transcriptPath: join(home, '.gemini', 'antigravity', 'brain', sessionId, 'transcript.jsonl'),
+    artifactDirectoryPath: join(home, '.gemini', 'antigravity', 'brain', sessionId),
+    modelName: 'gemini-3-pro',
+    hookEventName: 'PreToolUse',
+    cwd,
+  }),
+  denyReason: getAntigravityDenyReason,
+} as const;
+
 const adapters = [
   {
     agent: 'claude-code',
@@ -115,11 +137,9 @@ const adapters = [
       conversationId: sessionId,
       workspacePaths: [cwd],
     }),
-    denyReason: (output: Record<string, unknown>) => {
-      expect(output.decision).toBe('deny');
-      return String(output.reason);
-    },
+    denyReason: getAntigravityDenyReason,
   },
+  codingCliAntigravityAdapter,
   {
     agent: 'cursor',
     flag: '-cu',
@@ -176,7 +196,13 @@ afterAll(() => {
 
 describe('built CLI protection contract', () => {
   for (const adapter of adapters) {
-    describe(`${adapter.agent === 'claude-code' ? 'Coding CLI' : adapter.agent} hook protocol`, () => {
+    const protocol =
+      'label' in adapter
+        ? adapter.label
+        : adapter.agent === 'claude-code'
+          ? 'Coding CLI'
+          : adapter.agent;
+    describe(`${protocol} hook protocol`, () => {
       test('allows git status and records the allowed decision', async () => {
         await withWorkspace(async ({ cwd, home }) => {
           const safeSession = `${adapter.agent}-safe`;
@@ -312,6 +338,24 @@ describe('built CLI protection contract', () => {
         command,
         ruleId: 'secret.home.ssh',
       });
+    });
+  });
+
+  test('Coding CLI records an allowed Antigravity payload as Antigravity', async () => {
+    await withWorkspace(async ({ cwd, home }) => {
+      const sessionId = 'coding-cli-antigravity-npm-test';
+      await expectAllowedAction(cwd, home, sessionId, (action) =>
+        runGated(
+          codingCliAntigravityAdapter,
+          codingCliAntigravityAdapter.commandInput('npm test', cwd, home, sessionId),
+          cwd,
+          home,
+          action,
+        ),
+      );
+      expect(readAuditLogEntriesForSession(home, sessionId)).toMatchObject([
+        { agent: 'antigravity-cli', command: 'npm test', decision: 'allow' },
+      ]);
     });
   });
 
@@ -1010,4 +1054,9 @@ function getClaudeStyleDenyReason(output: Record<string, unknown>) {
   expect(hookOutput.hookEventName).toBe('PreToolUse');
   expect(hookOutput.permissionDecision).toBe('deny');
   return String(hookOutput.permissionDecisionReason);
+}
+
+function getAntigravityDenyReason(output: Record<string, unknown>) {
+  expect(output).toEqual({ decision: 'deny', reason: expect.any(String) });
+  return String(output.reason);
 }
