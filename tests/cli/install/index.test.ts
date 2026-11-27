@@ -513,7 +513,12 @@ const CODEX_TRUST =
   'Start Codex, open `/hooks`, select the cc-safety-net PreToolUse hook, and press `t` to trust it.';
 const codexCall = (rest: string) => `codex plugin ${rest}\t<root>`;
 const codexScript = (listOutput: string) => [
-  { command: 'codex', args: ['plugin', 'list'], stdout: listOutput },
+  {
+    command: 'codex',
+    args: ['plugin', 'list', '--marketplace', 'cc-marketplace'],
+    stdout: listOutput,
+  },
+  { command: 'codex', args: ['plugin', 'list'], exit: 1 },
   { command: 'codex' },
 ];
 
@@ -528,7 +533,7 @@ test('Codex adds the marketplace only when its plugin list has none', async () =
     exitCode: 0,
     lines: ['Installed Codex integration', CODEX_TRUST, ''],
     log: [
-      codexCall('list'),
+      codexCall('list --marketplace cc-marketplace'),
       codexCall('marketplace add kenryu42/cc-marketplace'),
       codexCall(`add ${CLAUDE_PLUGIN}`),
     ].sort(),
@@ -545,7 +550,7 @@ test('Codex adds the marketplace only when its plugin list has none', async () =
   expect(registered.lines).toEqual(['Installed Codex integration', CODEX_TRUST, '']);
   expect(registered.log).toEqual(
     [
-      codexCall('list'),
+      codexCall('list --marketplace cc-marketplace'),
       codexCall('marketplace upgrade cc-marketplace'),
       codexCall(`add ${CLAUDE_PLUGIN}`),
     ].sort(),
@@ -573,7 +578,7 @@ test('an installed Codex row updates, and a legacy row is removed afterwards', a
     exitCode: 0,
     warnings: [],
     log: [
-      codexCall('list'),
+      codexCall('list --marketplace cc-marketplace'),
       codexCall('marketplace upgrade cc-marketplace'),
       codexCall(`add ${CLAUDE_PLUGIN}`),
       codexCall(`remove ${CLAUDE_LEGACY}`),

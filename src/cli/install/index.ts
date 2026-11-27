@@ -219,7 +219,8 @@ const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
   codex: {
     installCommands: async (_environment, codexPluginListOutput) => {
       const pluginList =
-        codexPluginListOutput ?? (await runNativeCommand(['codex', 'plugin', 'list']));
+        codexPluginListOutput ??
+        (await runNativeCommand(['codex', 'plugin', 'list', '--marketplace', 'cc-marketplace']));
       const update = hasCodexReplacementPlugin(pluginList);
       return {
         commands: [
@@ -426,7 +427,7 @@ async function detectInstallHookState(
   const [ampPluginListOutput, codexPluginListOutput, copilotCliVersion] = await Promise.all([
     fetchVersion(['amp', 'plugins', 'list'], 30_000),
 
-    fetchVersion(['codex', 'plugin', 'list'], 30_000),
+    fetchVersion(['codex', 'plugin', 'list', '--marketplace', 'cc-marketplace'], 30_000),
     fetchVersion(['copilot', '--binary-version']),
   ]);
 

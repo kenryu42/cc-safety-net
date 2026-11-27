@@ -233,7 +233,7 @@ test('a Codex plugin list with a legacy row updates Codex and removes the old pl
   const result = await flow({
     invoke: 'update',
     script: [{ command: 'codex' }],
-    options: () => versions({ 'codex plugin list': CODEX_LIST }),
+    options: () => versions({ 'codex plugin list --marketplace cc-marketplace': CODEX_LIST }),
   });
 
   expect(result).toMatchObject({
@@ -243,6 +243,40 @@ test('a Codex plugin list with a legacy row updates Codex and removes the old pl
       'codex plugin marketplace upgrade cc-marketplace\t<root>',
       'codex plugin add cc-safety-net@cc-marketplace\t<root>',
       'codex plugin remove safety-net@cc-marketplace\t<root>',
+    ].sort(),
+  });
+  expect(result.lines[0]).toBe('Updated Codex integration');
+});
+
+test('Codex is found from its cc-marketplace listing without the catalog-fetching full list', async () => {
+  const result = await flow({
+    invoke: 'update',
+    script: [
+      {
+        command: 'codex',
+        args: ['plugin', 'list', '--marketplace', 'cc-marketplace'],
+        stdout: [
+          'Marketplace `cc-marketplace`',
+          '/Users/x/.codex/.tmp/marketplaces/cc-marketplace/.agents/plugins/marketplace.json',
+          '',
+          'PLUGIN                        STATUS              VERSION  SOURCE',
+          'cc-safety-net@cc-marketplace  installed, enabled  2.8.3    https://github.com/kenryu42/cc-safety-net.git, ref `plugin`',
+          '',
+        ].join('\n'),
+      },
+      { command: 'codex', args: ['plugin', 'list'], exit: 1 },
+      { command: 'codex' },
+    ],
+    options: () => ({ ...versions(), fetchVersion: undefined }),
+  });
+
+  expect(result).toMatchObject({
+    exitCode: 0,
+    warnings: [],
+    log: [
+      'codex plugin list --marketplace cc-marketplace\t<root>',
+      'codex plugin marketplace upgrade cc-marketplace\t<root>',
+      'codex plugin add cc-safety-net@cc-marketplace\t<root>',
     ].sort(),
   });
   expect(result.lines[0]).toBe('Updated Codex integration');

@@ -209,7 +209,7 @@ export async function getSystemInfo(
       await fetcher(awaitPluginActivation, 30_000);
       return fetcher(['opencode', 'api', 'plugin.list', ...location], 30_000);
     }),
-    fetcher(['codex', 'plugin', 'list'], 30_000),
+    fetcher(['codex', 'plugin', 'list', '--marketplace', 'cc-marketplace'], 30_000),
     fetcher(['amp', 'plugins', 'list'], 30_000),
     fetcher(['node', '--version']),
     fetcher(['npm', '--version']),
