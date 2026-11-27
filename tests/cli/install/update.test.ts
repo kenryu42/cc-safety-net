@@ -108,21 +108,22 @@ const UPDATE_REPORTS = [
   `Updated Kimi Code hook in <home>/${KIMI_CONFIG}`,
 ];
 
+const AGY_PLUGIN = '.gemini/config/plugins/cc-safety-net';
+const AGY_LEGACY = '.gemini/config/hooks.json';
+const AGY_COMMAND = 'npx -y cc-safety-net hook --agy-cli';
+const agyHooks = (name: string, hooks: object[]) => ({
+  [name]: { PreToolUse: [{ matcher: '*', hooks }] },
+});
+const AGY_SAFETY_NET_HOOKS = agyHooks('cc-safety-net', [{ type: 'command', command: AGY_COMMAND }]);
+const AGY_INSTALL_SCRIPT = [
+  { command: 'agy', args: ['plugin', 'install'], copyLastArgTo: `<home>/${AGY_PLUGIN}` },
+];
+const AGY_INSTALL_LOG = [expect.stringMatching(/^agy plugin install <root>\/tmp\/\S+\t<root>$/)];
+
 test('a retained Antigravity CLI install is skipped when agy is not on PATH', async () => {
   const result = await flow({
     invoke: 'update',
-    seed: {
-      '.gemini/config/plugins/cc-safety-net/hooks.json': `${JSON.stringify({
-        'cc-safety-net': {
-          PreToolUse: [
-            {
-              matcher: '*',
-              hooks: [{ type: 'command', command: 'npx -y cc-safety-net hook --agy-cli' }],
-            },
-          ],
-        },
-      })}\n`,
-    },
+    seed: { [`${AGY_PLUGIN}/hooks.json`]: `${JSON.stringify(AGY_SAFETY_NET_HOOKS)}\n` },
     options: () => versions(),
   });
 
@@ -132,6 +133,66 @@ test('a retained Antigravity CLI install is skipped when agy is not on PATH', as
     errors: [],
     log: [],
   });
+});
+
+test('update moves a legacy Antigravity CLI hook onto the agy plugin and keeps other hooks', async () => {
+  const unrelated = agyHooks('mine', [{ type: 'command', command: 'echo mine' }]);
+  const result = await flow({
+    invoke: 'update',
+    seed: {
+      [AGY_LEGACY]: `${JSON.stringify({ ...unrelated, ...AGY_SAFETY_NET_HOOKS })}\n`,
+      [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+    },
+    script: AGY_INSTALL_SCRIPT,
+    options: () => versions(),
+  });
+
+  expect(result).toMatchObject({
+    exitCode: 0,
+    lines: [
+      'Updated Antigravity CLI integration',
+      `Removed the legacy Antigravity CLI hook from <home>/${AGY_LEGACY}`,
+      '',
+      NUDGE,
+      '',
+    ],
+    errors: [],
+    log: AGY_INSTALL_LOG,
+    tmp: [],
+  });
+  expect(fileAt(result.tree, `${AGY_PLUGIN}/hooks.json`)).toContain(AGY_COMMAND);
+  expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBeDefined();
+  expect(JSON.parse(fileAt(result.tree, AGY_LEGACY) ?? '{}')).toEqual({
+    ...unrelated,
+    'cc-safety-net': { PreToolUse: [] },
+  });
+  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+});
+
+test('update reinstalls an Antigravity CLI plugin to refresh its manifest and skill', async () => {
+  const result = await flow({
+    invoke: 'update',
+    seed: {
+      [`${AGY_PLUGIN}/plugin.json`]: '{"name":"cc-safety-net","version":"0.0.1"}\n',
+      [`${AGY_PLUGIN}/hooks.json`]: `${JSON.stringify(AGY_SAFETY_NET_HOOKS)}\n`,
+      [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+    },
+    script: AGY_INSTALL_SCRIPT,
+    options: () => versions(),
+  });
+
+  expect(result).toMatchObject({
+    exitCode: 0,
+    lines: ['Updated Antigravity CLI integration', '', NUDGE, ''],
+    errors: [],
+    log: AGY_INSTALL_LOG,
+    tmp: [],
+  });
+  expect(JSON.parse(fileAt(result.tree, `${AGY_PLUGIN}/plugin.json`) ?? '{}')).toMatchObject({
+    version: 'dev',
+  });
+  expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBeDefined();
+  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
 });
 
 test('every installed integration is updated in catalog order behind one cache clear', async () => {
