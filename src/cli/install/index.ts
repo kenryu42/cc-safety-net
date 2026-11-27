@@ -104,7 +104,6 @@ type NativeInstallPlan = {
 
   cleanupCommands?: readonly NativeCommand[];
   afterInstall?: () => Promise<void>;
-  cleanup?: () => void;
   update?: boolean;
 };
 type InstallTargetSelection = readonly InstallTarget[] | null | 'update';
@@ -535,7 +534,7 @@ async function installNativeTarget(
     typeof definition.installCommands === 'function'
       ? await definition.installCommands(environment, codexPluginListOutput)
       : { commands: definition.installCommands };
-  await runNativeCommands(plan.commands).finally(() => plan.cleanup?.());
+  await runNativeCommands(plan.commands);
   await runNativeCleanupCommands(plan.cleanupCommands ?? []);
   await plan.afterInstall?.();
   return [

@@ -6,7 +6,7 @@ import { type DetectContext, type HookDetection, readStateFile } from '@/hosts/d
 export const ANTIGRAVITY_PLUGIN_NAME = 'cc-safety-net';
 
 const ANTIGRAVITY_HOOK_COMMAND_PATTERN =
-  /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*(?:--agy-cli|-ac)(\s|["']|$)/;
+  /cc-safety-net(?:\.js)?\s+hook\s+(?:[^\s]+\s+)*(?:--agy-cli|-ac)(\s|["']|$)/;
 
 export function getAntigravityPluginDir(homeDir: string): string {
   return join(homeDir, '.gemini', 'config', 'plugins', ANTIGRAVITY_PLUGIN_NAME);

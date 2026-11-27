@@ -1,5 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import type { Environment } from '@/core/environment';
 import { atomicWriteFile } from '@/core/io/atomic-write';
 import {
@@ -10,48 +9,23 @@ import {
 import { getAntigravityHooksPath } from '@/hosts/antigravity-cli/hook';
 import type { NativeCommand } from '@/hosts/install/native';
 import { managedHookCommands } from '@/hosts/managed-command';
-import { getPackageVersion } from '@/hosts/system-info';
-import { CC_SAFETY_NET_SKILL } from '@/hosts/templates/cc-safety-net';
 
 const ANTIGRAVITY_HOOK_COMMAND = managedHookCommands['antigravity-cli'];
+const PLUGIN_BRANCH_URL = 'https://github.com/kenryu42/cc-safety-net/tree/plugin';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-}
-
 export function planAntigravityCliInstall(environment: Environment) {
-  const dir = mkdtempSync(join(environment.tmpdir, 'cc-safety-net-agy-'));
-  mkdirSync(join(dir, 'skills', ANTIGRAVITY_PLUGIN_NAME), { recursive: true });
-  writeJson(join(dir, 'plugin.json'), {
-    name: ANTIGRAVITY_PLUGIN_NAME,
-    version: getPackageVersion(),
-    description: 'Blocks destructive commands and secret access before Antigravity CLI runs them.',
-  });
-  writeJson(join(dir, 'hooks.json'), {
-    [ANTIGRAVITY_PLUGIN_NAME]: {
-      PreToolUse: [
-        {
-          matcher: '*',
-          hooks: [{ type: 'command', command: ANTIGRAVITY_HOOK_COMMAND, timeout: 30 }],
-        },
-      ],
-    },
-  });
-  writeFileSync(join(dir, 'skills', ANTIGRAVITY_PLUGIN_NAME, 'SKILL.md'), CC_SAFETY_NET_SKILL);
-
   return {
     commands: [
-      ['agy', 'plugin', 'install', dir],
+      ['agy', 'plugin', 'install', PLUGIN_BRANCH_URL],
       ...(isAntigravityPluginDisabled(environment.home)
         ? [['agy', 'plugin', 'enable', ANTIGRAVITY_PLUGIN_NAME] as const]
         : []),
     ] satisfies NativeCommand[],
     update: existsSync(getAntigravityPluginDir(environment.home)),
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
 

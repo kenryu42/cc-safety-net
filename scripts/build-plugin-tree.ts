@@ -169,6 +169,28 @@ export async function buildPluginTree(outdir: string) {
       owner: cursorPlugin.author,
       plugins: [{ name: cursorPlugin.name, source: './', description: cursorPlugin.description }],
     }),
+    writeJson(join(outdir, '.antigravity-plugin', 'plugin.json'), {
+      name: cursorPlugin.name,
+      version: pkg.version,
+      description: cursorPlugin.description,
+      logo: TREE_LOGO_SVG,
+    }),
+    writeJson(join(outdir, 'hooks.json'), {
+      [cursorPlugin.name]: {
+        PreToolUse: [
+          {
+            matcher: '*',
+            hooks: [
+              {
+                type: 'command',
+                command: 'node ./dist/bin/cc-safety-net.js hook --agy-cli',
+                timeout: 30,
+              },
+            ],
+          },
+        ],
+      },
+    }),
   ]);
 }
 

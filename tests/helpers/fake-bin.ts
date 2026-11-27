@@ -21,7 +21,6 @@ export type FakeScriptEntry = {
   delayMs?: number;
   seedDir?: string;
   seedInto?: string;
-  copyLastArgTo?: string;
   snapshotTo?: string;
 };
 

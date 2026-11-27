@@ -47,6 +47,28 @@ describe('the Antigravity detector differential', () => {
     ).toEqual({ kind: 'returned', value: PLUGIN_CONFIGURED });
   });
 
+  test('reports the plugin branch install, whose hook runs the bundled hook, as configured', async () => {
+    const bundled = {
+      PreToolUse: [
+        {
+          matcher: '*',
+          hooks: [
+            {
+              type: 'command',
+              command: 'node ./dist/bin/cc-safety-net.js hook --agy-cli',
+              timeout: 30,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(await detection({ [PLUGIN_HOOKS]: hooksConfig({ 'cc-safety-net': bundled }) })).toEqual({
+      kind: 'returned',
+      value: PLUGIN_CONFIGURED,
+    });
+  });
+
   test('reports the native agy plugin as disabled when agy config turns it off', async () => {
     expect(
       await detection({

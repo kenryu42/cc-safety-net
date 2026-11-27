@@ -40,6 +40,23 @@ export type FlowSpec = {
   options?: (home: string) => FlowOptions;
 };
 
+export const AGY_PLUGIN_BRANCH_SKILL = '# CC Safety Net from the plugin branch\n';
+
+export const AGY_PLUGIN_BRANCH = {
+  'agy-plugin-branch/.antigravity-plugin/plugin.json':
+    '{"name":"cc-safety-net","version":"9.9.9"}\n',
+  'agy-plugin-branch/hooks.json':
+    '{"cc-safety-net":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"node ./dist/bin/cc-safety-net.js hook --agy-cli","timeout":30}]}]}}\n',
+  'agy-plugin-branch/skills/cc-safety-net/SKILL.md': AGY_PLUGIN_BRANCH_SKILL,
+};
+
+export const AGY_PLUGIN_BRANCH_INSTALL = {
+  command: 'agy',
+  args: ['plugin', 'install', 'https://github.com/kenryu42/cc-safety-net/tree/plugin'],
+  seedDir: '<root>/tmp/agy-plugin-branch',
+  seedInto: '<home>/.gemini/config/plugins/cc-safety-net',
+};
+
 export function openCodeV2Script(
   row = 'cc-safety-net  2.4.2  cc-safety-net@latest',
   addStdout = 'Plugin "cc-safety-net@latest" installed and added to <home>/.config/opencode/opencode.json\n',
