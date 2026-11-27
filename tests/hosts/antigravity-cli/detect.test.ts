@@ -95,4 +95,20 @@ describe('the Antigravity detector differential', () => {
       },
     });
   });
+
+  test('reports a plugin hooks file it cannot parse when no legacy hook remains', async () => {
+    expect(await detection({ [PLUGIN_HOOKS]: '{ "cc-safety-net": {}, }\n' })).toMatchObject({
+      kind: 'returned',
+      value: {
+        platform: 'antigravity-cli',
+        status: 'n/a',
+        configPath: `<home>/${PLUGIN_HOOKS}`,
+        errors: [
+          expect.stringContaining(
+            `Failed to parse Antigravity hooks config <home>/${PLUGIN_HOOKS}: `,
+          ),
+        ],
+      },
+    });
+  });
 });

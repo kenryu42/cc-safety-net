@@ -129,22 +129,24 @@ export async function runSide(spec: FlowSpec) {
     console.warn = reportedWarning;
   });
 
-  return normalize(
-    {
-      exitCode: typeof spec.invoke === 'string' ? exitCodes[0] : exitCodes,
-      lines: output.text().split('\n'),
-      errors,
-      warnings,
-      log: fakeBin.readLog().sort(),
-      tree: snapshotHome(home),
-      tmp: snapshotTree(tmp),
-    },
-    [
-      [home, '<home>'],
-      [reportedCwd, '<root>'],
-      [root, '<root>'],
-      [REPO_ROOT, '<repo>'],
-      ...WINDOWS_SEPARATOR_FOLDS,
-    ],
-  );
+  const pathFolds = [
+    [home, '<home>'],
+    [reportedCwd, '<root>'],
+    [root, '<root>'],
+    [REPO_ROOT, '<repo>'],
+  ] as const;
+  return {
+    ...normalize(
+      {
+        exitCode: typeof spec.invoke === 'string' ? exitCodes[0] : exitCodes,
+        lines: output.text().split('\n'),
+        errors,
+        warnings,
+        log: fakeBin.readLog().sort(),
+      },
+      [...pathFolds, ...WINDOWS_SEPARATOR_FOLDS],
+    ),
+    tree: normalize(snapshotHome(home), pathFolds),
+    tmp: normalize(snapshotTree(tmp), pathFolds),
+  };
 }

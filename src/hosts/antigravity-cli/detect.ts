@@ -101,6 +101,7 @@ export function detect(context: DetectContext): HookDetection {
   return (
     detections.find((detection) => detection.status === 'configured') ??
     detections.find((detection) => detection.status === 'disabled') ??
+    detections.find((detection) => detection.errors !== undefined) ??
     detections[1]
   );
 }

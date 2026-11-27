@@ -108,6 +108,32 @@ const UPDATE_REPORTS = [
   `Updated Kimi Code hook in <home>/${KIMI_CONFIG}`,
 ];
 
+test('a retained Antigravity CLI install is skipped when agy is not on PATH', async () => {
+  const result = await flow({
+    invoke: 'update',
+    seed: {
+      '.gemini/config/plugins/cc-safety-net/hooks.json': `${JSON.stringify({
+        'cc-safety-net': {
+          PreToolUse: [
+            {
+              matcher: '*',
+              hooks: [{ type: 'command', command: 'npx -y cc-safety-net hook --agy-cli' }],
+            },
+          ],
+        },
+      })}\n`,
+    },
+    options: () => versions(),
+  });
+
+  expect(result).toMatchObject({
+    exitCode: 0,
+    lines: ['Antigravity CLI not found; skipped', '', NUDGE, ''],
+    errors: [],
+    log: [],
+  });
+});
+
 test('every installed integration is updated in catalog order behind one cache clear', async () => {
   const result = await flow({
     invoke: 'update',

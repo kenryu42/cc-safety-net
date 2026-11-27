@@ -156,6 +156,7 @@ type InstallTargetResolution = {
 const CLAUDE_LEGACY_PLUGIN_ID = 'safety-net@cc-marketplace';
 
 const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
+  'antigravity-cli',
   'claude-code',
   'codex',
   'copilot-cli',
