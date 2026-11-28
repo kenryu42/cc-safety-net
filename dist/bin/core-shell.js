@@ -49,6 +49,7 @@ __export(exports_core_shell, {
   GIT_GLOBAL_OPTS_WITH_VALUE: () => GIT_GLOBAL_OPTS_WITH_VALUE,
   INTERPRETERS: () => INTERPRETERS,
   MAX_REASON_LENGTH: () => MAX_REASON_LENGTH,
+  POWERSHELL_MEMBER_ACCESS: () => POWERSHELL_MEMBER_ACCESS,
   PYTHON_INTERPRETER_PATTERN: () => PYTHON_INTERPRETER_PATTERN,
   PolicyFilesystemError: () => PolicyFilesystemError,
   REQUEST_CLIENT_COMMANDS: () => REQUEST_CLIENT_COMMANDS,
@@ -887,8 +888,13 @@ var SECRET_CODING_CLI_RULES = [
   {
     id: "secret.cli.antigravity",
     category: "Coding CLI config",
-    label: "Antigravity CLI hook config",
-    paths: ["~/.gemini/config/hooks.json", "~/.gemini/config/mcp_config.json"]
+    label: "Antigravity CLI hook and plugin config",
+    paths: [
+      "~/.gemini/config/hooks.json",
+      "~/.gemini/config/mcp_config.json",
+      "~/.gemini/config/config.json",
+      "~/.gemini/config/plugins/cc-safety-net/hooks.json"
+    ]
   },
   {
     id: "secret.cli.codex",
@@ -3492,6 +3498,7 @@ var AUTO_POWERSHELL_PARAMETERS = ["-rec", "-for", "-path", "-literalpath", "-wha
 var POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
 var POWERSHELL_SEPARATED_VARIABLE = /^(?:\$\{?\w+\}?|~)\\./;
 var WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~|\$env:\w+)\\|^-[^=]*[=:][a-z]:\\/i;
+var POWERSHELL_MEMBER_ACCESS = /^(?:\.[A-Za-z_]\w*)+/;
 function shouldUsePowerShellParser(source, limits) {
   const candidate = source.toLowerCase().replaceAll("`", "");
   if (![...AUTO_POWERSHELL_HEADS].some((head) => candidate.includes(head)) && !(candidate.includes("rm") && AUTO_POWERSHELL_PARAMETERS.some((word) => candidate.includes(word))) && !candidate.includes("<#") && !hasPathExpressionSignal(candidate)) {
@@ -4006,6 +4013,7 @@ function derivePowerShellWordParts(source, start, end) {
   const hereString = readPowerShellHereStringHeader(source, start);
   let literalStart = start;
   let single = false;
+  let double = hereString?.quote === '"';
   let i = hereString?.bodyStart ?? start;
   while (i < end) {
     const char = source[i];
@@ -4026,6 +4034,11 @@ function derivePowerShellWordParts(source, start, end) {
       i++;
       continue;
     }
+    if (char === '"' && !hereString) {
+      double = !double;
+      i++;
+      continue;
+    }
     if (source.startsWith("$(", i)) {
       const close = findPowerShellSubexpressionEnd(source, i + 2, end);
       const next = close === -1 ? end : close + 1;
@@ -4036,7 +4049,9 @@ function derivePowerShellWordParts(source, start, end) {
       continue;
     }
     if (char === "$" || char === "@" && i === start) {
-      const next = readPowerShellVariableEnd(source, i + 1, end);
+      const nameEnd = readPowerShellVariableEnd(source, i + 1, end);
+      const startsMemberAccess = !double && i === start && /^\w+(?::\w+)*$/.test(source.slice(i + 1, nameEnd));
+      const next = startsMemberAccess ? nameEnd + (POWERSHELL_MEMBER_ACCESS.exec(source.slice(nameEnd, end))?.[0].length ?? 0) : nameEnd;
       collector.push(literalStart, i, "literal");
       collector.push(i, next, "variable");
       i = next;
@@ -4146,7 +4161,6 @@ function connector(source, start, end) {
     span: { start, end }
   };
 }
-
 // src/core/shell/parse.ts
 function parseCommand(source, dialect = "auto", limits = DEFAULT_COMMAND_PARSER_LIMITS) {
   if (dialect === "powershell" || dialect === "auto" && shouldUsePowerShellParser(source.slice(0, limits.maxInputLength), limits)) {

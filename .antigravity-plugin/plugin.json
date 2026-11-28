@@ -1,0 +1,6 @@
+{
+  "name": "cc-safety-net",
+  "version": "2.9.0",
+  "description": "Block destructive commands and secret access",
+  "logo": "assets/logo.svg"
+}

@@ -290,7 +290,7 @@ function rmdirQuietly(dir) {
 }
 
 // src/audit/writer.ts
-var AUDIT_LOG_VERSION = "2.8.3";
+var AUDIT_LOG_VERSION = "2.9.0";
 var COMMAND_MAX_LENGTH = 1e4;
 var SEGMENT_MAX_LENGTH = 2000;
 var TOOL_NAME_MAX_LENGTH = 256;
@@ -534,9 +534,9 @@ async function readHookInput(outputDeny) {
   }
   return import_intake.parseHookJson(inputText, outputDeny, "Failed to parse hook input JSON.");
 }
-async function runHookAdapter(adapter) {
+async function runHookAdapter(adapter, parsedInput) {
   const environment = import_environment.createProcessEnvironment();
-  const input = await readHookInput(adapter.outputDeny);
+  const input = parsedInput ?? await readHookInput(adapter.outputDeny);
   if (input === undefined) {
     return;
   }
@@ -544,6 +544,9 @@ async function runHookAdapter(adapter) {
     import_intake.outputFailedClosed(adapter.outputDeny);
     return;
   }
+  const handedOff = adapter.handOff?.(input);
+  if (handedOff)
+    return handedOff;
   if (!adapter.isSupported(input)) {
     return;
   }
@@ -665,14 +668,14 @@ function getHookAuditCwd(input) {
   const commandCwd = args.Cwd;
   return typeof commandCwd === "string" ? commandCwd : null;
 }
-async function runConfiguredHookAdapter(adapter) {
+async function runConfiguredHookAdapter(adapter, parsedInput) {
   const outputDeny = (denial) => outputHookDeny(adapter, denial);
   const createAskOutput = adapter.createAskOutput;
   const outputAsk = createAskOutput ? (denial) => console.log(JSON.stringify(createAskOutput(import_denial.formatAskPrompt(denial)))) : undefined;
   const createAllowOutput = adapter.createAllowOutput;
   const outputAllow = createAllowOutput ? () => console.log(JSON.stringify(createAllowOutput())) : undefined;
   try {
-    await runHookAdapter({ ...adapter, outputDeny, outputAsk, outputAllow });
+    await runHookAdapter({ ...adapter, outputDeny, outputAsk, outputAllow }, parsedInput);
   } catch (error) {
     console.error("CC Safety Net error:", error);
     outputDeny(import_denial.createFailedClosedDenial());
@@ -701,7 +704,7 @@ var ANTIGRAVITY_PATH_KEYS = new Set([
 function getAntigravityCliToolRoute(toolName) {
   return import_intake2.getToolRoute(toolName, ANTIGRAVITY_CLI_COMMAND_TOOLS);
 }
-async function runAntigravityCliHook() {
+async function runAntigravityCliHook(parsedInput) {
   await runConfiguredHookAdapter({
     agent: "antigravity-cli",
     createDenyOutput: (message) => ({
@@ -723,7 +726,7 @@ async function runAntigravityCliHook() {
     },
     getContext: resolveAntigravityContext,
     getSessionId: (input) => input.conversationId
-  });
+  }, parsedInput);
 }
 function resolveAntigravityContext(input, toolInput, toolName, outputDeny, environment) {
   const workspacePaths = requestedWorkspacePaths(input);
@@ -847,7 +850,7 @@ var catalog = [
     },
     install: {
       flag: "--agy-cli",
-      artifactKind: "hook config",
+      artifactKind: "plugin",
       probeCommand: ["agy", "--version"]
     }
   },
@@ -1130,6 +1133,7 @@ async function runPreToolUseHook(options) {
         }
       })
     } : {},
+    handOff: options.handOff,
     isSupported: (input) => input.hook_event_name === PRE_TOOL_USE_HOOK_EVENT,
     getToolName: (input) => input.tool_name,
     getToolInput: (input, toolName, _outputDeny, environment) => ({
@@ -1161,7 +1165,8 @@ async function runClaudeCodeHook() {
     agent: "claude-code",
     getAgent: (input, environment) => detectClaudeShapeAgent(input.transcript_path, environment),
     canPromptPerson: (input) => PERMISSION_MODES_THAT_PROMPT_ON_ASK.includes(input.permission_mode ?? ""),
-    getToolRoute: getClaudeCodeToolRoute
+    getToolRoute: getClaudeCodeToolRoute,
+    handOff: (input) => ("toolCall" in input) && typeof input.toolCall === "object" && input.toolCall !== null && !Array.isArray(input.toolCall) && !("tool_name" in input) ? runAntigravityCliHook(input) : undefined
   });
 }
 

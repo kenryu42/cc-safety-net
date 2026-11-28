@@ -113,6 +113,7 @@ var import_wrapper_prelude2 = require("./analyzer.js");
 var import_canonicalization = require("./core.js");
 var import_model = require("./core-shell.js");
 var import_parse = require("./core-shell.js");
+var import_powershell = require("./core-shell.js");
 var import_posix = require("./core-shell.js");
 var import_tokens = require("./core-shell.js");
 var import_transparent_wrappers = require("./analyzer.js");
@@ -631,11 +632,9 @@ function readExpansion(raw, start, state, flags, powershell) {
     collectAssignmentFallback(expansion, state, flags, powershell);
     return { text: expansion, next: close + 1 };
   }
-  if (char !== undefined && SPECIAL_VARIABLE_NAME.test(char)) {
-    return { text: `\${${char}}`, next: start + 2 };
-  }
-  const name = (powershell ? POWERSHELL_VARIABLE_NAME : /^\w*/).exec(raw.slice(start + 1))?.[0] ?? "";
-  return { text: `\${${name}}`, next: start + 1 + name.length };
+  const name = char !== undefined && SPECIAL_VARIABLE_NAME.test(char) && !(powershell && char === "_") ? char : (powershell ? POWERSHELL_VARIABLE_NAME : /^\w*/).exec(raw.slice(start + 1))?.[0] ?? "";
+  const member = powershell && !state.double && /^\w/.test(name) ? import_powershell.POWERSHELL_MEMBER_ACCESS.exec(raw.slice(start + 1 + name.length))?.[0] ?? "" : "";
+  return { text: `\${${name}${member}}`, next: start + 1 + name.length + member.length };
 }
 function collectAssignmentFallback(expansion, state, flags, powershell) {
   const content = expansion.slice(2, -1);
@@ -2554,9 +2553,13 @@ function extractInlineCodePathTargets(command, code, store, options, environment
   const literals = literalsPresumedData && !(containsRecognizableInlineAccess(masked.masked) || shellExec || languageEval) ? [] : masked.literals;
   const execCalls = literalsPresumedData ? Array.from(masked.masked.matchAll(SHELL_EXEC_CALL), (call) => {
     const start = call.index + call[0].length;
-    return { start, end: import_interpreters.closingParenthesis(masked.masked, start) };
+    return {
+      start,
+      end: import_interpreters.closingParenthesis(masked.masked, start),
+      heldList: heldArgvList(masked, start, family)
+    };
   }) : [];
-  const literalsExecCallsReceive = !literalsPresumedData || execCalls.some((call) => import_interpreters.firstArgumentHasName(masked.masked, call.start) && !runsArgvWithoutCodeFlag(masked, call.start)) ? masked.literals : masked.literals.filter((literal) => SHELL_EXEC_PREFIX.test(masked.masked.slice(0, literal.start)) || execCalls.some((call) => literal.start >= call.start && literal.start < call.end));
+  const literalsExecCallsReceive = !literalsPresumedData || execCalls.some((call) => import_interpreters.firstArgumentHasName(masked.masked, call.start) && !runsArgvWithoutCodeFlag(masked, call.start) && call.heldList === undefined) ? masked.literals : masked.literals.filter((literal) => SHELL_EXEC_PREFIX.test(masked.masked.slice(0, literal.start)) || execCalls.some((call) => [call, call.heldList].some((range) => range !== undefined && literal.start >= range.start && literal.start < range.end)));
   const literalsWalkedAsShell = new Set(shellExec ? literalsExecCallsReceive : []);
   const literalRolesReadable = codeRolesReadable && literals.length > 0 && !holdsUnreadableLiteralRoles(masked.masked, family === "python" ? "#" : "//");
   const openers = literalRolesReadable ? innermostOpeners(masked.masked) : [];
@@ -2617,14 +2620,32 @@ function namesCommandExecution(identifiers) {
   return identifiers.some((identifier) => identifierParts(identifier.name).some((part) => COMMAND_EXECUTION_IDENTIFIER_PART.test(part)));
 }
 var WINDOWS_SHELLS = new Set(["cmd", "powershell", "pwsh"]);
+function heldArgvList(masked, start, family) {
+  const loneName = /\s*([A-Za-z_$][\w$]*)\s*[,)]/y;
+  loneName.lastIndex = start;
+  const name = loneName.exec(masked.masked)?.[1]?.replaceAll("$", "\\$");
+  if (name === undefined || masked.masked.match(new RegExp(`(?<![\\w$])${name}(?![\\w$])`, "g"))?.length !== 2) {
+    return;
+  }
+  const assignment = new RegExp(`(?:^|[;\\n{])[ \\t]*(?:(?:const|let|var)\\s+)?${name}\\s*=\\s*(?=${family === "python" ? "[[(]" : "\\["})`).exec(masked.masked);
+  if (assignment === null)
+    return;
+  const opener = assignment.index + assignment[0].length;
+  const end = masked.masked.indexOf(masked.masked[opener] === "[" ? "]" : ")", opener + 1);
+  const statementEnd = /[ \t]*(?:[;\r\n]|$)/y;
+  statementEnd.lastIndex = end + 1;
+  return end !== -1 && statementEnd.test(masked.masked) && !/[[\](){}]/.test(masked.masked.slice(opener + 1, end)) && (!/[A-Za-z_$]/.test(masked.masked.slice(opener + 1, end)) || argvElementsRunNoCode(masked, opener, end)) ? { start: opener + 1, end } : undefined;
+}
 function runsArgvWithoutCodeFlag(masked, start) {
   const opener = nextNonWhitespaceIndex(masked.masked, start);
   const closer = BRACKET_CLOSERS[masked.masked[opener] ?? ""];
   if (closer === undefined || closer === "}")
     return false;
   const end = masked.masked.indexOf(closer, opener + 1);
-  const elements = masked.masked.slice(opener + 1, end);
-  return end !== -1 && /^\s*,[\w\s,]*$/.test(elements) && /^[,)]/.test(masked.masked.slice(nextNonWhitespaceIndex(masked.masked, end + 1))) && !masked.literals.some((literal) => literal.tokenStart > opener && literal.tokenStart < end && (CODE_EVAL_FLAGS.has(literal.text) || isCodeInterpreter(basename2(literal.text).toLowerCase()) || WINDOWS_SHELLS.has(basename2(literal.text).toLowerCase().replace(/\.exe$/, ""))));
+  return end !== -1 && /^[,)]/.test(masked.masked.slice(nextNonWhitespaceIndex(masked.masked, end + 1))) && argvElementsRunNoCode(masked, opener, end);
+}
+function argvElementsRunNoCode(masked, opener, end) {
+  return /^\s*,[\w\s,]*$/.test(masked.masked.slice(opener + 1, end)) && !masked.literals.some((literal) => literal.tokenStart > opener && literal.tokenStart < end && (CODE_EVAL_FLAGS.has(literal.text) || isCodeInterpreter(basename2(literal.text).toLowerCase()) || WINDOWS_SHELLS.has(basename2(literal.text).toLowerCase().replace(/\.exe$/, ""))));
 }
 function innermostOpeners(masked) {
   const open = [];
@@ -3335,7 +3356,7 @@ function matchesCodingCliPath(normalized, cwd, config, environment, budget) {
         return matchesFileInRoot(normalized, codingCliRoot(environment.env.get("CLAUDE_CONFIG_DIR"), "~/.claude", cwd, environment, budget), ["settings.json", "settings.local.json"]) || matchesExactPath(normalized, "~/.claude.json", cwd, environment, budget) || segments.at(-2) === ".claude" && ["settings.json", "settings.local.json"].includes(segments.at(-1) ?? "") || segments.at(-1) === ".mcp.json";
       }
       case "secret.cli.antigravity":
-        return matchesFileInRoot(normalized, normalizeCandidatePath("~/.gemini/config", cwd, environment, budget), ["hooks.json", "mcp_config.json"]);
+        return matchesFileInRoot(normalized, normalizeCandidatePath("~/.gemini/config", cwd, environment, budget), ["hooks.json", "mcp_config.json", "config.json", "plugins/cc-safety-net/hooks.json"]);
       case "secret.cli.codex": {
         const root = codingCliRoot(environment.env.get("CODEX_HOME"), "~/.codex", cwd, environment, budget);
         return matchesFileInRoot(normalized, root, ["auth.json", ".credentials.json"]) || matchesDirInRoot(normalized, root, ["secrets", ".sandbox-secrets"]);

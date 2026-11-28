@@ -1,0 +1,16 @@
+{
+  "cc-safety-net": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./dist/bin/cc-safety-net.js hook --agy-cli",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
