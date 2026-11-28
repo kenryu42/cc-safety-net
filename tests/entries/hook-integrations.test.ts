@@ -167,7 +167,7 @@ describe('the host catalog', () => {
       {
         id: 'antigravity-cli',
         flag: '--agy-cli',
-        artifactKind: 'hook config',
+        artifactKind: 'plugin',
         probeCommand: ['agy', '--version'],
       },
       {

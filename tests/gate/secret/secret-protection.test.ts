@@ -498,6 +498,23 @@ describe('shell operands against the built-in secret catalog', () => {
     checkCarriers([{ name: target, command: `cat ${target}`, expected }]);
     expect(toolSecret({ file_path: target }, { kind: 'path' })).toStrictEqual(expected);
   });
+
+  test.each([
+    ['~/.gemini/config/hooks.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/mcp_config.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/config.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/plugins/cc-safety-net/hooks.json', 'secret.cli.antigravity'],
+    ['~/.gemini/config/plugins/other-plugin/hooks.json', null],
+  ])('an Antigravity read, shell edit and file tool write of %s decide as %s', (target, ruleId) => {
+    const expected = ruleId === null ? null : { target, ruleId };
+    checkCarriers([
+      { name: `cat ${target}`, command: `cat ${target}`, expected },
+      { name: `sed -i ${target}`, command: `sed -i 's/true/false/' ${target}`, expected },
+    ]);
+    expect(toolSecret({ file_path: target, content: '{}' }, { kind: 'path' })).toStrictEqual(
+      expected,
+    );
+  });
 });
 
 describe('the carriers a candidate path can arrive through', () => {
@@ -1413,6 +1430,51 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: env('.env'),
         relaxedInStandard: true,
       },
+      {
+        name: 'a status line beside an argument list held in a name',
+        command: python(
+          'import subprocess',
+          "args = ['true']",
+          'subprocess.run(args, check=True)',
+          "print('Fixture ready; no credentials printed')",
+        ),
+        expected: creds('credentials'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'prose beside a literal argument list held in a name',
+        command: python(
+          'import subprocess',
+          "args = ['true']",
+          'subprocess.run(args)',
+          "x = 'see .env file'",
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'prose beside an ffprobe argument list held in a name',
+        command: python(
+          'import subprocess',
+          "f = 'a.mp3'",
+          "args = ['ffprobe', '-v', 'error', f]",
+          'subprocess.run(args)',
+          "texts = ['It keeps SSH keys and .env files out of reach.']",
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a command literal held in a name a nice argument list receives',
+        command: python(
+          'import subprocess',
+          "cmd = 'cat .env'",
+          "args = ['nice', cmd]",
+          'subprocess.run(args)',
+        ),
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
     ]);
   });
 
@@ -1431,7 +1493,6 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         'subprocess.run([prog, cmd])',
         "subprocess.run([f'{prog}', cmd])",
         'subprocess.run([cmd], shell=True)',
-        "args = ['nice', cmd]\nsubprocess.run(args)",
         "subprocess.run(['nice', cmd] + extra)",
         "subprocess.run(['env', *argv, cmd])",
         "subprocess.run(['nice', [cmd]])",
@@ -1439,11 +1500,34 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         "subprocess.run(['CMD.EXE', '/c', cmd])",
         "subprocess.run(['powershell', '-Command', cmd])",
         "subprocess.run(['pwsh.exe', '-NoProfile', cmd])",
+        "args = ['true']\nargs += ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ['true']\nargs.extend(['sh', '-c', cmd])\nsubprocess.run(args)",
+        "args = ['true']\nargs[0:1] = ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ['true']\nif cmd:\n    args = ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ['sh', '-c', cmd]\nsubprocess.run(args)",
+        "args = ('sh', '-c', 'cat .env')\nsubprocess.run(args)",
+        'args = [cmd]\nsubprocess.run(args, shell=True)',
+        'args = [prog, cmd]\nsubprocess.run(args)',
+        "args = ['nice', cmd] + extra\nsubprocess.run(args)",
+        "args = ['true']\nsubprocess.run(args)\nsubprocess.run(cmd, shell=True)",
+        "args = ['sh'[0:2]\n, '-c', cmd]\nsubprocess.run(args)",
       ].map((call) => ({
         name: `a command literal reaching ${call}`,
         command: python('import subprocess', cmd, call),
         expected: env('.env'),
       })),
+      {
+        name: 'a JavaScript comma expression held in a name is not an argument list',
+        command: [
+          "node - <<'EOF'",
+          "const cp = require('node:child_process');",
+          "const cmd = 'cat .env';",
+          "const args = ('nice', cmd);",
+          "cp.execSync(args, { stdio: 'inherit' });",
+          'EOF',
+        ].join('\n'),
+        expected: env('.env'),
+      },
       {
         name: 'node code reaching an argument list with an eval flag',
         command: python(
@@ -1461,6 +1545,26 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       {
         name: 'a home key path held in a name an argument list receives',
         command: python('import subprocess', "f = '~/.ssh/id_rsa'", "subprocess.run(['cat', f])"),
+        expected: ssh('~/.ssh/id_rsa'),
+      },
+      {
+        name: 'a path literal held in a name an argument list held in a name receives',
+        command: python(
+          'import subprocess',
+          "f = '.env'",
+          "args = ['cat', f]",
+          'subprocess.run(args)',
+        ),
+        expected: env('.env'),
+      },
+      {
+        name: 'a home key path held in a name an argument list held in a name receives',
+        command: python(
+          'import subprocess',
+          "f = '~/.ssh/id_rsa'",
+          "args = ['cat', f]",
+          'subprocess.run(args)',
+        ),
         expected: ssh('~/.ssh/id_rsa'),
       },
       {
@@ -3762,6 +3866,51 @@ describe('secret protection through tool inputs', () => {
     ];
     for (const row of cases) {
       expect(routeVerdict({ command: row.command }, powershell), row.name).toStrictEqual(
+        row.expected,
+      );
+    }
+  });
+
+  test('an unquoted PowerShell member access is one value, not a file suffix', () => {
+    const powershell: ToolRoute = { kind: 'command', shell: 'powershell' };
+    const cases: readonly { command: string; expected: Verdict }[] = [
+      {
+        command:
+          '@{a=1}.GetEnumerator() | ForEach-Object { $o | Add-Member $_.Key $_.Value -Force }',
+        expected: null,
+      },
+      { command: 'Write-Output $_.Key', expected: null },
+      { command: 'Add-Member $x.Key 1', expected: null },
+      { command: 'Get-Content $_.Key', expected: null },
+      {
+        command: 'Get-Content "$_.key"',
+        expected: { target: '${_}.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      {
+        command: 'Get-Content "$dir.key"',
+        expected: { target: '${dir}.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      {
+        command: 'Get-Content ${dir}.key',
+        expected: { target: '${dir}.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      {
+        command: 'Get-Content id.key',
+        expected: { target: 'id.key', ruleId: 'secret.ext-pattern.key' },
+      },
+      ...[
+        ['Get-Content ./certs/$name.key', './certs/${name}.key'],
+        ['Get-Content ./keys/server$null.key', './keys/server${null}.key'],
+        ['Get-Content certs\\$name.key', 'certs\\${name}.key'],
+        ['Get-Content $.key', '${}.key'],
+        ['Get-Content $?.key', '${?}.key'],
+      ].map(([command = '', target = '']) => ({
+        command,
+        expected: { target, ruleId: 'secret.ext-pattern.key' },
+      })),
+    ];
+    for (const row of cases) {
+      expect(routeVerdict({ command: row.command }, powershell), row.command).toStrictEqual(
         row.expected,
       );
     }

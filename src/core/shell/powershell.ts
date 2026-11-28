@@ -57,6 +57,7 @@ const AUTO_POWERSHELL_PARAMETERS = ['-rec', '-for', '-path', '-literalpath', '-w
 const POWERSHELL_ENV_VARIABLE = /^\$env:\w/i;
 const POWERSHELL_SEPARATED_VARIABLE = /^(?:\$\{?\w+\}?|~)\\./;
 const WINDOWS_NATIVE_PATH = /^(?:[a-z]:|~|\$env:\w+)\\|^-[^=]*[=:][a-z]:\\/i;
+export const POWERSHELL_MEMBER_ACCESS = /^(?:\.[A-Za-z_]\w*)+/;
 
 export function shouldUsePowerShellParser(source: string, limits: CommandParserLimits): boolean {
   const candidate = source.toLowerCase().replaceAll('`', '');
@@ -635,6 +636,7 @@ function derivePowerShellWordParts(source: string, start: number, end: number): 
   const hereString = readPowerShellHereStringHeader(source, start);
   let literalStart = start;
   let single = false;
+  let double = hereString?.quote === '"';
 
   let i = hereString?.bodyStart ?? start;
   while (i < end) {
@@ -656,6 +658,11 @@ function derivePowerShellWordParts(source: string, start: number, end: number): 
       i++;
       continue;
     }
+    if (char === '"' && !hereString) {
+      double = !double;
+      i++;
+      continue;
+    }
     if (source.startsWith('$(', i)) {
       const close = findPowerShellSubexpressionEnd(source, i + 2, end);
       const next = close === -1 ? end : close + 1;
@@ -666,7 +673,12 @@ function derivePowerShellWordParts(source: string, start: number, end: number): 
       continue;
     }
     if (char === '$' || (char === '@' && i === start)) {
-      const next = readPowerShellVariableEnd(source, i + 1, end);
+      const nameEnd = readPowerShellVariableEnd(source, i + 1, end);
+      const startsMemberAccess =
+        !double && i === start && /^\w+(?::\w+)*$/.test(source.slice(i + 1, nameEnd));
+      const next = startsMemberAccess
+        ? nameEnd + (POWERSHELL_MEMBER_ACCESS.exec(source.slice(nameEnd, end))?.[0].length ?? 0)
+        : nameEnd;
       collector.push(literalStart, i, 'literal');
       collector.push(i, next, 'variable');
       i = next;

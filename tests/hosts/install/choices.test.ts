@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { DEEPSEEK_HARNESS_NPM_PROBE } from '@/hosts/catalog';
 import {
   applyInstallTargetState,
   buildInstallTargetChoicesAsync,
@@ -14,7 +15,7 @@ import { createTempRoot, removeTempRoots, withProcessEnv } from '../../helpers/t
 const SCRIPT: readonly FakeScriptEntry[] = [
   { command: 'present', stdout: '1.0.0\n' },
   { command: 'broken', exit: 1 },
-  { command: 'stalled', delayMs: 1000 },
+  { command: 'stalled', delayMs: 10_000 },
 ];
 
 const CONFIGURED: readonly InstallTarget[] = ['cursor', 'pi'];
@@ -37,28 +38,28 @@ const groupedReasons = (
 afterEach(removeTempRoots);
 
 describe('probing a host CLI', () => {
-  test('a clean exit means present; a failure and a missing binary do not', async () => {
+  test('a CLI on PATH is present however it answers; a missing one is not', async () => {
     const bin = createFakeBin(join(createTempRoot('next-probe-'), 'fake'), SCRIPT);
     const commands: NativeCommand[] = [
       ['present', '--version'],
       ['broken', '--version'],
+      ['stalled', '--version'],
       ['absent', '--version'],
     ];
-    const ported = await withProcessEnv(bin.env, () =>
+    const probed = await withProcessEnv(bin.env, () =>
       Promise.all(commands.map((command) => probeInstallTarget(command))),
     );
-    expect(ported).toEqual([true, false, false]);
+    expect(probed).toEqual([true, true, true, false]);
   });
 
-  test('a CLI that never answers is unavailable once the probe cap expires', async () => {
-    const bin = createFakeBin(join(createTempRoot('next-probe-'), 'fake'), SCRIPT);
-    const stalled: NativeCommand = ['stalled', '--version'];
-    const started = Date.now();
-    const probed = await withProcessEnv(bin.env, () => probeInstallTarget(stalled, 100));
-    const elapsed = Date.now() - started;
-    expect(probed).toBe(false);
-    expect(elapsed).toBeGreaterThanOrEqual(100);
-    expect(elapsed).toBeLessThan(900);
+  test('DeepSeek Harness counts only when the npm package answers, not when npx is on PATH', async () => {
+    const probeWith = (exit: number) => {
+      const bin = createFakeBin(join(createTempRoot('next-probe-'), 'fake'), [
+        { command: 'npx', exit },
+      ]);
+      return withProcessEnv(bin.env, () => probeInstallTarget([...DEEPSEEK_HARNESS_NPM_PROBE]));
+    };
+    expect([await probeWith(0), await probeWith(1)]).toEqual([true, false]);
   });
 });
 

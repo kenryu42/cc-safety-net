@@ -5,7 +5,13 @@ import { AMP_MANAGED_HEADER } from '@/hosts/amp/artifact';
 import { buildOpenClawArtifactHeader } from '@/hosts/openclaw/artifact';
 import type { InstallTargetChoice } from '@/hosts/install/choices';
 import type { InstallTarget } from '@/hosts/install/targets';
-import { type FlowSpec, openCodeV2Script, runSide } from '../../helpers/command-flow';
+import {
+  AGY_PLUGIN_BRANCH,
+  AGY_PLUGIN_BRANCH_INSTALL,
+  type FlowSpec,
+  openCodeV2Script,
+  runSide,
+} from '../../helpers/command-flow';
 import { type TreeSpec, writeTree } from '../../helpers/fixture-tree';
 import { fileAt } from '../../helpers/host-differential';
 import {
@@ -54,7 +60,6 @@ const NPX_ENTRY = '.npm/_npx/dd7a/node_modules/cc-safety-net/package.json';
 
 const CONFIG_HOSTS = [
   { flag: '--cursor', name: 'Cursor', file: '.cursor/hooks.json' },
-  { flag: '--agy-cli', name: 'Antigravity CLI', file: '.gemini/config/hooks.json' },
   { flag: '--devin', name: 'Devin CLI', file: DEVIN_CONFIG },
   { flag: '--droid', name: 'Factory Droid', file: '.factory/hooks.json' },
   { flag: '--grok-build', name: 'Grok Build', file: '.grok/hooks/cc-safety-net.json' },
@@ -117,12 +122,157 @@ test('a file where the config directory belongs stops the install', async () => 
 test('a file part-way down the config path gets the parent-path hint', async () => {
   const result = await flow({
     invoke: 'install',
-    args: ['--agy-cli'],
-    seed: { '.gemini': 'not a directory\n' },
+    args: ['--grok-build'],
+    seed: { '.grok': 'not a directory\n' },
   });
 
   expect(result.exitCode).toBe(1);
   expect(result.errors[0]).toEndWith('\nCheck that every parent path component is a directory.');
+});
+
+const AGY_LEGACY = '.gemini/config/hooks.json';
+const AGY_PLUGIN = '.gemini/config/plugins/cc-safety-net';
+const AGY_COMMAND = 'npx -y cc-safety-net hook --agy-cli';
+const agyLegacyHooks = (definition: Record<string, unknown>) =>
+  `${JSON.stringify(
+    {
+      mine: {
+        PreToolUse: [{ hooks: [{ type: 'command', command: 'echo mine' }] }],
+      },
+      'cc-safety-net': definition,
+    },
+    null,
+    2,
+  )}\n`;
+const AGY_LEGACY_SEED = agyLegacyHooks({
+  PreToolUse: [{ hooks: [{ type: 'command', command: AGY_COMMAND, timeout: 30 }] }],
+});
+const AGY_PLUGIN_HOOKS = `${AGY_PLUGIN}/hooks.json`;
+const agyPluginSeed = {
+  [`${AGY_PLUGIN}/plugin.json`]: '{"name":"cc-safety-net"}\n',
+  [AGY_PLUGIN_HOOKS]: `{"cc-safety-net":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"${AGY_COMMAND}"}]}]}}\n`,
+};
+const AGY_PLUGIN_INSTALL_LOG =
+  'agy plugin install https://github.com/kenryu42/cc-safety-net/tree/plugin\t<root>';
+
+test('Antigravity CLI installs the agy plugin from the plugin branch and retires the legacy hook entry', async () => {
+  const installed = await flow({
+    invoke: 'install',
+    args: ['--agy-cli'],
+    script: [AGY_PLUGIN_BRANCH_INSTALL],
+    seedTmp: AGY_PLUGIN_BRANCH,
+    seed: {
+      [AGY_LEGACY]: AGY_LEGACY_SEED,
+      [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+    },
+  });
+
+  expect(installed).toMatchObject({
+    exitCode: 0,
+    lines: [
+      'Installed Antigravity CLI integration',
+      'Removed the legacy Antigravity CLI hook from <home>/.gemini/config/hooks.json',
+      '',
+    ],
+    errors: [],
+    log: [AGY_PLUGIN_INSTALL_LOG],
+  });
+  expect(filesUnder(installed.tree, `${AGY_PLUGIN}/`)).toEqual(
+    Object.fromEntries(
+      Object.entries(AGY_PLUGIN_BRANCH).map(([path, content]) => [
+        path.replace('agy-plugin-branch', AGY_PLUGIN),
+        content,
+      ]),
+    ),
+  );
+  expect(fileAt(installed.tree, AGY_LEGACY)).toBe(agyLegacyHooks({ PreToolUse: [] }));
+  expect(installed.tree.map((entry) => entry.path)).toContain('.npm/_npx/dd7a');
+});
+
+test('a failed agy plugin install keeps the legacy Antigravity CLI hook in place', async () => {
+  const failed = await flow({
+    invoke: 'install',
+    args: ['--agy-cli'],
+    script: [
+      {
+        command: 'agy',
+        args: ['plugin', 'install', 'https://github.com/kenryu42/cc-safety-net/tree/plugin'],
+        exit: 1,
+        stderr: 'agy exploded\n',
+      },
+    ],
+    seed: { [AGY_LEGACY]: AGY_LEGACY_SEED },
+  });
+
+  expect(failed.exitCode).toBe(1);
+  expect(failed.errors[0]).toStartWith(
+    'Failed to run agy plugin install https://github.com/kenryu42/cc-safety-net/tree/plugin ',
+  );
+  expect(failed.errors[0]).toEndWith('(exit 1).\nagy exploded');
+  expect(fileAt(failed.tree, AGY_LEGACY)).toBe(AGY_LEGACY_SEED);
+  expect(failed.tree.map((entry) => entry.path)).not.toContain(AGY_PLUGIN);
+});
+
+test('reinstalling an Antigravity CLI plugin the user disabled enables it again', async () => {
+  const reinstalled = await flow({
+    invoke: 'install',
+    args: ['--agy-cli'],
+    script: [
+      AGY_PLUGIN_BRANCH_INSTALL,
+      { command: 'agy', args: ['plugin', 'enable', 'cc-safety-net'] },
+    ],
+    seedTmp: AGY_PLUGIN_BRANCH,
+    seed: {
+      ...agyPluginSeed,
+      '.gemini/config/config.json': '{"plugins":{"cc-safety-net":{"enabled":false}}}\n',
+    },
+  });
+
+  expect(reinstalled).toMatchObject({
+    exitCode: 0,
+    lines: ['Updated Antigravity CLI integration', ''],
+  });
+  expect(reinstalled.log).toEqual([
+    'agy plugin enable cc-safety-net\t<root>',
+    AGY_PLUGIN_INSTALL_LOG,
+  ]);
+});
+
+test.each([
+  ['[]\n', 'Antigravity hooks config must be a JSON object'],
+  [
+    '{\n  // ours\n  "cc-safety-net": {}\n}\n',
+    'Failed to parse Antigravity hooks config <home>/.gemini/config/hooks.json: ',
+  ],
+])(
+  'Antigravity CLI uninstall refuses a legacy hook config it cannot edit: %s',
+  async (seed, message) => {
+    const refused = await flow({
+      invoke: 'uninstall',
+      args: ['--agy-cli'],
+      seed: { [AGY_LEGACY]: seed },
+    });
+
+    expect(refused.exitCode).toBe(1);
+    expect(refused.errors[0]).toStartWith(message);
+    expect(fileAt(refused.tree, AGY_LEGACY)).toBe(seed);
+  },
+);
+
+test('Antigravity CLI uninstall removes the agy plugin and the legacy hook entry', async () => {
+  const removed = await flow({
+    invoke: 'uninstall',
+    args: ['--agy-cli'],
+    script: [{ command: 'agy', args: ['plugin', 'uninstall', 'cc-safety-net'] }],
+    seed: { ...agyPluginSeed, [AGY_LEGACY]: AGY_LEGACY_SEED },
+  });
+
+  expect(removed).toMatchObject({
+    exitCode: 0,
+    lines: ['Uninstalled Antigravity CLI integration', ''],
+    log: ['agy plugin uninstall cc-safety-net\t<root>'],
+  });
+  expect(fileAt(removed.tree, AGY_LEGACY)).toBe(agyLegacyHooks({ PreToolUse: [] }));
 });
 
 function filesUnder(tree: readonly { path: string; content?: string }[], prefix: string) {
@@ -513,7 +663,12 @@ const CODEX_TRUST =
   'Start Codex, open `/hooks`, select the cc-safety-net PreToolUse hook, and press `t` to trust it.';
 const codexCall = (rest: string) => `codex plugin ${rest}\t<root>`;
 const codexScript = (listOutput: string) => [
-  { command: 'codex', args: ['plugin', 'list'], stdout: listOutput },
+  {
+    command: 'codex',
+    args: ['plugin', 'list', '--marketplace', 'cc-marketplace'],
+    stdout: listOutput,
+  },
+  { command: 'codex', args: ['plugin', 'list'], exit: 1 },
   { command: 'codex' },
 ];
 
@@ -528,7 +683,7 @@ test('Codex adds the marketplace only when its plugin list has none', async () =
     exitCode: 0,
     lines: ['Installed Codex integration', CODEX_TRUST, ''],
     log: [
-      codexCall('list'),
+      codexCall('list --marketplace cc-marketplace'),
       codexCall('marketplace add kenryu42/cc-marketplace'),
       codexCall(`add ${CLAUDE_PLUGIN}`),
     ].sort(),
@@ -545,7 +700,7 @@ test('Codex adds the marketplace only when its plugin list has none', async () =
   expect(registered.lines).toEqual(['Installed Codex integration', CODEX_TRUST, '']);
   expect(registered.log).toEqual(
     [
-      codexCall('list'),
+      codexCall('list --marketplace cc-marketplace'),
       codexCall('marketplace upgrade cc-marketplace'),
       codexCall(`add ${CLAUDE_PLUGIN}`),
     ].sort(),
@@ -573,7 +728,7 @@ test('an installed Codex row updates, and a legacy row is removed afterwards', a
     exitCode: 0,
     warnings: [],
     log: [
-      codexCall('list'),
+      codexCall('list --marketplace cc-marketplace'),
       codexCall('marketplace upgrade cc-marketplace'),
       codexCall(`add ${CLAUDE_PLUGIN}`),
       codexCall(`remove ${CLAUDE_LEGACY}`),
@@ -1336,6 +1491,29 @@ test('the selector can cancel, install several targets in order, or hand over to
   const handedOver = await flow({ invoke: 'install', options: selection('update') });
   expect(handedOver).toMatchObject({ exitCode: 7, lines: [''], log: [] });
 });
+
+test('the picker offers a CLI on PATH that is slow to answer and greys out one that is absent', async () => {
+  const offered: InstallTargetChoice[] = [];
+  await flow({
+    invoke: 'install',
+    script: [{ command: 'opencode', args: ['--version'], delayMs: 6000 }],
+    options: () => ({
+      detectConfiguredTargets: async () => [],
+      selectTargets: async (_action: string, choices: readonly InstallTargetChoice[]) => {
+        offered.push(...choices);
+        return null;
+      },
+    }),
+  });
+
+  expect(offered.find((choice) => choice.target === 'opencode')).toMatchObject({
+    available: true,
+  });
+  expect(offered.find((choice) => choice.target === 'droid')).toMatchObject({
+    available: false,
+    unavailableReason: 'CLI not installed',
+  });
+}, 15_000);
 
 test('the uninstall selector does not offer a Cursor covered only by the Claude Code plugin', async () => {
   const offered: InstallTargetChoice[] = [];

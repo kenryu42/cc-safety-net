@@ -33,6 +33,7 @@ export async function runPreToolUseHook(options: {
   // Only a host that prompts on `ask` may use it; Codex rejects it and runs the tool.
   canPromptPerson?: (input: PreToolUseHookInput) => boolean;
   denyExitCode?: number;
+  handOff?: (input: object) => Promise<void> | undefined;
   getToolRoute: (
     toolName: string,
     toolInput: PreToolUseHookInput['tool_input'],
@@ -69,6 +70,7 @@ export async function runPreToolUseHook(options: {
           }),
         }
       : {}),
+    handOff: options.handOff,
     isSupported: (input) => input.hook_event_name === PRE_TOOL_USE_HOOK_EVENT,
     getToolName: (input) => input.tool_name,
     getToolInput: (input, toolName, _outputDeny, environment) => ({

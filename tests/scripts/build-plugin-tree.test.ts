@@ -84,6 +84,7 @@ describe('the plugin tree', () => {
 
   test('holds exactly the plugin manifests, the skill, the logo and the readable hook build', () => {
     expect(listFiles(tree)).toEqual([
+      '.antigravity-plugin/plugin.json',
       '.claude-plugin/plugin.json',
       '.codex-plugin/plugin.json',
       '.cursor-plugin/marketplace.json',
@@ -100,6 +101,7 @@ describe('the plugin tree', () => {
       'dist/bin/gate.js',
       'dist/bin/hook.js',
       'dist/bin/package.json',
+      'hooks.json',
       'hooks/codex.json',
       'hooks/cursor.json',
       'hooks/hooks.json',
@@ -135,6 +137,63 @@ describe('the plugin tree', () => {
     });
   });
 
+  test('carries an Antigravity manifest and a root agy hooks.json for agy plugin install', () => {
+    expect(readJson(join(tree, '.antigravity-plugin/plugin.json'))).toEqual({
+      name: 'cc-safety-net',
+      version: pkg.version,
+      description: 'Block destructive commands and secret access',
+      logo: 'assets/logo.svg',
+    });
+    expect(readJson(join(tree, 'hooks.json'))).toEqual({
+      'cc-safety-net': {
+        PreToolUse: [
+          {
+            matcher: '*',
+            hooks: [
+              {
+                type: 'command',
+                command: 'node ./dist/bin/cc-safety-net.js hook --agy-cli',
+                timeout: 30,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  test('the agy hook command, run from the tree, blocks git reset --hard', () => {
+    const home = createTempRoot('cc-safety-net-plugin-tree-home-');
+    const command: string = readJson(join(tree, 'hooks.json'))['cc-safety-net'].PreToolUse[0]
+      .hooks[0].command;
+    const proc = Bun.spawnSync(command.split(' '), {
+      cwd: tree,
+      stdin: Buffer.from(
+        JSON.stringify({
+          toolCall: {
+            id: 'plugin-tree-tool-call',
+            name: 'run_command',
+            args: { CommandLine: 'git reset --hard', Cwd: home },
+          },
+          conversationId: 'plugin-tree',
+          workspacePaths: [home],
+          hookEventName: 'PreToolUse',
+          cwd: home,
+        }),
+      ),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: isolatedSpawnEnv(home),
+    });
+
+    expect(proc.stderr.toString()).toBe('');
+    expect(proc.exitCode).toBe(0);
+    expect(JSON.parse(proc.stdout.toString())).toMatchObject({
+      decision: 'deny',
+      reason: expect.stringContaining('git.reset-hard'),
+    });
+  });
+
   test('ships the repository README with its repository links pinned to the release tag', () => {
     const readme = readFileSync(join(tree, 'README.md'), 'utf8');
     const repositoryLinks = [
@@ -156,9 +215,10 @@ describe('the plugin tree', () => {
     const codex = readJson(join(tree, '.codex-plugin/plugin.json'));
     const cursor = readJson(join(tree, '.cursor-plugin/plugin.json'));
     const kimi = readJson(join(tree, 'kimi.plugin.json'));
+    const antigravity = readJson(join(tree, '.antigravity-plugin/plugin.json'));
     const files = listFiles(tree);
     const relativeToTree = (path: string) => path.replace(/^\.\//, '');
-    [claude.icon, codex.interface.logo, codex.interface.composerIcon, cursor.logo]
+    [claude.icon, codex.interface.logo, codex.interface.composerIcon, cursor.logo, antigravity.logo]
       .map(relativeToTree)
       .forEach((path) => expect(files).toContain(path));
     [codex.skills, codex.hooks, cursor.hooks, kimi.skills]

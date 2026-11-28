@@ -108,7 +108,7 @@ describe('the system report', () => {
       'amp --version': '1.0.14',
       'droid --version': '0.233.0',
       'devin --version': 'devin 3000.11.3 (9c803229faa4)',
-      'codex plugin list': 'codex plugins',
+      'codex plugin list --marketplace cc-marketplace': 'codex plugins',
       'amp plugins list': 'amp plugins',
       'node --version': 'v22.0.0',
       'npm --version': '10.0.0',
@@ -124,7 +124,7 @@ describe('the system report', () => {
     );
     expect(calls.map((call) => call.args.join(' ')).sort()).toEqual(Object.keys(outputs).sort());
     expect(calls.filter((call) => call.timeoutMs !== undefined)).toEqual([
-      { args: ['codex', 'plugin', 'list'], timeoutMs: 30_000 },
+      { args: ['codex', 'plugin', 'list', '--marketplace', 'cc-marketplace'], timeoutMs: 30_000 },
       { args: ['amp', 'plugins', 'list'], timeoutMs: 30_000 },
     ]);
     expect(info.versions).toEqual({

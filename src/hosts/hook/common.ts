@@ -37,6 +37,7 @@ type HookAdapter<T> = {
   outputAllow?: () => void;
   guardDependencies?: Partial<GuardDependencies>;
   isSupported: (input: T) => boolean;
+  handOff?: (input: object) => Promise<void> | undefined;
   getToolName: (input: T) => unknown;
   getToolInput: (
     input: T,
@@ -133,9 +134,9 @@ async function readHookInput<T>(outputDeny: HookDenyOutput): Promise<T | undefin
   return parseHookJson<T>(inputText, outputDeny, 'Failed to parse hook input JSON.');
 }
 
-async function runHookAdapter<T>(adapter: HookAdapter<T>): Promise<void> {
+async function runHookAdapter<T>(adapter: HookAdapter<T>, parsedInput?: T): Promise<void> {
   const environment = createProcessEnvironment();
-  const input = await readHookInput<T>(adapter.outputDeny);
+  const input = parsedInput ?? (await readHookInput<T>(adapter.outputDeny));
   if (input === undefined) {
     return;
   }
@@ -143,6 +144,9 @@ async function runHookAdapter<T>(adapter: HookAdapter<T>): Promise<void> {
     outputFailedClosed(adapter.outputDeny);
     return;
   }
+
+  const handedOff = adapter.handOff?.(input);
+  if (handedOff) return handedOff;
 
   if (!adapter.isSupported(input)) {
     return;
@@ -282,6 +286,7 @@ function getHookAuditCwd(input: unknown): string | null {
 
 export async function runConfiguredHookAdapter<T>(
   adapter: ConfiguredHookAdapter<T>,
+  parsedInput?: T,
 ): Promise<void> {
   const outputDeny: HookDenyOutput = (denial) => outputHookDeny(adapter, denial);
   const createAskOutput = adapter.createAskOutput;
@@ -295,7 +300,7 @@ export async function runConfiguredHookAdapter<T>(
     : undefined;
 
   try {
-    await runHookAdapter<T>({ ...adapter, outputDeny, outputAsk, outputAllow });
+    await runHookAdapter<T>({ ...adapter, outputDeny, outputAsk, outputAllow }, parsedInput);
   } catch (error) {
     console.error('CC Safety Net error:', error);
     outputDeny(createFailedClosedDenial());

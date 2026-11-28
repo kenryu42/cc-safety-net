@@ -1,6 +1,13 @@
 import { afterEach, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { type FlowSpec, openCodeV2Script, runSide } from '../../helpers/command-flow';
+import {
+  AGY_PLUGIN_BRANCH,
+  AGY_PLUGIN_BRANCH_INSTALL,
+  AGY_PLUGIN_BRANCH_SKILL,
+  type FlowSpec,
+  openCodeV2Script,
+  runSide,
+} from '../../helpers/command-flow';
 import { fileAt } from '../../helpers/host-differential';
 import { CLAUDE_CURSOR_PLUGIN_SEED, removeTempRoots } from '../../helpers/temp-home';
 
@@ -108,12 +115,119 @@ const UPDATE_REPORTS = [
   `Updated Kimi Code hook in <home>/${KIMI_CONFIG}`,
 ];
 
+const AGY_PLUGIN = '.gemini/config/plugins/cc-safety-net';
+const AGY_LEGACY = '.gemini/config/hooks.json';
+const AGY_COMMAND = 'npx -y cc-safety-net hook --agy-cli';
+const AGY_BUNDLED_COMMAND = 'node ./dist/bin/cc-safety-net.js hook --agy-cli';
+const agyHooks = (name: string, command: string) => ({
+  [name]: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command }] }] },
+});
+const AGY_INSTALL_LOG = [
+  'agy plugin install https://github.com/kenryu42/cc-safety-net/tree/plugin\t<root>',
+];
+
+test.each([
+  ['plugin', `${AGY_PLUGIN}/hooks.json`, AGY_BUNDLED_COMMAND],
+  ['legacy npx hook', AGY_LEGACY, AGY_COMMAND],
+])(
+  'a retained Antigravity CLI %s is skipped when agy is not on PATH and the npx package is still refreshed',
+  async (_install, hooksPath, command) => {
+    const result = await flow({
+      invoke: 'update',
+      seed: {
+        [hooksPath]: `${JSON.stringify(agyHooks('cc-safety-net', command))}\n`,
+        [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+      },
+      options: () => versions(),
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      lines: ['Antigravity CLI not found; skipped', '', NUDGE, ''],
+      errors: [],
+      log: [],
+    });
+    expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+  },
+);
+
+test('update moves a legacy Antigravity CLI hook onto the agy plugin and keeps other hooks', async () => {
+  const unrelated = agyHooks('mine', 'echo mine');
+  const result = await flow({
+    invoke: 'update',
+    seed: {
+      [AGY_LEGACY]: `${JSON.stringify({ ...unrelated, ...agyHooks('cc-safety-net', AGY_COMMAND) })}\n`,
+      [NPX_ENTRY]: '{"name":"cc-safety-net"}\n',
+    },
+    seedTmp: AGY_PLUGIN_BRANCH,
+    script: [AGY_PLUGIN_BRANCH_INSTALL],
+    options: () => versions(),
+  });
+
+  expect(result).toMatchObject({
+    exitCode: 0,
+    lines: [
+      'Updated Antigravity CLI integration',
+      `Removed the legacy Antigravity CLI hook from <home>/${AGY_LEGACY}`,
+      '',
+      NUDGE,
+      '',
+    ],
+    errors: [],
+    log: AGY_INSTALL_LOG,
+  });
+  expect(fileAt(result.tree, `${AGY_PLUGIN}/hooks.json`)).toContain(AGY_BUNDLED_COMMAND);
+  expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
+    AGY_PLUGIN_BRANCH_SKILL,
+  );
+  expect(JSON.parse(fileAt(result.tree, AGY_LEGACY) ?? '{}')).toEqual({
+    ...unrelated,
+    'cc-safety-net': { PreToolUse: [] },
+  });
+  expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+});
+
+test.each([
+  ['a cached npx package', NPX_ENTRY, '{"name":"cc-safety-net"}\n'],
+  ['an npx cache that cannot be cleared', '.npm/_npx', 'not a directory\n'],
+])(
+  'update reinstalls the Antigravity CLI plugin from the plugin branch to refresh its skill with %s',
+  async (_cache, cachePath, cacheContent) => {
+    const result = await flow({
+      invoke: 'update',
+      seed: {
+        [`${AGY_PLUGIN}/.antigravity-plugin/plugin.json`]:
+          '{"name":"cc-safety-net","version":"0.0.1"}\n',
+        [`${AGY_PLUGIN}/hooks.json`]: `${JSON.stringify(agyHooks('cc-safety-net', AGY_BUNDLED_COMMAND))}\n`,
+        [`${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`]: '# CC Safety Net, outdated\n',
+        [cachePath]: cacheContent,
+      },
+      seedTmp: AGY_PLUGIN_BRANCH,
+      script: [AGY_PLUGIN_BRANCH_INSTALL],
+      options: () => versions(),
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      lines: ['Updated Antigravity CLI integration', '', NUDGE, ''],
+      errors: [],
+      log: AGY_INSTALL_LOG,
+    });
+    expect(
+      JSON.parse(fileAt(result.tree, `${AGY_PLUGIN}/.antigravity-plugin/plugin.json`) ?? '{}'),
+    ).toMatchObject({ version: '9.9.9' });
+    expect(fileAt(result.tree, `${AGY_PLUGIN}/skills/cc-safety-net/SKILL.md`)).toBe(
+      AGY_PLUGIN_BRANCH_SKILL,
+    );
+    expect(result.tree.map((entry) => entry.path)).not.toContain('.npm/_npx/9f1');
+  },
+);
+
 test('every installed integration is updated in catalog order behind one cache clear', async () => {
   const result = await flow({
     invoke: 'update',
     seed: await seedInstalledHome(),
     script: [{ command: 'claude' }, { command: 'hermes' }],
-    extraCommands: ['gemini'],
     options: () => versions(),
   });
 
@@ -122,9 +236,6 @@ test('every installed integration is updated in catalog order behind one cache c
     lines: [...UPDATE_REPORTS, '', NUDGE, ''],
     errors: [],
     log: [
-      'claude --version\t<root>',
-      'gemini --version\t<root>',
-      'hermes --version\t<root>',
       'claude plugin marketplace update cc-marketplace\t<root>',
       'claude plugin update cc-safety-net@cc-marketplace\t<root>',
       'hermes plugins enable cc-safety-net --no-allow-tool-override\t<root>',
@@ -145,7 +256,6 @@ test('one failing target is reported as an error while the rest still update', a
       { command: 'claude' },
       { command: 'hermes' },
     ],
-    extraCommands: ['gemini'],
     options: () => versions(),
   });
 
@@ -238,17 +348,50 @@ test('a Codex plugin list with a legacy row updates Codex and removes the old pl
   const result = await flow({
     invoke: 'update',
     script: [{ command: 'codex' }],
-    options: () => versions({ 'codex plugin list': CODEX_LIST }),
+    options: () => versions({ 'codex plugin list --marketplace cc-marketplace': CODEX_LIST }),
   });
 
   expect(result).toMatchObject({
     exitCode: 0,
     warnings: [],
     log: [
-      'codex --version\t<root>',
       'codex plugin marketplace upgrade cc-marketplace\t<root>',
       'codex plugin add cc-safety-net@cc-marketplace\t<root>',
       'codex plugin remove safety-net@cc-marketplace\t<root>',
+    ].sort(),
+  });
+  expect(result.lines[0]).toBe('Updated Codex integration');
+});
+
+test('Codex is found from its cc-marketplace listing without the catalog-fetching full list', async () => {
+  const result = await flow({
+    invoke: 'update',
+    script: [
+      {
+        command: 'codex',
+        args: ['plugin', 'list', '--marketplace', 'cc-marketplace'],
+        stdout: [
+          'Marketplace `cc-marketplace`',
+          '/Users/x/.codex/.tmp/marketplaces/cc-marketplace/.agents/plugins/marketplace.json',
+          '',
+          'PLUGIN                        STATUS              VERSION  SOURCE',
+          'cc-safety-net@cc-marketplace  installed, enabled  2.8.3    https://github.com/kenryu42/cc-safety-net.git, ref `plugin`',
+          '',
+        ].join('\n'),
+      },
+      { command: 'codex', args: ['plugin', 'list'], exit: 1 },
+      { command: 'codex' },
+    ],
+    options: () => ({ ...versions(), fetchVersion: undefined }),
+  });
+
+  expect(result).toMatchObject({
+    exitCode: 0,
+    warnings: [],
+    log: [
+      'codex plugin list --marketplace cc-marketplace\t<root>',
+      'codex plugin marketplace upgrade cc-marketplace\t<root>',
+      'codex plugin add cc-safety-net@cc-marketplace\t<root>',
     ].sort(),
   });
   expect(result.lines[0]).toBe('Updated Codex integration');
@@ -272,7 +415,6 @@ test('a Copilot plugin checkout on disk is enough to update Copilot', async () =
   expect(result).toMatchObject({
     exitCode: 0,
     log: [
-      'copilot --binary-version\t<root>',
       'copilot plugin list\t<root>',
       'copilot plugin marketplace update cc-marketplace\t<root>',
       'copilot plugin update cc-safety-net@cc-marketplace\t<root>',
@@ -297,7 +439,6 @@ test('a Claude Code install under CLAUDE_CONFIG_DIR is found and updated', async
   expect(result).toMatchObject({
     exitCode: 0,
     log: [
-      'claude --version\t<root>',
       'claude plugin marketplace update cc-marketplace\t<root>',
       'claude plugin update cc-safety-net@cc-marketplace\t<root>',
     ].sort(),

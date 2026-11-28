@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { isExecutableOnPath } from '@/hosts/system-info';
 
 const DIALOG_TIMEOUT_MS = 120_000;
 const PROMPT = 'Choose the project folder';
@@ -21,22 +21,11 @@ const LINUX_DIALOGS = [
   { binary: 'kdialog', args: ['--getexistingdirectory', '.', '--title', PROMPT] },
 ];
 
-const onPath = (binary: string, env: NodeJS.ProcessEnv) =>
-  (env.PATH ?? '').split(delimiter).some((dir) => {
-    if (dir.length === 0) return false;
-    try {
-      const stats = statSync(join(dir, binary));
-      return stats.isFile() && (stats.mode & 0o111) !== 0;
-    } catch {
-      return false;
-    }
-  });
-
 export function isDirectoryPickerAvailable(platform: string, env: NodeJS.ProcessEnv): boolean {
   if (platform === 'darwin' || platform === 'win32') return true;
   if (platform !== 'linux') return false;
   if (!env.DISPLAY && !env.WAYLAND_DISPLAY) return false;
-  return LINUX_DIALOGS.some((dialog) => onPath(dialog.binary, env));
+  return LINUX_DIALOGS.some((dialog) => isExecutableOnPath(dialog.binary, env));
 }
 
 function getDialogCommand(
@@ -50,7 +39,7 @@ function getDialogCommand(
       args: ['-NoProfile', '-STA', '-Command', WINDOWS_SCRIPT],
     };
   }
-  const dialog = LINUX_DIALOGS.find((candidate) => onPath(candidate.binary, env));
+  const dialog = LINUX_DIALOGS.find((candidate) => isExecutableOnPath(candidate.binary, env));
   return dialog ? { cmd: dialog.binary, args: dialog.args } : null;
 }
 

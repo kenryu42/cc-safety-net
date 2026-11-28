@@ -15,7 +15,11 @@ import { createProcessEnvironment, type Environment } from '@/core/environment';
 import { atomicWriteFile } from '@/core/io/atomic-write';
 import { stripJsonComments } from '@/core/io/jsonc';
 import { installAmp, uninstallAmp } from '@/hosts/amp/install';
-import { installAntigravityCli, uninstallAntigravityCli } from '@/hosts/antigravity-cli/install';
+import {
+  planAntigravityCliInstall,
+  planAntigravityCliUninstall,
+  removeLegacyAntigravityHook,
+} from '@/hosts/antigravity-cli/install';
 import { getIntegrationDisplayName } from '@/hosts/catalog';
 import { detectClaudeCode, hasClaudeInstalledPlugin } from '@/hosts/claude-code/detect';
 import { CODEX_TRUST_HINT } from '@/hosts/codex/detect';
@@ -89,7 +93,7 @@ import { defaultVersionFetcher, type VersionFetcher } from '@/hosts/system-info'
 
 type ConfigInstallTarget = Extract<
   InstallTarget,
-  'antigravity-cli' | 'devin' | 'droid' | 'grok-build' | 'kimi-code' | 'cursor'
+  'devin' | 'droid' | 'grok-build' | 'kimi-code' | 'cursor'
 >;
 
 type ManagedArtifactTarget = Extract<InstallTarget, 'amp' | 'hermes-agent'>;
@@ -151,6 +155,7 @@ type InstallTargetResolution = {
 const CLAUDE_LEGACY_PLUGIN_ID = 'safety-net@cc-marketplace';
 
 const NATIVE_UPDATE_TARGETS = new Set<InstallTarget>([
+  'antigravity-cli',
   'claude-code',
   'codex',
   'copilot-cli',
@@ -184,6 +189,10 @@ function hasCodexMarketplace(output: string | null): boolean {
 }
 
 const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
+  'antigravity-cli': {
+    installCommands: planAntigravityCliInstall,
+    uninstallCommands: planAntigravityCliUninstall,
+  },
   'claude-code': {
     installCommands: (environment) => {
       const update = hasClaudeInstalledPlugin(environment, 'cc-safety-net@cc-marketplace');
@@ -219,7 +228,8 @@ const NATIVE_INSTALLS: Record<NativeInstallTarget, NativeInstallDefinition> = {
   codex: {
     installCommands: async (_environment, codexPluginListOutput) => {
       const pluginList =
-        codexPluginListOutput ?? (await runNativeCommand(['codex', 'plugin', 'list']));
+        codexPluginListOutput ??
+        (await runNativeCommand(['codex', 'plugin', 'list', '--marketplace', 'cc-marketplace']));
       const update = hasCodexReplacementPlugin(pluginList);
       return {
         commands: [
@@ -426,7 +436,7 @@ async function detectInstallHookState(
   const [ampPluginListOutput, codexPluginListOutput, copilotCliVersion] = await Promise.all([
     fetchVersion(['amp', 'plugins', 'list'], 30_000),
 
-    fetchVersion(['codex', 'plugin', 'list'], 30_000),
+    fetchVersion(['codex', 'plugin', 'list', '--marketplace', 'cc-marketplace'], 30_000),
     fetchVersion(['copilot', '--binary-version']),
   ]);
 
@@ -560,7 +570,6 @@ function uninstallOpenCodeTarget(environment: Environment): string {
 }
 
 const CONFIG_INSTALLS = {
-  'antigravity-cli': { install: installAntigravityCli, uninstall: uninstallAntigravityCli },
   cursor: { install: installCursor, uninstall: uninstallCursor },
   devin: { install: installDevin, uninstall: uninstallDevin },
   droid: { install: installDroid, uninstall: uninstallDroid },
@@ -677,6 +686,7 @@ const INSTALL_EXTRAS: Partial<
     }
   >
 > = {
+  'antigravity-cli': { afterInstall: removeLegacyAntigravityHook },
   'copilot-cli': { afterInstall: enableCopilotPlugin },
   cursor: { afterUninstall: uninstallCursorPlugin },
   'hermes-agent': {
@@ -918,7 +928,11 @@ async function updateInstalledIntegrations(options: UpdateCommandOptions): Promi
             message: `${getIntegrationDisplayName(target)} not found; skipped`,
             failed: false,
           });
-        if (npxCacheFailure !== null && NPX_CACHE_TARGETS.has(target))
+        if (
+          npxCacheFailure !== null &&
+          NPX_CACHE_TARGETS.has(target) &&
+          target !== 'antigravity-cli'
+        )
           return Promise.resolve({ message: npxCacheFailure, failed: true });
         return runSingleInstallTarget(
           'install',

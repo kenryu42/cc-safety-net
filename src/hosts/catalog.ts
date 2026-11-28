@@ -40,7 +40,7 @@ const catalog = [
     },
     install: {
       flag: '--agy-cli',
-      artifactKind: 'hook config',
+      artifactKind: 'plugin',
       probeCommand: ['agy', '--version'],
     },
   },

@@ -1,9 +1,28 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { getAntigravityHooksPath } from '@/hosts/antigravity-cli/hook';
-import type { DetectContext, HookDetection } from '@/hosts/detect/context';
+import { type DetectContext, type HookDetection, readStateFile } from '@/hosts/detect/context';
+
+export const ANTIGRAVITY_PLUGIN_NAME = 'cc-safety-net';
 
 const ANTIGRAVITY_HOOK_COMMAND_PATTERN =
-  /cc-safety-net\s+hook\s+(?:[^\s]+\s+)*(?:--agy-cli|-ac)(\s|["']|$)/;
+  /cc-safety-net(?:\.js)?\s+hook\s+(?:[^\s]+\s+)*(?:--agy-cli|-ac)(\s|["']|$)/;
+
+export function getAntigravityPluginDir(homeDir: string): string {
+  return join(homeDir, '.gemini', 'config', 'plugins', ANTIGRAVITY_PLUGIN_NAME);
+}
+
+export function isAntigravityPluginDisabled(homeDir: string): boolean {
+  const config = readStateFile(join(homeDir, '.gemini', 'config', 'config.json'));
+  return (
+    config.kind === 'ok' &&
+    (
+      config.value as {
+        plugins?: Record<string, { enabled?: unknown } | null | undefined>;
+      } | null
+    )?.plugins?.[ANTIGRAVITY_PLUGIN_NAME]?.enabled === false
+  );
+}
 
 function _findAntigravitySafetyNetHooks(
   config: unknown,
@@ -34,9 +53,11 @@ function _findAntigravitySafetyNetHooks(
   });
 }
 
-export function detect(context: DetectContext): HookDetection {
-  const configPath = getAntigravityHooksPath(context.environment.home);
-
+function inspectHooksFile(
+  configPath: string,
+  method: 'plugin' | 'hook config',
+  pluginEnabled: boolean,
+): HookDetection {
   if (!existsSync(configPath)) {
     return { platform: 'antigravity-cli', status: 'n/a', configPath };
   }
@@ -55,23 +76,32 @@ export function detect(context: DetectContext): HookDetection {
     };
   }
 
-  if (matches.some((match) => match.enabled)) {
-    return {
-      platform: 'antigravity-cli',
-      status: 'configured',
-      method: 'hook config',
-      configPath,
-    };
+  if (pluginEnabled && matches.some((match) => match.enabled)) {
+    return { platform: 'antigravity-cli', status: 'configured', method, configPath };
   }
 
   if (matches.length > 0) {
-    return {
-      platform: 'antigravity-cli',
-      status: 'disabled',
-      method: 'hook config',
-      configPath,
-    };
+    return { platform: 'antigravity-cli', status: 'disabled', method, configPath };
   }
 
   return { platform: 'antigravity-cli', status: 'n/a', configPath };
+}
+
+export function detect(context: DetectContext): HookDetection {
+  const home = context.environment.home;
+  const detections = [
+    inspectHooksFile(
+      join(getAntigravityPluginDir(home), 'hooks.json'),
+      'plugin',
+      !isAntigravityPluginDisabled(home),
+    ),
+    inspectHooksFile(getAntigravityHooksPath(home), 'hook config', true),
+  ] as const;
+
+  return (
+    detections.find((detection) => detection.status === 'configured') ??
+    detections.find((detection) => detection.status === 'disabled') ??
+    detections.find((detection) => detection.errors !== undefined) ??
+    detections[1]
+  );
 }

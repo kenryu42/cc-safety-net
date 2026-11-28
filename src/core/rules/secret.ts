@@ -203,8 +203,13 @@ export const SECRET_CODING_CLI_RULES = [
   {
     id: 'secret.cli.antigravity',
     category: 'Coding CLI config',
-    label: 'Antigravity CLI hook config',
-    paths: ['~/.gemini/config/hooks.json', '~/.gemini/config/mcp_config.json'],
+    label: 'Antigravity CLI hook and plugin config',
+    paths: [
+      '~/.gemini/config/hooks.json',
+      '~/.gemini/config/mcp_config.json',
+      '~/.gemini/config/config.json',
+      '~/.gemini/config/plugins/cc-safety-net/hooks.json',
+    ],
   },
   {
     id: 'secret.cli.codex',

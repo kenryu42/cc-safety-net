@@ -12,6 +12,7 @@ import {
   readPowerShellHereStringHeader,
 } from '@/core/shell/model';
 import { DEFAULT_COMMAND_PARSER_LIMITS, parseCommand } from '@/core/shell/parse';
+import { POWERSHELL_MEMBER_ACCESS } from '@/core/shell/powershell';
 import { scanParameterExpansion } from '@/core/shell/posix';
 import { getBasename, hasUnclosedQuotes } from '@/core/shell/tokens';
 import type { EnvironmentContext } from '@/gate/analysis';
@@ -811,12 +812,15 @@ function readExpansion(
     collectAssignmentFallback(expansion, state, flags, powershell);
     return { text: expansion, next: close + 1 };
   }
-  if (char !== undefined && SPECIAL_VARIABLE_NAME.test(char)) {
-    return { text: `\${${char}}`, next: start + 2 };
-  }
   const name =
-    (powershell ? POWERSHELL_VARIABLE_NAME : /^\w*/).exec(raw.slice(start + 1))?.[0] ?? '';
-  return { text: `\${${name}}`, next: start + 1 + name.length };
+    char !== undefined && SPECIAL_VARIABLE_NAME.test(char) && !(powershell && char === '_')
+      ? char
+      : ((powershell ? POWERSHELL_VARIABLE_NAME : /^\w*/).exec(raw.slice(start + 1))?.[0] ?? '');
+  const member =
+    powershell && !state.double && /^\w/.test(name)
+      ? (POWERSHELL_MEMBER_ACCESS.exec(raw.slice(start + 1 + name.length))?.[0] ?? '')
+      : '';
+  return { text: `\${${name}${member}}`, next: start + 1 + name.length + member.length };
 }
 
 function collectAssignmentFallback(
